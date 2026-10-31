@@ -192,6 +192,15 @@ final class TopLevelMenuTests: XCTestCase {
         gone.trashed = true
         XCTAssertEqual(titles(MenuBuilder.topLevel(entries: [gone])), ["Password Generator"])
     }
+
+    func testTheSameTitleFromTwoFilesShowsTheFileName() {
+        let home = entry("Mail", user: "ada")
+        let work = entry("Mail", user: "ada")
+        let sources = [home.id: "/home/personal.kdbx", work.id: "/work/office.kdbx"]
+        let rows = MenuBuilder.searchResults(entries: [home, work], query: "mail", scope: .major, sources: sources)
+        let details = rows.filter { $0.entryID != nil }.map(\.username)
+        XCTAssertEqual(Set(details), Set(["ada — personal.kdbx", "ada — office.kdbx"]))
+    }
 }
 
 final class AutoLockTests: XCTestCase {

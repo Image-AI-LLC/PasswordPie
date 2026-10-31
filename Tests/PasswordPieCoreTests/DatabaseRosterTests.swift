@@ -22,6 +22,20 @@ final class DatabaseRosterTests: XCTestCase {
         XCTAssertEqual(roster.paths, ["/vaults/b.kdbx", "/vaults/c.kdbx"])
     }
 
+    func testReplacingAnImportKeepsTheCurrentFileAndDropsTheSource() {
+        let roster = DatabaseRoster(current: "/vaults/main.kdbx", remembered: ["/imports/work.opvault"])
+            .replacing("/imports/work.opvault", with: "/imports/work.kdbx")
+        XCTAssertEqual(roster.current, "/vaults/main.kdbx")
+        XCTAssertEqual(roster.paths, ["/vaults/main.kdbx", "/imports/work.kdbx"])
+    }
+
+    func testReplacingTheCurrentImportMakesTheKDBXCurrent() {
+        let roster = DatabaseRoster(current: "/imports/work.opvault", remembered: ["/vaults/main.kdbx"])
+            .replacing("/imports/work.opvault", with: "/imports/work.kdbx")
+        XCTAssertEqual(roster.current, "/imports/work.kdbx")
+        XCTAssertEqual(roster.paths, ["/imports/work.kdbx", "/vaults/main.kdbx"])
+    }
+
     func testRemovingTheOnlyFileLeavesIt() {
         let roster = DatabaseRoster(current: "/vaults/a.kdbx")
         XCTAssertEqual(roster.removing("/vaults/a.kdbx"), roster)
@@ -106,5 +120,54 @@ final class StoredUnlockTests: XCTestCase {
 
     func testEmptyDataIsNotASecret() {
         XCTAssertNil(StoredUnlock(stored: Data()))
+    }
+}
+
+final class EntryCatalogTests: XCTestCase {
+    func testMergeKeepsBothFilesAndTheFirstId() {
+        let shared = UUID()
+        var home = VaultEntry(id: shared)
+        home.title = "Home"
+        var work = VaultEntry(id: UUID())
+        work.title = "Work"
+        let merged = EntryCatalog.merge([
+            ("/home/vault.kdbx", [home]),
+            ("/work/vault.kdbx", [work]),
+        ])
+        XCTAssertEqual(merged.map(\.entry.title), ["Home", "Work"])
+        XCTAssertEqual(merged.map(\.listID), [shared, work.id])
+        XCTAssertEqual(merged.map(\.path), ["/home/vault.kdbx", "/work/vault.kdbx"])
+    }
+
+    func testARepeatedIdStaysInBothFilesWithAStableStandIn() {
+        let shared = UUID()
+        var first = VaultEntry(id: shared)
+        first.title = "Bank"
+        var second = VaultEntry(id: shared)
+        second.title = "Bank copy"
+        let groups = [
+            ("/a/one.kdbx", [first]),
+            ("/b/two.kdbx", [second]),
+        ]
+        let once = EntryCatalog.merge(groups)
+        let twice = EntryCatalog.merge(groups)
+        XCTAssertEqual(once.map(\.listID), twice.map(\.listID))
+        XCTAssertEqual(once[0].listID, shared)
+        XCTAssertNotEqual(once[1].listID, shared)
+        XCTAssertEqual(once[1].entry.id, shared)
+        XCTAssertEqual(EntryCatalog.storedEntries(path: "/b/two.kdbx", merged: once).map(\.id), [shared])
+        XCTAssertEqual(EntryCatalog.storedEntries(path: "/a/one.kdbx", merged: once).map(\.title), ["Bank"])
+    }
+
+    func testSearchSeesEntriesFromEveryFile() {
+        var home = VaultEntry()
+        home.title = "Home Mail"
+        var work = VaultEntry()
+        work.title = "Work Mail"
+        let merged = EntryCatalog.merge([
+            ("/home/vault.kdbx", [home]),
+            ("/work/vault.kdbx", [work]),
+        ]).map(\.entry)
+        XCTAssertEqual(searchEntries(merged, query: "mail", scope: .major).map(\.title), ["Home Mail", "Work Mail"])
     }
 }

@@ -33,6 +33,18 @@ public struct DatabaseRoster: Equatable, Sendable {
         return DatabaseRoster(current: path, remembered: paths)
     }
 
+    /// An imported file saved as a sibling `.kdbx` replaces the source path. The current file stays current.
+    public func replacing(_ path: String, with replacement: String) -> DatabaseRoster {
+        guard !replacement.isEmpty, path != replacement, paths.contains(path) else { return self }
+        if paths.contains(replacement) {
+            let removed = removing(path)
+            return removed.current == replacement ? removed : removed.selecting(current == path ? replacement : current)
+        }
+        let currentPath = current == path ? replacement : current
+        let rewritten = paths.map { $0 == path ? replacement : $0 }
+        return DatabaseRoster(current: currentPath, remembered: rewritten.filter { $0 != currentPath })
+    }
+
     /// Drops one file. Removing the current file selects the next one. Removing the last file does nothing.
     public func removing(_ path: String) -> DatabaseRoster {
         let remaining = paths.filter { $0 != path }

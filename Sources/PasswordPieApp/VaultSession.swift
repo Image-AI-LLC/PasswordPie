@@ -29,6 +29,13 @@ private enum TouchIDGate {
     case failed(String)
 }
 
+private struct OpenedFile {
+    var url: URL
+    var vault: Vault
+    var password: String
+    var keyFile: Data?
+}
+
 @MainActor
 final class VaultSession: ObservableObject {
     @Published var locked = true
@@ -76,6 +83,8 @@ final class VaultSession: ObservableObject {
     }
     /// Every database the user has opened. The current file is first.
     @Published private(set) var databasePaths: [String] = []
+    /// Menu id → file path. Set before `entries` so a refresh can label rows from other files.
+    private(set) var entrySources: [UUID: String] = [:]
     /// Shown on the lock screen only for a KeePass 1 database.
     @Published private(set) var keyFileName = ""
 
@@ -90,8 +99,11 @@ final class VaultSession: ObservableObject {
     private var masterPassword = ""
     private var rootName = "PasswordPie"
     private var kdf = KDFParameters.default
-    /// The opened database, including its decrypted XML. Cleared on lock so secrets do not outlive the session.
-    private var opened: Vault?
+    /// Decrypted databases for this unlock. Cleared on lock so secrets do not outlive the session.
+    private var openedFiles: [OpenedFile] = []
+    /// Menu id → id stored in that file. They differ only when two files share a UUID.
+    private var listOrigins: [UUID: UUID] = [:]
+    private var listPaths: [UUID: String] = [:]
     private var keyFileData: Data?
     private var roster = DatabaseRoster(current: "")
     private var applyingRoster = false
@@ -347,7 +359,10 @@ final class VaultSession: ObservableObject {
     }
 
     func lock() {
-        opened = nil
+        openedFiles = []
+        listOrigins = [:]
+        listPaths = [:]
+        entrySources = [:]
         entries = []
         masterPassword = ""
         passwordDraft = ""
@@ -538,6 +553,30 @@ final class VaultSession: ObservableObject {
         }
     }
 
+    /// An import saved as a sibling `.kdbx` keeps its keychain secret. A failed copy leaves the old path listed.
+    private func migrateUnlockSecret(from old: String, to new: String) -> Bool {
+        guard old != new else { return true }
+        let loaded = secretStore.load(account: old)
+        if let secret = loaded.secret, !secret.isEmpty {
+            guard secretStore.save(secret: secret, account: new) == errSecSuccess else { return false }
+        } else if loaded.status != errSecItemNotFound {
+            return false
+        }
+        let defaults = UserDefaults.standard
+        let keys = [
+            (touchIDStampKey(for: old), touchIDStampKey(for: new)),
+            (touchIDEnabledKey(for: old), touchIDEnabledKey(for: new)),
+            (touchIDStaleKey(for: old), touchIDStaleKey(for: new)),
+            (touchIDDeclinedKey(for: old), touchIDDeclinedKey(for: new))
+        ]
+        for (source, destination) in keys {
+            if let value = defaults.object(forKey: source) {
+                defaults.set(value, forKey: destination)
+            }
+        }
+        return true
+    }
+
     private func clearTouchIDDefaults(for account: String) {
         let defaults = UserDefaults.standard
         defaults.removeObject(forKey: touchIDStampKey(for: account))
@@ -619,13 +658,14 @@ final class VaultSession: ObservableObject {
     func saveEditing(_ entry: VaultEntry) {
         var entry = entry
         if entry.title.isEmpty { entry.title = "Untitled" }
-        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
-            entries[index] = entry
+        let path = listPaths[entry.id] ?? databaseURL.path
+        if listPaths[entry.id] != nil {
+            replaceStored(entry)
         } else {
-            entries.append(entry)
+            appendStored(entry, to: path)
         }
         editing = nil
-        save()
+        persist(path: path)
     }
 
     func cancelEditing() {
@@ -633,25 +673,28 @@ final class VaultSession: ObservableObject {
     }
 
     func deleteEditing() {
-        guard let id = editing?.id, let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        entries[index].trashed = true
+        guard let id = editing?.id, var entry = entry(id) else { return }
+        entry.trashed = true
+        replaceStored(entry)
         editing = nil
-        save()
+        persist(path: listPaths[id] ?? databaseURL.path)
     }
 
     func toggleFavorite(_ id: UUID) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
-        entries[index].favorite.toggle()
-        save()
+        guard var entry = entry(id) else { return }
+        entry.favorite.toggle()
+        replaceStored(entry)
+        persist(path: listPaths[id] ?? databaseURL.path)
     }
 
     /// A generated password saved as a new Password item, only when the user asks for it.
+    /// New items go into the file whose password unlocked this session.
     func saveGenerated(_ password: String) {
         var entry = VaultEntry()
         entry.title = "Generated Password"
         entry.password = password
-        entries.append(entry)
-        save()
+        appendStored(entry, to: databaseURL.path)
+        persist(path: databaseURL.path)
     }
 
     // MARK: Actions
@@ -734,41 +777,135 @@ final class VaultSession: ObservableObject {
     }
 
     private func apply(_ vault: Vault, password: String) {
-        opened = vault
         vaultName = vault.name
         rootName = vault.rootName
         kdf = vault.kdf
-        entries = vault.entries
         masterPassword = password
         passwordDraft = ""
+        let file = OpenedFile(url: databaseURL, vault: vault, password: password, keyFile: keyFileForUnlock)
+        if let index = openedFiles.firstIndex(where: { $0.url.path == databaseURL.path }) {
+            openedFiles[index] = file
+        } else {
+            openedFiles.insert(file, at: 0)
+        }
+        loadRememberedDatabases()
+    }
+
+    /// Other files in the list open from their own keychain secrets. A file without one stays out of the list.
+    private func loadRememberedDatabases() {
+        let currentPath = databaseURL.path
+        openedFiles.removeAll { $0.url.path != currentPath }
+        if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
+            for path in databasePaths where path != currentPath {
+                guard let secret = secretStore.load(account: path).secret, let stored = StoredUnlock(stored: secret) else { continue }
+                let url = URL(fileURLWithPath: path)
+                let key = url.pathExtension.lowercased() == "kdb" ? stored.keyFile : nil
+                guard let vault = try? VaultFormat.load(url: url, password: stored.password, keyFile: key) else { continue }
+                openedFiles.append(OpenedFile(url: url, vault: vault, password: stored.password, keyFile: key))
+            }
+        }
+        publishCatalog()
+    }
+
+    private func publishCatalog() {
+        let merged = EntryCatalog.merge(openedFiles.map { (path: $0.url.path, entries: $0.vault.entries) })
+        listOrigins = Dictionary(uniqueKeysWithValues: merged.map { ($0.listID, $0.entry.id) })
+        listPaths = Dictionary(uniqueKeysWithValues: merged.map { ($0.listID, $0.path) })
+        entrySources = listPaths
+        entries = merged.map { item in
+            var copy = item.entry
+            copy.id = item.listID
+            return copy
+        }
+    }
+
+    private func appendStored(_ entry: VaultEntry, to path: String) {
+        if !openedFiles.contains(where: { $0.url.path == path }) {
+            openedFiles.insert(
+                OpenedFile(
+                    url: URL(fileURLWithPath: path),
+                    vault: Vault(name: vaultName, rootName: rootName, entries: [], kdf: kdf),
+                    password: masterPassword,
+                    keyFile: keyFileForUnlock
+                ),
+                at: 0
+            )
+        }
+        guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
+        openedFiles[index].vault.entries.append(entry)
+    }
+
+    private func replaceStored(_ entry: VaultEntry) {
+        guard let path = listPaths[entry.id], let original = listOrigins[entry.id],
+              let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }),
+              let entryIndex = openedFiles[fileIndex].vault.entries.firstIndex(where: { $0.id == original })
+        else { return }
+        var stored = entry
+        stored.id = original
+        openedFiles[fileIndex].vault.entries[entryIndex] = stored
     }
 
     private func save() {
+        persist(path: databaseURL.path)
+    }
+
+    /// Writes one file. The merged list is never saved into a single database.
+    private func persist(path: String) {
         onActivity?()
-        var vault = opened ?? Vault(name: vaultName, rootName: rootName, entries: entries, kdf: kdf)
-        vault.name = vaultName
-        vault.rootName = rootName
-        vault.entries = entries
-        vault.kdf = kdf
+        let index = openedFiles.firstIndex { $0.url.path == path }
+        var vault = index.map { openedFiles[$0].vault }
+            ?? Vault(name: vaultName, rootName: rootName, entries: [], kdf: kdf)
+        let password = index.map { openedFiles[$0].password } ?? masterPassword
+        let fileURL = index.map { openedFiles[$0].url } ?? URL(fileURLWithPath: path)
+        let isCurrent = path == databaseURL.path
+        if isCurrent {
+            vault.name = vaultName
+            vault.rootName = rootName
+            vault.kdf = kdf
+        }
         // An imported CSV, PUX, OPVault, Bitwarden, Proton Pass, or KeePass 1 file stays untouched.
         // The first change is written as a sibling .kdbx, and later saves use that file.
         // A key-file-only database can open with an empty password. The new .kdbx cannot.
-        let writesKDBX = VaultFormat.writesKDBX(databaseURL)
-        if VaultFormat.blocksImportSave(writesKDBX: writesKDBX, password: masterPassword) {
+        let writesKDBX = VaultFormat.writesKDBX(fileURL)
+        if VaultFormat.blocksImportSave(writesKDBX: writesKDBX, password: password) {
             message = "Set a master password before saving this database."
             NSSound.beep()
             return
         }
-        let destination = writesKDBX ? databaseURL : VaultFormat.importedKDBXURL(beside: databaseURL)
+        let destination = writesKDBX ? fileURL : VaultFormat.importedKDBXURL(beside: fileURL)
         do {
-            let data = try KDBX.save(vault: &vault, password: masterPassword)
+            let data = try KDBX.save(vault: &vault, password: password)
             try data.write(to: destination, options: .atomic)
-            if destination != databaseURL { databaseURL = destination }
-            opened = vault
-            entries = vault.entries
-            kdf = vault.kdf
-            rootName = vault.rootName
-            vaultName = vault.name
+            let stored = OpenedFile(
+                url: destination,
+                vault: vault,
+                password: password,
+                keyFile: index.flatMap { openedFiles[$0].keyFile }
+            )
+            if let index {
+                openedFiles[index] = stored
+            } else {
+                openedFiles.insert(stored, at: 0)
+            }
+            if destination.path != path {
+                // The sibling .kdbx is the file we will open next. Leaving the import in the
+                // roster would show the same entries twice.
+                if migrateUnlockSecret(from: path, to: destination.path) {
+                    applyingRoster = true
+                    if isCurrent { databaseURL = destination }
+                    adopt(roster.replacing(path, with: destination.path))
+                    applyingRoster = false
+                } else {
+                    message = "Saved \(destination.lastPathComponent), but the saved password could not move to it."
+                }
+            }
+            if isCurrent {
+                kdf = vault.kdf
+                rootName = vault.rootName
+                vaultName = vault.name
+                masterPassword = password
+            }
+            publishCatalog()
         } catch {
             NSSound.beep()
         }

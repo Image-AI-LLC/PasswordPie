@@ -28,8 +28,6 @@ final class LockFields {
 /// Values needed to present the lock form, without owning vault or credential state.
 struct LockScreenPresentation {
     var databaseName: String
-    /// Menu titles when more than one database is open. Empty keeps the plain name.
-    var databaseChoices: [String] = []
     var creating = false
     var message = ""
     var showsKeyFile = false
@@ -44,7 +42,6 @@ struct LockScreenActions {
     var create: () -> Void
     var keyFile: () -> Void
     var edit: () -> Void
-    var selectDatabase: (Int) -> Void = { _ in }
 }
 
 enum LockFieldFocus: Equatable {
@@ -67,7 +64,6 @@ struct DoorsView: View {
         LockScreenContent(
             presentation: LockScreenPresentation(
                 databaseName: session.databaseURL.lastPathComponent,
-                databaseChoices: session.databasePaths.count > 1 ? session.databaseMenuTitles : [],
                 creating: session.creating, message: session.message,
                 showsKeyFile: session.showsKeyFile, keyFileName: session.keyFileName,
                 touchIDAvailable: session.touchIDAvailable),
@@ -77,12 +73,7 @@ struct DoorsView: View {
                 unlock: session.unlock, touchID: session.unlockWithTouchID,
                 open: session.chooseDatabase, create: session.newDatabase,
                 keyFile: session.chooseKeyFile,
-                edit: { if !session.message.isEmpty { session.message = "" } },
-                selectDatabase: { index in
-                    let paths = session.databasePaths
-                    guard paths.indices.contains(index) else { return }
-                    session.selectDatabase(paths[index])
-                }))
+                edit: { if !session.message.isEmpty { session.message = "" } }))
             .scaleEffect(lock.open ? 0.97 : 1)
             .opacity(lock.open ? 0 : 1)
             .animation(.easeInOut(duration: 0.3), value: lock.open)
@@ -103,23 +94,9 @@ struct LockScreenContent: View {
     private var foreground: Color { Palette.text(dark: dark) }
     private var secondary: Color { Palette.secondaryText(dark: dark) }
 
-    /// One database shows its name. Several databases open a menu. Each file keeps its own keychain secret.
-    @ViewBuilder private var databaseTitle: some View {
-        if presentation.databaseChoices.count > 1 {
-            Menu {
-                ForEach(Array(presentation.databaseChoices.enumerated()), id: \.offset) { index, title in
-                    Button(title) { actions.selectDatabase(index) }
-                }
-            } label: {
-                databaseNameLabel
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+    private var databaseTitle: some View {
+        databaseNameLabel
             .padding(.top, 4)
-        } else {
-            databaseNameLabel
-                .padding(.top, 4)
-        }
     }
 
     private var databaseNameLabel: some View {
