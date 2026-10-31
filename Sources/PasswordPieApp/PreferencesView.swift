@@ -20,6 +20,7 @@ struct PreferencesView: View {
                     section("Security") { security }
                     section("Everyday") { everyday }
                     section("Database") { database }
+                    section("Import passwords") { importPasswords }
                 }
                 .padding(24)
             }
@@ -273,6 +274,50 @@ struct PreferencesView: View {
             }
         }
         .controlSize(.regular)
+    }
+
+    private var importPasswords: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            importRow(
+                "Chrome",
+                steps: "In Chrome, open chrome://password-manager/settings and choose Export passwords. Then pick the file here.",
+                source: .chrome
+            )
+            Divider()
+            importRow(
+                "Apple Passwords",
+                steps: "In the Passwords app, choose File > Export All Passwords. Then pick the file here.",
+                source: .applePasswords
+            )
+            Text("Passwords go into a \"Chrome\" or \"Apple Passwords\" group. Import again to update them: new sites are added, changed passwords are updated, and sites that are gone move to the Recycle Bin. Your own entries are never changed.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !session.importStatus.isEmpty {
+                Text(session.importStatus)
+                    .font(.system(size: 11))
+                    .foregroundStyle(session.importStatusIsError ? Palette.danger : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .controlSize(.regular)
+    }
+
+    private func importRow(_ title: String, steps: String, source: BrowserImportSource) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).fontWeight(.medium)
+                Text(steps)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            Button("Import…") {
+                recorder.stop()
+                session.importPasswords(from: source)
+            }
+            .disabled(session.locked)
+            .help(session.locked ? "Unlock this database first." : "Choose the exported CSV file")
+        }
     }
 
     private var touchIDDescription: String {

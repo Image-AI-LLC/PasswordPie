@@ -40,6 +40,8 @@ final class VaultSession: ObservableObject {
     }
     @Published var entries: [VaultEntry] = []
     @Published var message = ""
+    @Published var importStatus = ""
+    @Published var importStatusIsError = false
     @Published var editing: VaultEntry?
     @Published var editingIsNew = false
     @Published var touchIDAvailable = false
@@ -310,6 +312,8 @@ final class VaultSession: ObservableObject {
         locked = true
         creating = !FileManager.default.fileExists(atPath: databaseURL.path)
         message = ""
+        importStatus = ""
+        importStatusIsError = false
         refreshTouchID()
     }
 
@@ -522,6 +526,78 @@ final class VaultSession: ObservableObject {
         save()
     }
 
+    // MARK: Browser password import
+
+    /// Imports a Chrome or Apple Passwords CSV into this database, then offers to delete the plain-text file.
+    func importPasswords(from source: BrowserImportSource) {
+        guard !locked else {
+            setImportStatus("Unlock the database first.", isError: true)
+            return
+        }
+        let chooser = NSOpenPanel()
+        chooser.canChooseFiles = true
+        chooser.canChooseDirectories = false
+        chooser.allowedContentTypes = [.commaSeparatedText]
+        chooser.allowsOtherFileTypes = true
+        chooser.message = "Choose the \(source.label) password export (.csv)"
+        let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
+        guard accepted, let url = chooser.url else { return }
+
+        let imported: [VaultEntry]
+        do {
+            imported = try BrowserImport.entries(fromCSV: Data(contentsOf: url), source: source)
+        } catch {
+            setImportStatus(openErrorText(error), isError: true)
+            return
+        }
+        let backup = entries
+        let merged = BrowserImport.merge(imported, into: entries, source: source)
+        entries = merged.entries
+        guard save() else {
+            entries = backup
+            setImportStatus("Couldn't save the imported passwords. Nothing was changed.", isError: true)
+            return
+        }
+        var status = importSummaryText(merged.summary, source: source)
+        var failed = false
+        if confirmDeleteExport(url) {
+            do {
+                try BrowserImport.deleteExport(at: url)
+                status += " The export file was deleted."
+            } catch {
+                status += " Couldn't delete the export file. It still holds your passwords in plain text, so delete it yourself."
+                failed = true
+            }
+        } else {
+            status += " The export file is still on disk in plain text."
+        }
+        setImportStatus(status, isError: failed)
+    }
+
+    private func setImportStatus(_ text: String, isError: Bool) {
+        importStatus = text
+        importStatusIsError = isError
+    }
+
+    private func importSummaryText(_ summary: BrowserImportSummary, source: BrowserImportSource) -> String {
+        var parts: [String] = []
+        if summary.added > 0 { parts.append("\(summary.added) added") }
+        if summary.updated > 0 { parts.append("\(summary.updated) updated") }
+        if summary.removed > 0 { parts.append("\(summary.removed) moved to the Recycle Bin") }
+        if parts.isEmpty { return "\(source.label) is already up to date." }
+        return "Imported from \(source.label): " + parts.joined(separator: ", ") + "."
+    }
+
+    private func confirmDeleteExport(_ url: URL) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Delete the exported file?"
+        alert.informativeText = "\(url.lastPathComponent) holds your passwords in plain text. They are now in your PasswordPie database, so the file is no longer needed. Deleting it is permanent."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Keep")
+        return AppDelegate.shared?.keepOpen { alert.runModal() == .alertFirstButtonReturn } ?? false
+    }
+
     // MARK: Actions
 
     func value(of target: CopyTarget, in entry: VaultEntry) -> String {
@@ -619,7 +695,8 @@ final class VaultSession: ObservableObject {
         passwordDraft = ""
     }
 
-    private func save() {
+    @discardableResult
+    private func save() -> Bool {
         onActivity?()
         var vault = opened ?? Vault(name: vaultName, rootName: rootName, entries: entries, kdf: kdf)
         vault.name = vaultName
@@ -633,7 +710,7 @@ final class VaultSession: ObservableObject {
         if VaultFormat.blocksImportSave(writesKDBX: writesKDBX, password: masterPassword) {
             message = "Set a master password before saving this database."
             NSSound.beep()
-            return
+            return false
         }
         let destination = writesKDBX ? databaseURL : VaultFormat.importedKDBXURL(beside: databaseURL)
         do {
@@ -645,8 +722,10 @@ final class VaultSession: ObservableObject {
             kdf = vault.kdf
             rootName = vault.rootName
             vaultName = vault.name
+            return true
         } catch {
             NSSound.beep()
+            return false
         }
     }
 
