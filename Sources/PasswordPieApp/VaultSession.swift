@@ -104,7 +104,7 @@ final class VaultSession: ObservableObject {
     nonisolated static func databaseContentTypes() -> [UTType] {
         var types: [UTType] = [.data, .json, .commaSeparatedText, .folder]
         let opvault = UTType(filenameExtension: "opvault", conformingTo: .package)
-            ?? UTType(exportedAs: "com.agilebits.opvault", conformingTo: .package)
+            ?? UTType(importedAs: "com.agilebits.opvault", conformingTo: .package)
         types.append(opvault)
         return types
     }
@@ -197,7 +197,13 @@ final class VaultSession: ObservableObject {
     private func didUnlock(withMasterPassword: Bool) {
         locked = false
         let declined = UserDefaults.standard.bool(forKey: touchIDDeclinedKey)
-        if withMasterPassword, UnlockMemory.shouldStore(hardware: touchIDHardware, declined: declined) || touchIDEnabled {
+        // touchIDHardware stays true when a sensor exists but no fingerprint is enrolled.
+        // Store only when biometrics can actually gate the next read.
+        if withMasterPassword, UnlockMemory.shouldStore(
+            hardware: biometryCanGate(),
+            declined: declined,
+            alreadyEnabled: touchIDEnabled
+        ) {
             rememberUnlockSecret()
         }
         onActivity?()
@@ -491,12 +497,11 @@ final class VaultSession: ObservableObject {
         let resolved = databaseURL(resolving: URL(fileURLWithPath: path)).path
         let next = roster.removing(resolved)
         guard next != roster else { return }
-        _ = secretStore.delete(account: resolved)
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: touchIDStampKey(for: resolved))
-        defaults.removeObject(forKey: touchIDEnabledKey(for: resolved))
-        defaults.removeObject(forKey: touchIDStaleKey(for: resolved))
-        defaults.removeObject(forKey: touchIDDeclinedKey(for: resolved))
+        let status = secretStore.delete(account: resolved)
+        guard !TouchIDEnrollment.keepsPersistedFlag(deleteStatus: status) else {
+            reportKeychainCleanupFailure(status, path: resolved)
+            return
+        }
         guard next.current != databaseURL.path else {
             adopt(next)
             return
@@ -511,11 +516,46 @@ final class VaultSession: ObservableObject {
     }
 
     private func adopt(_ next: DatabaseRoster) {
-        roster = next
-        databasePaths = next.paths
+        let evicted = roster.paths.filter { !next.paths.contains($0) }
+        var blocked: [String] = []
+        for path in evicted {
+            let status = secretStore.delete(account: path)
+            if TouchIDEnrollment.keepsPersistedFlag(deleteStatus: status) {
+                blocked.append(path)
+                reportKeychainCleanupFailure(status, path: path)
+            } else {
+                clearTouchIDDefaults(for: path)
+            }
+        }
+        let applied = next.keeping(blocked)
+        roster = applied
+        databasePaths = applied.paths
         guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return }
-        UserDefaults.standard.set(next.current, forKey: "databasePath")
-        UserDefaults.standard.set(next.paths, forKey: "databasePaths")
+        UserDefaults.standard.set(applied.current, forKey: "databasePath")
+        UserDefaults.standard.set(applied.paths, forKey: "databasePaths")
+    }
+
+    private func clearTouchIDDefaults(for account: String) {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: touchIDStampKey(for: account))
+        defaults.removeObject(forKey: touchIDEnabledKey(for: account))
+        defaults.removeObject(forKey: touchIDStaleKey(for: account))
+        defaults.removeObject(forKey: touchIDDeclinedKey(for: account))
+    }
+
+    private func reportKeychainCleanupFailure(_ status: OSStatus, path: String) {
+        let text = "Couldn't remove the saved password (\(status)). The database stays in the list."
+        message = text
+        guard path == databaseURL.path else { return }
+        touchIDStatus = text
+        touchIDStatusIsError = true
+    }
+
+    /// True only when this Mac can run a biometric prompt. A sensor with no enrolled finger is false.
+    private func biometryCanGate() -> Bool {
+        let context = LAContext()
+        var error: NSError?
+        return context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
     }
 
     private func offerRememberedUnlock() {

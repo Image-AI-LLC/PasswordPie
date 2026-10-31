@@ -35,6 +35,15 @@ final class DatabaseRosterTests: XCTestCase {
         XCTAssertEqual(roster.paths.first, "/vaults/current.kdbx")
     }
 
+    func testASecretThatCannotBeDeletedStaysPastTheLimit() {
+        var remembered: [String] = []
+        for index in 0..<DatabaseRoster.limit { remembered.append("/vaults/\(index).kdbx") }
+        let full = DatabaseRoster(current: "/vaults/0.kdbx", remembered: remembered)
+        let kept = full.keeping(["/vaults/evicted.kdbx"])
+        XCTAssertEqual(kept.paths.count, DatabaseRoster.limit + 1)
+        XCTAssertTrue(kept.paths.contains("/vaults/evicted.kdbx"))
+    }
+
     func testDuplicateNamesIncludeTheParentFolder() {
         let titles = DatabaseRoster.menuTitles(for: [
             "/work/vault.kdbx",
@@ -48,6 +57,8 @@ final class DatabaseRosterTests: XCTestCase {
         XCTAssertTrue(UnlockMemory.shouldStore(hardware: true, declined: false))
         XCTAssertFalse(UnlockMemory.shouldStore(hardware: false, declined: false))
         XCTAssertFalse(UnlockMemory.shouldStore(hardware: true, declined: true))
+        XCTAssertFalse(UnlockMemory.shouldStore(hardware: false, declined: false, alreadyEnabled: true))
+        XCTAssertTrue(UnlockMemory.shouldStore(hardware: true, declined: true, alreadyEnabled: true))
     }
 }
 

@@ -8,16 +8,24 @@ public struct DatabaseRoster: Equatable, Sendable {
     public let current: String
     public let paths: [String]
 
-    public init(current: String, remembered: [String] = []) {
+    public init(current: String, remembered: [String] = [], limit: Int = DatabaseRoster.limit) {
+        let cap = max(limit, 1)
         var ordered: [String] = []
         var seen = Set<String>()
         for path in [current] + remembered {
             guard !path.isEmpty, seen.insert(path).inserted else { continue }
             ordered.append(path)
-            if ordered.count == Self.limit { break }
+            if ordered.count == cap { break }
         }
         self.current = ordered.first ?? current
         self.paths = ordered
+    }
+
+    /// Keeps paths whose keychain secret could not be deleted. The usual cap does not drop them.
+    public func keeping(_ extras: [String]) -> DatabaseRoster {
+        let added = extras.filter { !paths.contains($0) && !$0.isEmpty }
+        guard !added.isEmpty else { return self }
+        return DatabaseRoster(current: current, remembered: paths + added, limit: paths.count + added.count)
     }
 
     public func selecting(_ path: String) -> DatabaseRoster {
@@ -49,7 +57,9 @@ public struct DatabaseRoster: Equatable, Sendable {
 /// A password unlock stores the file's secret only when Touch ID can gate the later read,
 /// and only when the user has not turned that memory off for the file.
 public enum UnlockMemory {
-    public static func shouldStore(hardware: Bool, declined: Bool) -> Bool {
-        hardware && !declined
+    /// `hardware` means biometrics can gate a later read, not merely that a sensor exists.
+    /// An already-enabled file is refreshed only while that gate still works.
+    public static func shouldStore(hardware: Bool, declined: Bool, alreadyEnabled: Bool = false) -> Bool {
+        hardware && (!declined || alreadyEnabled)
     }
 }
