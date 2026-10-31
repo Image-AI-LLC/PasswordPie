@@ -594,6 +594,14 @@ final class VaultSession: ObservableObject {
         AppDelegate.shared?.showLargeType(text)
     }
 
+    /// Pins the account in a floating window, then puts the menu away so the user can fill another app.
+    func pinEntry(_ id: UUID) {
+        guard let entry = entry(id) else { return }
+        onActivity?()
+        AppDelegate.shared?.showPinnedEntry(entry)
+        hidePanel?()
+    }
+
     // MARK: Private
 
     /// Quitting inside the clipboard timeout must not leave a copied secret behind.

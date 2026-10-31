@@ -643,18 +643,31 @@ shows as written.
   rests on its row; the first details popover since launch waits 0.7 s (and
   animates in), later ones open at once without animation. Moving towards an open submenu delays the change of
   selection by 0.2 s.
-- **Details popover** — header (32 pt tile, `title`, edit pencil, favourite
+- **Details popover** — header (32 pt tile, `title`, edit pencil, pin, favourite
   star in `favorite` or `label-secondary`), then one field per value:
   username, password (+ strength), website, one-time password, custom fields,
-  notes, tags.
+  notes, tags. Pin opens that account in its own utility window and hides the
+  menu. Each account has one window: pinning it again brings that window
+  forward and leaves it where it is. A new window starts at the top-right of
+  the current screen; each further window steps 28 pt down and left. The level
+  matches a detached 1Password mini: main-menu level minus 2, so it stays above
+  normal windows and under PasswordPie's menu, including after PasswordPie
+  deactivates. Only its close button dismisses it. Command-W, Escape, clicking
+  elsewhere, and copying or opening a field do not. Locking the vault, or
+  trashing the account, does.
 - **Detail field** — `label` over the value, 0.5 pt ink 10 % line on top.
   States: normal; focused (keyboard, `field-focus` tint); hover (a small
-  "copy" button at the right. Clicking the word copies. A password adds an
-  arrow beside it: reveal / conceal and large type. A website adds an arrow:
-  open and fill / open. Other fields have no arrow.); flashing (Return:
-  the button shows at 40 % for 0.3 s, then the value is copied and the panel
-  hides). Masked secrets show 8 to 16 bullets; holding Option or "reveal"
-  shows them in `body-code`. URLs are `accent`; notes wrap up to 8 lines.
+  button at the right. Clicking the word runs the field's primary action.
+  Username, password, notes, one-time password and custom fields say "copy".
+  A password adds an arrow: reveal / conceal and large type. A website says
+  "open" and adds an arrow: copy, open and fill. Other fields have no arrow.
+  The pinned window uses the same hover as the popover.); flashing
+  (Return: the button shows at 40 % for 0.3 s, then the primary action runs.
+  In the popover, copy and open hide the panel.) Masked secrets show 8 to 16
+  bullets; holding Option or "reveal" shows them in `body-code`. The pinned
+  window does not inherit a held Option, and that reveal clears when
+  PasswordPie resigns active. An explicit reveal stays until conceal. URLs are
+  `accent`; notes wrap up to 8 lines.
 - **OTP field** — grouped code in `code-lg` `accent` with a 14 pt countdown pie
   (ring at 35 %); both turn `system-red` in the last 5 s.
 - **Strength meter** — 5 pt capsule: ink 12 % track, fill in `system-red`,
