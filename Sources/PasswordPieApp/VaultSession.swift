@@ -739,11 +739,14 @@ final class VaultSession: ObservableObject {
     // MARK: Entries
 
     /// The database's entries plus live Chrome logins that the database does not already hold. Search and menus read this.
-    var allEntries: [VaultEntry] {
+    var allEntries: [VaultEntry] { Self.visibleEntries(saved: entries, live: liveEntries) }
+
+    /// Shared by `allEntries` and the pinned windows, which build it from the values a publisher just emitted.
+    static func visibleEntries(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
         #if PP_DIRECT
-        return entries + ChromeLogins.visible(liveEntries, against: entries)
+        return saved + ChromeLogins.visible(live, against: saved)
         #else
-        return entries
+        return saved
         #endif
     }
 
@@ -808,6 +811,9 @@ final class VaultSession: ObservableObject {
     /// The copy is a normal entry from then on, and the live one is hidden because the database now holds it.
     func saveToDatabase(_ id: UUID) {
         guard let live = liveEntries.first(where: { $0.id == id }) else { return }
+        #if PP_DIRECT
+        guard !ChromeLogins.visible([live], against: entries).isEmpty else { return }
+        #endif
         var copy = live
         copy.id = UUID()
         copy.groupPath = [BrowserImportSource.chrome.label]

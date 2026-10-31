@@ -116,6 +116,8 @@ public struct ChromeLoginsResult: Sendable {
     /// Passwords that were saved but could not be decrypted.
     public var skipped = 0
     public var profileCount = 0
+    /// Display names of profiles that could not be read while another profile could.
+    public var failedProfiles: [String] = []
     /// When Chrome last used each login (its `date_last_used`). Logins Chrome never used, or older Chrome without the column, are absent.
     public var lastUsed: [UUID: Date] = [:]
 }
@@ -155,7 +157,7 @@ public enum ChromeLogins {
         return names
     }
 
-    /// All profiles together. Throws only when nothing could be read.
+    /// All profiles together. Throws only when nothing could be read; profiles that failed beside one that worked are listed in `failedProfiles`.
     public static func load(root: URL = defaultRoot, key: Data) throws -> ChromeLoginsResult {
         let profiles = profiles(root: root)
         guard !profiles.isEmpty else { throw ChromeLoginsError.noChrome }
@@ -170,6 +172,7 @@ public enum ChromeLogins {
                 combined.profileCount += 1
             } catch {
                 firstError = firstError ?? error
+                combined.failedProfiles.append(profile.name)
             }
         }
         if combined.profileCount == 0, let firstError { throw firstError }

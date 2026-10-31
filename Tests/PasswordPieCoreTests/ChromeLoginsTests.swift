@@ -198,6 +198,17 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertEqual(result.profileCount, 2)
     }
 
+    func testAProfileThatCannotBeReadIsReportedBesideOneThatCan() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        _ = try makeProfile("Profile 1", name: "Work", rows: [Row(origin: "https://a.example/", realm: "r1", user: "u", password: "p1", key: key)])
+        let broken = try makeProfile("Profile 2", name: "Home", rows: [])
+        try Data("not a database".utf8).write(to: broken.directory.appendingPathComponent("Login Data"))
+        let result = try ChromeLogins.load(root: root, key: key)
+        XCTAssertEqual(result.entries.map(\.password), ["p1"])
+        XCTAssertEqual(result.profileCount, 1)
+        XCTAssertEqual(result.failedProfiles, ["Home"])
+    }
+
     // MARK: Showing live entries next to the database
 
     func testAChromeLoginAlreadyInTheDatabaseIsHidden() {

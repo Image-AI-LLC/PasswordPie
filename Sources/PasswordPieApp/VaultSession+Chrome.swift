@@ -90,6 +90,9 @@ extension VaultSession {
         let profiles = result.profileCount == 1 ? "1 profile" : "\(result.profileCount) profiles"
         var text = "\(passwords) from \(profiles)."
         if result.skipped > 0 { text += " \(result.skipped) couldn't be read." }
+        if !result.failedProfiles.isEmpty {
+            text += result.failedProfiles.count == 1 ? " 1 profile couldn't be read." : " \(result.failedProfiles.count) profiles couldn't be read."
+        }
         return text
     }
 

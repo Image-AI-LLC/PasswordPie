@@ -94,6 +94,18 @@ final class LiveEntriesTests: XCTestCase {
         #endif
     }
 
+    #if PP_DIRECT
+    /// The store channel never has live Chrome logins, so the already-saved check exists only in the direct channel.
+    func testSavingALiveLoginTwiceKeepsOneCopy() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        session.saveToDatabase(live.id)
+        session.saveToDatabase(live.id)
+        XCTAssertEqual(try savedEntries().filter { $0.password == "chrome-secret" }.count, 1)
+    }
+    #endif
+
     func testChromeLastUsedTimesFeedTheRankingMapAndLaterOnesWin() {
         let session = unlockedSession()
         let live = liveLogin()
