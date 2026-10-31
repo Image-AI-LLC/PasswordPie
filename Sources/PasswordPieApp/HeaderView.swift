@@ -70,7 +70,7 @@ final class HeaderView: NSView, NSTextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Own-brand shield, rendered once and tinted by AppKit for the current appearance.
+    /// Own-brand pie, rendered once and tinted by AppKit for the current appearance.
     @MainActor
     private static let logoImage: NSImage? = {
         let renderer = ImageRenderer(content: PasswordPieMark(size: 32, style: .monochrome).environment(\.colorScheme, .light))

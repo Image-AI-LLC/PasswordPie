@@ -1,52 +1,53 @@
-# PasswordPie icon art
+# Password Pie icon art
 
-The app icon is a satin-metal shield with a keyhole cut through it, on a graphite background
-(round 5, option X6). The menu bar icon is the same shield as a one-colour template image.
+The selected brand is **B / Keyhole pie**: a flat orange (`#EE8C32`) scalloped pie
+with a transparent keyhole. The app tile uses a warm cream (`#FFF6E7`) background.
+The visible pie fills 84.2% of the app tile, matching the selected mark's proportions.
+No baked-food texture, bevel, gradient or shadow is part of the brand artwork.
 
-## Files
+## Canonical assets
 
-| Path | What it is |
+| Path | Purpose |
 |---|---|
-| `source/shield-tile-codex.png` | Original artwork from Codex `image_gen` (round 2, option G, purple background). |
-| `source/shield-mark.png` | The shield lifted off that background, transparent, pixels unchanged. |
-| `source/menubar.svg` | Menu bar icon, hand-written SVG by Codex (18×18). `Sources/PasswordPieApp/MenuBarIcon.swift` traces it. |
-| `briefs/` | The Codex briefs for rounds 1–3. Rounds 4–5 only changed the background and size with the tools below. |
-| `tools/` | The scripts below. |
+| `source/icon.svg` | Editable 1024×1024 full-bleed app tile, without pre-rounded corners. |
+| `source/mark.svg` | Transparent 24×24 vector master; `currentColor`, even-odd keyhole. |
+| `source/menubar.svg` | Same geometry in an 18×18 template image. |
+| `../Sources/PasswordPieApp/MenuBarIcon.swift` | Native AppKit equivalent, 24-unit geometry scaled to 18 pt. |
+| `../Sources/PasswordPieApp/BrandMark.swift` | Shared SwiftUI pie: flat orange for lock/Preferences, monochrome for the header. |
+| `../Assets/AppIcon.icon/Assets/tile.png` | Raster export of `source/icon.svg`, consumed by Icon Composer. |
+| `../Assets/AppIcon.icon/icon.json` | Icon Composer source, with matching cream fill. |
+| `../Assets/Assets.car`, `../Assets/AppIcon.icns` | Compiled macOS 26+ assets and older macOS fallback. |
 
-The app icon itself lives in `Assets/`:
-
-| Path | What it is |
-|---|---|
-| `Assets/AppIcon.icon/` | Icon Composer source. `Assets/tile.png` is the full-bleed 1024 px artwork (no rounded corners); the system applies the squircle mask. |
-| `Assets/Assets.car`, `Assets/AppIcon.icns` | Compiled by `make icon` (Xcode `actool`). macOS 26+ reads `Assets.car`; older macOS falls back to the `.icns`. `make install` copies both. |
-
-Why full-bleed: macOS 26 and later shrink an `.icns` drawn on the old Big Sur grid (824 px tile with a
-transparent margin) into a grey rounded square. A full-bleed square compiled from an `.icon` is masked by the
-system and shows no grey frame.
+The user selected B from three ImageGen flat concepts, then approved increasing
+the app mark from 60.6% to 84.2% of the canvas width. The SVG is the manually refined
+vector master, not a bitmap embedded in an SVG. Menu bar and mark geometry were
+not enlarged independently; the app tile now uses their original canvas proportions.
 
 ## Rebuild
 
-```bash
-# 1. Lift the shield off the Codex tile (only needed if the tile changes)
-python3 art/tools/extract_mark.py art/source/shield-tile-codex.png art/source/shield-mark.png
+Requires Xcode and `rsvg-convert` (`brew install librsvg`).
 
-# 2. Put it on the graphite background at 1.3x and save the full-bleed 1024 px artwork
-mkdir -p /tmp/passwordpie-icon
-python3 art/tools/compose_tile.py art/source/shield-mark.png /tmp/passwordpie-icon/tile.png '#3A3F46' '#15181B' 0.5 1.3
-python3 -c "from PIL import Image; Image.open('/tmp/passwordpie-icon/tile.png').convert('RGBA').resize((1024, 1024), Image.LANCZOS).save('Assets/AppIcon.icon/Assets/tile.png')"
-
-# 3. Compile Assets.car + AppIcon.icns (needs Xcode)
+```sh
+# SVG -> full-bleed tile PNG -> Assets.car and AppIcon.icns
 make icon
 
-# Optional: previews on the old Big Sur grid, the Dock and the menu bar (used for the concept pages).
-# Needs rsvg-convert (brew install librsvg) for the menu bar SVG.
-cp art/source/menubar.svg /tmp/passwordpie-icon/
-python3 art/tools/make_icon.py /tmp/passwordpie-icon
+# Build and install the app, using the committed compiled icon resources
+make install
 
-# Check the real menu bar icon code offline (black-on-transparent PNGs at 1x and 2x)
+# Render the actual native menu-bar path at 1x and 2x
+mkdir -p /tmp/passwordpie-icon
 swiftc -parse-as-library art/tools/render_menubar.swift Sources/PasswordPieApp/MenuBarIcon.swift -o /tmp/render_menubar
 /tmp/render_menubar /tmp/passwordpie-icon
 ```
 
-Steps 1–2 reproduce the committed PNGs byte for byte. The concept rounds and their comparison pages are not
-kept in the repo; only the chosen artwork and the tools are.
+The app tile must remain full-bleed with no pre-rounded corners: macOS applies
+its own mask. The old 824 px Big Sur grid can produce a grey frame on macOS 26+.
+The menu bar image must remain a transparent template (`isTemplate = true`), so
+macOS supplies the correct light, dark and selected tint.
+
+## Historical artwork
+
+`source/shield-tile-codex.png`, `source/shield-mark.png`, `briefs/round*.md` and the
+old raster-composition tools are retained as historical provenance, not production
+inputs. Earlier screenshots under `icons/` and `preferences/` document the old
+shield UI and are not current visual acceptance evidence.

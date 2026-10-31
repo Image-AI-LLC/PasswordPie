@@ -29,8 +29,9 @@ install: build
 	@echo "Installed $(DEST)"
 
 # Compile the Icon Composer source into Assets.car (macOS 26+) and AppIcon.icns (older macOS).
-# Needs Xcode's actool (absolute paths: it may resolve relative ones against a stale $$PWD);
+# Needs librsvg (rsvg-convert) and Xcode's actool (absolute paths: it may resolve relative ones against a stale $$PWD);
 # the compiled files are committed so `make install` does not need Xcode.
 icon:
+	rsvg-convert -w 1024 -h 1024 "$(CURDIR)/art/source/icon.svg" -o "$(CURDIR)/Assets/AppIcon.icon/Assets/tile.png"
 	xcrun actool "$(CURDIR)/Assets/AppIcon.icon" --compile "$(CURDIR)/Assets" --platform macosx --minimum-deployment-target 14.0 \
 		--app-icon AppIcon --output-partial-info-plist /dev/null --output-format human-readable-text
