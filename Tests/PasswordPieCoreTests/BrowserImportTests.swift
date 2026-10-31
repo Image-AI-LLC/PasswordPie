@@ -126,6 +126,24 @@ final class BrowserImportTests: XCTestCase {
         XCTAssertEqual(result.summary, BrowserImportSummary(added: 0, updated: 0, unchanged: 0, removed: 0))
     }
 
+    func testADeletedEntryDoesNotShadowAnActiveOneWithTheSameKey() {
+        var deleted = entry("https://a.example/one", "u", "p")
+        deleted.trashed = true
+        let active = entry("https://a.example/two", "u", "p")
+        let result = BrowserImport.merge([entry("https://a.example", "u", "p")], into: [deleted, active], source: .chrome)
+        XCTAssertTrue(result.entries.first { $0.id == deleted.id }!.trashed)
+        XCTAssertFalse(result.entries.first { $0.id == active.id }!.trashed)
+        XCTAssertEqual(result.summary, BrowserImportSummary(added: 0, updated: 0, unchanged: 1, removed: 0))
+    }
+
+    func testReimportWithoutAnOneTimeCodeKeepsTheExistingOneAndCountsAsUnchanged() {
+        var existing = entry("https://a.example", "u", "p")
+        existing.otp = "otpauth://totp/x?secret=ABC"
+        let result = BrowserImport.merge([entry("https://a.example", "u", "p")], into: [existing], source: .chrome)
+        XCTAssertEqual(result.entries, [existing])
+        XCTAssertEqual(result.summary, BrowserImportSummary(added: 0, updated: 0, unchanged: 1, removed: 0))
+    }
+
     func testSameSiteAndUserTwiceInOneExportLosesNothing() {
         let imported = [entry("https://a.example/one", "u", "p1"), entry("https://a.example/two", "u", "p2")]
         let first = BrowserImport.merge(imported, into: [], source: .chrome)

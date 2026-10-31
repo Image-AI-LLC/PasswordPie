@@ -66,8 +66,11 @@ public enum BrowserImport {
         var result = existing
         var summary = BrowserImportSummary()
         var managed: [String: [Int]] = [:]
-        for (index, entry) in existing.enumerated() where isManaged(entry, by: source) {
-            managed[matchKey(entry), default: []].append(index)
+        // Active entries go first, so a deleted twin never shadows a live entry with the same key.
+        for trashed in [false, true] {
+            for (index, entry) in existing.enumerated() where entry.trashed == trashed && isManaged(entry, by: source) {
+                managed[matchKey(entry), default: []].append(index)
+            }
         }
         var matched = Set<Int>()
 
@@ -78,7 +81,8 @@ public enum BrowserImport {
                 matched.insert(index)
                 if existing[index].trashed { continue }
                 var current = result[index]
-                if current.password != incoming.password || current.otp != incoming.otp {
+                let otpChanged = !incoming.otp.isEmpty && current.otp != incoming.otp
+                if current.password != incoming.password || otpChanged {
                     current.password = incoming.password
                     if !incoming.otp.isEmpty { current.otp = incoming.otp }
                     result[index] = current

@@ -25,7 +25,7 @@ A word with punctuation (`github.com`) matches the title or host as a whole at 0
 | Signal | What it is | Range |
 |---|---|---|
 | **recency** | When the user last used the account. `0.5 ^ (days since / 30)`: 1 today, 0.5 after 30 days, 0.125 after 90 days. Unknown or never used is 0. | 0 to 1 |
-| **site** | Popularity of the site's root domain from the bundled top 10,000: `1 − ln(rank) / ln(10001)`. Subdomains use their parent's rank. Unranked is 0. | 0 to 1 |
+| **site** | Popularity of the site's root domain from the bundled top 10,000: `1 − ln(rank) / ln(10001)`. A subdomain uses its parent's rank, unless the subdomain has its own entry in the table (then it keeps its own). Unranked is 0. | 0 to 1 |
 
 - Recency counts 60% and site rank 40%. Recency is the user's own behavior. Site rank is only a general prior.
 - The boost is at most 0.24, under 0.25. The closest match classes differ by a factor of 1.25 (1.0 against 0.8), so the boost
