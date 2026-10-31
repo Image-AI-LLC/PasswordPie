@@ -660,7 +660,9 @@ shows as written.
   In the pinned window the button stays visible without hover.); flashing
   (Return: the button shows at 40 % for 0.3 s, then the primary action runs.
   In the popover, copy and open hide the panel.) Masked secrets show 8 to 16
-  bullets; holding Option or "reveal" shows them in `body-code`. URLs are
+  bullets; holding Option or "reveal" shows them in `body-code`. The pinned
+  window does not inherit a held Option, and that reveal clears when
+  PasswordPie resigns active. An explicit reveal stays until conceal. URLs are
   `accent`; notes wrap up to 8 lines.
 - **OTP field** — grouped code in `code-lg` `accent` with a 14 pt countdown pie
   (ring at 35 %); both turn `system-red` in the last 5 s.

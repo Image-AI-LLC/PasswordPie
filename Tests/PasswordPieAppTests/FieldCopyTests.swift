@@ -61,6 +61,22 @@ final class FieldCopyTests: XCTestCase {
         XCTAssertNil(activePinnedEntry([], id: entry.id))
     }
 
+    func testPinnedWindowDoesNotKeepOptionRevealAfterTheAppResigns() {
+        // Pinning while Option is already down must not show the secret. The popover still does.
+        XCTAssertFalse(optionRevealHeld(after: .opened(presentation: .pinned, optionDown: true)))
+        XCTAssertTrue(optionRevealHeld(after: .opened(presentation: .popover, optionDown: true)))
+        XCTAssertFalse(optionRevealHeld(after: .opened(presentation: .popover, optionDown: false)))
+
+        // Holding Option in the pinned window reveals it, until PasswordPie resigns.
+        XCTAssertTrue(optionRevealHeld(after: .flagsChanged(optionDown: true)))
+        XCTAssertFalse(optionRevealHeld(after: .flagsChanged(optionDown: false)))
+        XCTAssertFalse(optionRevealHeld(after: .appResignedActive))
+
+        // Coming back samples the key, so a release in the other app stays concealed.
+        XCTAssertFalse(optionRevealHeld(after: .appBecameActive(optionDown: false)))
+        XCTAssertTrue(optionRevealHeld(after: .appBecameActive(optionDown: true)))
+    }
+
     func testOnlyTheCloseButtonDismissesAPinnedWindow() {
         XCTAssertFalse(pinnedWindowShouldClose(.resignKey))
         XCTAssertFalse(pinnedWindowShouldClose(.escape))

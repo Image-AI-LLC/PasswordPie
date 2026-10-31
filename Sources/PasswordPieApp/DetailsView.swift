@@ -81,6 +81,28 @@ func fieldActionsStayVisible(_ presentation: DetailsPresentation) -> Bool {
     presentation == .pinned
 }
 
+/// Why the Option-to-reveal flag changed. A local monitor never sees the key-up after another app is front.
+enum OptionRevealChange: Equatable {
+    case opened(presentation: DetailsPresentation, optionDown: Bool)
+    case flagsChanged(optionDown: Bool)
+    case appResignedActive
+    case appBecameActive(optionDown: Bool)
+}
+
+/// Option reveals a secret only while this app can see the key. The pinned window stays on screen
+/// after PasswordPie deactivates, so it must not inherit a held Option or keep one after resign.
+/// An explicit Reveal stays in `revealed` and is not cleared here.
+func optionRevealHeld(after change: OptionRevealChange) -> Bool {
+    switch change {
+    case .opened(let presentation, let optionDown):
+        return presentation == .popover && optionDown
+    case .flagsChanged(let optionDown), .appBecameActive(let optionDown):
+        return optionDown
+    case .appResignedActive:
+        return false
+    }
+}
+
 /// State of the details popover. The search field keeps keyboard focus, so the controller drives this model with up, down and return.
 @MainActor
 final class DetailsModel: ObservableObject {
@@ -90,13 +112,14 @@ final class DetailsModel: ObservableObject {
     let tags: [String]
     @Published var focused = 0
     @Published var revealed: Set<String> = []
-    @Published var optionHeld = NSEvent.modifierFlags.contains(.option)
+    @Published var optionHeld = false
     @Published var flashing = false
     @Published var favorite: Bool
     let presentation: DetailsPresentation
     unowned let session: VaultSession
     private let done: () -> Void
     private var monitor: Any?
+    private var activationObservers: [NSObjectProtocol] = []
 
     init(entry: VaultEntry, session: VaultSession, presentation: DetailsPresentation = .popover, done: @escaping () -> Void) {
         entryID = entry.id
@@ -118,14 +141,36 @@ final class DetailsModel: ObservableObject {
         if !entry.notes.isEmpty { fields.append(DetailField(id: "notes", kind: .notes, label: "notes", value: entry.notes, secret: false)) }
         self.fields = fields
         focused = fields.firstIndex { $0.kind == .password } ?? 0
+        let optionDown = NSEvent.modifierFlags.contains(.option)
+        optionHeld = optionRevealHeld(after: .opened(presentation: presentation, optionDown: optionDown))
         monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.optionHeld = event.modifierFlags.contains(.option)
+            self?.optionHeld = optionRevealHeld(after: .flagsChanged(optionDown: event.modifierFlags.contains(.option)))
             return event
         }
+        // The pinned window stays visible over the form. A local monitor misses the key-up
+        // in the other app, so resign hides the Option reveal and the next activation samples the key again.
+        // `revealed` is an explicit click and is left alone.
+        guard presentation == .pinned else { return }
+        activationObservers = [
+            NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.optionHeld = optionRevealHeld(after: .appResignedActive)
+                }
+            },
+            NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    let optionDown = NSEvent.modifierFlags.contains(.option)
+                    self?.optionHeld = optionRevealHeld(after: .appBecameActive(optionDown: optionDown))
+                }
+            },
+        ]
     }
 
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        for observer in activationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     /// Up and down move between copyable fields and stop at the ends.
