@@ -94,6 +94,20 @@ struct LockScreenContent: View {
     private var foreground: Color { Palette.text(dark: dark) }
     private var secondary: Color { Palette.secondaryText(dark: dark) }
 
+    private var databaseTitle: some View {
+        databaseNameLabel
+            .padding(.top, 4)
+    }
+
+    private var databaseNameLabel: some View {
+        Text(presentation.databaseName)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(presentation.databaseName)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             PasswordPieMark(size: 64, turn: turned ? 1 : 0)
@@ -101,13 +115,7 @@ struct LockScreenContent: View {
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(foreground)
                 .padding(.top, 4)
-            Text(presentation.databaseName)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(presentation.databaseName)
-                .padding(.top, 4)
+            databaseTitle
             Text(presentation.creating ? "Choose a password for your new database." : "Your passwords, kept safe.")
                 .font(.system(size: 11))
                 .foregroundStyle(secondary)

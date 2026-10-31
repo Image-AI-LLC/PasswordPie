@@ -119,9 +119,10 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     }
 
     private func rebuildRoot(selectFirst first: Bool) {
+        let sources = session.entrySources
         let rows = query.isEmpty
-            ? MenuBuilder.topLevel(entries: session.entries)
-            : MenuBuilder.searchResults(entries: session.entries, query: query, scope: session.searchAll ? .allFields : .major)
+            ? MenuBuilder.topLevel(entries: session.entries, sources: sources)
+            : MenuBuilder.searchResults(entries: session.entries, query: query, scope: session.searchAll ? .allFields : .major, sources: sources)
         root.rows = rows
         root.list.setRows(rows)
         if first { selectFirst(in: root) }
