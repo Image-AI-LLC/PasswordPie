@@ -42,6 +42,15 @@ final class VaultSession: ObservableObject {
     @Published var message = ""
     @Published var importStatus = ""
     @Published var importStatusIsError = false
+    /// Chrome logins read live. Never part of `entries`, so no save can copy them into the database.
+    @Published var liveEntries: [VaultEntry] = []
+    @Published var chromeStatus = ""
+    @Published var chromeStatusIsError = false
+    @Published var chromeBusy = false
+    @Published var chromeSyncEnabled = false
+    /// Held in memory while unlocked so a refresh does not ask the keychain again.
+    var chromeKey: Data?
+    var chromeGeneration = 0
     @Published var editing: VaultEntry?
     @Published var editingIsNew = false
     @Published var touchIDAvailable = false
@@ -197,6 +206,7 @@ final class VaultSession: ObservableObject {
             }
         }
         onActivity?()
+        startChromeSyncIfEnabled()
     }
 
     func unlockWithTouchID() {
@@ -314,6 +324,7 @@ final class VaultSession: ObservableObject {
         message = ""
         importStatus = ""
         importStatusIsError = false
+        clearChrome()
         refreshTouchID()
     }
 
@@ -471,8 +482,21 @@ final class VaultSession: ObservableObject {
 
     // MARK: Entries
 
+    /// The database's entries plus live Chrome logins that the database does not already hold. Search and menus read this.
+    var allEntries: [VaultEntry] {
+        #if PP_DIRECT
+        return entries + ChromeLogins.visible(liveEntries, against: entries)
+        #else
+        return entries
+        #endif
+    }
+
+    func isLive(_ id: UUID) -> Bool {
+        liveEntries.contains { $0.id == id }
+    }
+
     func entry(_ id: UUID) -> VaultEntry? {
-        entries.first { $0.id == id && !$0.trashed }
+        allEntries.first { $0.id == id && !$0.trashed }
     }
 
     func newEntry() {
@@ -482,6 +506,10 @@ final class VaultSession: ObservableObject {
     }
 
     func edit(_ id: UUID) {
+        if isLive(id) {
+            editInChrome()
+            return
+        }
         guard let entry = entry(id) else { return }
         onActivity?()
         editing = entry
@@ -512,9 +540,23 @@ final class VaultSession: ObservableObject {
     }
 
     func toggleFavorite(_ id: UUID) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        guard !isLive(id), let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].favorite.toggle()
         save()
+    }
+
+    /// Copies a live Chrome login into the database, in the same group and with the same tag a CSV import uses.
+    /// The copy is a normal entry from then on, and the live one is hidden because the database now holds it.
+    func saveToDatabase(_ id: UUID) {
+        guard let live = liveEntries.first(where: { $0.id == id }) else { return }
+        var copy = live
+        copy.id = UUID()
+        copy.groupPath = [BrowserImportSource.chrome.label]
+        copy.tags = BrowserImportSource.chrome.label
+        entries.append(copy)
+        if !save() {
+            entries.removeAll { $0.id == copy.id }
+        }
     }
 
     /// A generated password saved as a new Password item, only when the user asks for it.

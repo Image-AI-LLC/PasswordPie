@@ -112,13 +112,13 @@ public enum BrowserImport {
     }
 
     /// The same site and account in a new export. Scheme, `www.`, path and letter case do not matter.
-    private static func matchKey(_ entry: VaultEntry) -> String {
+    static func matchKey(_ entry: VaultEntry) -> String {
         let site = host(of: entry.url)
         let place = site.isEmpty ? entry.title.lowercased() : site
         return place + "\u{1}" + entry.username.lowercased()
     }
 
-    private static func host(of raw: String) -> String {
+    static func host(of raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         let candidate = trimmed.contains("://") ? trimmed : "https://" + trimmed

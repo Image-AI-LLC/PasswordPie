@@ -21,6 +21,9 @@ struct PreferencesView: View {
                     section("Everyday") { everyday }
                     section("Database") { database }
                     section("Import passwords") { importPasswords }
+                    #if PP_DIRECT
+                    section("Chrome") { chromeSync }
+                    #endif
                 }
                 .padding(24)
             }
@@ -304,6 +307,49 @@ struct PreferencesView: View {
         }
         .controlSize(.regular)
     }
+
+    #if PP_DIRECT
+    private var chromeSync: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sync Chrome passwords").fontWeight(.medium)
+                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. They stay in Chrome: nothing is copied into your database unless you choose Save to KeePass on one. macOS asks once to let PasswordPie use Chrome Safe Storage. Choose Always Allow.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Toggle("Sync Chrome passwords", isOn: Binding(
+                    get: { session.chromeSyncEnabled },
+                    set: { recorder.stop(); session.setChromeSync($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .disabled(session.locked)
+                .accessibilityLabel("Sync Chrome passwords")
+                .help(session.locked ? "Unlock this database first." : "Read passwords saved in Chrome")
+            }
+            if session.chromeSyncEnabled {
+                HStack(spacing: 10) {
+                    if !session.chromeStatus.isEmpty {
+                        Text(session.chromeStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(session.chromeStatusIsError ? Palette.danger : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 4)
+                    Button(session.chromeBusy ? "Reading…" : "Refresh") {
+                        recorder.stop()
+                        session.refreshChrome()
+                    }
+                    .disabled(session.locked || session.chromeBusy)
+                }
+            }
+        }
+        .controlSize(.regular)
+    }
+    #endif
 
     private func importRow(_ title: String, steps: String, source: BrowserImportSource) -> some View {
         HStack(alignment: .top, spacing: 12) {

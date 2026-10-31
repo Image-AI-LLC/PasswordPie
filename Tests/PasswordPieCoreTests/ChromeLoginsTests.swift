@@ -1,0 +1,285 @@
+#if PP_DIRECT
+import CommonCrypto
+import SQLite3
+import XCTest
+@testable import PasswordPieCore
+
+final class ChromeLoginsTests: XCTestCase {
+    private var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("chrome-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    // MARK: Key derivation and decryption
+
+    func testPBKDF2SHA1MatchesRFC6070() throws {
+        let one = try ChromeSafeStorage.pbkdf2SHA1(password: Data("password".utf8), salt: Data("salt".utf8), iterations: 1, length: 20)
+        XCTAssertEqual(hex(one), "0c60c80f961f0e71f3a9b524af6012062fe037a6")
+        let two = try ChromeSafeStorage.pbkdf2SHA1(password: Data("password".utf8), salt: Data("salt".utf8), iterations: 2, length: 20)
+        XCTAssertEqual(hex(two), "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957")
+        let many = try ChromeSafeStorage.pbkdf2SHA1(password: Data("password".utf8), salt: Data("salt".utf8), iterations: 4096, length: 20)
+        XCTAssertEqual(hex(many), "4b007901b765489abead49d926f721d065a429c1")
+    }
+
+    func testDerivedKeyIsSixteenBytes() throws {
+        XCTAssertEqual(try ChromeSafeStorage.deriveKey(password: Data("abc".utf8)).count, 16)
+    }
+
+    func testV10BlobsRoundTrip() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("safe-storage-secret".utf8))
+        for text in ["hunter2", "", "pässwörd-密码-🔑", String(repeating: "x", count: 100)] {
+            let blob = try encrypt(text, key: key)
+            XCTAssertEqual(try ChromeSafeStorage.decrypt(blob, key: key), text)
+        }
+    }
+
+    func testDecryptRejectsWrongKeysAndUnknownFormats() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("right".utf8))
+        let wrong = try ChromeSafeStorage.deriveKey(password: Data("wrong".utf8))
+        let blob = try encrypt("hunter2", key: key)
+        XCTAssertThrowsError(try ChromeSafeStorage.decrypt(blob, key: wrong))
+        XCTAssertThrowsError(try ChromeSafeStorage.decrypt(Data("v11".utf8) + blob.dropFirst(3), key: key))
+        XCTAssertThrowsError(try ChromeSafeStorage.decrypt(Data("v10".utf8) + Data(repeating: 1, count: 7), key: key))
+        XCTAssertThrowsError(try ChromeSafeStorage.decrypt(Data(), key: key))
+    }
+
+    // MARK: Reading a profile
+
+    func testReadsLoginsAndSkipsNeverSavedAndEmptyRows() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let profile = try makeProfile("Profile 1", rows: [
+            Row(origin: "https://github.com/login", realm: "https://github.com/", user: "ann", password: "pw1", key: key),
+            Row(origin: "https://www.news.example/", realm: "https://www.news.example/", user: "bob", password: "pw2", key: key),
+            Row(origin: "https://never.example/", realm: "https://never.example/", user: "", password: nil, blacklisted: true, key: key),
+            Row(origin: "https://federated.example/", realm: "federation://federated.example/accounts", user: "carl", password: nil, key: key)
+        ])
+        let entries = try ChromeLogins.entries(in: profile, key: key).entries
+        XCTAssertEqual(entries.map(\.password).sorted(), ["pw1", "pw2"])
+        let github = try XCTUnwrap(entries.first { $0.username == "ann" })
+        XCTAssertEqual(github.url, "https://github.com/login")
+        XCTAssertEqual(github.title, "github.com")
+        XCTAssertEqual(github.groupPath, ["Chrome (live)", "Work"])
+    }
+
+    func testBothLoginDataAndTheAccountStoreAreRead() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let profile = try makeProfile("Profile 2", name: "Home", rows: [
+            Row(origin: "https://local.example/", realm: "https://local.example/", user: "a", password: "p1", key: key)
+        ], accountRows: [
+            Row(origin: "https://synced.example/", realm: "https://synced.example/", user: "b", password: "p2", key: key),
+            Row(origin: "https://local.example/", realm: "https://local.example/", user: "a", password: "p1", key: key)
+        ])
+        let entries = try ChromeLogins.entries(in: profile, key: key).entries
+        XCTAssertEqual(entries.map(\.password).sorted(), ["p1", "p2"], "the same login in both stores shows once")
+    }
+
+    func testRowsStillInTheWriteAheadLogAreRead() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let dir = root.appendingPathComponent("Profile 9", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let path = dir.appendingPathComponent("Login Data").path
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        try exec(db, "PRAGMA journal_mode=WAL")
+        try exec(db, loginsSchema)
+        try insert(db, Row(origin: "https://wal.example/", realm: "https://wal.example/", user: "w", password: "walpw", key: key))
+        // Chrome has the database open, so the new row is in the -wal file, not yet in the main file.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: path + "-wal"))
+        let profile = ChromeProfile(directoryName: "Profile 9", name: "Wal", directory: dir)
+        let entries = try ChromeLogins.entries(in: profile, key: key).entries
+        XCTAssertEqual(entries.map(\.password), ["walpw"])
+    }
+
+    func testTheOriginalDatabaseIsNeverModifiedAndNoCopyIsLeftBehind() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let profile = try makeProfile("Profile 1", rows: [
+            Row(origin: "https://a.example/", realm: "https://a.example/", user: "u", password: "p", key: key)
+        ])
+        let original = profile.directory.appendingPathComponent("Login Data")
+        let before = try Data(contentsOf: original)
+        let temp = FileManager.default.temporaryDirectory
+        let tempBefore = try FileManager.default.contentsOfDirectory(atPath: temp.path).filter { $0.hasPrefix("passwordpie-chrome-") }
+        _ = try ChromeLogins.entries(in: profile, key: key)
+        XCTAssertEqual(try Data(contentsOf: original), before)
+        let tempAfter = try FileManager.default.contentsOfDirectory(atPath: temp.path).filter { $0.hasPrefix("passwordpie-chrome-") }
+        XCTAssertEqual(tempAfter.count, tempBefore.count)
+    }
+
+    func testIDsAreStableAcrossReads() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let profile = try makeProfile("Profile 1", rows: [
+            Row(origin: "https://a.example/", realm: "https://a.example/", user: "u", password: "p", key: key)
+        ])
+        let first = try ChromeLogins.entries(in: profile, key: key).entries
+        let second = try ChromeLogins.entries(in: profile, key: key).entries
+        XCTAssertEqual(first.map(\.id), second.map(\.id))
+    }
+
+    func testOneUndecryptableRowDoesNotLoseTheOthers() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let other = try ChromeSafeStorage.deriveKey(password: Data("other".utf8))
+        let profile = try makeProfile("Profile 1", rows: [
+            Row(origin: "https://good.example/", realm: "https://good.example/", user: "u", password: "p", key: key),
+            Row(origin: "https://bad.example/", realm: "https://bad.example/", user: "u", password: "q", key: other)
+        ])
+        let result = try ChromeLogins.entries(in: profile, key: key)
+        XCTAssertEqual(result.entries.map(\.password), ["p"])
+        XCTAssertEqual(result.skipped, 1)
+    }
+
+    func testAWrongKeyForEveryRowIsReportedAsAWrongKey() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let wrong = try ChromeSafeStorage.deriveKey(password: Data("wrong".utf8))
+        let profile = try makeProfile("Profile 1", rows: [
+            Row(origin: "https://a.example/", realm: "https://a.example/", user: "u", password: "p", key: key),
+            Row(origin: "https://b.example/", realm: "https://b.example/", user: "u", password: "q", key: key)
+        ])
+        XCTAssertThrowsError(try ChromeLogins.entries(in: profile, key: wrong)) { error in
+            XCTAssertEqual(error as? ChromeLoginsError, .wrongKey)
+        }
+    }
+
+    // MARK: Finding profiles
+
+    func testProfilesUseTheNamesFromLocalState() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        _ = try makeProfile("Profile 1", name: "Work", rows: [Row(origin: "https://a.example/", realm: "r", user: "u", password: "p", key: key)])
+        _ = try makeProfile("Profile 3", name: "Home", rows: [])
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Crashpad"), withIntermediateDirectories: true)
+        let profiles = ChromeLogins.profiles(root: root)
+        XCTAssertEqual(profiles.map(\.directoryName), ["Profile 1", "Profile 3"])
+        XCTAssertEqual(profiles.map(\.name), ["Work", "Home"])
+    }
+
+    func testAMissingChromeInstallHasNoProfiles() {
+        XCTAssertTrue(ChromeLogins.profiles(root: root.appendingPathComponent("absent")).isEmpty)
+    }
+
+    func testAllProfilesAreCombinedAndReportTheirCounts() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        _ = try makeProfile("Profile 1", name: "Work", rows: [Row(origin: "https://a.example/", realm: "r1", user: "u", password: "p1", key: key)])
+        _ = try makeProfile("Profile 2", name: "Home", rows: [Row(origin: "https://b.example/", realm: "r2", user: "u", password: "p2", key: key)])
+        let result = try ChromeLogins.load(root: root, key: key)
+        XCTAssertEqual(result.entries.map(\.password).sorted(), ["p1", "p2"])
+        XCTAssertEqual(result.profileCount, 2)
+    }
+
+    // MARK: Showing live entries next to the database
+
+    func testAChromeLoginAlreadyInTheDatabaseIsHidden() {
+        var saved = VaultEntry(); saved.title = "GitHub"; saved.url = "https://github.com"; saved.username = "ann"; saved.password = "pw"
+        var live = VaultEntry(); live.title = "github.com"; live.url = "https://github.com/login"; live.username = "ANN"; live.password = "pw"
+        XCTAssertTrue(ChromeLogins.visible([live], against: [saved]).isEmpty)
+    }
+
+    func testAChromeLoginWithADifferentPasswordStaysVisible() {
+        var saved = VaultEntry(); saved.url = "https://github.com"; saved.username = "ann"; saved.password = "old"
+        var live = VaultEntry(); live.url = "https://github.com"; live.username = "ann"; live.password = "new"
+        XCTAssertEqual(ChromeLogins.visible([live], against: [saved]).count, 1)
+    }
+
+    func testTrashedDatabaseEntriesDoNotHideChromeLogins() {
+        var saved = VaultEntry(); saved.url = "https://github.com"; saved.username = "ann"; saved.password = "pw"; saved.trashed = true
+        var live = VaultEntry(); live.url = "https://github.com"; live.username = "ann"; live.password = "pw"
+        XCTAssertEqual(ChromeLogins.visible([live], against: [saved]).count, 1)
+    }
+
+    // MARK: Helpers
+
+    private struct Row {
+        var origin: String
+        var realm: String
+        var user: String
+        var password: String?
+        var blacklisted = false
+        var key: Data
+    }
+
+    private let loginsSchema = """
+    CREATE TABLE logins (origin_url VARCHAR NOT NULL, action_url VARCHAR, username_element VARCHAR, username_value VARCHAR,
+    password_element VARCHAR, password_value BLOB, submit_element VARCHAR, signon_realm VARCHAR NOT NULL, date_created INTEGER NOT NULL,
+    blacklisted_by_user INTEGER NOT NULL, scheme INTEGER NOT NULL, times_used INTEGER)
+    """
+
+    private func makeProfile(_ directoryName: String, name: String? = nil, rows: [Row], accountRows: [Row] = []) throws -> ChromeProfile {
+        let dir = root.appendingPathComponent(directoryName, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try write(rows, to: dir.appendingPathComponent("Login Data"))
+        if !accountRows.isEmpty { try write(accountRows, to: dir.appendingPathComponent("Login Data For Account")) }
+        let shownName = name ?? "Work"
+        try updateLocalState(directoryName, shownName)
+        return ChromeProfile(directoryName: directoryName, name: shownName, directory: dir)
+    }
+
+    private func updateLocalState(_ directoryName: String, _ name: String) throws {
+        let url = root.appendingPathComponent("Local State")
+        var info: [String: Any] = [:]
+        if let data = try? Data(contentsOf: url),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let cache = (json["profile"] as? [String: Any])?["info_cache"] as? [String: Any] {
+            info = cache
+        }
+        info[directoryName] = ["name": name]
+        let data = try JSONSerialization.data(withJSONObject: ["profile": ["info_cache": info]])
+        try data.write(to: url)
+    }
+
+    private func write(_ rows: [Row], to url: URL) throws {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        try exec(db, loginsSchema)
+        for row in rows { try insert(db, row) }
+    }
+
+    private func insert(_ db: OpaquePointer?, _ row: Row) throws {
+        let blob = try row.password.map { try encrypt($0, key: row.key) } ?? Data()
+        var statement: OpaquePointer?
+        let sql = "INSERT INTO logins (origin_url, action_url, username_value, password_value, signon_realm, date_created, blacklisted_by_user, scheme, times_used) VALUES (?, ?, ?, ?, ?, 0, ?, 0, 1)"
+        XCTAssertEqual(sqlite3_prepare_v2(db, sql, -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(statement, 1, row.origin, -1, transient)
+        sqlite3_bind_text(statement, 2, row.origin, -1, transient)
+        sqlite3_bind_text(statement, 3, row.user, -1, transient)
+        _ = blob.withUnsafeBytes { sqlite3_bind_blob(statement, 4, $0.baseAddress, Int32(blob.count), transient) }
+        sqlite3_bind_text(statement, 5, row.realm, -1, transient)
+        sqlite3_bind_int(statement, 6, row.blacklisted ? 1 : 0)
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_DONE)
+    }
+
+    private func exec(_ db: OpaquePointer?, _ sql: String) throws {
+        XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK, sql)
+    }
+
+    /// Chrome's macOS scheme: "v10" + AES-128-CBC(PKCS7) with an IV of 16 spaces.
+    private func encrypt(_ text: String, key: Data) throws -> Data {
+        let plain = Data(text.utf8)
+        var out = Data(count: plain.count + kCCBlockSizeAES128)
+        var written = 0
+        let iv = Data(repeating: 0x20, count: 16)
+        let status = out.withUnsafeMutableBytes { outRaw in
+            plain.withUnsafeBytes { plainRaw in
+                key.withUnsafeBytes { keyRaw in
+                    iv.withUnsafeBytes { ivRaw in
+                        CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
+                                keyRaw.baseAddress, key.count, ivRaw.baseAddress,
+                                plainRaw.baseAddress, plain.count, outRaw.baseAddress, outRaw.count, &written)
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(status, CCCryptorStatus(kCCSuccess))
+        return Data("v10".utf8) + out.prefix(written)
+    }
+
+    private func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+}
+#endif

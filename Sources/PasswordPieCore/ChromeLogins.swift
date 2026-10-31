@@ -1,0 +1,295 @@
+#if PP_DIRECT
+import CommonCrypto
+import CryptoKit
+import Foundation
+import SQLite3
+import Security
+
+// Direct-channel only. Package.swift leaves PP_DIRECT out of the App Store build, so none of this reaches the store binary.
+
+public enum ChromeLoginsError: Error, Equatable, CustomStringConvertible {
+    case noChrome
+    case wrongKey
+    case keychain(OSStatus)
+    case database(String)
+
+    public var description: String {
+        switch self {
+        case .noChrome: return "Chrome's password store was not found on this Mac."
+        case .wrongKey: return "Chrome's passwords could not be decrypted with the Chrome Safe Storage key."
+        case .keychain(let status): return "Couldn't read the Chrome Safe Storage key from the keychain (\(status))."
+        case .database(let message): return message
+        }
+    }
+}
+
+/// How Chrome on macOS protects saved passwords: the value is `v10` plus AES-128-CBC, keyed from the
+/// "Chrome Safe Storage" keychain item with PBKDF2-HMAC-SHA1 (salt `saltysalt`, 1003 rounds).
+public enum ChromeSafeStorage {
+    static let salt = Data("saltysalt".utf8)
+    static let iterations = 1003
+    static let keyLength = 16
+    static let version = Data("v10".utf8)
+    /// 16 spaces.
+    static let iv = Data(repeating: 0x20, count: 16)
+
+    public static func deriveKey(password: Data) throws -> Data {
+        try pbkdf2SHA1(password: password, salt: salt, iterations: iterations, length: keyLength)
+    }
+
+    static func pbkdf2SHA1(password: Data, salt: Data, iterations: Int, length: Int) throws -> Data {
+        var output = Data(count: length)
+        let status: Int32 = password.withUnsafeBytes { passwordRaw in
+            salt.withUnsafeBytes { saltRaw in
+                output.withUnsafeMutableBytes { outputRaw in
+                    CCKeyDerivationPBKDF(
+                        CCPBKDFAlgorithm(kCCPBKDF2),
+                        passwordRaw.bindMemory(to: Int8.self).baseAddress, password.count,
+                        saltRaw.bindMemory(to: UInt8.self).baseAddress, salt.count,
+                        CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1), UInt32(iterations),
+                        outputRaw.bindMemory(to: UInt8.self).baseAddress, length
+                    )
+                }
+            }
+        }
+        guard status == kCCSuccess else { throw ChromeLoginsError.database("Key derivation failed (\(status)).") }
+        return output
+    }
+
+    public static func decrypt(_ blob: Data, key: Data) throws -> String {
+        guard blob.starts(with: version) else {
+            throw ChromeLoginsError.database("Unsupported password format.")
+        }
+        let cipher = Data(blob.dropFirst(version.count))
+        guard !cipher.isEmpty, cipher.count % kCCBlockSizeAES128 == 0 else {
+            throw ChromeLoginsError.database("Malformed password value.")
+        }
+        var plain = Data(count: cipher.count)
+        var written = 0
+        let status = plain.withUnsafeMutableBytes { plainRaw in
+            cipher.withUnsafeBytes { cipherRaw in
+                key.withUnsafeBytes { keyRaw in
+                    iv.withUnsafeBytes { ivRaw in
+                        CCCrypt(CCOperation(kCCDecrypt), CCAlgorithm(kCCAlgorithmAES), CCOptions(kCCOptionPKCS7Padding),
+                                keyRaw.baseAddress, key.count, ivRaw.baseAddress,
+                                cipherRaw.baseAddress, cipher.count, plainRaw.baseAddress, plainRaw.count, &written)
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess, let text = String(data: plain.prefix(written), encoding: .utf8) else {
+            throw ChromeLoginsError.wrongKey
+        }
+        return text
+    }
+
+    /// The Safe Storage secret. macOS asks the user to allow this, so call it only after they turn the feature on.
+    public static func keychainPassword() -> (status: OSStatus, password: Data?) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Chrome Safe Storage",
+            kSecAttrAccount as String: "Chrome",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data, !data.isEmpty else { return (status == errSecSuccess ? errSecItemNotFound : status, nil) }
+        return (status, data)
+    }
+}
+
+public struct ChromeProfile: Equatable, Sendable {
+    public var directoryName: String
+    public var name: String
+    public var directory: URL
+
+    public init(directoryName: String, name: String, directory: URL) {
+        self.directoryName = directoryName
+        self.name = name
+        self.directory = directory
+    }
+}
+
+public struct ChromeLoginsResult: Sendable {
+    public var entries: [VaultEntry] = []
+    /// Passwords that were saved but could not be decrypted.
+    public var skipped = 0
+    public var profileCount = 0
+}
+
+public enum ChromeLogins {
+    public static let groupName = "Chrome (live)"
+    static let storeNames = ["Login Data", "Login Data For Account"]
+
+    public static var defaultRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Google/Chrome", isDirectory: true)
+    }
+
+    /// Every profile folder that has a login store, named as Chrome shows it. Chrome does not always create `Default`.
+    public static func profiles(root: URL = defaultRoot) -> [ChromeProfile] {
+        let names = profileNames(root: root)
+        let children = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        let folders = children.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted { lhs, rhs in
+            if lhs == "Default" { return true }
+            if rhs == "Default" { return false }
+            return lhs.compare(rhs, options: .numeric) == .orderedAscending
+        }
+        return folders.compactMap { folder in
+            let directory = root.appendingPathComponent(folder, isDirectory: true)
+            guard storeNames.contains(where: { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }) else { return nil }
+            return ChromeProfile(directoryName: folder, name: names[folder] ?? folder, directory: directory)
+        }
+    }
+
+    private static func profileNames(root: URL) -> [String: String] {
+        guard let data = try? Data(contentsOf: root.appendingPathComponent("Local State")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cache = (json["profile"] as? [String: Any])?["info_cache"] as? [String: Any] else { return [:] }
+        var names: [String: String] = [:]
+        for (folder, value) in cache {
+            if let name = (value as? [String: Any])?["name"] as? String, !name.isEmpty { names[folder] = name }
+        }
+        return names
+    }
+
+    /// All profiles together. Throws only when nothing could be read.
+    public static func load(root: URL = defaultRoot, key: Data) throws -> ChromeLoginsResult {
+        let profiles = profiles(root: root)
+        guard !profiles.isEmpty else { throw ChromeLoginsError.noChrome }
+        var combined = ChromeLoginsResult()
+        var firstError: Error?
+        for profile in profiles {
+            do {
+                let part = try entries(in: profile, key: key)
+                combined.entries += part.entries
+                combined.skipped += part.skipped
+                combined.profileCount += 1
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if combined.profileCount == 0, let firstError { throw firstError }
+        return combined
+    }
+
+    /// Reads one profile's two login stores from private copies, so Chrome's locks are never contended and its files are never written.
+    public static func entries(in profile: ChromeProfile, key: Data) throws -> ChromeLoginsResult {
+        var result = ChromeLoginsResult()
+        var seen = Set<UUID>()
+        var attempted = 0
+        var decrypted = 0
+        for store in storeNames {
+            let source = profile.directory.appendingPathComponent(store)
+            guard FileManager.default.fileExists(atPath: source.path) else { continue }
+            let rows = try withPrivateCopy(of: source) { try readRows(at: $0) }
+            for row in rows {
+                attempted += 1
+                guard let password = try? ChromeSafeStorage.decrypt(row.passwordValue, key: key) else {
+                    result.skipped += 1
+                    continue
+                }
+                decrypted += 1
+                let id = stableID(profile: profile.directoryName, realm: row.realm, origin: row.origin, username: row.username)
+                guard seen.insert(id).inserted else { continue }
+                var entry = VaultEntry(id: id, groupPath: groupPath(for: profile))
+                entry.title = BrowserImport.host(of: row.origin).isEmpty ? row.origin : BrowserImport.host(of: row.origin)
+                entry.url = row.origin
+                entry.username = row.username
+                entry.password = password
+                result.entries.append(entry)
+            }
+        }
+        if attempted > 0, decrypted == 0 { throw ChromeLoginsError.wrongKey }
+        result.profileCount = 1
+        return result
+    }
+
+    /// Chrome logins to show beside the database's own entries: one that the database already holds
+    /// (same site, same account, same password) is hidden. A different password stays visible so the difference is not lost.
+    public static func visible(_ live: [VaultEntry], against saved: [VaultEntry]) -> [VaultEntry] {
+        var held = Set<String>()
+        for entry in saved where !entry.trashed {
+            held.insert(BrowserImport.matchKey(entry) + "\u{2}" + entry.password)
+        }
+        return live.filter { !held.contains(BrowserImport.matchKey($0) + "\u{2}" + $0.password) }
+    }
+
+    // MARK: Private
+
+    private struct Row {
+        var origin: String
+        var username: String
+        var passwordValue: Data
+        var realm: String
+    }
+
+    private static func groupPath(for profile: ChromeProfile) -> [String] {
+        [groupName, profile.name]
+    }
+
+    private static func stableID(profile: String, realm: String, origin: String, username: String) -> UUID {
+        let digest = SHA256.hash(data: Data(["chrome-live", profile, realm, origin, username].joined(separator: "\u{1}").utf8))
+        let bytes = Array(digest.prefix(16))
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
+
+    /// Copies the database and its `-wal` and `-journal` files to a private temporary folder, runs `body` on the copy, then removes the folder.
+    /// A failure to remove the copy is an error: it holds encrypted passwords and must not be left behind silently.
+    private static func withPrivateCopy<T>(of database: URL, _ body: (URL) throws -> T) throws -> T {
+        let fileManager = FileManager.default
+        let folder = fileManager.temporaryDirectory.appendingPathComponent("passwordpie-chrome-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        var outcome: Result<T, Error>
+        do {
+            for suffix in ["", "-wal", "-journal"] {
+                let from = URL(fileURLWithPath: database.path + suffix)
+                guard fileManager.fileExists(atPath: from.path) else { continue }
+                try fileManager.copyItem(at: from, to: folder.appendingPathComponent(database.lastPathComponent + suffix))
+            }
+            outcome = .success(try body(folder.appendingPathComponent(database.lastPathComponent)))
+        } catch {
+            outcome = .failure(error)
+        }
+        do {
+            try fileManager.removeItem(at: folder)
+        } catch {
+            throw ChromeLoginsError.database("Couldn't remove the temporary copy of Chrome's password store at \(folder.path).")
+        }
+        return try outcome.get()
+    }
+
+    /// The copy is opened read-write only so SQLite can replay the copied write-ahead log; the original is never opened.
+    private static func readRows(at copy: URL) throws -> [Row] {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(copy.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+            sqlite3_close(db)
+            throw ChromeLoginsError.database("Couldn't open Chrome's password store.")
+        }
+        defer { sqlite3_close(db) }
+        var statement: OpaquePointer?
+        let sql = "SELECT origin_url, username_value, password_value, signon_realm FROM logins WHERE blacklisted_by_user = 0"
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw ChromeLoginsError.database("Chrome's password store has an unexpected layout.")
+        }
+        defer { sqlite3_finalize(statement) }
+        var rows: [Row] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let length = Int(sqlite3_column_bytes(statement, 2))
+            guard length > 0, let bytes = sqlite3_column_blob(statement, 2) else { continue }
+            rows.append(Row(
+                origin: text(statement, 0),
+                username: text(statement, 1),
+                passwordValue: Data(bytes: bytes, count: length),
+                realm: text(statement, 3)
+            ))
+        }
+        return rows
+    }
+
+    private static func text(_ statement: OpaquePointer?, _ column: Int32) -> String {
+        sqlite3_column_text(statement, column).map { String(cString: $0) } ?? ""
+    }
+}
+#endif
