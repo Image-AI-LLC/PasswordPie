@@ -24,13 +24,16 @@ struct PreferencesView: View {
                 }
                 .padding(24)
             }
-            Text("Changes are saved automatically.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 14)
-                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Changes are saved automatically.")
+                Text("Site popularity in search comes from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).")
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 14)
+            .padding(.top, 4)
         }
         .font(.system(size: 13))
         .background(Color(nsColor: .windowBackgroundColor))
