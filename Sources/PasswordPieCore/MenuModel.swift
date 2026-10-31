@@ -123,9 +123,11 @@ public enum MenuBuilder {
         entries: [VaultEntry],
         query: String,
         scope: SearchScope,
+        lastUsed: [UUID: Date] = [:],
+        now: Date = Date(),
         sources: [UUID: String] = [:]
     ) -> [MenuRow] {
-        let found = searchEntries(entries, query: query, scope: scope)
+        let found = searchEntries(entries, query: query, scope: scope, lastUsed: lastUsed, now: now)
         guard !found.isEmpty else {
             return [MenuRow(kind: .disabled, title: "No items found")]
         }

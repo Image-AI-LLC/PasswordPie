@@ -20,16 +20,23 @@ struct PreferencesView: View {
                     section("Security") { security }
                     section("Everyday") { everyday }
                     section("Database") { database }
+                    section("Import passwords") { importPasswords }
+                    #if PP_DIRECT
+                    section("Chrome") { chromeSync }
+                    #endif
                 }
                 .padding(24)
             }
-            Text("Changes are saved automatically.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 14)
-                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Changes are saved automatically.")
+                Text("Site popularity in search comes from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).")
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 14)
+            .padding(.top, 4)
         }
         .font(.system(size: 13))
         .background(Color(nsColor: .windowBackgroundColor))
@@ -292,6 +299,93 @@ struct PreferencesView: View {
             }
         }
         .controlSize(.regular)
+    }
+
+    private var importPasswords: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            importRow(
+                "Chrome",
+                steps: "In Chrome, open chrome://password-manager/settings and choose Export passwords. Then pick the file here.",
+                source: .chrome
+            )
+            Divider()
+            importRow(
+                "Apple Passwords",
+                steps: "In the Passwords app, choose File > Export All Passwords. Then pick the file here.",
+                source: .applePasswords
+            )
+            Text("Passwords go into a \"Chrome\" or \"Apple Passwords\" group. Import again to update them: new sites are added, changed passwords are updated, and sites that are gone move to the Recycle Bin. Your own entries are never changed.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !session.importStatus.isEmpty {
+                Text(session.importStatus)
+                    .font(.system(size: 11))
+                    .foregroundStyle(session.importStatusIsError ? Palette.danger : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .controlSize(.regular)
+    }
+
+    #if PP_DIRECT
+    private var chromeSync: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sync Chrome passwords").fontWeight(.medium)
+                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. They stay in Chrome: nothing is copied into your database unless you choose Save to KeePass on one. macOS asks once to let PasswordPie use Chrome Safe Storage. Choose Always Allow.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Toggle("Sync Chrome passwords", isOn: Binding(
+                    get: { session.chromeSyncEnabled },
+                    set: { recorder.stop(); session.setChromeSync($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .disabled(session.locked)
+                .accessibilityLabel("Sync Chrome passwords")
+                .help(session.locked ? "Unlock this database first." : "Read passwords saved in Chrome")
+            }
+            if session.chromeSyncEnabled {
+                HStack(spacing: 10) {
+                    if !session.chromeStatus.isEmpty {
+                        Text(session.chromeStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(session.chromeStatusIsError ? Palette.danger : Color.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 4)
+                    Button(session.chromeBusy ? "Reading…" : "Refresh") {
+                        recorder.stop()
+                        session.refreshChrome()
+                    }
+                    .disabled(session.locked || session.chromeBusy)
+                }
+            }
+        }
+        .controlSize(.regular)
+    }
+    #endif
+
+    private func importRow(_ title: String, steps: String, source: BrowserImportSource) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).fontWeight(.medium)
+                Text(steps)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            Button("Import…") {
+                recorder.stop()
+                session.importPasswords(from: source)
+            }
+            .disabled(session.locked)
+            .help(session.locked ? "Unlock this database first." : "Choose the exported CSV file")
+        }
     }
 
     private var touchIDDescription: String {

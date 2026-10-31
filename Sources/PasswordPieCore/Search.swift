@@ -58,17 +58,38 @@ private func hasPunctuation(_ token: String) -> Bool {
 
 private let standardKeys: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
 
-/// Entries matching every token of `query`, sorted. An empty query matches nothing here; callers show the initial menu.
-public func searchEntries(_ entries: [VaultEntry], query: String, scope: SearchScope) -> [VaultEntry] {
+/// Entries matching every token of `query`. Favorites come first, then the match score scaled by `1 + RankingBoost`
+/// (how recently the account was used, and how popular its site is), then title order.
+/// An empty query matches nothing here; callers show the initial menu.
+public func searchEntries(
+    _ entries: [VaultEntry],
+    query: String,
+    scope: SearchScope,
+    popularity: DomainPopularity = .bundled,
+    lastUsed: [UUID: Date] = [:],
+    now: Date = Date()
+) -> [VaultEntry] {
     let tokens = searchTokens(query)
     guard !tokens.isEmpty else { return [] }
     let candidates = entries.filter { !$0.trashed }.map { SearchIndexEntry($0) }
     for substring in [false, true] {
-        let hits = candidates.filter { candidate in
-            tokens.allSatisfy { candidate.matches($0, substring: substring, allFields: scope == .allFields) }
+        var hits: [(entry: VaultEntry, score: Double)] = []
+        for candidate in candidates {
+            guard let match = candidate.score(tokens, substring: substring, allFields: scope == .allFields) else { continue }
+            let boost = RankingBoost.value(
+                recency: Recency.score(lastUsed: lastUsed[candidate.entry.id], now: now),
+                site: popularity.popularity(forHost: candidate.rankHost)
+            )
+            hits.append((candidate.entry, match * (1 + boost)))
         }
         if !hits.isEmpty {
-            return sortedForMenu(hits.map(\.entry), favoritesFirst: true)
+            return hits.sorted { lhs, rhs in
+                if lhs.entry.favorite != rhs.entry.favorite { return lhs.entry.favorite }
+                if abs(lhs.score - rhs.score) > 1e-9 { return lhs.score > rhs.score }
+                let order = lhs.entry.title.localizedCaseInsensitiveCompare(rhs.entry.title)
+                if order != .orderedSame { return order == .orderedAscending }
+                return lhs.entry.id.uuidString < rhs.entry.id.uuidString
+            }.map(\.entry)
         }
     }
     return []
@@ -94,14 +115,45 @@ private struct SearchIndexEntry {
         self.extra = extra
     }
 
-    func matches(_ token: String, substring: Bool, allFields: Bool) -> Bool {
-        if hasPunctuation(token) {
-            if title.contains(token) || host.contains(token) { return true }
-        } else if substring {
-            if words.contains(where: { $0.contains(token) }) { return true }
-        } else if words.contains(where: { $0.hasPrefix(token) }) {
-            return true
+    /// The host whose popularity counts: the URL's host, or a title that is itself a bare domain such as `github.com`.
+    var rankHost: String {
+        var candidate = host
+        if candidate.isEmpty, title.contains("."), !title.contains(where: { $0.isWhitespace }) {
+            candidate = title
         }
-        return allFields && extra.contains { $0.contains(token) }
+        if let at = candidate.lastIndex(of: "@") { candidate = String(candidate[candidate.index(after: at)...]) }
+        return candidate
+    }
+
+    /// The mean of each token's match score, or nil when any token does not match.
+    func score(_ tokens: [String], substring: Bool, allFields: Bool) -> Double? {
+        var total = 0.0
+        for token in tokens {
+            guard let value = tokenScore(token, substring: substring, allFields: allFields) else { return nil }
+            total += value
+        }
+        return total / Double(tokens.count)
+    }
+
+    /// Exact word 1.0, prefix of the first word 0.8, prefix of a later word 0.6, substring 0.4 (second pass only),
+    /// a hit only in username, notes, tags or custom fields 0.2. A token with punctuation matches the title or host as a whole at 0.8.
+    private func tokenScore(_ token: String, substring: Bool, allFields: Bool) -> Double? {
+        var best: Double?
+        func offer(_ value: Double) { best = max(best ?? 0, value) }
+        if hasPunctuation(token) {
+            if title.contains(token) || host.contains(token) { offer(0.8) }
+        } else {
+            for (index, word) in words.enumerated() {
+                if word == token {
+                    offer(1.0)
+                } else if word.hasPrefix(token) {
+                    offer(index == 0 ? 0.8 : 0.6)
+                } else if substring, word.contains(token) {
+                    offer(0.4)
+                }
+            }
+        }
+        if allFields, extra.contains(where: { $0.contains(token) }) { offer(0.2) }
+        return best
     }
 }

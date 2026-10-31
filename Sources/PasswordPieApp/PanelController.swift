@@ -172,6 +172,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             .dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.refresh() } }
             .store(in: &cancellables)
+        session.$liveEntries
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.refresh() } }
+            .store(in: &cancellables)
         session.$creating
             .removeDuplicates()
             .dropFirst()

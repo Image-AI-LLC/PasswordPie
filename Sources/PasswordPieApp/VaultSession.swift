@@ -55,6 +55,20 @@ final class VaultSession: ObservableObject {
     }
     @Published var entries: [VaultEntry] = []
     @Published var message = ""
+    @Published var importStatus = ""
+    @Published var importStatusIsError = false
+    /// Chrome logins read live. Never part of `entries`, so no save can copy them into the database.
+    @Published var liveEntries: [VaultEntry] = []
+    @Published var chromeStatus = ""
+    @Published var chromeStatusIsError = false
+    @Published var chromeBusy = false
+    @Published var chromeSyncEnabled = false
+    /// Held in memory while unlocked so a refresh does not ask the keychain again.
+    var chromeKey: Data?
+    var chromeGeneration = 0
+    /// Chrome's own last-used times for the live logins. Replaced on every refresh, cleared on lock.
+    var chromeLastUsed: [UUID: Date] = [:]
+    private let usage: UsageStore
     @Published var editing: VaultEntry?
     @Published var editingIsNew = false
     @Published var touchIDAvailable = false
@@ -140,6 +154,8 @@ final class VaultSession: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PasswordPie", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let usagePath = ProcessInfo.processInfo.environment["PASSWORDPIE_USAGE"]
+        usage = UsageStore(url: usagePath.map { URL(fileURLWithPath: $0) } ?? support.appendingPathComponent("usage.json"))
         let initialPath: String
         if let override = ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] {
             initialPath = override
@@ -234,6 +250,7 @@ final class VaultSession: ObservableObject {
             rememberUnlockSecret()
         }
         onActivity?()
+        startChromeSyncIfEnabled()
     }
 
     /// The file keeps its own password. After this unlock, the login keychain holds it
@@ -386,6 +403,9 @@ final class VaultSession: ObservableObject {
         locked = true
         creating = !FileManager.default.fileExists(atPath: databaseURL.path)
         message = ""
+        importStatus = ""
+        importStatusIsError = false
+        clearChrome()
         refreshTouchID()
     }
 
@@ -718,8 +738,24 @@ final class VaultSession: ObservableObject {
 
     // MARK: Entries
 
+    /// The database's entries plus live Chrome logins that the database does not already hold. Search and menus read this.
+    var allEntries: [VaultEntry] { Self.visibleEntries(saved: entries, live: liveEntries) }
+
+    /// Shared by `allEntries` and the pinned windows, which build it from the values a publisher just emitted.
+    static func visibleEntries(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
+        #if PP_DIRECT
+        return saved + ChromeLogins.visible(live, against: saved)
+        #else
+        return saved
+        #endif
+    }
+
+    func isLive(_ id: UUID) -> Bool {
+        liveEntries.contains { $0.id == id }
+    }
+
     func entry(_ id: UUID) -> VaultEntry? {
-        entries.first { $0.id == id && !$0.trashed }
+        allEntries.first { $0.id == id && !$0.trashed }
     }
 
     func newEntry() {
@@ -729,6 +765,10 @@ final class VaultSession: ObservableObject {
     }
 
     func edit(_ id: UUID) {
+        if isLive(id) {
+            editInChrome()
+            return
+        }
         guard let entry = entry(id) else { return }
         onActivity?()
         editing = entry
@@ -761,10 +801,33 @@ final class VaultSession: ObservableObject {
     }
 
     func toggleFavorite(_ id: UUID) {
-        guard var entry = entry(id) else { return }
+        guard !isLive(id), var entry = entry(id) else { return }
         entry.favorite.toggle()
         replaceStored(entry)
         persist(path: listPaths[id] ?? databaseURL.path)
+    }
+
+    /// Copies a live Chrome login into the database, in the same group and with the same tag a CSV import uses.
+    /// The copy is a normal entry from then on, and the live one is hidden because the database now holds it.
+    func saveToDatabase(_ id: UUID) {
+        guard let live = liveEntries.first(where: { $0.id == id }) else { return }
+        #if PP_DIRECT
+        guard !ChromeLogins.visible([live], against: entries).isEmpty else { return }
+        #endif
+        var copy = live
+        copy.id = UUID()
+        copy.groupPath = [BrowserImportSource.chrome.label]
+        copy.tags = BrowserImportSource.chrome.label
+        let path = databaseURL.path
+        appendStored(copy, to: path)
+        if persist(path: path) {
+            if let used = lastUsedMap[live.id] { try? usage.record(copy.id, at: used) }
+        } else {
+            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
+                openedFiles[index].vault.entries.removeAll { $0.id == copy.id }
+            }
+            publishCatalog()
+        }
     }
 
     /// A generated password saved as a new Password item, only when the user asks for it.
@@ -775,6 +838,90 @@ final class VaultSession: ObservableObject {
         entry.password = password
         appendStored(entry, to: databaseURL.path)
         persist(path: databaseURL.path)
+    }
+
+    // MARK: Browser password import
+
+    /// Imports a Chrome or Apple Passwords CSV into this database, then offers to delete the plain-text file.
+    func importPasswords(from source: BrowserImportSource) {
+        guard !locked else {
+            setImportStatus("Unlock the database first.", isError: true)
+            return
+        }
+        let chooser = NSOpenPanel()
+        chooser.canChooseFiles = true
+        chooser.canChooseDirectories = false
+        chooser.allowedContentTypes = [.commaSeparatedText]
+        chooser.allowsOtherFileTypes = true
+        chooser.message = "Choose the \(source.label) password export (.csv)"
+        let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
+        guard accepted, let url = chooser.url else { return }
+
+        let imported: [VaultEntry]
+        do {
+            imported = try BrowserImport.entries(fromCSV: Data(contentsOf: url), source: source)
+        } catch {
+            setImportStatus(openErrorText(error), isError: true)
+            return
+        }
+        guard let summary = mergeImported(imported, source: source) else {
+            setImportStatus("Couldn't save the imported passwords. Nothing was changed.", isError: true)
+            return
+        }
+        var status = importSummaryText(summary, source: source)
+        var failed = false
+        if confirmDeleteExport(url) {
+            do {
+                try BrowserImport.deleteExport(at: url)
+                status += " The export file was deleted."
+            } catch {
+                status += " Couldn't delete the export file. It still holds your passwords in plain text, so delete it yourself."
+                failed = true
+            }
+        } else {
+            status += " The export file is still on disk in plain text."
+        }
+        setImportStatus(status, isError: failed)
+    }
+
+    /// Merges an export into the file this session unlocked and saves it. The merged menu list is never saved as one database.
+    /// Returns nil, with nothing changed, when the file cannot be saved.
+    func mergeImported(_ imported: [VaultEntry], source: BrowserImportSource) -> BrowserImportSummary? {
+        let path = databaseURL.path
+        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }) else { return nil }
+        let backup = openedFiles[fileIndex].vault
+        let merged = BrowserImport.merge(imported, into: backup.entries, source: source)
+        openedFiles[fileIndex].vault.entries = merged.entries
+        guard persist(path: path) else {
+            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) { openedFiles[index].vault = backup }
+            publishCatalog()
+            return nil
+        }
+        return merged.summary
+    }
+
+    private func setImportStatus(_ text: String, isError: Bool) {
+        importStatus = text
+        importStatusIsError = isError
+    }
+
+    private func importSummaryText(_ summary: BrowserImportSummary, source: BrowserImportSource) -> String {
+        var parts: [String] = []
+        if summary.added > 0 { parts.append("\(summary.added) added") }
+        if summary.updated > 0 { parts.append("\(summary.updated) updated") }
+        if summary.removed > 0 { parts.append("\(summary.removed) moved to the Recycle Bin") }
+        if parts.isEmpty { return "\(source.label) is already up to date." }
+        return "Imported from \(source.label): " + parts.joined(separator: ", ") + "."
+    }
+
+    private func confirmDeleteExport(_ url: URL) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Delete the exported file?"
+        alert.informativeText = "\(url.lastPathComponent) holds your passwords in plain text. They are now in your PasswordPie database, so the file is no longer needed. Deleting it is permanent."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Keep")
+        return AppDelegate.shared?.keepOpen { alert.runModal() == .alertFirstButtonReturn } ?? false
     }
 
     // MARK: Actions
@@ -799,12 +946,28 @@ final class VaultSession: ObservableObject {
     func copy(_ target: CopyTarget, of id: UUID) {
         guard let entry = entry(id) else { return }
         copy(value(of: target, in: entry))
+        switch target {
+        case .username, .password, .oneTimePassword: recordUse(id)
+        case .url, .notes, .custom: break
+        }
     }
 
     func openURL(of id: UUID) {
         guard let raw = entry(id)?.url, let url = webURL(raw) else { return }
         onActivity?()
         NSWorkspace.shared.open(url)
+        recordUse(id)
+    }
+
+    /// When each account was last used, for search ranking: this app's own record, or Chrome's for a live login, whichever is later.
+    var lastUsedMap: [UUID: Date] {
+        usage.lastUsed.merging(chromeLastUsed) { max($0, $1) }
+    }
+
+    /// Copying a username, password or code, filling, and opening the website count as using an account. Looking at it does not.
+    /// A failed write only loses one ranking hint, so it does not interrupt the action.
+    private func recordUse(_ id: UUID) {
+        try? usage.record(id)
     }
 
     /// Fills the previous app. The panel hides first so keystrokes reach the app that was frontmost.
@@ -816,6 +979,7 @@ final class VaultSession: ObservableObject {
             return
         }
         onActivity?()
+        recordUse(id)
         let username = entry.username
         let password = entry.password
         // Password items have no username field to leave; Logins keep the Tab even without a saved username.
@@ -973,12 +1137,14 @@ final class VaultSession: ObservableObject {
         openedFiles[fileIndex].vault.entries[slot] = stored
     }
 
-    private func save() {
+    @discardableResult
+    private func save() -> Bool {
         persist(path: databaseURL.path)
     }
 
-    /// Writes one file. The merged list is never saved into a single database.
-    private func persist(path: String) {
+    /// Writes one file. The merged list is never saved into a single database. Returns whether the file was written.
+    @discardableResult
+    private func persist(path: String) -> Bool {
         onActivity?()
         let index = openedFiles.firstIndex { $0.url.path == path }
         var vault = index.map { openedFiles[$0].vault }
@@ -998,7 +1164,7 @@ final class VaultSession: ObservableObject {
         if VaultFormat.blocksImportSave(writesKDBX: writesKDBX, password: password) {
             message = "Set a master password before saving this database."
             NSSound.beep()
-            return
+            return false
         }
         let pending = index.flatMap { openedFiles[$0].pendingSaveURL?.path } ?? pendingImportPath(for: path)
         let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
@@ -1040,8 +1206,10 @@ final class VaultSession: ObservableObject {
                 masterPassword = password
             }
             publishCatalog()
+            return true
         } catch {
             NSSound.beep()
+            return false
         }
     }
 
@@ -1146,11 +1314,16 @@ final class TimerCancellable: Cancellable {
 // MARK: Helpers
 
 /// Accepts "example.com" as well as full URLs, since KeePass entries often hold bare hosts.
+/// The web address of an entry's website field. Only http and https open: an entry can come from an import or from Chrome,
+/// and Fill types the password into the front app after the open, so another scheme (android://, ssh://, file://) must not launch a handler.
+/// A bare host such as `github.com` or `localhost:3000` gets https.
 func webURL(_ raw: String) -> URL? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
-    if let url = URL(string: trimmed), url.scheme != nil { return url }
-    return URL(string: "https://" + trimmed)
+    let candidate = trimmed.contains("://") ? trimmed : "https://" + trimmed
+    guard let url = URL(string: candidate), url.host != nil,
+          let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+    return url
 }
 
 func groupedCode(_ code: String) -> String {

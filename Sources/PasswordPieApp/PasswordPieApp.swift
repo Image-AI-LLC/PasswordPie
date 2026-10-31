@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 pinned.forEach { $0.close() }
             }
             .store(in: &cancellables)
-        session.$entries
+        session.$entries.combineLatest(session.$liveEntries) { VaultSession.visibleEntries(saved: $0, live: $1) }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] entries in
                 self?.refreshPinnedEntry(entries)
