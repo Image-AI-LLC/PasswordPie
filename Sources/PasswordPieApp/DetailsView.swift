@@ -78,7 +78,10 @@ func showsPinButton(_ presentation: DetailsPresentation) -> Bool {
 
 /// The popover shows its buttons on hover. The pinned window keeps them visible so a field can be copied while another app is in front.
 func fieldActionsStayVisible(_ presentation: DetailsPresentation) -> Bool {
-    presentation == .pinned
+    switch presentation {
+    case .popover, .pinned:
+        return false
+    }
 }
 
 /// Why the Option-to-reveal flag changed. A local monitor never sees the key-up after another app is front.

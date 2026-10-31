@@ -47,9 +47,9 @@ final class FieldCopyTests: XCTestCase {
         XCTAssertFalse(showsPinButton(.pinned))
     }
 
-    func testPinnedFieldActionsStayVisible() {
+    func testFieldActionsShowOnHoverInThePopoverAndThePinnedWindow() {
         XCTAssertFalse(fieldActionsStayVisible(.popover))
-        XCTAssertTrue(fieldActionsStayVisible(.pinned))
+        XCTAssertFalse(fieldActionsStayVisible(.pinned))
     }
 
     func testTrashedOrRemovedAccountLeavesThePinnedWindow() {
@@ -80,18 +80,63 @@ final class FieldCopyTests: XCTestCase {
     func testOnlyTheCloseButtonDismissesAPinnedWindow() {
         XCTAssertFalse(pinnedWindowShouldClose(.resignKey))
         XCTAssertFalse(pinnedWindowShouldClose(.escape))
+        XCTAssertFalse(pinnedWindowShouldClose(.commandW))
         XCTAssertTrue(pinnedWindowShouldClose(.closeButton))
     }
 
+    func testCommandWIsNotAPinnedClose() {
+        let commandW = keyEvent(characters: "w", modifiers: .command)
+        let shifted = keyEvent(characters: "w", modifiers: [.command, .shift])
+        XCTAssertTrue(pinnedEventIsCommandW(commandW))
+        XCTAssertTrue(pinnedEventIsCommandW(shifted))
+        XCTAssertFalse(pinnedEventIsCommandW(keyEvent(characters: "w", modifiers: [])))
+        XCTAssertFalse(pinnedEventIsCommandW(keyEvent(characters: "q", modifiers: .command)))
+    }
+
+    func testEachAccountGetsItsOwnPinnedWindow() {
+        let first = UUID()
+        let second = UUID()
+        XCTAssertEqual(pinnedWindowPlacement(openIDs: [], id: first), .openNew(index: 0))
+        XCTAssertEqual(pinnedWindowPlacement(openIDs: [first], id: first), .orderFront)
+        XCTAssertEqual(pinnedWindowPlacement(openIDs: [first], id: second), .openNew(index: 1))
+    }
+
+    func testNewPinnedWindowsCascadeDownLeft() {
+        let size = CGSize(width: 400, height: 160)
+        let first = pinnedWindowOrigin(visibleMaxX: 1400, visibleMaxY: 900, size: size, index: 0)
+        let second = pinnedWindowOrigin(visibleMaxX: 1400, visibleMaxY: 900, size: size, index: 1)
+        XCTAssertEqual(first, CGPoint(x: 1400 - 400 - 24, y: 900 - 160 - 24))
+        XCTAssertEqual(second.x, first.x - 28)
+        XCTAssertEqual(second.y, first.y - 28)
+    }
+
     @MainActor
-    func testPinnedPanelFloatsAboveNormalWindowsUntilClosed() {
+    func testPinnedPanelSitsOneLevelUnderTheMenuLikeADetached1PasswordMini() {
         let panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 120))
-        XCTAssertEqual(panel.level, .floating)
-        XCTAssertGreaterThan(panel.level.rawValue, NSWindow.Level.normal.rawValue)
+        let menuLevel = Int(CGWindowLevelForKey(.mainMenuWindow))
+        XCTAssertEqual(panel.level, pinnedWindowLevel())
+        XCTAssertEqual(panel.level.rawValue, menuLevel - 2)
+        XCTAssertGreaterThan(panel.level.rawValue, NSWindow.Level.floating.rawValue)
+        XCTAssertLessThan(panel.level.rawValue, menuLevel - 1)
         XCTAssertFalse(panel.hidesOnDeactivate)
         XCTAssertTrue(panel.isFloatingPanel)
         XCTAssertTrue(panel.styleMask.contains(.closable))
         XCTAssertFalse(panel.styleMask.contains(.resizable))
         XCTAssertFalse(panel.isVisible)
     }
+}
+
+private func keyEvent(characters: String, modifiers: NSEvent.ModifierFlags) -> NSEvent {
+    NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        characters: characters,
+        charactersIgnoringModifiers: characters,
+        isARepeat: false,
+        keyCode: 13
+    )!
 }

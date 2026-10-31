@@ -646,18 +646,22 @@ shows as written.
 - **Details popover** — header (32 pt tile, `title`, edit pencil, pin, favourite
   star in `favorite` or `label-secondary`), then one field per value:
   username, password (+ strength), website, one-time password, custom fields,
-  notes, tags. Pin opens the same account in a floating utility window at the
-  top-right of the current screen and hides the menu. That window stays above
-  normal windows, including after PasswordPie deactivates, until its close
-  button. Escape, clicking elsewhere, and copying or opening a field do not
-  dismiss it. Locking the vault does. Pinning another account reuses the window.
+  notes, tags. Pin opens that account in its own utility window and hides the
+  menu. Each account has one window: pinning it again brings that window
+  forward and leaves it where it is. A new window starts at the top-right of
+  the current screen; each further window steps 28 pt down and left. The level
+  matches a detached 1Password mini: main-menu level minus 2, so it stays above
+  normal windows and under PasswordPie's menu, including after PasswordPie
+  deactivates. Only its close button dismisses it. Command-W, Escape, clicking
+  elsewhere, and copying or opening a field do not. Locking the vault, or
+  trashing the account, does.
 - **Detail field** — `label` over the value, 0.5 pt ink 10 % line on top.
   States: normal; focused (keyboard, `field-focus` tint); hover (a small
   button at the right. Clicking the word runs the field's primary action.
   Username, password, notes, one-time password and custom fields say "copy".
   A password adds an arrow: reveal / conceal and large type. A website says
   "open" and adds an arrow: copy, open and fill. Other fields have no arrow.
-  In the pinned window the button stays visible without hover.); flashing
+  The pinned window uses the same hover as the popover.); flashing
   (Return: the button shows at 40 % for 0.3 s, then the primary action runs.
   In the popover, copy and open hide the panel.) Masked secrets show 8 to 16
   bullets; holding Option or "reveal" shows them in `body-code`. The pinned

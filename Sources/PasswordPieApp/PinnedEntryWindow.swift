@@ -3,13 +3,41 @@ import PasswordPieCore
 import SwiftUI
 
 enum PinnedWindowCloseReason: Equatable {
-    case closeButton, resignKey, escape
+    case closeButton, resignKey, escape, commandW
 }
 
 /// A pinned account stays up while its fields are copied into another app.
-/// Losing focus or pressing Escape must not dismiss it. Only the close button does.
+/// Losing focus, pressing Escape, or Command-W must not dismiss it. Only the close button does.
 func pinnedWindowShouldClose(_ reason: PinnedWindowCloseReason) -> Bool {
     reason == .closeButton
+}
+
+/// Command-W reaches `performClose` as a key-down. The close button is a mouse event, so it still closes.
+func pinnedEventIsCommandW(_ event: NSEvent) -> Bool {
+    guard event.type == .keyDown, event.modifierFlags.contains(.command) else { return false }
+    return event.charactersIgnoringModifiers?.lowercased() == "w"
+}
+
+enum PinnedWindowPlacement: Equatable {
+    case orderFront
+    case openNew(index: Int)
+}
+
+/// One window per account. Pinning an account that is already open brings that window forward.
+func pinnedWindowPlacement(openIDs: [UUID], id: UUID) -> PinnedWindowPlacement {
+    openIDs.contains(id) ? .orderFront : .openNew(index: openIDs.count)
+}
+
+/// New windows start at the top-right and step down-left so they do not stack on the same origin.
+func pinnedWindowOrigin(visibleMaxX: CGFloat, visibleMaxY: CGFloat, size: CGSize, index: Int) -> CGPoint {
+    let step = 28 * CGFloat(index)
+    return CGPoint(x: visibleMaxX - size.width - 24 - step, y: visibleMaxY - size.height - 24 - step)
+}
+
+/// Detached 1Password mini (`OPHelperWindow.setDetached:` in 6.8.9) uses the main-menu level minus 2.
+/// The attached mini, and PasswordPie's own menu, sit one level higher.
+func pinnedWindowLevel() -> NSWindow.Level {
+    NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) - 2)
 }
 
 /// The entry still shown in the pinned window. Trash and deletion both return nil, so the window closes.
@@ -28,8 +56,8 @@ final class PinnedEntryPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        // isFloatingPanel turns hidesOnDeactivate back on. Set it after, or clicking the form hides the account.
-        level = .floating
+        // isFloatingPanel turns hidesOnDeactivate back on and resets the level. Set both after.
+        level = pinnedWindowLevel()
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
         isReleasedWhenClosed = false
@@ -38,6 +66,12 @@ final class PinnedEntryPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performClose(_ sender: Any?) {
+        let commandW = NSApp.currentEvent.map(pinnedEventIsCommandW) ?? false
+        guard pinnedWindowShouldClose(commandW ? .commandW : .closeButton) else { return }
+        super.performClose(sender)
+    }
 
     override func resignKey() {
         super.resignKey()

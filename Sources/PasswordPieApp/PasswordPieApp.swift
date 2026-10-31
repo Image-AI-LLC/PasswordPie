@@ -41,10 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotKeyHandlerInstalled = false
     private let hotKeySignature: OSType = 0x50506965
     private(set) var largeTypeWindow: NSWindow?
-    private var pinnedEntryWindow: PinnedEntryPanel?
-    private var pinnedModel: DetailsModel?
-    private var pinnedSnapshot: VaultEntry?
-    private var pinnedContentHeight: CGFloat = 0
+    private struct PinnedAccount {
+        let panel: PinnedEntryPanel
+        var model: DetailsModel
+        var snapshot: VaultEntry
+        var contentHeight: CGFloat
+    }
+    private var pinnedAccounts: [UUID: PinnedAccount] = [:]
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
@@ -79,7 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .sink { [weak self] _ in
                 self?.largeTypeWindow?.close()
                 self?.largeTypeWindow = nil
-                self?.pinnedEntryWindow?.close()
+                let pinned = Array(self?.pinnedAccounts.values.map(\.panel) ?? [])
+                pinned.forEach { $0.close() }
             }
             .store(in: &cancellables)
         session.$entries
@@ -145,63 +149,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         largeTypeWindow = window
     }
 
-    /// Shows `entry` in the floating window. Pinning another account reuses the window and keeps its place.
+    /// Shows `entry` in its own window. Pinning it again brings that window forward and leaves it in place.
     func showPinnedEntry(_ entry: VaultEntry) {
-        let sameAccount = pinnedModel?.entryID == entry.id
+        switch pinnedWindowPlacement(openIDs: Array(pinnedAccounts.keys), id: entry.id) {
+        case .orderFront:
+            updatePinned(entry)
+            pinnedAccounts[entry.id]?.panel.orderFrontRegardless()
+        case .openNew(let index):
+            let model = pinnedModel(for: entry, previous: nil)
+            let panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160))
+            panel.delegate = self
+            panel.title = model.title
+            panel.contentView = FirstMouseHostingView(rootView: pinnedRoot(model))
+            pinnedAccounts[entry.id] = PinnedAccount(panel: panel, model: model, snapshot: entry, contentHeight: 0)
+            placePinned(panel, index: index)
+            panel.orderFrontRegardless()
+        }
+    }
+
+    private func updatePinned(_ entry: VaultEntry) {
+        guard var account = pinnedAccounts[entry.id] else { return }
+        let model = pinnedModel(for: entry, previous: account.model)
+        account.model = model
+        account.snapshot = entry
+        account.panel.title = model.title
+        if let host = account.panel.contentView as? FirstMouseHostingView<DetailsView> {
+            host.rootView = pinnedRoot(model)
+        }
+        pinnedAccounts[entry.id] = account
+    }
+
+    private func pinnedModel(for entry: VaultEntry, previous: DetailsModel?) -> DetailsModel {
         let model = DetailsModel(entry: entry, session: session, presentation: .pinned, done: {})
-        if sameAccount, let previous = pinnedModel {
+        if let previous {
             model.focused = min(previous.focused, max(model.fields.count - 1, 0))
             model.revealed = previous.revealed
         }
-        pinnedModel = model
-        pinnedSnapshot = entry
-        let root = DetailsView(model: model) { [weak self] height in
-            self?.resizePinned(height: height)
+        return model
+    }
+
+    private func pinnedRoot(_ model: DetailsModel) -> DetailsView {
+        DetailsView(model: model) { [weak self] height in
+            self?.resizePinned(id: model.entryID, height: height)
         }
-        let panel: PinnedEntryPanel
-        if let existing = pinnedEntryWindow {
-            panel = existing
-            if let host = existing.contentView as? FirstMouseHostingView<DetailsView> {
-                host.rootView = root
-            }
-        } else {
-            panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160))
-            panel.delegate = self
-            panel.contentView = FirstMouseHostingView(rootView: root)
-            pinnedEntryWindow = panel
-            pinnedContentHeight = 0
-            placePinned(panel)
-        }
-        panel.title = model.title
-        panel.orderFrontRegardless()
     }
 
     private func refreshPinnedEntry(_ entries: [VaultEntry]) {
-        guard let pinnedSnapshot else { return }
-        guard let entry = activePinnedEntry(entries, id: pinnedSnapshot.id) else {
-            pinnedEntryWindow?.close()
-            return
+        for id in Array(pinnedAccounts.keys) {
+            guard let snapshot = pinnedAccounts[id]?.snapshot else { continue }
+            guard let entry = activePinnedEntry(entries, id: id) else {
+                pinnedAccounts[id]?.panel.close()
+                continue
+            }
+            guard entry != snapshot else { continue }
+            showPinnedEntry(entry)
         }
-        guard entry != pinnedSnapshot else { return }
-        showPinnedEntry(entry)
     }
 
     /// Keeps the title bar where the user put it while the content grows or shrinks.
-    private func resizePinned(height: CGFloat) {
-        guard height != pinnedContentHeight, let panel = pinnedEntryWindow else { return }
-        pinnedContentHeight = height
+    private func resizePinned(id: UUID, height: CGFloat) {
+        guard var account = pinnedAccounts[id], height != account.contentHeight else { return }
+        account.contentHeight = height
+        let panel = account.panel
         let oldMaxY = panel.frame.maxY
         panel.setContentSize(NSSize(width: 400, height: height))
         var frame = panel.frame
         frame.origin.y += oldMaxY - frame.maxY
         panel.setFrame(frame, display: true)
+        pinnedAccounts[id] = account
     }
 
-    private func placePinned(_ panel: NSPanel) {
+    private func placePinned(_ panel: NSPanel, index: Int) {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let frame = panel.frame
-        let origin = NSPoint(x: visible.maxX - frame.width - 24, y: visible.maxY - frame.height - 24)
+        let origin = pinnedWindowOrigin(
+            visibleMaxX: visible.maxX,
+            visibleMaxY: visible.maxY,
+            size: panel.frame.size,
+            index: index
+        )
         panel.setFrameOrigin(origin)
     }
 
@@ -255,11 +281,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
-        } else if window === pinnedEntryWindow {
-            pinnedEntryWindow = nil
-            pinnedModel = nil
-            pinnedSnapshot = nil
-            pinnedContentHeight = 0
+        } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
+            pinnedAccounts[id] = nil
         }
     }
 
