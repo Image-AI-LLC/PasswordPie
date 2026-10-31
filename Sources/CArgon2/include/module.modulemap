@@ -1,0 +1,4 @@
+module CArgon2 {
+    header "argon2_shim.h"
+    export *
+}

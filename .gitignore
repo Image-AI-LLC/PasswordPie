@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+*.xcodeproj/
+PasswordPie.app/
+交付报告.html
+交付报告.md

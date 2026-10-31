@@ -1,0 +1,1048 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PasswordPie Satin Vault</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  PasswordPie design system preview. Everything below is rendered from TOKENS (the JS table near the end),
+  which mirrors the YAML front matter of DESIGN.md. Edit tokens in the Token manager, then export YAML/CSS
+  and copy the values back into DESIGN.md. Palette.swift holds only five of these colours (see DESIGN.md Known Gaps).
+  Works offline; images use repo-relative paths.
+-->
+<style>
+  /* Layout: one reading column (max 1080) for the spec; product samples are drawn at real point size. */
+  :root {
+    --page-bg: #F2F3F5; --page-card: #FFFFFF; --page-fg: #1C1F23; --page-muted: #5F6873; --page-line: #DCDFE4;
+    --page-accent: #3A3F46; --page-code-bg: #EBEDF0;
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", system-ui, sans-serif;
+    --ui-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "PingFang SC", system-ui, sans-serif;
+    --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --page-bg: #121417; --page-card: #1B1E22; --page-fg: #E8EBEF; --page-muted: #9AA3AD; --page-line: #2C3137;
+    --page-accent: #D7DCE1; --page-code-bg: #23272C; color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --page-bg: #121417; --page-card: #1B1E22; --page-fg: #E8EBEF; --page-muted: #9AA3AD; --page-line: #2C3137;
+    --page-accent: #D7DCE1; --page-code-bg: #23272C; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page-bg); color: var(--page-fg); font: 14px/1.55 var(--ui); }
+  main { max-width: 1080px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 32px 64px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  main > * { min-width: 0; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; }
+  h2.sec { font: 600 12px/1.3 var(--ui); letter-spacing: .1em; text-transform: uppercase; color: var(--page-muted);
+    padding-bottom: 10px; border-bottom: 1px solid var(--page-line); margin-bottom: 18px; }
+  h3 { font: 600 14px/1.3 var(--ui); margin-bottom: 10px; }
+  p { margin: 0; max-width: 68ch; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--page-code-bg); padding: 1px 5px; border-radius: 4px; }
+  .muted { color: var(--page-muted); }
+  .grid { display: grid; gap: 16px; }
+  .card { background: var(--page-card); border: 1px solid var(--page-line); border-radius: 10px; padding: 18px; min-width: 0; }
+  .scroll { overflow-x: auto; }
+
+  /* Header */
+  .masthead { display: grid; grid-template-columns: auto 1fr; gap: 22px; align-items: center; }
+  .masthead img { width: 112px; height: 112px; border-radius: 24px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .wordmark { font: var(--f-brand-wordmark); letter-spacing: var(--ls-brand-wordmark); }
+  .wordmark small { font: 400 15px/1.3 var(--ui); color: var(--page-muted); display: block; margin-top: 6px; letter-spacing: 0; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .btn { font: 500 13px/1 var(--ui); padding: 8px 12px; border-radius: 7px; border: 1px solid var(--page-line);
+    background: var(--page-card); color: var(--page-fg); cursor: pointer; }
+  .btn:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--page-accent); outline-offset: 2px; }
+  @media (max-width: 560px) { .masthead { grid-template-columns: 1fr; } }
+
+  /* Brand */
+  .brand-row { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-end; }
+  .brand-row figure { margin: 0; display: grid; gap: 6px; justify-items: center; }
+  figcaption { font: 400 11px/1.3 var(--mono); color: var(--page-muted); }
+  .menubar { display: flex; align-items: center; justify-content: flex-end; gap: 14px; height: 24px; padding: 0 12px;
+    width: 220px; border-radius: 6px; font: 500 13px/1 var(--ui); }
+  .menubar.light { background: #ECECEE; color: #000; }
+  .menubar.dark { background: #28282A; color: #fff; }
+  .menubar svg { width: 18px; height: 18px; display: block; }
+  .menubar .sel { background: rgba(127,127,127,.28); border-radius: 4px; padding: 3px; }
+
+  /* Swatches */
+  .swatch-groups { display: grid; gap: 22px; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .sw { border: 1px solid var(--page-line); border-radius: 8px; overflow: hidden; background: var(--page-card); }
+  .sw .chip { height: 56px; display: flex; align-items: flex-end; justify-content: flex-end; padding: 6px;
+    font: 500 10px/1 var(--mono); }
+  .sw .meta { padding: 8px 10px; display: grid; gap: 2px; }
+  .sw .meta b { font: 600 12px/1.3 var(--ui); overflow-wrap: anywhere; }
+  .sw .meta span { font: 400 11px/1.3 var(--mono); color: var(--page-muted); overflow-wrap: anywhere; }
+
+  /* Type specimens */
+  .type-table { width: 100%; border-collapse: collapse; }
+  .type-table td, .type-table th { text-align: left; vertical-align: baseline; padding: 12px 10px; border-bottom: 1px solid var(--page-line); }
+  .type-table th { font: 600 11px/1.3 var(--ui); color: var(--page-muted); letter-spacing: .04em; }
+  .type-table .spec { font: 400 11px/1.45 var(--mono); color: var(--page-muted); white-space: nowrap; }
+  .type-table .name { font: 600 12px/1.3 var(--mono); white-space: nowrap; }
+  .type-table .sample { color: var(--page-fg); min-width: 260px; }
+
+  /* Shapes, spacing, elevation */
+  .shape-row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+  .shape { width: 72px; height: 52px; background: var(--c-door); border: 1px solid var(--c-door-edge-dark); }
+  .space-bar { height: 12px; background: var(--page-accent); border-radius: 2px; }
+  .space-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: center; font: 400 12px/1.3 var(--mono); }
+
+  /* ---------- Product components (drawn with product tokens) ---------- */
+  .prod { font-family: var(--ui); -webkit-font-smoothing: antialiased; }
+  .stage { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .state { display: grid; gap: 6px; justify-items: start; }
+  .state > span, .lbl { font: 400 11px/1.3 var(--mono); color: var(--page-muted); }
+  /* A state table: product column(s) at real size, then a label. Lives in .scroll so it never widens the page. */
+  .states { display: grid; gap: 10px 16px; align-items: center; width: max-content; }
+
+  /* Appearance scope. Every menu-side role reads these, so one class switches a sample to dark. */
+  .ap { --m-material: var(--c-menu-material); --m-label: var(--c-label); --m-label2: var(--c-label-secondary); --m-label3: var(--c-label-tertiary);
+    --m-hdr: var(--c-group-header-text); --m-ink: var(--c-ink); --m-sel: var(--c-selection); --m-well: var(--c-well);
+    --m-shadow: 0 10px 28px rgba(0,0,0,.25), 0 0 0 .5px rgba(0,0,0,.22); color: var(--m-label); }
+  .ap.dark { --m-material: var(--c-menu-material-dark); --m-label: var(--c-label-dark); --m-label2: var(--c-label-secondary-dark);
+    --m-label3: var(--c-label-tertiary-dark); --m-hdr: var(--c-group-header-text-dark); --m-ink: var(--c-ink-dark);
+    --m-sel: var(--c-selection-dark); --m-well: var(--c-well-dark);
+    --m-shadow: 0 10px 28px rgba(0,0,0,.5), 0 0 0 .5px rgba(255,255,255,.16); }
+  .ap { --m-ink3: color-mix(in srgb, var(--m-ink) 3%, transparent); --m-ink10: color-mix(in srgb, var(--m-ink) 10%, transparent);
+    --m-ink12: color-mix(in srgb, var(--m-ink) 12%, transparent); --m-ink20: color-mix(in srgb, var(--m-ink) 20%, transparent);
+    --m-ink25: color-mix(in srgb, var(--m-ink) 25%, transparent); }
+  /* Desktop behind the samples, so the material's translucency reads. Page decoration, not a token. */
+  .desk { padding: 20px; border-radius: 12px; background: linear-gradient(135deg, #B7C6D6 0%, #D9D0C2 100%); width: max-content; }
+  .desk.dark { background: linear-gradient(135deg, #1B2531 0%, #33292A 100%); }
+  .deskbar { height: 24px; margin: 0 -20px; padding: 0 20px; display: flex; align-items: center; gap: 14px;
+    background: rgba(246,246,246,.72); color: #000; font: 500 13px/1 var(--ui); }
+  .deskbar .mb { width: 26px; height: 22px; display: grid; place-items: center; border-radius: 4px; background: rgba(0,0,0,.12); }
+  .deskbar svg { width: 18px; height: 18px; }
+
+  /* System menu material (stand-in): blur + translucent fill + stand-in window shadow. */
+  .mat { background: var(--m-material); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6);
+    border-radius: var(--r-menu); box-shadow: var(--m-shadow); }
+  .mpanel { width: max-content; min-width: var(--s-panel-width); overflow: hidden; flex: none; }
+  .mpanel.attached { border-top-left-radius: 0; border-top-right-radius: 0; }
+  .msub { width: max-content; min-width: 50px; padding: var(--s-submenu-inset) 0; overflow: hidden; flex: none; }
+
+  /* Header: 40 pt bar + 5 pt band; separator line at y = 40 */
+  .mhead { position: relative; height: var(--s-header-height); }
+  .mhead .logo { position: absolute; left: 4px; top: 4px; width: var(--s-logo-size); height: var(--s-logo-size); }
+  .mhead .q { position: absolute; left: var(--s-row-title-x); right: 36px; top: 8px; height: var(--s-search-field-height); display: flex; align-items: center;
+    font: var(--f-search); letter-spacing: var(--ls-search); color: var(--m-label); white-space: nowrap; overflow: hidden; }
+  .mhead .q.ph { color: var(--m-label2); }
+  .mhead .q .caret { width: 1px; height: 20px; background: var(--m-label); margin-left: 1px; }
+  .mhead .gear { position: absolute; right: 4px; top: 5px; width: 30px; height: 30px; display: grid; place-items: center; color: var(--m-label2); }
+  .mhead .gear svg { width: 16px; height: 16px; }
+  .mhead.sep::after { content: ""; position: absolute; left: 0; right: 0; top: 40px; height: 1px; background: var(--m-ink25); }
+
+  /* Menu rows (MenuListView.swift): 21 pt items, 11 pt separators, 16 pt group headers */
+  .mrow { position: relative; height: var(--s-row-height); display: flex; align-items: center; padding: 0 20px 0 var(--s-row-title-x);
+    font: var(--f-menu-item); letter-spacing: var(--ls-menu-item); color: var(--m-label); white-space: nowrap; }
+  .mrow.arrow { padding-right: 48px; }
+  .mrow .tt, .mrow .un { overflow: hidden; text-overflow: ellipsis; }
+  .mrow .un { color: var(--m-label2); }
+  .mrow .ic { position: absolute; left: var(--s-row-icon-x); top: calc((var(--s-row-height) - var(--s-row-icon)) / 2);
+    width: var(--s-row-icon); height: var(--s-row-icon); display: grid; place-items: center; color: var(--tint); }
+  .mrow .ic svg.sym { width: 15px; height: 15px; display: block; }
+  .mrow .ic .badge { position: absolute; left: 9px; top: 9px; width: 9px; height: 9px; color: var(--c-favorite); }
+  /* Arrow: 8.5 x 10 triangle centred in a 16 pt slot that starts 26 pt from the right edge. */
+  .mrow .arr { position: absolute; right: 13.75px; top: calc((var(--s-row-height) - 10px) / 2); width: 8.5px; height: 10px; fill: var(--c-menu-arrow); }
+  .mrow.sel { background: var(--m-sel); color: var(--c-on-selection); }
+  .mrow.sel .un, .mrow.sel .ic { color: var(--c-on-selection); }
+  .mrow.sel .ic .badge { color: var(--c-favorite); }
+  .mrow.sel .arr { fill: var(--c-on-selection); }
+  .mrow.more { padding-left: 42px; color: var(--m-label3); }
+  .mrow.more.sel { color: var(--c-on-selection); }
+  .mrow.none { color: var(--c-label-disabled); }
+  .msep { position: relative; height: var(--s-separator-height); }
+  .msep::after { content: ""; position: absolute; left: 0; right: 0; top: calc(var(--s-separator-height) / 2 - .5px); height: 1px; background: var(--m-ink25); }
+  .mgh { height: var(--s-group-header-height); display: flex; align-items: center; padding-left: 6px; background: var(--m-ink3);
+    border-top: 1px solid var(--m-ink20); border-bottom: 1px solid var(--m-ink20);
+    font: var(--f-caption); letter-spacing: var(--ls-caption); text-transform: uppercase; color: var(--m-hdr); white-space: nowrap; }
+
+  /* Letter tile: 16 pt, radius 22 %, hashed hue gradient, 0.5 pt stroke */
+  .tile { width: var(--s-row-icon); height: var(--s-row-icon); border-radius: var(--r-item-icon); display: grid; place-items: center;
+    color: var(--c-on-tile); font: var(--f-tile-letter); box-shadow: inset 0 0 0 .5px var(--c-tile-stroke); }
+  .tile.lg { width: var(--s-details-tile); height: var(--s-details-tile); font-size: calc(var(--t-tile-letter-size) * 2); }
+
+  /* Details popover (system popover chrome is a stand-in) */
+  .pop { position: relative; width: var(--s-details-width); max-height: var(--s-details-max-height); border-radius: 10px; flex: none; }
+  .pop .tip { position: absolute; left: -9px; width: 9px; height: 18px; }
+  .pop .tip path { fill: var(--m-material); }
+  .dhead { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  .dhead .tt { flex: 1; min-width: 0; font: var(--f-title); letter-spacing: var(--ls-title); color: var(--m-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dhead .g { color: var(--m-label2); display: grid; place-items: center; }
+  .dhead .g svg { display: block; }
+  .dfield { position: relative; min-height: var(--s-details-row-min-height); padding: 5px 14px; display: grid; gap: 2px; align-content: center;
+    box-shadow: inset 0 .5px 0 var(--m-ink10); width: var(--s-details-width); }
+  .dfield.focus { background: var(--c-field-focus); }
+  .dfield .l { font: var(--f-label); letter-spacing: var(--ls-label); color: var(--m-label2); }
+  .dfield .v { font: var(--f-body); letter-spacing: var(--ls-body); color: var(--m-label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dfield .v.code { font: var(--f-body-code); letter-spacing: var(--ls-body-code); }
+  .dfield .v.url { color: var(--c-accent); }
+  .dfield .v.notes { white-space: normal; }
+  .dfield .act { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+  .dfield .act.flash { opacity: .4; }
+  /* Small copy button. The word copies. An arrow is a separate hit target. */
+  .cbtn { display: inline-flex; align-items: stretch; border-radius: 5px; background: var(--m-well);
+    box-shadow: 0 0 0 .5px var(--m-ink20), 0 .5px 1.5px var(--m-ink20); font: var(--f-caption); letter-spacing: var(--ls-caption); color: var(--m-label); }
+  .cbtn .word { padding: 1px 7px; }
+  .cbtn .caret { display: grid; place-items: center; width: 16px; border-left: .5px solid var(--m-ink20); }
+  .cbtn svg { width: 7px; height: 5px; }
+  .meter { position: relative; height: 5px; margin: 4px 0; border-radius: var(--r-capsule); background: var(--m-ink12); }
+  .meter i { position: absolute; left: 0; top: 0; bottom: 0; min-width: 6px; border-radius: inherit; }
+  .otp { display: flex; align-items: center; gap: 8px; font: var(--f-code-lg); letter-spacing: var(--ls-code-lg); color: var(--c-accent); }
+  .otp.urgent { color: var(--c-system-red); }
+  .otp svg { width: 14px; height: 14px; flex: none; }
+
+  /* Password Generator child window (system controls are stand-ins) */
+  .gen { width: var(--s-generator-width); height: var(--s-generator-height); padding: 12px 14px; display: flex; flex-direction: column; gap: 12px;
+    font: var(--f-control); letter-spacing: var(--ls-control); color: var(--m-label); flex: none; }
+  .gen .pw { display: flex; gap: 6px; align-items: center; }
+  .gen .well { width: 310px; height: 28px; padding: 0 8px; display: flex; align-items: center; border-radius: var(--r-well); background: var(--m-well);
+    box-shadow: inset 0 0 0 .5px var(--m-ink25); font: var(--f-code-md); letter-spacing: var(--ls-code-md); white-space: nowrap; overflow: hidden; }
+  .sysbtn { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 5px; background: var(--m-well);
+    box-shadow: 0 0 0 .5px var(--m-ink20), 0 .5px 1.5px var(--m-ink20); white-space: nowrap; }
+  .seg { display: flex; padding: 2px; border-radius: 6px; background: var(--m-ink10); }
+  .seg span { flex: 1; text-align: center; padding: 2px 0; border-radius: 5px; }
+  .seg .on { background: var(--m-well); box-shadow: 0 .5px 1.5px var(--m-ink25); }
+  .srow { display: grid; grid-template-columns: 70px 1fr 24px; gap: 8px; align-items: center; }
+  .srow .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .slider { position: relative; height: 4px; border-radius: 2px; background: var(--m-ink12); }
+  .slider i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: var(--c-accent); }
+  .slider b { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #fff;
+    box-shadow: 0 0 0 .5px rgba(0,0,0,.25), 0 1px 2px rgba(0,0,0,.25); }
+  .chk { display: flex; align-items: center; gap: 6px; }
+  .chk i { width: 14px; height: 14px; border-radius: 3.5px; background: var(--c-accent); display: grid; place-items: center; }
+  .prog { width: 90px; height: 5px; border-radius: 3px; background: var(--m-ink12); position: relative; overflow: hidden; }
+  .prog i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--c-accent); }
+
+  /* Door (lock screen) */
+  .door-field { display: flex; width: var(--s-door-field-width); height: var(--s-door-field-height); border: 1px solid var(--c-door-field-frame);
+    border-radius: var(--r-field-group); overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,.9); flex: none; }
+  .door-field .in { position: relative; flex: 1; display: flex; align-items: center; padding: 0 10px; background: var(--c-door-field);
+    font: var(--f-menu-item); letter-spacing: var(--ls-menu-item); color: var(--c-label-tertiary); /* system placeholder grey, close to label-tertiary */ }
+  .door-field .in::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 6px; background: linear-gradient(var(--c-door-field-shade), transparent); }
+  .door-field .in.filled { color: var(--c-label); letter-spacing: 1px; }
+  .door-field .split { width: 1px; background: var(--c-door-field-split); }
+  .door-field .db { width: 40px; display: grid; place-items: center; color: var(--c-door-button-glyph);
+    background: linear-gradient(var(--c-door-button-top), var(--c-door-button-bottom)); }
+  .door-field .db.touch { width: 38px; }
+  .door-field .db.pressed { background: linear-gradient(var(--c-door-button-pressed-top), var(--c-door-button-pressed-bottom)); }
+  .engraved { text-shadow: 0 1px 0 rgba(255,255,255,.7); }
+  .door-err { font: var(--f-caption); letter-spacing: var(--ls-caption); color: var(--c-danger); text-shadow: 0 1px 0 rgba(255,255,255,.6); text-align: center; }
+  .largetype { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--c-large-type-bg);
+    border-radius: var(--r-large-type); padding: 24px; font: var(--f-display-code); letter-spacing: var(--ls-display-code); max-width: 100%; }
+  .lt-g { display: inline-flex; border-radius: 8px; padding: 4px 8px; }
+  .lt-g.even { background: var(--c-large-type-stripe); }
+  .lt-g.odd { background: var(--c-large-type-stripe-alt); }
+  .lt-letter { color: var(--c-on-large-type); }
+  .lt-digit { color: var(--c-on-large-type-digit); }
+  .lt-symbol { color: var(--c-on-large-type-symbol); }
+  .lt-space { color: var(--c-on-large-type-space); }
+
+  /* Locked panel */
+  .panel { width: var(--s-panel-width); border-radius: var(--r-panel-locked); overflow: hidden; flex: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25), 0 0 0 .5px rgba(0,0,0,.25); }
+  .locked { height: var(--s-locked-height); position: relative; background: var(--c-door); }
+  .seam { position: absolute; left: 0; right: 0; top: calc(var(--s-door-height) - 21px); height: 42px; }
+  .seam i { display: block; }
+  .dialwrap { position: absolute; left: 50%; top: var(--s-door-height); width: var(--s-dial-size); height: var(--s-dial-size); transform: translate(-50%, -50%); }
+  .door-text { position: absolute; left: 0; right: 0; text-align: center; }
+  .door-name { top: 154px; font: var(--f-caption-strong); letter-spacing: var(--ls-caption-strong); color: var(--c-text-door); }
+  .door-hint { top: 171px; font: var(--f-caption); letter-spacing: var(--ls-caption); color: var(--c-text-door-hint); }
+  .door-row { position: absolute; top: 196px; left: 0; right: 0; display: flex; justify-content: center; }
+  .door-links { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; justify-content: center; gap: 14px;
+    font: var(--f-label); letter-spacing: var(--ls-label); color: var(--c-text-door-hint); }
+
+  /* Token manager */
+  .tm { display: grid; gap: 12px; }
+  .tm table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .tm td, .tm th { padding: 6px 8px; border-bottom: 1px solid var(--page-line); text-align: left; vertical-align: middle; }
+  .tm th { font: 600 11px/1.3 var(--ui); color: var(--page-muted); }
+  .tm input[type=text], .tm input[type=number] { font: 400 12px/1.2 var(--mono); width: 100%; min-width: 80px; padding: 5px 6px;
+    border: 1px solid var(--page-line); border-radius: 5px; background: var(--page-bg); color: var(--page-fg); }
+  .tm input[type=color] { width: 32px; height: 24px; padding: 0; border: 1px solid var(--page-line); border-radius: 4px; background: none; }
+  .tm .changed td { background: color-mix(in srgb, #F5B833 14%, transparent); }
+  .tm textarea { width: 100%; min-height: 220px; font: 400 12px/1.45 var(--mono); padding: 10px; border: 1px solid var(--page-line);
+    border-radius: 8px; background: var(--page-bg); color: var(--page-fg); }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tabs .btn[aria-pressed="true"] { background: var(--page-accent); color: var(--page-card); border-color: var(--page-accent); }
+  @media (prefers-reduced-motion: no-preference) { .btn { transition: background .15s ease-out; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="masthead">
+    <img src="Assets/AppIcon.icon/Assets/tile.png" alt="PasswordPie app icon: satin shield with a keyhole on graphite">
+    <div>
+      <h1 class="wordmark">PasswordPie <small>Satin Vault — design system. Source of truth: <code>DESIGN.md</code>. This page renders its tokens.</small></h1>
+      <div class="toolbar">
+        <button class="btn" id="theme-toggle" type="button">Page theme: system</button>
+        <a class="btn" href="#tokens" style="text-decoration:none">Token manager ↓</a>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <h2 class="sec">Overview</h2>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));">
+      <div class="card"><h3>A door, then a menu</h3><p class="muted">Locked: a 300 × 280 pt brushed-grey door with a dial on the seam. Unlocked: the same window becomes a native menu with cascading submenus and a details popover.</p></div>
+      <div class="card"><h3>A menu, not a window</h3><p class="muted">21 pt rows, 14 pt text, a flat selection fill, and the keyboard stays in the search field. Width and height follow the rows.</p></div>
+      <div class="card"><h3>Native, not themed</h3><p class="muted">System font, SF Symbols, the menu material and semantic colours, so the menu follows light and dark. The door stays light; brand graphite stays outside the panel.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Brand</h2>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+      <div class="card">
+        <h3>App icon</h3>
+        <p class="muted" style="margin-bottom:14px">Full-bleed art; macOS applies the squircle. Shown here with a CSS squircle approximation.</p>
+        <div class="brand-row">
+          <figure><img src="Assets/AppIcon.icon/Assets/tile.png" width="128" height="128" style="border-radius:28px" alt=""><figcaption>128</figcaption></figure>
+          <figure><img src="Assets/AppIcon.icon/Assets/tile.png" width="64" height="64" style="border-radius:14px" alt=""><figcaption>64</figcaption></figure>
+          <figure><img src="Assets/AppIcon.icon/Assets/tile.png" width="32" height="32" style="border-radius:7px" alt=""><figcaption>32</figcaption></figure>
+          <figure><img src="Assets/AppIcon.icon/Assets/tile.png" width="16" height="16" style="border-radius:4px" alt=""><figcaption>16</figcaption></figure>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Menu bar mark</h3>
+        <p class="muted" style="margin-bottom:14px">18 × 18 pt template image (<code>MenuBarIcon.swift</code>); the system tints it.</p>
+        <div class="grid" style="gap:10px">
+          <div class="menubar light"><span>Wi‑Fi</span><span class="mb"></span><span>Fri 10:24</span></div>
+          <div class="menubar dark"><span>Wi‑Fi</span><span class="mb"></span><span>Fri 10:24</span></div>
+          <div class="menubar dark"><span>Wi‑Fi</span><span class="mb sel"></span><span>Fri 10:24</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Wordmark</h3>
+        <p class="muted" style="margin-bottom:14px"><code>brand-wordmark</code> on graphite. Never translated.</p>
+        <div id="wordmark-demo" style="border-radius:12px; padding:22px; display:flex; align-items:center; gap:14px;">
+          <img src="Assets/AppIcon.icon/Assets/tile.png" width="44" height="44" style="border-radius:10px" alt="">
+          <span class="tok-brand-wordmark" style="color:var(--c-on-brand)">PasswordPie</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Colors</h2>
+    <p class="muted" style="margin-bottom:14px">Menu colours are system colours resolved on macOS 27 with the default blue accent; <code>-dark</code> tokens are the dark appearance. <code>menu-material</code> is a preview stand-in for the system menu material. Translucent values are shown over a checkerboard.</p>
+    <div class="swatch-groups" id="swatches"></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Typography — Latin</h2>
+    <p class="muted" style="margin-bottom:14px">SF Pro + SF Mono (macOS system). On other systems this page falls back to the local UI font. Samples use real PasswordPie copy.</p>
+    <div class="card scroll" style="margin-bottom:16px"><table class="type-table">
+      <tr><th>Family</th><th>Used for</th><th>Sample</th></tr>
+      <tr><td class="name">SF Pro Text</td><td class="muted">Search, menu rows, titles, body, captions, labels, controls</td><td class="sample" style="font-family:var(--ui)">Aa Gg 0123 ⌘ ⌥ ⇧ · Search PasswordPie</td></tr>
+      <tr><td class="name">SF Pro Display</td><td class="muted">Wordmark only (brand-wordmark)</td><td class="sample" style="font-family:var(--ui-display);font-weight:600">PasswordPie</td></tr>
+      <tr><td class="name">SF Mono</td><td class="muted">Secrets, OTP, generated strings, paths</td><td class="sample" style="font-family:var(--mono)">x7#Rq-9vLm!2 · 482 913</td></tr>
+      <tr><td class="name">PingFang SC</td><td class="muted">CJK fallback through the system cascade; no CJK font is bundled</td><td class="sample" lang="zh-CN" style="font-family:var(--ui)">密码保险箱</td></tr>
+    </table>
+    <p class="muted" style="margin-top:12px">Text tokens use weights 400, 500 and 600; line height is the font default (1.18). Glyphs are not type tokens: SF Symbols are 8, 13, 15, 16 and 19 pt (Touch ID light), and the submenu arrow is a drawn 8.5 × 10 pt triangle.</p></div>
+    <div class="card scroll"><table class="type-table" id="type-latin"></table></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Typography — CJK 中文</h2>
+    <p class="muted" style="margin-bottom:14px">System cascade to PingFang SC. Same sizes; line height +0.1; tracking 0; minimum 10 pt; no synthetic bold or italic. Group headers are upper-cased in code; CJK has no case.</p>
+    <div class="card scroll"><table class="type-table" id="type-cjk"></table></div>
+  </section>
+
+  <section>
+    <h2 class="sec">Radius · Spacing · Elevation</h2>
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+      <div class="card"><h3>Radius</h3><div class="shape-row" id="radii"></div></div>
+      <div class="card"><h3>Spacing rhythm</h3><div class="grid" style="gap:8px" id="spacing"></div>
+        <p class="muted" style="margin-top:12px">All metrics (row heights, header, popover, generator) are in the Token manager under Spacing.</p></div>
+      <div class="card"><h3>Elevation</h3>
+        <div class="stage prod" style="align-items:center">
+          <div class="state"><svg class="dial" width="64" height="64" viewBox="0 0 96 96"></svg><span>dial · 35% r3 y1</span></div>
+          <div class="state"><div style="width:90px;height:30px;background:var(--c-door);box-shadow:0 1px 6px rgba(0,0,0,.35)"></div><span>door opening · 35% r6 y1</span></div>
+          <div class="state"><div style="background:var(--c-door);padding:8px 12px;border-radius:4px"><span class="engraved" style="font:var(--f-caption-strong);color:var(--c-text-door)">Passwords.kdbx</span></div><span>engraved · white r0 y1</span></div>
+        </div>
+        <p class="muted" style="margin-top:14px">Two blur shadows, plus the engraved highlight line. The menu, submenus and generator use the system menu material (a behind-window blur); windows and the popover use the system shadow. Samples below draw stand-ins.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Components</h2>
+    <div class="grid">
+      <div class="card"><h3>Header</h3>
+        <p class="muted" style="margin-bottom:12px">Dial logo, chrome-less 18 pt search field, gear. The separator shows only while the field is empty.</p>
+        <div class="scroll"><div class="desk prod"><div class="stage" id="c-header"></div></div></div>
+      </div>
+      <div class="card"><h3>Menu rows — light and dark</h3>
+        <p class="muted" style="margin-bottom:12px">Each line is one row kind at real size (300 pt wide).</p>
+        <div class="scroll prod" id="c-rows"></div>
+      </div>
+      <div class="card"><h3>Details fields</h3>
+        <p class="muted" style="margin-bottom:12px">Rows of the details popover (400 pt wide). The word "copy" copies. Passwords and websites add an arrow; other fields do not.</p>
+        <div class="scroll prod" id="c-fields"></div>
+      </div>
+      <div class="card"><h3>Password Generator</h3>
+        <p class="muted" style="margin-bottom:12px">412 × 300 pt child window. Segmented control, sliders, checkbox and progress bar are system controls, drawn as stand-ins.</p>
+        <div class="scroll"><div class="desk prod" style="display:flex;gap:20px"><div class="ap mat gen" id="c-gen-light"></div><div class="ap dark mat gen" id="c-gen-dark"></div></div></div>
+      </div>
+      <div class="card"><h3>Door field row, door buttons, Large Type</h3>
+        <div class="stage prod" style="align-items:center" id="c-door"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">Product UI — panel at real size</h2>
+    <p class="muted" style="margin-bottom:14px">Drawn from the tokens at real point size with sample data (not a real vault). Window shadows, the menu material and the popover chrome are stand-ins for the system ones.</p>
+    <div class="grid">
+      <div class="stage prod">
+        <div class="state" id="p-locked"></div>
+      </div>
+      <div class="state" style="min-width:0;max-width:100%">
+        <div class="scroll" style="max-width:100%"><div class="desk prod" id="p-cascade" style="padding-top:0"></div></div>
+        <span>unlocked from the menu bar icon · light · Logins submenu · details popover (sample data)</span>
+      </div>
+      <div class="state" style="min-width:0;max-width:100%">
+        <div class="scroll" style="max-width:100%"><div class="desk dark prod" id="p-search"></div></div>
+        <span>opened with the shortcut · dark · search results for "git" (sample data)</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="tokens">
+    <h2 class="sec">Token manager</h2>
+    <div class="card tm">
+      <p class="muted">Edit a value and the whole page updates. Edits stay in this browser only. Export, then paste into <code>DESIGN.md</code> front matter (and <code>Palette.swift</code> for colours).</p>
+      <div class="tabs" role="group" aria-label="Token group">
+        <button class="btn" type="button" data-tab="colors" aria-pressed="true">Colors</button>
+        <button class="btn" type="button" data-tab="typography" aria-pressed="false">Typography</button>
+        <button class="btn" type="button" data-tab="rounded" aria-pressed="false">Radius</button>
+        <button class="btn" type="button" data-tab="spacing" aria-pressed="false">Spacing</button>
+      </div>
+      <div class="scroll"><table id="token-table"></table></div>
+      <div class="toolbar">
+        <button class="btn" type="button" id="export-yaml">Export YAML</button>
+        <button class="btn" type="button" id="export-css">Export CSS variables</button>
+        <button class="btn" type="button" id="export-swift">Export Palette.swift colours</button>
+        <button class="btn" type="button" id="copy-export">Copy</button>
+        <button class="btn" type="button" id="reset">Reset to DESIGN.md</button>
+        <span class="muted" id="tm-status" aria-live="polite"></span>
+      </div>
+      <label for="export" class="muted">Export</label>
+      <textarea id="export" readonly placeholder="Choose an export format."></textarea>
+    </div>
+  </section>
+</main>
+
+<script>
+// ---- Token table: mirrors DESIGN.md front matter. Keep in sync. ----
+const DEFAULT_TOKENS = {
+  colors: {
+    "brand-graphite": "#3A3F46", "brand-graphite-deep": "#15181B", "brand-satin": "#D7DCE1", "brand-satin-shade": "#9AA3AD", "on-brand": "#F4F6F8",
+    "door": "#D6D6D6", "door-band": "#E6E6E6", "door-band-highlight": "#FAFAFA", "door-band-line": "#666666",
+    "door-edge-light": "#EFEFEF", "door-edge-dark": "#737373", "door-field": "#FFFFFF", "door-field-shade": "rgba(0, 0, 0, 0.22)",
+    "door-field-frame": "#2B2B2B", "door-field-split": "#3A3A3A", "door-button-top": "#FCFCFC", "door-button-bottom": "#E2E2E2",
+    "door-button-pressed-top": "#D2D2D2", "door-button-pressed-bottom": "#E6E6E6", "door-button-glyph": "#8C8C8C",
+    "text-door": "#555555", "text-door-hint": "#6F6F6F", "danger": "#C8372D",
+    "dial-rim-top": "#F0F0F0", "dial-rim-bottom": "#C4C4C4", "dial-rim-stroke": "#7A7A7A", "dial-ring": "#FFFFFF",
+    "dial-inner-top": "#B8B8B8", "dial-inner-bottom": "#D8D8D8", "dial-inner-stroke": "#9A9A9A", "dial-face-top": "#F6F6F6",
+    "dial-face-bottom": "#DEDEDE", "dial-hub": "#E4E4E4", "dial-hub-stroke": "#D0D0D0", "dial-key": "#626262", "dial-lug": "#8E8E8E",
+    "menu-material": "rgba(246, 246, 246, 0.85)", "menu-material-dark": "rgba(38, 38, 40, 0.85)",
+    "label": "rgba(0, 0, 0, 0.85)", "label-dark": "rgba(255, 255, 255, 0.85)",
+    "label-secondary": "rgba(0, 0, 0, 0.5)", "label-secondary-dark": "rgba(255, 255, 255, 0.55)",
+    "label-tertiary": "rgba(0, 0, 0, 0.26)", "label-tertiary-dark": "rgba(255, 255, 255, 0.25)",
+    "label-disabled": "#666666", "group-header-text": "#333333", "group-header-text-dark": "#E6E6E6",
+    "ink": "#000000", "ink-dark": "#FFFFFF", "menu-arrow": "#999999",
+    "selection": "rgba(0, 103, 244, 0.5)", "selection-dark": "#0059D1", "on-selection": "#FFFFFF",
+    "accent": "#007AFF", "field-focus": "rgba(0, 122, 255, 0.14)", "well": "#FFFFFF", "well-dark": "#1E1E1E",
+    "favorite": "#F5B833", "tint-login": "#738094", "tint-note": "#E6B333", "tint-card": "#808C9E", "tint-identity": "#6699D9",
+    "tint-folder": "#599EE6", "tint-tag": "#73B366", "tile-stroke": "rgba(0, 0, 0, 0.25)", "on-tile": "#FFFFFF",
+    "system-red": "#FF383C", "system-orange": "#FF8D28", "system-green": "#34C759",
+    "large-type-bg": "rgba(0, 0, 0, 0.88)", "on-large-type": "#FFFFFF",
+    "on-large-type-digit": "#5CB3FF", "on-large-type-symbol": "#FFBF59", "on-large-type-space": "rgba(255, 255, 255, 0.55)",
+    "large-type-stripe": "rgba(255, 255, 255, 0.18)", "large-type-stripe-alt": "rgba(255, 255, 255, 0.09)"
+  },
+  typography: {
+    "display-code":   { fontFamily: "mono",    fontSize: 54,  fontWeight: 500, lineHeight: 1.18, letterSpacing: 0,     use: "Large Type overlay, shrinks to fit",                      sample: "x7#Rq-9vLm!2",               cjk: "x7#Rq-9vLm!2" },
+    "brand-wordmark": { fontFamily: "display", fontSize: 28,  fontWeight: 600, lineHeight: 1.1,  letterSpacing: -0.4,  use: "Wordmark: website, README, About",                        sample: "PasswordPie",                  cjk: "PasswordPie 密码保险箱" },
+    "search":         { fontFamily: "text",    fontSize: 18,  fontWeight: 400, lineHeight: 1.18, letterSpacing: -0.44, use: "Header search field and placeholder",                     sample: "Search PasswordPie",           cjk: "搜索 PasswordPie" },
+    "code-lg":        { fontFamily: "mono",    fontSize: 17,  fontWeight: 500, lineHeight: 1.18, letterSpacing: 0,     use: "Live OTP code",                                           sample: "482 913",                    cjk: "482 913" },
+    "title":          { fontFamily: "text",    fontSize: 16,  fontWeight: 600, lineHeight: 1.18, letterSpacing: -0.31, use: "Details popover title",                                   sample: "GitHub",                     cjk: "招商银行网银" },
+    "menu-item":      { fontFamily: "text",    fontSize: 14,  fontWeight: 400, lineHeight: 1.18, letterSpacing: -0.15, use: "Menu rows, Show more, No items found; master password",   sample: "Password Generator",         cjk: "密码生成器" },
+    "code-md":        { fontFamily: "mono",    fontSize: 14,  fontWeight: 400, lineHeight: 1.18, letterSpacing: 0,     use: "Generated password",                                      sample: "pR4-vault-Kq9!mZ",           cjk: "pR4-vault-Kq9!mZ" },
+    "body":           { fontFamily: "text",    fontSize: 13,  fontWeight: 400, lineHeight: 1.18, letterSpacing: -0.08, use: "Details values; Editor and Preferences forms",            sample: "https://github.com/login",   cjk: "输入主密码以解锁数据库" },
+    "body-code":      { fontFamily: "mono",    fontSize: 13,  fontWeight: 400, lineHeight: 1.18, letterSpacing: 0,     use: "Revealed secrets",                                        sample: "x7#Rq-9vLm!2",               cjk: "x7#Rq-9vLm!2" },
+    "control":        { fontFamily: "text",    fontSize: 12,  fontWeight: 400, lineHeight: 1.18, letterSpacing: 0,     use: "Generator controls; Editor notes",                        sample: "Avoid ambiguous characters", cjk: "避免易混淆的字符" },
+    "caption-strong": { fontFamily: "text",    fontSize: 11,  fontWeight: 600, lineHeight: 1.18, letterSpacing: 0.06,  use: "Database name on the door",                               sample: "Passwords.kdbx",             cjk: "密码库.kdbx" },
+    "caption":        { fontFamily: "text",    fontSize: 11,  fontWeight: 400, lineHeight: 1.18, letterSpacing: 0.06,  use: "Door hint and error, copy button, group headers (upper case)", sample: "Enter Master Password to unlock.", cjk: "输入主密码以解锁。" },
+    "caption-code":   { fontFamily: "mono",    fontSize: 11,  fontWeight: 400, lineHeight: 1.18, letterSpacing: 0,     use: "Database path in Preferences",                            sample: "~/Documents/Passwords.kdbx", cjk: "~/文稿/Passwords.kdbx" },
+    "label":          { fontFamily: "text",    fontSize: 10,  fontWeight: 400, lineHeight: 1.18, letterSpacing: 0.12,  use: "Details field labels, door links, form footnotes",        sample: "one-time password",          cjk: "一次性密码" },
+    "tile-letter":    { fontFamily: "text",    fontSize: 9.5, fontWeight: 600, lineHeight: 1.18, letterSpacing: 0,     use: "Letter on a 16 pt tile (CJK: 10 pt)",                     sample: "G",                          cjk: "招" }
+  },
+  rounded: { "menu": 5, "panel-locked": 8, "field-group": 6, "well": 5, "editor-well": 4, "item-icon": "22%", "large-type": 14, "capsule": 999,
+    "app-icon": "system squircle (macOS applies the mask)" },
+  spacing: {
+    "panel-width": 300, "menu-max-width": "screen width / 4", "screen-margin": 8, "locked-height": 280, "create-height": 330,
+    "door-height": 96, "dial-size": 96, "door-field-width": 260, "door-field-height": 42,
+    "header-height": 45, "logo-size": 32, "search-field-height": 24,
+    "row-height": 21, "separator-height": 11, "group-header-height": 16, "list-min-height": 24, "row-icon": 16, "row-icon-x": 16,
+    "row-title-x": 38, "arrow-inset": 26, "submenu-inset": 5,
+    "details-width": 400, "details-max-height": 500, "details-row-min-height": 38, "details-tile": 32,
+    "generator-width": 412, "generator-height": 300, "large-type-padding": 24, "large-type-group": 4, "large-type-gap": 8,
+    "space-1": 4, "space-2": 5, "space-3": 8, "space-4": 10, "space-5": 12, "space-6": 14, "space-7": 20, "space-8": 24, "menu-bar-icon": 18
+  }
+};
+const FAMILIES = {
+  text: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "PingFang SC", system-ui, sans-serif',
+  display: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", "PingFang SC", system-ui, sans-serif',
+  mono: '"SF Mono", ui-monospace, Menlo, Consolas, "PingFang SC", monospace'
+};
+const FAMILY_NAMES = { text: "SF Pro Text", display: "SF Pro Display", mono: "SF Mono" };
+// Each colour is shown in the first group whose pattern matches; anything unmatched lands in "Other".
+const COLOR_GROUPS = [
+  ["Brand", /^(brand-|on-brand)/],
+  ["Door", /^(door|text-door|danger)/],
+  ["Dial", /^dial-/],
+  ["Menu — dark appearance", /-dark$/],
+  ["Menu — light appearance", /^(menu-|label|group-header|ink|selection|on-selection|accent|field-focus|well)/],
+  ["Item icons", /^(favorite|tint-|tile-|on-tile)/],
+  ["Status & overlay", /^(system-|large-type|on-large-type)/]
+];
+const MENUBAR_PATH = "M9 1 C9.5 1 12 2.5 15.5 3.5 Q16.5 4 16.5 5 C16.5 10.5 14.5 14.5 9 17 C3.5 14.5 1.5 10.5 1.5 5 Q1.5 4 2.5 3.5 C6 2.5 8.5 1 9 1 Z M8 8.5 C7 8 6.5 7.5 6.5 6.5 C6.5 5 7.5 4 9 4 C10.5 4 11.5 5 11.5 6.5 C11.5 7.5 11 8 10 8.5 L11.5 12.5 H6.5 Z";
+// v2: the token set was rebuilt for the menu UI (Oct 2026). A v1 save holds every old value (row-height 44 and so on),
+// which would override the new defaults through the per-key merge below, so v1 saves are ignored.
+const STORE_KEY = "passwordpie-design-tokens-v2";
+
+const clone = (o) => JSON.parse(JSON.stringify(o));
+let tokens = clone(DEFAULT_TOKENS);
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+  if (saved && typeof saved === "object") {
+    // Merge per token, so tokens added, renamed or removed in DESIGN.md are not hidden by an old save.
+    // A saved value is used only when its type matches the default, so a bad save falls back to DESIGN.md.
+    for (const group of Object.keys(tokens)) {
+      for (const key of Object.keys(tokens[group])) {
+        const value = saved[group] && saved[group][key];
+        if (value === undefined || value === null) continue;
+        const base = DEFAULT_TOKENS[group][key];
+        if (group === "typography") {
+          if (typeof value !== "object") continue;
+          for (const f of ["fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing"]) {
+            const ok = typeof value[f] === typeof base[f] && (f !== "fontFamily" || FAMILIES[value[f]]);
+            if (ok) tokens[group][key][f] = value[f];
+          }
+        } else if (typeof value === typeof base) tokens[group][key] = value;
+      }
+    }
+  }
+} catch (e) { /* storage blocked: use defaults */ }
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(tokens)); } catch (e) { /* ignore */ } }
+
+// ---- Colour maths (WCAG contrast; translucent colours are composited over the background first) ----
+function rgbaOf(value) {
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+  if (hex) { const n = parseInt(hex[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1]; }
+  const rgba = /rgba?\(([^)]+)\)/.exec(value);
+  if (rgba) { const p = rgba[1].split(",").map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; }
+  return [0, 0, 0, 1];
+}
+function over(value, bg) {
+  const [r, g, b, a] = rgbaOf(value), [R, G, B] = rgbaOf(bg);
+  return [r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a)];
+}
+function lum(rgb) {
+  return rgb.map((c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); })
+    .reduce((acc, c, i) => acc + c * [0.2126, 0.7152, 0.0722][i], 0);
+}
+function contrast(a, b) { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+
+// ---- Apply tokens as CSS variables ----
+const px = (v) => typeof v === "number" ? v + "px" : v;
+function fontShorthand(t) { return `${t.fontWeight} ${t.fontSize}px/${t.lineHeight} ${FAMILIES[t.fontFamily]}`; }
+function applyVars() {
+  const root = document.documentElement.style;
+  for (const [k, v] of Object.entries(tokens.colors)) root.setProperty(`--c-${k}`, v);
+  for (const [k, t] of Object.entries(tokens.typography)) {
+    root.setProperty(`--f-${k}`, fontShorthand(t));
+    root.setProperty(`--ls-${k}`, t.letterSpacing + "px");
+    root.setProperty(`--t-${k}-size`, t.fontSize + "px");
+  }
+  for (const [k, v] of Object.entries(tokens.rounded)) root.setProperty(`--r-${k}`, px(v));
+  for (const [k, v] of Object.entries(tokens.spacing)) root.setProperty(`--s-${k}`, px(v));
+  document.querySelectorAll("[class*='tok-']").forEach((el) => {
+    const name = [...el.classList].find((c) => c.startsWith("tok-")).slice(4);
+    styleType(el, tokens.typography[name]);
+  });
+  const demo = document.getElementById("wordmark-demo");
+  demo.style.background = `radial-gradient(circle at 50% 40%, ${tokens.colors["brand-graphite"]}, ${tokens.colors["brand-graphite-deep"]})`;
+}
+function styleType(el, t, cjk) {
+  el.style.fontFamily = FAMILIES[t.fontFamily];
+  el.style.fontSize = (cjk && t.fontSize < 10 ? 10 : t.fontSize) + "px";
+  el.style.fontWeight = t.fontWeight;
+  el.style.lineHeight = cjk ? (t.lineHeight + 0.1).toFixed(2) : t.lineHeight;
+  el.style.letterSpacing = cjk ? "0" : t.letterSpacing + "px";
+  el.style.fontSynthesis = "none";
+}
+
+// ---- Renderers ----
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const CHECKER = "repeating-conic-gradient(#C8C8C8 0 25%, #FFFFFF 0 50%) 0 0 / 12px 12px";
+function renderSwatches() {
+  const host = document.getElementById("swatches");
+  host.innerHTML = "";
+  const groups = COLOR_GROUPS.map(([title]) => ({ title, names: [] }));
+  const other = { title: "Other", names: [] };
+  for (const n of Object.keys(tokens.colors)) {
+    const i = COLOR_GROUPS.findIndex(([, re]) => re.test(n));
+    (i < 0 ? other : groups[i]).names.push(n);
+  }
+  for (const { title, names } of [...groups, other]) {
+    if (!names.length) continue;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `<h3>${title}</h3><div class="swatches"></div>`;
+    const grid = wrap.querySelector(".swatches");
+    for (const n of names) {
+      const v = tokens.colors[n];
+      const dark = /-dark$/.test(n), ground = dark ? "#1E1E1E" : "#FFFFFF";
+      const shown = over(v, ground);
+      const vsGround = contrast(shown, rgbaOf(ground)), onWhite = contrast(shown, [255, 255, 255]), onBlack = contrast(shown, [0, 0, 0]);
+      const ink = onWhite > onBlack ? "#FFFFFF" : "#000000";
+      const translucent = rgbaOf(v)[3] < 1;
+      const el = document.createElement("div");
+      el.className = "sw";
+      el.innerHTML = `<div class="chip" style="background:linear-gradient(${esc(v)}, ${esc(v)})${translucent ? ", " + CHECKER : ""};color:${ink}">${Math.max(onWhite, onBlack).toFixed(1)}:1</div>
+        <div class="meta"><b>${esc(n)}</b><span>${esc(v)}</span><span>vs ${dark ? "#1E1E1E" : "white"} ${vsGround.toFixed(2)}</span></div>`;
+      grid.appendChild(el);
+    }
+    host.appendChild(wrap);
+  }
+}
+function renderType() {
+  const head = "<tr><th>Token</th><th>Spec</th><th>Sample</th><th>Use</th></tr>";
+  const latin = document.getElementById("type-latin"), cjk = document.getElementById("type-cjk");
+  latin.innerHTML = head; cjk.innerHTML = "<tr><th>Token</th><th>Spec (CJK)</th><th>样例</th><th>Use</th></tr>";
+  for (const [name, t] of Object.entries(tokens.typography)) {
+    const spec = `${FAMILY_NAMES[t.fontFamily]} · ${t.fontSize}/${t.lineHeight} · ${t.fontWeight} · ${t.letterSpacing}px`;
+    const row = document.createElement("tr");
+    row.innerHTML = `<td class="name">${name}</td><td class="spec">${spec}</td><td class="sample"></td><td class="muted">${esc(t.use)}</td>`;
+    const s = row.querySelector(".sample"); s.textContent = t.sample; styleType(s, t);
+    latin.appendChild(row);
+    const size = t.fontSize < 10 ? 10 : t.fontSize;
+    const cspec = `PingFang SC · ${size}/${(t.lineHeight + 0.1).toFixed(2)} · ${t.fontWeight} · 0`;
+    const crow = document.createElement("tr");
+    crow.innerHTML = `<td class="name">${name}</td><td class="spec">${cspec}</td><td class="sample" lang="zh-CN"></td><td class="muted">${esc(t.use)}</td>`;
+    const cs = crow.querySelector(".sample"); cs.textContent = t.cjk; styleType(cs, t, true);
+    cjk.appendChild(crow);
+  }
+}
+function renderShapes() {
+  const radii = Object.entries(tokens.rounded).map(([k, v]) => {
+    // Percent tokens (item-icon) draw at their value; app-icon is a text token, shown as a 22 % approximation.
+    const css = typeof v === "number" ? v + "px" : (/%$/.test(v) ? v : "22%");
+    return `<div class="state"><div class="shape" style="border-radius:${css}"></div><span>${esc(k)} · ${esc(v)}</span></div>`;
+  });
+  document.getElementById("radii").innerHTML = radii.join("");
+  document.getElementById("spacing").innerHTML = Object.entries(tokens.spacing).filter(([k]) => k.startsWith("space-"))
+    .map(([k, v]) => `<div class="space-row"><span>${k} · ${v}</span><div class="space-bar" style="width:${v * 4}px"></div></div>`).join("");
+}
+function renderDials() {
+  const c = tokens.colors;
+  const svg = `<defs>
+      <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c["dial-rim-top"]}"/><stop offset="1" stop-color="${c["dial-rim-bottom"]}"/></linearGradient>
+      <linearGradient id="inner" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c["dial-inner-top"]}"/><stop offset="1" stop-color="${c["dial-inner-bottom"]}"/></linearGradient>
+      <linearGradient id="face" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c["dial-face-top"]}"/><stop offset="1" stop-color="${c["dial-face-bottom"]}"/></linearGradient>
+      <filter id="dsh" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity=".35"/></filter></defs>
+    <circle cx="48" cy="48" r="46" fill="url(#rim)" stroke="${c["dial-rim-stroke"]}" stroke-width=".75" filter="url(#dsh)"/>
+    <circle cx="48" cy="48" r="44" fill="none" stroke="${c["dial-ring"]}" stroke-width="3"/>
+    <circle cx="48" cy="48" r="36" fill="url(#inner)" stroke="${c["dial-inner-stroke"]}" stroke-width=".5"/>
+    <circle cx="48" cy="48" r="30" fill="url(#face)" stroke="${c["dial-ring"]}" stroke-width="1"/>
+    <circle cx="48" cy="48" r="12" fill="${c["dial-hub"]}" stroke="${c["dial-hub-stroke"]}" stroke-width=".5"/>
+    <polygon points="42,27 54,27 54,45.9 48,50.1 54,54.3 54,69 42,69 42,50.1 48,45.9 42,41.7" fill="${c["dial-key"]}"/>
+    <rect x="11.5" y="46.5" width="7" height="3" fill="${c["dial-lug"]}"/><rect x="77.5" y="46.5" width="7" height="3" fill="${c["dial-lug"]}"/>`;
+  document.querySelectorAll("svg.dial").forEach((el) => { el.innerHTML = svg; });
+}
+function renderTiles() {
+  document.querySelectorAll(".tile[data-title]").forEach((el) => {
+    const title = el.dataset.title;
+    let h = 2166136261 >>> 0;
+    for (const b of new TextEncoder().encode(title.toLowerCase())) { h = Math.imul(h ^ b, 16777619) >>> 0; }
+    const hue = h % 360;
+    // Same HSB stops as MenuIcons.tile in MenuListView.swift, converted to CSS hsl().
+    const hsl = (s, v) => { const l = v * (1 - s / 2); const sl = l === 0 || l === 1 ? 0 : (v - l) / Math.min(l, 1 - l);
+      return `hsl(${hue} ${(sl * 100).toFixed(1)}% ${(l * 100).toFixed(1)}%)`; };
+    el.textContent = title.trim()[0].toUpperCase();
+    el.style.background = `linear-gradient(${hsl(0.45, 0.95)}, ${hsl(0.7, 0.78)})`;
+  });
+}
+function renderMenubar() {
+  document.querySelectorAll(".menubar .mb, .deskbar .mb").forEach((el) => {
+    el.innerHTML = `<svg viewBox="0 0 18 18" aria-label="PasswordPie menu bar icon"><path fill="currentColor" fill-rule="evenodd" d="${MENUBAR_PATH}"/></svg>`;
+  });
+}
+
+// ---- Product samples (built once; colours and metrics come from the CSS variables above) ----
+// SF Symbols are not available on the web; these are simple stand-in glyphs at the same size and tint.
+const SYM = {
+  star: '<path d="M8 1.3l2 4.2 4.6.6-3.4 3.2.9 4.6L8 11.7l-4.1 2.2.9-4.6L1.4 6.1 6 5.5z"/>',
+  key: '<path fill-rule="evenodd" d="M5.5 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zm-1 2.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8zM9 7h6v2h-1.2v2h-1.6V9H9z"/>',
+  login: '<path fill-rule="evenodd" d="M3.5 1.5h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM8 4.3a1.9 1.9 0 0 0-.9 3.6L6.4 11.7h3.2L8.9 7.9A1.9 1.9 0 0 0 8 4.3z"/>',
+  note: '<path fill-rule="evenodd" d="M3 1.5h10a1.5 1.5 0 0 1 1.5 1.5v10a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 13V3A1.5 1.5 0 0 1 3 1.5zM4 4.5v1.2h8V4.5zm0 2.9v1.2h8V7.4zm0 2.9v1.2h5.5v-1.2z"/>',
+  card: '<path fill-rule="evenodd" d="M2.5 3h11A1.5 1.5 0 0 1 15 4.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 11.5v-7A1.5 1.5 0 0 1 2.5 3zM1 5.4v1.8h14V5.4zm2 4.4v1.2h3.5V9.8z"/>',
+  identity: '<path fill-rule="evenodd" d="M2.5 2.5h11A1.5 1.5 0 0 1 15 4v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12V4a1.5 1.5 0 0 1 1.5-1.5zM5.5 5a1.6 1.6 0 1 0 0 3.2 1.6 1.6 0 0 0 0-3.2zM3 11.4h5c0-1.6-1.1-2.6-2.5-2.6S3 9.8 3 11.4zm6.5-5.6v1.2H13V5.8zm0 2.6v1.2H12V8.4z"/>',
+  doc: '<path d="M3.5 1h6l4 4v8.5A1.5 1.5 0 0 1 12 15H3.5A1.5 1.5 0 0 1 2 13.5v-11A1.5 1.5 0 0 1 3.5 1zm5.5 1v3.5h3.5z"/>',
+  folder: '<path d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.2l1.5 1.5H13A1.5 1.5 0 0 1 14.5 5.5v7A1.5 1.5 0 0 1 13 14H3a1.5 1.5 0 0 1-1.5-1.5z"/>',
+  tag: '<path fill-rule="evenodd" d="M1.5 2.8A1.3 1.3 0 0 1 2.8 1.5h4.6l7 7a1.2 1.2 0 0 1 0 1.7l-4.2 4.2a1.2 1.2 0 0 1-1.7 0l-7-7zM5 3.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8z"/>'
+};
+const TINT = { favorites: ["star", "var(--c-favorite)"], generator: ["key", "var(--m-label2)"], login: ["login", "var(--c-tint-login)"],
+  note: ["note", "var(--c-tint-note)"], card: ["card", "var(--c-tint-card)"], identity: ["identity", "var(--c-tint-identity)"],
+  password: ["key", "var(--m-label2)"], document: ["doc", "var(--c-tint-card)"], folder: ["folder", "var(--c-tint-folder)"], tag: ["tag", "var(--c-tint-tag)"] };
+const sym = (name, cls = "sym") => `<svg class="${cls}" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor">${SYM[name]}</svg>`;
+const ARROW = '<svg class="arr" viewBox="0 0 8.5 10" aria-hidden="true"><path d="M0 0 8.5 5 0 10z"/></svg>';
+const GEAR = '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor"><circle cx="8" cy="8" r="6.2" stroke-width="2.6" stroke-dasharray="2.43 2.43"/><circle cx="8" cy="8" r="4.3" stroke-width="3"/></svg>';
+const CHEVRON = '<svg viewBox="0 0 7 5" aria-hidden="true"><path d="M.5 .8 3.5 4 6.5 .8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+const LOCK_OPEN = '<svg width="13" height="16" viewBox="0 0 13 16" aria-hidden="true"><path d="M3 7V4.6a3.3 3.3 0 0 1 6.5-.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="0.5" y="7" width="12" height="8.5" rx="2" fill="currentColor"/></svg>';
+const TOUCH_ID = '<svg width="19" height="19" viewBox="0 0 19 19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><path d="M3.2 6.2A7 7 0 0 1 15.8 6.2M2.4 9.8a7 7 0 0 1 .3-2.2M16.6 9.8c0-.8-.1-1.5-.3-2.2"/><path d="M5 14.5a5 5 0 0 1-.6-4.7A5.2 5.2 0 0 1 14.5 10c0 1.2-.1 2.4-.4 3.6"/><path d="M7.4 16.2a3 3 0 0 1-1.1-2.6V10a3.2 3.2 0 0 1 6.4 0v1.6c0 1.6-.4 3.2-1.1 4.6"/><path d="M9.5 10v2.2c0 1.7-.5 3.4-1.4 4.8"/></svg>';
+const PENCIL = '<svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M2 11 2.6 8.4 9.3 1.7a1.2 1.2 0 0 1 1.7 0l.3.3a1.2 1.2 0 0 1 0 1.7L4.6 10.4z"/><path d="M8.3 2.7 10.3 4.7"/></svg>';
+const STAR_FILL = '<svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="' + SYM.star.match(/d="([^"]+)"/)[1] + '"/></svg>';
+
+function row(r) {
+  if (r.k === "sep") return '<div class="msep"></div>';
+  if (r.k === "hdr") return `<div class="mgh">${esc(r.t)}</div>`;
+  if (r.k === "none") return `<div class="mrow none">${esc(r.t)}</div>`;
+  if (r.k === "more") return `<div class="mrow more${r.sel ? " sel" : ""}">${esc(r.t)}</div>`;
+  const arrow = r.k === "sub" || r.k === "gen";
+  let icon;
+  if (r.k === "entry") {
+    icon = `<span class="ic"><span class="tile" data-title="${esc(r.t)}"></span>${r.fav ? sym("star", "badge") : ""}</span>`;
+  } else {
+    const [glyph, tint] = TINT[r.i];
+    icon = `<span class="ic" style="--tint:${tint}">${sym(glyph)}</span>`;
+  }
+  return `<div class="mrow${r.sel ? " sel" : ""}${arrow ? " arrow" : ""}">${icon}<span class="tt">${esc(r.t)}</span>${r.u ? `<span class="un">&nbsp;— ${esc(r.u)}</span>` : ""}${arrow ? ARROW : ""}</div>`;
+}
+function header(query) {
+  const q = query ? `<div class="q">${esc(query)}<span class="caret"></span></div>` : '<div class="q ph">Search PasswordPie</div>';
+  return `<div class="mhead${query ? "" : " sep"}"><svg class="dial logo" viewBox="0 0 96 96" aria-label="PasswordPie logo"></svg>${q}<div class="gear">${GEAR}</div></div>`;
+}
+function pie(fraction, color) {
+  const a = -Math.PI / 2 + 2 * Math.PI * fraction, r = 5;
+  const x = 7 + r * Math.cos(a), y = 7 + r * Math.sin(a), large = fraction > 0.5 ? 1 : 0;
+  return `<svg viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="6.5" fill="none" stroke="${color}" stroke-opacity=".35" stroke-width="1"/>` +
+    `<path d="M7 7V2A5 5 0 ${large} 1 ${x.toFixed(2)} ${y.toFixed(2)}Z" fill="${color}"/></svg>`;
+}
+function largeType(text) {
+  const chars = Array.from(text);
+  const groups = [];
+  for (let i = 0; i < chars.length; i += 4) groups.push(chars.slice(i, i + 4));
+  const body = groups.map((group, index) => {
+    const cells = group.map(ch => {
+      const space = /\s/.test(ch);
+      const kind = space ? "space" : /^\p{Nd}$/u.test(ch) ? "digit" : /^\p{L}$/u.test(ch) ? "letter" : "symbol";
+      return `<span class="lt-${kind}">${space ? "␣" : esc(ch)}</span>`;
+    }).join("");
+    return `<span class="lt-g ${index % 2 ? "odd" : "even"}">${cells}</span>`;
+  }).join("");
+  return `<div class="largetype">${body}</div>`;
+}
+function field(f) {
+  let value;
+  if (f.otp) value = `<div class="otp${f.urgent ? " urgent" : ""}"><span>482 913</span>${pie(f.otp, f.urgent ? "var(--c-system-red)" : "var(--c-accent)")}</div>`;
+  else if (f.meter) value = `<div class="meter"><i style="width:${f.meter * 100}%;background:var(--c-${f.meter < 0.4 ? "system-red" : f.meter < 0.7 ? "system-orange" : "system-green"})"></i></div>`;
+  else value = `<div class="v${f.cls ? " " + f.cls : ""}">${esc(f.v)}</div>`;
+  const caret = f.menu ? `<span class="caret">${CHEVRON}</span>` : "";
+  const act = f.act ? `<div class="act${f.act === "flash" ? " flash" : ""}"><span class="cbtn"><span class="word">copy</span>${caret}</span></div>` : "";
+  return `<div class="dfield${f.focus ? " focus" : ""}"><div class="l">${esc(f.l)}</div>${value}${act}</div>`;
+}
+function details(d) {
+  return `<div class="dhead"><span class="tile lg" data-title="${esc(d.title)}"></span><span class="tt">${esc(d.title)}</span>` +
+    `<span class="g">${PENCIL}</span><span class="g" style="color:${d.fav ? "var(--c-favorite)" : "var(--m-label2)"}">${STAR_FILL}</span></div>` + d.fields.map(field).join("");
+}
+function doorField({ touch, filled, pressed } = {}) {
+  return `<div class="door-field">${touch ? `<div class="db touch">${TOUCH_ID}</div><div class="split"></div>` : ""}` +
+    `<div class="in${filled ? " filled" : ""}">${filled ? "••••••••••" : "Master Password"}</div><div class="split"></div>` +
+    `<div class="db${pressed ? " pressed" : ""}">${LOCK_OPEN}</div></div>`;
+}
+
+const ROOT_ROWS = [
+  { k: "sub", t: "Favorites", i: "favorites" }, { k: "gen", t: "Password Generator", i: "generator" }, { k: "sep" },
+  { k: "sub", t: "Logins", i: "login", sel: true }, { k: "sub", t: "Secure Notes", i: "note" }, { k: "sub", t: "Credit Cards", i: "card" },
+  { k: "sub", t: "Identities", i: "identity" }, { k: "sub", t: "Passwords", i: "password" }, { k: "sep" },
+  { k: "sub", t: "Folders", i: "folder" }, { k: "sub", t: "Tags", i: "tag" }
+];
+const LOGIN_ROWS = [
+  { k: "entry", t: "Amazon" }, { k: "entry", t: "Apple ID" }, { k: "entry", t: "Cloudflare" }, { k: "entry", t: "Fastmail", fav: true },
+  { k: "entry", t: "GitHub", u: "oldcai", fav: true, sel: true }, { k: "entry", t: "GitHub", u: "ci-bot" },
+  { k: "entry", t: "Linear" }, { k: "entry", t: "Spaceship" }
+];
+const GITHUB = { title: "GitHub", fav: true, fields: [
+  { l: "username", v: "oldcai" }, { l: "password", v: "••••••••••••", focus: true }, { l: "strength", meter: 0.82 },
+  { l: "website", v: "https://github.com/login", cls: "url", act: "hover", menu: true }, { l: "one-time password", otp: 0.68 }, { l: "tags", v: "dev, work" }
+] };
+const SEARCH_ROWS = [
+  { k: "hdr", t: "Open Login" }, { k: "entry", t: "GitHub", u: "oldcai", fav: true }, { k: "entry", t: "GitHub", u: "ci-bot" },
+  { k: "entry", t: "GitLab", sel: true }, { k: "entry", t: "Gitea" }, { k: "entry", t: "git.example.com" }, { k: "more", t: "Show 2 more items" },
+  { k: "hdr", t: "Secure Notes" }, { k: "entry", t: "Git signing key" }, { k: "hdr", t: "Show Password" }, { k: "entry", t: "git deploy token" }
+];
+
+function buildSamples() {
+  // Header states
+  document.getElementById("c-header").innerHTML =
+    `<div class="state"><div class="ap mat mpanel">${header("")}</div><span style="color:#1C1F23">empty · separator</span></div>` +
+    `<div class="state"><div class="ap mat mpanel">${header("git")}</div><span style="color:#1C1F23">query · no separator</span></div>` +
+    `<div class="state"><div class="ap dark mat mpanel">${header("")}</div><span style="color:#1C1F23">dark · empty</span></div>`;
+
+  // Row kinds, light and dark side by side
+  const kinds = [
+    [{ k: "sub", t: "Favorites", i: "favorites" }, "submenu row · normal"],
+    [{ k: "sub", t: "Logins", i: "login", sel: true }, "submenu row · selected (icon, arrow white)"],
+    [{ k: "gen", t: "Password Generator", i: "generator" }, "generator row (opens a child window)"],
+    [{ k: "entry", t: "Fastmail", fav: true }, "entry · letter tile · favourite badge"],
+    [{ k: "entry", t: "GitHub", u: "oldcai", sel: true }, "entry · duplicate title · selected"],
+    [{ k: "sep" }, "separator · 11 pt"],
+    [{ k: "hdr", t: "Fill Credit Card" }, "group header · 16 pt · upper case"],
+    [{ k: "more", t: "Show 3 more items" }, "show more"],
+    [{ k: "more", t: "Show 3 more items", sel: true }, "show more · selected"],
+    [{ k: "none", t: "No items found" }, "no results · not selectable"]
+  ];
+  document.getElementById("c-rows").innerHTML = `<div class="desk"><div class="states" style="grid-template-columns: 300px 300px auto">` +
+    kinds.map(([r, label]) => `<div class="ap mat" style="width:300px;border-radius:0;box-shadow:none">${row(r)}</div>` +
+      `<div class="ap dark mat" style="width:300px;border-radius:0;box-shadow:none">${row(r)}</div><span class="lbl" style="color:#1C1F23">${label}</span>`).join("") +
+    `</div></div>`;
+
+  // Details field states
+  const fstates = [
+    [{ l: "username", v: "oldcai" }, "normal"],
+    [{ l: "password", v: "••••••••••••", focus: true }, "focused (keyboard) · masked"],
+    [{ l: "password", v: "x7#Rq-9vLm!2", cls: "code", act: "hover", menu: true }, "revealed (SF Mono) · hover shows copy and an arrow"],
+    [{ l: "password", v: "x7#Rq-9vLm!2", cls: "code", focus: true, act: "flash", menu: true }, "Return · copy button flashes at 40 %"],
+    [{ l: "strength", meter: 0.25 }, "strength · weak"],
+    [{ l: "strength", meter: 0.55 }, "strength · fair"],
+    [{ l: "strength", meter: 0.9 }, "strength · strong"],
+    [{ l: "website", v: "https://github.com/login", cls: "url" }, "URL · accent"],
+    [{ l: "one-time password", otp: 0.68 }, "OTP · live"],
+    [{ l: "one-time password", otp: 0.12, urgent: true }, "OTP · last 5 s"],
+    [{ l: "notes", v: "Recovery codes are in the Secure Notes item. Rotate the token every 90 days.", cls: "notes" }, "notes · wraps up to 8 lines"]
+  ];
+  document.getElementById("c-fields").innerHTML = `<div class="desk"><div class="states" style="grid-template-columns: 400px 400px 140px; column-gap: 12px">` +
+    fstates.map(([f, label]) => `<div class="ap mat" style="border-radius:0;box-shadow:none">${field(f)}</div>` +
+      `<div class="ap dark mat" style="border-radius:0;box-shadow:none">${field(f)}</div><span class="lbl" style="color:#1C1F23">${label}</span>`).join("") +
+    `</div></div>`;
+
+  // Generator
+  const gen = `<div class="pw"><div class="well">pR4-vault-Kq9!mZ-x2Lw</div><span class="sysbtn">Copy ${CHEVRON}</span></div>
+    <div class="seg"><span class="on">Characters</span><span>Words</span></div>
+    <div class="srow"><span>Length</span><div class="slider"><i style="width:38%"></i><b style="left:38%"></b></div><span class="num">20</span></div>
+    <div class="srow"><span>Digits</span><div class="slider"><i style="width:20%"></i><b style="left:20%"></b></div><span class="num">2</span></div>
+    <div class="srow"><span>Symbols</span><div class="slider"><i style="width:20%"></i><b style="left:20%"></b></div><span class="num">2</span></div>
+    <div class="chk"><i><svg width="9" height="8" viewBox="0 0 9 8" aria-hidden="true"><path d="M1 4.2 3.4 6.5 8 1.2" fill="none" stroke="#fff" stroke-width="1.6"/></svg></i>Avoid ambiguous characters</div>
+    <div style="display:flex;align-items:center;justify-content:space-between"><span class="sysbtn">Regenerate Password</span><div class="prog"><i style="width:78%"></i></div></div>`;
+  document.getElementById("c-gen-light").innerHTML = gen;
+  document.getElementById("c-gen-dark").innerHTML = gen;
+
+  // Door pieces
+  document.getElementById("c-door").innerHTML =
+    `<div class="state" style="background:var(--c-door);padding:14px;border-radius:6px">${doorField()}<span style="color:var(--c-text-door-hint)">empty · unlock button</span></div>` +
+    `<div class="state" style="background:var(--c-door);padding:14px;border-radius:6px">${doorField({ touch: true, filled: true })}<span style="color:var(--c-text-door-hint)">Touch ID · filled</span></div>` +
+    `<div class="state" style="background:var(--c-door);padding:14px;border-radius:6px">${doorField({ filled: true, pressed: true })}<div class="door-err" style="width:260px">Incorrect password. Please try again.</div><span style="color:var(--c-text-door-hint)">pressed · error</span></div>` +
+    `<div class="state" style="max-width:100%">${largeType("x7#R q9vLm!2")}<span>Large Type · stripes of 4 · own glyph width · shrinks to fit · space is ␣</span></div>`;
+
+  // Locked panel (300 x 280)
+  document.getElementById("p-locked").innerHTML = `<div class="panel locked">
+      <div class="seam">
+        <i style="height:.5px;background:var(--c-door-edge-light)"></i><i style="height:1px;background:var(--c-door-edge-dark)"></i>
+        <i style="height:18px;background:var(--c-door-band)"></i><i style="height:1px;background:var(--c-door-band-highlight)"></i>
+        <i style="height:.5px;background:var(--c-door-band-line)"></i>
+        <i style="height:.5px;background:var(--c-door-band-line)"></i><i style="height:1px;background:var(--c-door-band-highlight)"></i>
+        <i style="height:18.5px;background:var(--c-door-band)"></i><i style="height:1px;background:var(--c-door-edge-light)"></i>
+      </div>
+      <svg class="dial dialwrap" viewBox="0 0 96 96"></svg>
+      <div class="door-text door-name engraved">Passwords.kdbx</div>
+      <div class="door-text door-hint engraved">Enter Master Password to unlock.</div>
+      <div class="door-row">${doorField({ touch: true })}</div>
+      <div class="door-links engraved"><span>Open Database…</span><span>New Database…</span></div>
+    </div><span>locked · 300 × 280 · Touch ID available</span>`;
+
+  // Unlocked from the status item: panel hangs flush under the menu bar; Logins submenu; GitHub details popover.
+  // Submenu top = parent row top − submenu-inset (Logins row top is 45 + 21 + 21 + 11 = 98, so 93).
+  // Popover is centred on the selected submenu row (row centre 93 + 5 + 4 × 21 + 10.5 = 192.5; popover 280 tall).
+  document.getElementById("p-cascade").innerHTML =
+    `<div class="deskbar"><span class="mb"></span><span>Wi‑Fi</span><span style="margin-left:auto">Fri 10:24</span></div>` +
+    `<div style="display:flex;align-items:flex-start">` +
+      `<div class="ap mat mpanel attached">${header("")}${ROOT_ROWS.map(row).join("")}</div>` +
+      `<div class="ap mat msub" style="margin-top:93px">${LOGIN_ROWS.map(row).join("")}</div>` +
+      `<div class="ap mat pop" style="margin-top:52px;margin-left:9px"><svg class="tip" style="top:131px" viewBox="0 0 9 18" aria-hidden="true"><path d="M9 0 0 9 9 18z"/></svg>${details(GITHUB)}</div>` +
+    `</div>`;
+
+  // Opened with the shortcut: all four corners rounded; dark appearance; search results.
+  document.getElementById("p-search").innerHTML = `<div class="ap dark mat mpanel">${header("git")}${SEARCH_ROWS.map(row).join("")}</div>`;
+}
+
+// ---- Token manager ----
+let tab = "colors";
+function renderTable() {
+  const table = document.getElementById("token-table");
+  const set = tokens[tab], base = DEFAULT_TOKENS[tab];
+  if (tab === "typography") {
+    table.innerHTML = "<tr><th>Token</th><th>Family</th><th>Size</th><th>Weight</th><th>Line</th><th>Tracking</th></tr>" +
+      Object.entries(set).map(([k, t]) => {
+        const changed = JSON.stringify(t) !== JSON.stringify(base[k]);
+        const sel = `<select data-k="${k}" data-f="fontFamily">${Object.keys(FAMILIES).map((f) => `<option value="${f}"${f === t.fontFamily ? " selected" : ""}>${FAMILY_NAMES[f]}</option>`).join("")}</select>`;
+        const num = (f, step) => `<input type="number" step="${step}" data-k="${k}" data-f="${f}" value="${t[f]}" aria-label="${k} ${f}">`;
+        return `<tr class="${changed ? "changed" : ""}"><td class="name"><code>${k}</code></td><td>${sel}</td><td>${num("fontSize", 0.5)}</td><td>${num("fontWeight", 100)}</td><td>${num("lineHeight", 0.01)}</td><td>${num("letterSpacing", 0.01)}</td></tr>`;
+      }).join("");
+  } else if (tab === "colors") {
+    table.innerHTML = "<tr><th>Token</th><th></th><th>Value</th><th>Default</th></tr>" +
+      Object.entries(set).map(([k, v]) => {
+        const isHex = /^#[0-9a-f]{6}$/i.test(v);
+        return `<tr class="${v !== base[k] ? "changed" : ""}"><td><code>${k}</code></td>
+          <td>${isHex ? `<input type="color" data-k="${k}" value="${v}" aria-label="${k} colour">` : ""}</td>
+          <td><input type="text" data-k="${k}" value="${esc(v)}" aria-label="${k} value"></td><td class="muted"><code>${esc(base[k])}</code></td></tr>`;
+      }).join("");
+  } else {
+    table.innerHTML = "<tr><th>Token</th><th>Value</th><th>Default</th></tr>" +
+      Object.entries(set).map(([k, v]) => {
+        const input = typeof v === "number"
+          ? `<input type="number" data-k="${k}" value="${v}" aria-label="${k}">`
+          : `<input type="text" data-k="${k}" value="${esc(v)}" aria-label="${k}">`;
+        const unit = typeof base[k] === "number" ? " px" : "";
+        return `<tr class="${v !== base[k] ? "changed" : ""}"><td><code>${k}</code></td>
+          <td>${input}</td><td class="muted">${esc(base[k])}${unit}</td></tr>`;
+      }).join("");
+  }
+}
+// Invalid input is flagged and not stored, so it cannot reach localStorage or the export.
+const COLOR_TEXT = /^(#[0-9a-f]{6}|rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*(,\s*[\d.]+\s*)?\))$/i;
+function checkValue(tabName, k, f, raw) {
+  const text = String(raw).trim();
+  if (tabName === "colors") return COLOR_TEXT.test(text) ? { ok: true, value: text } : { ok: false, msg: "needs #RRGGBB or rgba(r, g, b, a)" };
+  if (tabName === "typography" && f === "fontFamily") return FAMILIES[text] ? { ok: true, value: text } : { ok: false, msg: "is not a known family" };
+  if (typeof DEFAULT_TOKENS[tabName][k] === "string") return text ? { ok: true, value: text } : { ok: false, msg: "needs a value" };
+  const n = text === "" ? NaN : Number(text);
+  if (!Number.isFinite(n)) return { ok: false, msg: "needs a number" };
+  if (tabName === "typography") {
+    if (f === "fontWeight" && (n < 100 || n > 900)) return { ok: false, msg: "must be 100 to 900" };
+    if ((f === "fontSize" || f === "lineHeight") && n <= 0) return { ok: false, msg: "must be above 0" };
+  } else if (n < 0) return { ok: false, msg: "must be 0 or more" };
+  return { ok: true, value: n };
+}
+function onEdit(e) {
+  const el = e.target, k = el.dataset.k;
+  if (!k) return;
+  const f = el.dataset.f;
+  const res = checkValue(tab, k, f, el.value);
+  if (!res.ok) {
+    el.setAttribute("aria-invalid", "true");
+    status.textContent = `Not saved: ${k}${f ? " " + f : ""} ${res.msg}.`;
+    if (e.type === "change") setTimeout(renderTable, 0); // put the stored value back, after the blur has finished
+    return;
+  }
+  el.removeAttribute("aria-invalid");
+  if (tab === "typography") tokens.typography[k][f] = res.value;
+  else tokens[tab][k] = res.value;
+  save(); renderAll(false);
+  if (e.type === "change") { status.textContent = "Saved in this browser."; setTimeout(renderTable, 0); }
+}
+function toYaml() {
+  const lines = ["colors:"];
+  for (const [k, v] of Object.entries(tokens.colors)) lines.push(`  ${k}: '${v}'`);
+  lines.push("", "typography:");
+  for (const [k, t] of Object.entries(tokens.typography)) {
+    const fam = { text: "SF Pro Text, -apple-system, system-ui, sans-serif", display: "SF Pro Display, -apple-system, system-ui, sans-serif", mono: "SF Mono, ui-monospace, Menlo, monospace" }[t.fontFamily];
+    lines.push(`  ${k}:`, `    fontFamily: '${fam}'`, `    fontSize: ${t.fontSize}px`, `    fontWeight: ${t.fontWeight}`, `    lineHeight: ${t.lineHeight}`, `    letterSpacing: ${t.letterSpacing === 0 ? 0 : t.letterSpacing + "px"}`);
+  }
+  lines.push("", "rounded:");
+  for (const [k, v] of Object.entries(tokens.rounded)) lines.push(`  ${k}: ${px(v)}`);
+  lines.push("", "spacing:");
+  for (const [k, v] of Object.entries(tokens.spacing)) lines.push(`  ${k}: ${px(v)}`);
+  return lines.join("\n");
+}
+function toCss() {
+  const out = [":root {"];
+  for (const [k, v] of Object.entries(tokens.colors)) out.push(`  --mv-${k}: ${v};`);
+  for (const [k, t] of Object.entries(tokens.typography)) out.push(`  --mv-font-${k}: ${fontShorthand(t)};`, `  --mv-tracking-${k}: ${t.letterSpacing}px;`);
+  for (const [k, v] of Object.entries(tokens.rounded)) out.push(`  --mv-radius-${k}: ${typeof v === "number" ? v + "px" : `"${v}"`};`);
+  for (const [k, v] of Object.entries(tokens.spacing)) out.push(`  --mv-${k}: ${typeof v === "number" ? v + "px" : `"${v}"`};`);
+  out.push("}");
+  return out.join("\n");
+}
+// Tokens that are Palette.swift colours today, under their real Palette names.
+const PALETTE_NAMES = { "door": "door", "door-band": "band", "door-band-highlight": "bandHighlight", "door-band-line": "bandLine", "danger": "danger" };
+// Tokens that are system colours in code. They stay system colours (a literal would break dark mode or a custom accent).
+const SYSTEM_COLORS = {
+  "menu-material": "NSVisualEffectView.Material.menu", "label": "NSColor.labelColor", "label-secondary": "NSColor.secondaryLabelColor (SwiftUI .secondary)",
+  "label-tertiary": "NSColor.tertiaryLabelColor", "selection": "NSColor.keyboardFocusIndicatorColor", "selection-dark": "NSColor.alternateSelectedControlColor",
+  "accent": "Color.accentColor (NSColor.controlAccentColor)", "field-focus": "Color.accentColor.opacity(0.14)", "well": "NSColor.textBackgroundColor",
+  "ink": "menuInk(_:) / Color.primary at an alpha", "on-selection": "NSColor.white", "system-red": "Color.red (NSColor.systemRed)",
+  "system-orange": "Color.orange (NSColor.systemOrange)", "system-green": "Color.green (NSColor.systemGreen)"
+};
+function swiftColor(v) {
+  if (/^#[0-9a-f]{6}$/i.test(v)) return `Color(hex: 0x${v.slice(1).toUpperCase()})`;
+  const [r, g, b, a = 1] = v.match(/[\d.]+/g).map(Number);
+  return `Color(.sRGB, red: ${+(r / 255).toFixed(4)}, green: ${+(g / 255).toFixed(4)}, blue: ${+(b / 255).toFixed(4)}, opacity: ${a})`;
+}
+function toSwift() {
+  const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  const system = (k) => SYSTEM_COLORS[k] || SYSTEM_COLORS[k.replace(/-dark$/, "")];
+  const out = ["// Generated from DESIGN.md tokens. Needs Color(hex:) from Palette.swift.",
+    "// `enum Palette` uses the real Palette.swift names for the five colours it holds today: paste it over that enum.", "enum Palette {"];
+  for (const [k, name] of Object.entries(PALETTE_NAMES)) out.push(`    static let ${name} = ${swiftColor(tokens.colors[k])}`);
+  out.push("}", "", "// Mapping aid, not in Palette.swift yet: colours the views still write as literals (DESIGN.md Known Gaps).",
+    "// Names are the token names in camelCase. Move them into Palette when a view is next touched.", "enum DesignTokens {");
+  const sys = [];
+  for (const [k, v] of Object.entries(tokens.colors)) {
+    if (PALETTE_NAMES[k]) continue;
+    if (system(k)) { sys.push(`//   ${k} → ${system(k)}${/-dark$/.test(k) ? " (dark appearance)" : ""} · resolved ${v}`); continue; }
+    out.push(`    static let ${camel(k)} = ${swiftColor(v)}`);
+  }
+  out.push("}", "", "// System colours: keep using the system colour in code, not a literal.", ...sys);
+  return out.join("\n");
+}
+function renderAll(rebuildTable) {
+  applyVars(); renderSwatches(); renderType(); renderShapes(); renderDials();
+  if (rebuildTable) renderTable();
+}
+
+document.querySelector(".tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tab]"); if (!b) return;
+  tab = b.dataset.tab;
+  document.querySelectorAll("[data-tab]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  renderTable();
+});
+const tableEl = document.getElementById("token-table");
+tableEl.addEventListener("input", onEdit);
+tableEl.addEventListener("change", onEdit);
+const exportEl = document.getElementById("export"), status = document.getElementById("tm-status");
+document.getElementById("export-yaml").addEventListener("click", () => { exportEl.value = toYaml(); status.textContent = "YAML ready."; });
+document.getElementById("export-css").addEventListener("click", () => { exportEl.value = toCss(); status.textContent = "CSS ready."; });
+document.getElementById("export-swift").addEventListener("click", () => { exportEl.value = toSwift(); status.textContent = "Swift ready."; });
+document.getElementById("copy-export").addEventListener("click", () => {
+  if (!exportEl.value) { status.textContent = "Choose an export format first."; return; }
+  const fallback = () => { exportEl.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    status.textContent = ok ? "Copied." : "Copy failed. Select the text and copy it."; };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(exportEl.value).then(() => { status.textContent = "Copied."; }, fallback);
+  else fallback();
+});
+document.getElementById("reset").addEventListener("click", () => {
+  tokens = clone(DEFAULT_TOKENS); try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+  renderAll(true); status.textContent = "Reset to DESIGN.md values.";
+});
+
+// Page theme (chrome only; product samples always use product tokens)
+const themeBtn = document.getElementById("theme-toggle");
+const themes = ["system", "light", "dark"];
+let themeIdx = 0;
+themeBtn.addEventListener("click", () => {
+  themeIdx = (themeIdx + 1) % themes.length;
+  const t = themes[themeIdx];
+  if (t === "system") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t);
+  themeBtn.textContent = "Page theme: " + t;
+});
+
+buildSamples(); renderTiles(); renderMenubar(); renderAll(true);
+</script>
+</body>
+</html>
