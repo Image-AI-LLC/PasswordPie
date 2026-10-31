@@ -3,6 +3,9 @@
 The user selected the flat keyhole pie and approved the larger app tile (84.2% visible diameter).
 `size-comparison.png` records the approved SVG sizing change; it is a concept comparison, not a native screenshot.
 
+The lock-screen captures in this folder document the initial icon-only replacement.
+The subsequently redesigned lock panel is documented in `art/lock-screen/`.
+
 ## Actual native evidence
 
 - `system-app-icon.png`: NSWorkspace reads the compiled app icon from a fresh-path preview bundle. macOS applies its own mask/material rendering; the source tile itself is flat.

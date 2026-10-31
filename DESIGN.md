@@ -1,4 +1,6 @@
 ---
+
+> Current branding and locked-panel styling: see [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). Metal-door descriptions below document the earlier visual design; unchanged native interaction contracts still apply.
 version: 1
 name: PasswordPie — Satin Vault
 description: >-

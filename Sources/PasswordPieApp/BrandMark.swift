@@ -25,7 +25,7 @@ struct PasswordPieMark: View {
 
     var body: some View {
         PasswordPieShape()
-            .fill(style == .monochrome ? Color.primary : Color(hex: 0xEE8C32),
+            .fill(style == .monochrome ? Color.primary : Palette.brandAccent,
                   style: FillStyle(eoFill: true))
             .frame(width: size, height: size)
             .scaleEffect(1 + 0.035 * turn)
