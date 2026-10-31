@@ -231,7 +231,7 @@ final class MenuListView: NSView {
 
     /// Selection fill: the translucent keyboard-focus blue in light appearance, the alternate selection color in dark.
     private static let selectionColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .alternateSelectedControlColor : .keyboardFocusIndicatorColor
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .selectedContentBackgroundColor :.keyboardFocusIndicatorColor
     }
 
     private func fillSelection(_ rect: NSRect) {

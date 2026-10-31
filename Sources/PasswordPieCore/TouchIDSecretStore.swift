@@ -154,8 +154,21 @@ public struct TouchIDSecretStore: Sendable {
     /// Legacy keychain items ignore `kSecUseAuthenticationUI` and would otherwise
     /// raise a dialog when this build is not the item's owner.
     private func withoutKeychainUI<T>(_ body: () -> T) -> T {
-        _ = SecKeychainSetUserInteractionAllowed(false)
-        defer { _ = SecKeychainSetUserInteractionAllowed(true) }
+        Self.setKeychainUserInteractionAllowed(false)
+        defer { Self.setKeychainUserInteractionAllowed(true) }
         return body()
+    }
+
+    /// `SecKeychainSetUserInteractionAllowed` is deprecated with no replacement for legacy items,
+    /// so it is resolved at runtime instead of called directly (which would warn at build time).
+    /// If the symbol is ever removed, this becomes a no-op.
+    private static let keychainInteractionSetter: (@convention(c) (DarwinBoolean) -> OSStatus)? = {
+        let rtldDefault = UnsafeMutableRawPointer(bitPattern: -2)  // RTLD_DEFAULT
+        guard let symbol = dlsym(rtldDefault, "SecKeychainSetUserInteractionAllowed") else { return nil }
+        return unsafeBitCast(symbol, to: (@convention(c) (DarwinBoolean) -> OSStatus).self)
+    }()
+
+    private static func setKeychainUserInteractionAllowed(_ allowed: Bool) {
+        _ = keychainInteractionSetter?(DarwinBoolean(allowed))
     }
 }
