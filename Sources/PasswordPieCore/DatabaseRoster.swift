@@ -41,16 +41,42 @@ public struct DatabaseRoster: Equatable, Sendable {
         return DatabaseRoster(current: next, remembered: remaining)
     }
 
-    /// Same file names from different folders stay distinguishable.
+    /// Same file names stay distinguishable. A shared parent folder pulls in the next folder up.
     public static func menuTitles(for paths: [String]) -> [String] {
-        let names = paths.map { URL(fileURLWithPath: $0).lastPathComponent }
-        var counts: [String: Int] = [:]
-        for name in names { counts[name, default: 0] += 1 }
-        return zip(paths, names).map { path, name in
-            guard counts[name, default: 0] > 1 else { return name }
-            let parent = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
-            return parent.isEmpty ? name : "\(name) — \(parent)"
+        let urls = paths.map { URL(fileURLWithPath: $0).standardizedFileURL }
+        var titles = urls.map { $0.lastPathComponent }
+        var depth = 1
+        while depth < 16 {
+            var counts: [String: Int] = [:]
+            for title in titles { counts[title, default: 0] += 1 }
+            var changed = false
+            for index in titles.indices where counts[titles[index], default: 0] > 1 {
+                let chain = ancestorChain(urls[index], depth: depth)
+                guard !chain.isEmpty else { continue }
+                let next = "\(urls[index].lastPathComponent) — \(chain)"
+                if next != titles[index] {
+                    titles[index] = next
+                    changed = true
+                }
+            }
+            if !changed { break }
+            depth += 1
         }
+        return titles
+    }
+
+    private static func ancestorChain(_ url: URL, depth: Int) -> String {
+        var current = url
+        var parts: [String] = []
+        for _ in 0..<depth {
+            let parent = current.deletingLastPathComponent()
+            if parent.path == current.path { break }
+            let name = parent.lastPathComponent
+            current = parent
+            if name.isEmpty || parent.path == "/" { break }
+            parts.insert(name, at: 0)
+        }
+        return parts.joined(separator: "/")
     }
 }
 

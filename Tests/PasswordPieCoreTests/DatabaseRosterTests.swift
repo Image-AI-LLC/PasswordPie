@@ -53,6 +53,24 @@ final class DatabaseRosterTests: XCTestCase {
         XCTAssertEqual(titles, ["vault.kdbx — work", "vault.kdbx — home", "other.opvault"])
     }
 
+    func testDuplicateNamesWalkUpUntilTheTitlesDiffer() {
+        let titles = DatabaseRoster.menuTitles(for: [
+            "/a/work/vault.kdbx",
+            "/b/work/vault.kdbx"
+        ])
+        XCTAssertEqual(titles, ["vault.kdbx — a/work", "vault.kdbx — b/work"])
+    }
+
+    func testASavedRosterAboveTheCapLoadsWhole() {
+        var remembered: [String] = []
+        for index in 0..<40 { remembered.append("/vaults/\(index).kdbx") }
+        let loaded = DatabaseRoster(current: "/vaults/0.kdbx", remembered: remembered, limit: remembered.count + 1)
+        XCTAssertEqual(loaded.paths.count, 40)
+        let opened = loaded.selecting("/vaults/new.kdbx")
+        XCTAssertEqual(opened.paths.count, DatabaseRoster.limit)
+        XCTAssertEqual(opened.paths.first, "/vaults/new.kdbx")
+    }
+
     func testUnlockMemoryNeedsTouchIDAndConsent() {
         XCTAssertTrue(UnlockMemory.shouldStore(hardware: true, declined: false))
         XCTAssertFalse(UnlockMemory.shouldStore(hardware: false, declined: false))

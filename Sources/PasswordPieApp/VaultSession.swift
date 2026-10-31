@@ -134,7 +134,9 @@ final class VaultSession: ObservableObject {
         }
         hotKey = HotKeyConfig.load()
         let remembered = UserDefaults.standard.stringArray(forKey: "databasePaths") ?? []
-        roster = DatabaseRoster(current: initialPath, remembered: remembered)
+        // A failed keychain delete may have saved more than 32 paths. Loading must not drop them.
+        let cap = max(DatabaseRoster.limit, remembered.count + 1)
+        roster = DatabaseRoster(current: initialPath, remembered: remembered, limit: cap)
         databasePaths = roster.paths
     }
 
@@ -530,9 +532,10 @@ final class VaultSession: ObservableObject {
         let applied = next.keeping(blocked)
         roster = applied
         databasePaths = applied.paths
-        guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return }
-        UserDefaults.standard.set(applied.current, forKey: "databasePath")
-        UserDefaults.standard.set(applied.paths, forKey: "databasePaths")
+        if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
+            UserDefaults.standard.set(applied.current, forKey: "databasePath")
+            UserDefaults.standard.set(applied.paths, forKey: "databasePaths")
+        }
     }
 
     private func clearTouchIDDefaults(for account: String) {
