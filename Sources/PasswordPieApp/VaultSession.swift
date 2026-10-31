@@ -51,6 +51,9 @@ final class VaultSession: ObservableObject {
     /// Held in memory while unlocked so a refresh does not ask the keychain again.
     var chromeKey: Data?
     var chromeGeneration = 0
+    /// Chrome's own last-used times for the live logins. Replaced on every refresh, cleared on lock.
+    var chromeLastUsed: [UUID: Date] = [:]
+    private let usage: UsageStore
     @Published var editing: VaultEntry?
     @Published var editingIsNew = false
     @Published var touchIDAvailable = false
@@ -113,6 +116,8 @@ final class VaultSession: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PasswordPie", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let usagePath = ProcessInfo.processInfo.environment["PASSWORDPIE_USAGE"]
+        usage = UsageStore(url: usagePath.map { URL(fileURLWithPath: $0) } ?? support.appendingPathComponent("usage.json"))
         if let override = ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] {
             databaseURL = URL(fileURLWithPath: override)
         } else if let saved = UserDefaults.standard.string(forKey: "databasePath") {
@@ -554,7 +559,9 @@ final class VaultSession: ObservableObject {
         copy.groupPath = [BrowserImportSource.chrome.label]
         copy.tags = BrowserImportSource.chrome.label
         entries.append(copy)
-        if !save() {
+        if save() {
+            if let used = lastUsedMap[live.id] { try? usage.record(copy.id, at: used) }
+        } else {
             entries.removeAll { $0.id == copy.id }
         }
     }
@@ -662,12 +669,28 @@ final class VaultSession: ObservableObject {
     func copy(_ target: CopyTarget, of id: UUID) {
         guard let entry = entry(id) else { return }
         copy(value(of: target, in: entry))
+        switch target {
+        case .username, .password, .oneTimePassword: recordUse(id)
+        case .url, .notes, .custom: break
+        }
     }
 
     func openURL(of id: UUID) {
         guard let raw = entry(id)?.url, let url = webURL(raw) else { return }
         onActivity?()
         NSWorkspace.shared.open(url)
+        recordUse(id)
+    }
+
+    /// When each account was last used, for search ranking: this app's own record, or Chrome's for a live login, whichever is later.
+    var lastUsedMap: [UUID: Date] {
+        usage.lastUsed.merging(chromeLastUsed) { max($0, $1) }
+    }
+
+    /// Copying a username, password or code, filling, and opening the website count as using an account. Looking at it does not.
+    /// A failed write only loses one ranking hint, so it does not interrupt the action.
+    private func recordUse(_ id: UUID) {
+        try? usage.record(id)
     }
 
     /// Fills the previous app. The panel hides first so keystrokes reach the app that was frontmost.
@@ -679,6 +702,7 @@ final class VaultSession: ObservableObject {
             return
         }
         onActivity?()
+        recordUse(id)
         let username = entry.username
         let password = entry.password
         // Password items have no username field to leave; Logins keep the Tab even without a saved username.
@@ -872,11 +896,16 @@ final class TimerCancellable: Cancellable {
 // MARK: Helpers
 
 /// Accepts "example.com" as well as full URLs, since KeePass entries often hold bare hosts.
+/// The web address of an entry's website field. Only http and https open: an entry can come from an import or from Chrome,
+/// and Fill types the password into the front app after the open, so another scheme (android://, ssh://, file://) must not launch a handler.
+/// A bare host such as `github.com` or `localhost:3000` gets https.
 func webURL(_ raw: String) -> URL? {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
-    if let url = URL(string: trimmed), url.scheme != nil { return url }
-    return URL(string: "https://" + trimmed)
+    let candidate = trimmed.contains("://") ? trimmed : "https://" + trimmed
+    guard let url = URL(string: candidate), url.host != nil,
+          let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+    return url
 }
 
 func groupedCode(_ code: String) -> String {

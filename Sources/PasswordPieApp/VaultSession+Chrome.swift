@@ -15,6 +15,7 @@ extension VaultSession {
         chromeGeneration += 1
         chromeKey = nil
         liveEntries = []
+        chromeLastUsed = [:]
         chromeBusy = false
         chromeStatus = ""
         chromeStatusIsError = false
@@ -71,10 +72,12 @@ extension VaultSession {
             case .success(let loaded):
                 chromeKey = loaded.key
                 liveEntries = loaded.result.entries
+                chromeLastUsed = loaded.result.lastUsed
                 chromeStatus = chromeSummary(loaded.result)
                 chromeStatusIsError = false
             case .failure(let error):
                 liveEntries = []
+                chromeLastUsed = [:]
                 chromeKey = nil
                 chromeStatus = chromeErrorText(error)
                 chromeStatusIsError = true

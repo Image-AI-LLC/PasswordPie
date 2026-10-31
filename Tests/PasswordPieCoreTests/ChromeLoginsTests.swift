@@ -146,6 +146,33 @@ final class ChromeLoginsTests: XCTestCase {
         }
     }
 
+    func testChromeLastUsedTimesAreReadFromBothStoresAndTheLaterOneWins() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let dir = root.appendingPathComponent("Profile 5", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Chrome stores microseconds since 1601-01-01. 13_300_000_000_000_000 us is 2021-... in Unix time below.
+        let early: Int64 = 13_300_000_000_000_000
+        let late: Int64 = 13_400_000_000_000_000
+        try writeWithLastUsed([("https://a.example/", "u", "p", early), ("https://never.example/", "u", "q", 0)], to: dir.appendingPathComponent("Login Data"), key: key)
+        try writeWithLastUsed([("https://a.example/", "u", "p", late)], to: dir.appendingPathComponent("Login Data For Account"), key: key)
+        let profile = ChromeProfile(directoryName: "Profile 5", name: "Used", directory: dir)
+        let result = try ChromeLogins.entries(in: profile, key: key)
+        let used = try XCTUnwrap(result.entries.first { $0.url == "https://a.example/" })
+        let never = try XCTUnwrap(result.entries.first { $0.url == "https://never.example/" })
+        let expected = Date(timeIntervalSince1970: Double(late) / 1_000_000 - 11_644_473_600)
+        let seen = try XCTUnwrap(result.lastUsed[used.id])
+        XCTAssertEqual(seen.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 1)
+        XCTAssertNil(result.lastUsed[never.id], "0 means Chrome never used it")
+    }
+
+    func testAnOlderChromeWithoutTheColumnStillReads() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let profile = try makeProfile("Profile 6", rows: [Row(origin: "https://a.example/", realm: "r", user: "u", password: "p", key: key)])
+        let result = try ChromeLogins.entries(in: profile, key: key)
+        XCTAssertEqual(result.entries.count, 1)
+        XCTAssertTrue(result.lastUsed.isEmpty)
+    }
+
     // MARK: Finding profiles
 
     func testProfilesUseTheNamesFromLocalState() throws {
@@ -253,6 +280,28 @@ final class ChromeLoginsTests: XCTestCase {
         sqlite3_bind_text(statement, 5, row.realm, -1, transient)
         sqlite3_bind_int(statement, 6, row.blacklisted ? 1 : 0)
         XCTAssertEqual(sqlite3_step(statement), SQLITE_DONE)
+    }
+
+    private func writeWithLastUsed(_ rows: [(String, String, String, Int64)], to url: URL, key: Data) throws {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        try exec(db, loginsSchema.replacingOccurrences(of: "times_used INTEGER)", with: "times_used INTEGER, date_last_used INTEGER NOT NULL DEFAULT 0)"))
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for (origin, user, password, lastUsed) in rows {
+            let blob = try encrypt(password, key: key)
+            var statement: OpaquePointer?
+            let sql = "INSERT INTO logins (origin_url, action_url, username_value, password_value, signon_realm, date_created, blacklisted_by_user, scheme, times_used, date_last_used) VALUES (?, ?, ?, ?, ?, 0, 0, 0, 1, ?)"
+            XCTAssertEqual(sqlite3_prepare_v2(db, sql, -1, &statement, nil), SQLITE_OK)
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_text(statement, 1, origin, -1, transient)
+            sqlite3_bind_text(statement, 2, origin, -1, transient)
+            sqlite3_bind_text(statement, 3, user, -1, transient)
+            _ = blob.withUnsafeBytes { sqlite3_bind_blob(statement, 4, $0.baseAddress, Int32(blob.count), transient) }
+            sqlite3_bind_text(statement, 5, origin, -1, transient)
+            sqlite3_bind_int64(statement, 6, lastUsed)
+            XCTAssertEqual(sqlite3_step(statement), SQLITE_DONE)
+        }
     }
 
     private func exec(_ db: OpaquePointer?, _ sql: String) throws {

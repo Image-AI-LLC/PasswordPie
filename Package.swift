@@ -5,7 +5,7 @@ import PackageDescription
 /// Two release channels come from one source tree. The default build is the direct (Developer ID) channel and
 /// compiles PP_DIRECT code, such as reading Chrome's password store. `PP_MAS=1` builds the App Store channel without it,
 /// so that code is not in the store binary at all.
-let storeBuild = ProcessInfo.processInfo.environment["PP_MAS"] != nil
+let storeBuild = ProcessInfo.processInfo.environment["PP_MAS"] == "1"
 let channelSettings: [SwiftSetting] = storeBuild ? [] : [.define("PP_DIRECT")]
 
 let package = Package(

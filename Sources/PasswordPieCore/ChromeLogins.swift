@@ -116,6 +116,8 @@ public struct ChromeLoginsResult: Sendable {
     /// Passwords that were saved but could not be decrypted.
     public var skipped = 0
     public var profileCount = 0
+    /// When Chrome last used each login (its `date_last_used`). Logins Chrome never used, or older Chrome without the column, are absent.
+    public var lastUsed: [UUID: Date] = [:]
 }
 
 public enum ChromeLogins {
@@ -163,6 +165,7 @@ public enum ChromeLogins {
             do {
                 let part = try entries(in: profile, key: key)
                 combined.entries += part.entries
+                combined.lastUsed.merge(part.lastUsed) { max($0, $1) }
                 combined.skipped += part.skipped
                 combined.profileCount += 1
             } catch {
@@ -191,6 +194,7 @@ public enum ChromeLogins {
                 }
                 decrypted += 1
                 let id = stableID(profile: profile.directoryName, realm: row.realm, origin: row.origin, username: row.username)
+                if let used = row.lastUsed, used > (result.lastUsed[id] ?? .distantPast) { result.lastUsed[id] = used }
                 guard seen.insert(id).inserted else { continue }
                 var entry = VaultEntry(id: id, groupPath: groupPath(for: profile))
                 entry.title = BrowserImport.host(of: row.origin).isEmpty ? row.origin : BrowserImport.host(of: row.origin)
@@ -222,6 +226,7 @@ public enum ChromeLogins {
         var username: String
         var passwordValue: Data
         var realm: String
+        var lastUsed: Date?
     }
 
     private static func groupPath(for profile: ChromeProfile) -> [String] {
@@ -269,7 +274,7 @@ public enum ChromeLogins {
         }
         defer { sqlite3_close(db) }
         var statement: OpaquePointer?
-        let sql = "SELECT origin_url, username_value, password_value, signon_realm FROM logins WHERE blacklisted_by_user = 0"
+        let sql = "SELECT origin_url, username_value, password_value, signon_realm, \(hasLastUsedColumn(db) ? "date_last_used" : "0") FROM logins WHERE blacklisted_by_user = 0"
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw ChromeLoginsError.database("Chrome's password store has an unexpected layout.")
         }
@@ -285,10 +290,27 @@ public enum ChromeLogins {
                 origin: text(statement, 0),
                 username: text(statement, 1),
                 passwordValue: Data(bytes: bytes, count: length),
-                realm: text(statement, 3)
+                realm: text(statement, 3),
+                lastUsed: chromeDate(sqlite3_column_int64(statement, 4))
             ))
         }
         return rows
+    }
+
+    /// Chrome's `date_last_used` is microseconds since 1601-01-01, and 0 means never. Older Chrome has no such column.
+    private static func chromeDate(_ microseconds: Int64) -> Date? {
+        guard microseconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: Double(microseconds) / 1_000_000 - 11_644_473_600)
+    }
+
+    private static func hasLastUsedColumn(_ db: OpaquePointer?) -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(logins)", -1, &statement, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(statement) }
+        while sqlite3_step(statement) == SQLITE_ROW {
+            if text(statement, 1) == "date_last_used" { return true }
+        }
+        return false
     }
 
     private static func text(_ statement: OpaquePointer?, _ column: Int32) -> String {

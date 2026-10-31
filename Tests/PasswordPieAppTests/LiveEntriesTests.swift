@@ -14,10 +14,12 @@ final class LiveEntriesTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         databaseURL = directory.appendingPathComponent("test.kdbx")
         setenv("PASSWORDPIE_DB", databaseURL.path, 1)
+        setenv("PASSWORDPIE_USAGE", directory.appendingPathComponent("usage.json").path, 1)
     }
 
     override func tearDownWithError() throws {
         unsetenv("PASSWORDPIE_DB")
+        unsetenv("PASSWORDPIE_USAGE")
         try? FileManager.default.removeItem(at: directory)
     }
 
@@ -90,5 +92,26 @@ final class LiveEntriesTests: XCTestCase {
         #if PP_DIRECT
         XCTAssertEqual(session.allEntries.filter { $0.password == "chrome-secret" }.count, 1, "the copy hides the live login")
         #endif
+    }
+
+    func testChromeLastUsedTimesFeedTheRankingMapAndLaterOnesWin() {
+        let session = unlockedSession()
+        let live = liveLogin()
+        let early = Date(timeIntervalSince1970: 1_000)
+        session.chromeLastUsed = [live.id: early]
+        XCTAssertEqual(session.lastUsedMap[live.id], early)
+        session.lock()
+        XCTAssertTrue(session.lastUsedMap.isEmpty, "locking forgets Chrome's times")
+    }
+
+    func testSavingALiveLoginCarriesItsLastUsedTimeToTheCopy() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        let used = Date(timeIntervalSince1970: 1_700_000_000)
+        session.liveEntries = [live]
+        session.chromeLastUsed = [live.id: used]
+        session.saveToDatabase(live.id)
+        let copyID = try XCTUnwrap(session.entries.first { $0.password == "chrome-secret" }?.id)
+        XCTAssertEqual(try XCTUnwrap(session.lastUsedMap[copyID]).timeIntervalSince1970, used.timeIntervalSince1970, accuracy: 1)
     }
 }

@@ -58,18 +58,16 @@ private func hasPunctuation(_ token: String) -> Bool {
 
 private let standardKeys: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
 
-/// How much a top-ranked site can lift an entry's match score: `final = match * (1 + weight * popularity)`.
-/// Kept under 0.25 so popularity can reorder entries within a match class but never lift one class over the next:
-/// the closest classes score 1.0, 0.8, 0.6 and 0.4, a step of at least 1.25x, and the biggest lift is 1.2x.
-let popularityWeight = 0.2
-
-/// Entries matching every token of `query`. Favorites come first, then the best match scaled by how popular the site is,
-/// then title order. An empty query matches nothing here; callers show the initial menu.
+/// Entries matching every token of `query`. Favorites come first, then the match score scaled by `1 + RankingBoost`
+/// (how recently the account was used, and how popular its site is), then title order.
+/// An empty query matches nothing here; callers show the initial menu.
 public func searchEntries(
     _ entries: [VaultEntry],
     query: String,
     scope: SearchScope,
-    popularity: DomainPopularity = .bundled
+    popularity: DomainPopularity = .bundled,
+    lastUsed: [UUID: Date] = [:],
+    now: Date = Date()
 ) -> [VaultEntry] {
     let tokens = searchTokens(query)
     guard !tokens.isEmpty else { return [] }
@@ -78,7 +76,11 @@ public func searchEntries(
         var hits: [(entry: VaultEntry, score: Double)] = []
         for candidate in candidates {
             guard let match = candidate.score(tokens, substring: substring, allFields: scope == .allFields) else { continue }
-            hits.append((candidate.entry, match * (1 + popularityWeight * popularity.popularity(forHost: candidate.rankHost))))
+            let boost = RankingBoost.value(
+                recency: Recency.score(lastUsed: lastUsed[candidate.entry.id], now: now),
+                site: popularity.popularity(forHost: candidate.rankHost)
+            )
+            hits.append((candidate.entry, match * (1 + boost)))
         }
         if !hits.isEmpty {
             return hits.sorted { lhs, rhs in

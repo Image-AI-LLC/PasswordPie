@@ -37,7 +37,11 @@ def read_ranked(path, limit):
             domain = row[domain_at].strip().lower()
             if not DOMAIN.match(domain):
                 continue  # skips IDN punycode oddities and junk rows
-            rows.append((int(row[rank_at]), domain))
+            try:
+                rank = int(row[rank_at])
+            except ValueError:
+                continue  # skips a malformed rank cell, like a malformed domain
+            rows.append((rank, domain))
             if len(rows) >= limit:
                 break
     rows.sort()

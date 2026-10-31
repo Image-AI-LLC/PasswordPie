@@ -115,8 +115,14 @@ public enum MenuBuilder {
     }
 
     /// Search results: one group per category, each with a header, capped at `groupLimit` rows plus "Show N more items".
-    public static func searchResults(entries: [VaultEntry], query: String, scope: SearchScope) -> [MenuRow] {
-        let found = searchEntries(entries, query: query, scope: scope)
+    public static func searchResults(
+        entries: [VaultEntry],
+        query: String,
+        scope: SearchScope,
+        lastUsed: [UUID: Date] = [:],
+        now: Date = Date()
+    ) -> [MenuRow] {
+        let found = searchEntries(entries, query: query, scope: scope, lastUsed: lastUsed, now: now)
         guard !found.isEmpty else {
             return [MenuRow(kind: .disabled, title: "No items found")]
         }
