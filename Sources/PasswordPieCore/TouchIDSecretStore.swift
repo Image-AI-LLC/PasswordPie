@@ -76,6 +76,23 @@ public enum TouchIDEnrollment: Sendable {
     }
 }
 
+/// Whether another file's saved secret may enter the merged list.
+/// Each file keeps its own 7-day window. An expired secret is deleted, same as the current file.
+public enum RememberedFile {
+    public enum Access: Equatable, Sendable {
+        /// `stampNow` is true when the secret predates the window and the window starts on this read.
+        case load(stampNow: Bool)
+        case skip
+        case expire
+    }
+
+    public static func access(enabled: Bool, stale: Bool, unlockedAt: Date?, now: Date) -> Access {
+        guard enabled, !stale else { return .skip }
+        guard let unlockedAt else { return .load(stampNow: true) }
+        return TouchIDWindow.isValid(unlockedAt: unlockedAt, now: now) ? .load(stampNow: false) : .expire
+    }
+}
+
 /// Login-keychain copy of one database's master password.
 ///
 /// Biometric keychain access control (`kSecAccessControlBiometryCurrentSet`) returns

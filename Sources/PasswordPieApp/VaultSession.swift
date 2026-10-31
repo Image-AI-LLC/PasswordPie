@@ -190,6 +190,7 @@ final class VaultSession: ObservableObject {
             confirmDraft = ""
             message = ""
             save()
+            loadRememberedDatabases()
             didUnlock(withMasterPassword: true)
             return
         }
@@ -553,6 +554,42 @@ final class VaultSession: ObservableObject {
         }
     }
 
+    /// A sibling joins the merged list only while its own 7-day window is open.
+    private func rememberedUnlock(for path: String) -> StoredUnlock? {
+        let defaults = UserDefaults.standard
+        let stamp = defaults.object(forKey: touchIDStampKey(for: path)) as? Date
+        switch RememberedFile.access(
+            enabled: defaults.bool(forKey: touchIDEnabledKey(for: path)),
+            stale: defaults.bool(forKey: touchIDStaleKey(for: path)),
+            unlockedAt: stamp,
+            now: Date()
+        ) {
+        case .skip:
+            return nil
+        case .expire:
+            expireTouchID(for: path)
+            return nil
+        case .load(let stampNow):
+            if stampNow { defaults.set(Date(), forKey: touchIDStampKey(for: path)) }
+            let loaded = secretStore.load(account: path)
+            guard loaded.status == errSecSuccess, let secret = loaded.secret, let stored = StoredUnlock(stored: secret) else {
+                if loaded.status == errSecItemNotFound { expireTouchID(for: path) }
+                return nil
+            }
+            return stored
+        }
+    }
+
+    /// Deletes one file's saved secret after its window ends. Does not mark Touch ID declined.
+    private func expireTouchID(for account: String) {
+        let status = secretStore.delete(account: account)
+        guard !TouchIDEnrollment.keepsPersistedFlag(deleteStatus: status) else { return }
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: touchIDEnabledKey(for: account))
+        defaults.removeObject(forKey: touchIDStampKey(for: account))
+        defaults.removeObject(forKey: touchIDStaleKey(for: account))
+    }
+
     /// An import saved as a sibling `.kdbx` keeps its keychain secret. A failed copy leaves the old path listed.
     private func migrateUnlockSecret(from old: String, to new: String) -> Bool {
         guard old != new else { return true }
@@ -797,7 +834,7 @@ final class VaultSession: ObservableObject {
         openedFiles.removeAll { $0.url.path != currentPath }
         if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
             for path in databasePaths where path != currentPath {
-                guard let secret = secretStore.load(account: path).secret, let stored = StoredUnlock(stored: secret) else { continue }
+                guard let stored = rememberedUnlock(for: path) else { continue }
                 let url = URL(fileURLWithPath: path)
                 let key = url.pathExtension.lowercased() == "kdb" ? stored.keyFile : nil
                 guard let vault = try? VaultFormat.load(url: url, password: stored.password, keyFile: key) else { continue }
