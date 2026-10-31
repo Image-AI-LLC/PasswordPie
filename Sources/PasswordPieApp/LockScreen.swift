@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Animation state of the doors: the shield brightens, then the doors part.
+/// Animation state of the doors: the pie scales up, then the doors part.
 @MainActor
 final class LockModel: ObservableObject {
     @Published var turned = false
