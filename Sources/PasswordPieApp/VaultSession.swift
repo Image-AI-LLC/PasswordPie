@@ -34,6 +34,14 @@ private struct OpenedFile {
     var vault: Vault
     var password: String
     var keyFile: Data?
+    /// Set when an import was written to a sibling but its keychain secret did not move.
+    var pendingSaveURL: URL?
+}
+
+private struct SiblingJob: Sendable {
+    let path: String
+    let password: String
+    let keyFile: Data?
 }
 
 @MainActor
@@ -101,6 +109,8 @@ final class VaultSession: ObservableObject {
     private var kdf = KDFParameters.default
     /// Decrypted databases for this unlock. Cleared on lock so secrets do not outlive the session.
     private var openedFiles: [OpenedFile] = []
+    /// Bumped on lock and on each unlock. A sibling decrypt still running from the previous generation must not publish.
+    private var catalogGeneration: UInt = 0
     /// Menu id → id stored in that file. They differ only when two files share a UUID.
     private var listOrigins: [UUID: UUID] = [:]
     private var listPaths: [UUID: String] = [:]
@@ -360,6 +370,7 @@ final class VaultSession: ObservableObject {
     }
 
     func lock() {
+        catalogGeneration &+= 1
         openedFiles = []
         listOrigins = [:]
         listPaths = [:]
@@ -522,6 +533,15 @@ final class VaultSession: ObservableObject {
         }
         guard next.current != databaseURL.path else {
             adopt(next)
+            let kept = OpenedCatalog.afterRemoval(
+                openedPaths: openedFiles.map(\.url.path),
+                removedPath: resolved,
+                secretDeleted: true
+            )
+            if kept.count != openedFiles.count {
+                openedFiles = openedFiles.filter { kept.contains($0.url.path) }
+                publishCatalog()
+            }
             return
         }
         applyingRoster = true
@@ -829,19 +849,56 @@ final class VaultSession: ObservableObject {
     }
 
     /// Other files in the list open from their own keychain secrets. A file without one stays out of the list.
+    /// The current file is published immediately. Siblings decrypt off the main actor, one at a time.
     private func loadRememberedDatabases() {
+        catalogGeneration &+= 1
+        let generation = catalogGeneration
         let currentPath = databaseURL.path
         openedFiles.removeAll { $0.url.path != currentPath }
-        if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
-            for path in databasePaths where path != currentPath {
-                guard let stored = rememberedUnlock(for: path) else { continue }
-                let url = URL(fileURLWithPath: path)
-                let key = url.pathExtension.lowercased() == "kdb" ? stored.keyFile : nil
-                guard let vault = try? VaultFormat.load(url: url, password: stored.password, keyFile: key) else { continue }
-                openedFiles.append(OpenedFile(url: url, vault: vault, password: stored.password, keyFile: key))
+        publishCatalog()
+        guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return }
+        let jobs: [SiblingJob] = databasePaths.compactMap { path in
+            guard path != currentPath, let stored = rememberedUnlock(for: path) else { return nil }
+            let url = URL(fileURLWithPath: path)
+            let key = url.pathExtension.lowercased() == "kdb" ? stored.keyFile : nil
+            return SiblingJob(path: path, password: stored.password, keyFile: key)
+        }
+        guard !jobs.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for job in jobs {
+                if CatalogLoad.step(
+                    generation: generation,
+                    current: self.catalogGeneration,
+                    pathStillListed: true
+                ) == .stop { return }
+                let loaded = await Task.detached { () -> Vault? in
+                    try? VaultFormat.load(
+                        url: URL(fileURLWithPath: job.path),
+                        password: job.password,
+                        keyFile: job.keyFile
+                    )
+                }.value
+                switch CatalogLoad.step(
+                    generation: generation,
+                    current: self.catalogGeneration,
+                    pathStillListed: self.databasePaths.contains(job.path) && job.path != self.databaseURL.path
+                ) {
+                case .stop:
+                    return
+                case .skipFile:
+                    continue
+                case .publish:
+                    guard let loaded, !self.openedFiles.contains(where: { $0.url.path == job.path }) else { continue }
+                    let url = URL(fileURLWithPath: job.path)
+                    let key = url.pathExtension.lowercased() == "kdb" ? job.keyFile : nil
+                    self.openedFiles.append(OpenedFile(
+                        url: url, vault: loaded, password: job.password, keyFile: key
+                    ))
+                    self.publishCatalog()
+                }
             }
         }
-        publishCatalog()
     }
 
     private func publishCatalog() {
@@ -909,32 +966,36 @@ final class VaultSession: ObservableObject {
             NSSound.beep()
             return
         }
-        let destination = writesKDBX ? fileURL : VaultFormat.importedKDBXURL(beside: fileURL)
+        let pending = index.flatMap { openedFiles[$0].pendingSaveURL }
+        let destination = writesKDBX ? fileURL : (pending ?? VaultFormat.importedKDBXURL(beside: fileURL))
         do {
             let data = try KDBX.save(vault: &vault, password: password)
             try data.write(to: destination, options: .atomic)
+            // Move the secret before the opened file changes path. A failed move keeps the
+            // source path, so the next save still finds this vault and rewrites the same sibling.
+            let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
+            let decision = ImportRetarget.decide(source: path, destination: destination.path, secretMoved: moved)
             let stored = OpenedFile(
-                url: destination,
+                url: URL(fileURLWithPath: decision.openedPath),
                 vault: vault,
                 password: password,
-                keyFile: index.flatMap { openedFiles[$0].keyFile }
+                keyFile: index.flatMap { openedFiles[$0].keyFile },
+                pendingSaveURL: decision.pendingPath.map { URL(fileURLWithPath: $0) }
             )
             if let index {
                 openedFiles[index] = stored
             } else {
                 openedFiles.insert(stored, at: 0)
             }
-            if destination.path != path {
+            if decision.retargetRoster {
                 // The sibling .kdbx is the file we will open next. Leaving the import in the
                 // roster would show the same entries twice.
-                if migrateUnlockSecret(from: path, to: destination.path) {
-                    applyingRoster = true
-                    if isCurrent { databaseURL = destination }
-                    adopt(roster.replacing(path, with: destination.path))
-                    applyingRoster = false
-                } else {
-                    message = "Saved \(destination.lastPathComponent), but the saved password could not move to it."
-                }
+                applyingRoster = true
+                if isCurrent { databaseURL = URL(fileURLWithPath: decision.openedPath) }
+                adopt(roster.replacing(path, with: destination.path))
+                applyingRoster = false
+            } else if destination.path != path {
+                message = "Saved \(destination.lastPathComponent), but the saved password could not move to it."
             }
             if isCurrent {
                 kdf = vault.kdf
