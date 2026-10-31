@@ -643,18 +643,25 @@ shows as written.
   rests on its row; the first details popover since launch waits 0.7 s (and
   animates in), later ones open at once without animation. Moving towards an open submenu delays the change of
   selection by 0.2 s.
-- **Details popover** — header (32 pt tile, `title`, edit pencil, favourite
+- **Details popover** — header (32 pt tile, `title`, edit pencil, pin, favourite
   star in `favorite` or `label-secondary`), then one field per value:
   username, password (+ strength), website, one-time password, custom fields,
-  notes, tags.
+  notes, tags. Pin opens the same account in a floating utility window at the
+  top-right of the current screen and hides the menu. That window stays above
+  normal windows, including after PasswordPie deactivates, until its close
+  button. Escape, clicking elsewhere, and copying or opening a field do not
+  dismiss it. Locking the vault does. Pinning another account reuses the window.
 - **Detail field** — `label` over the value, 0.5 pt ink 10 % line on top.
   States: normal; focused (keyboard, `field-focus` tint); hover (a small
-  "copy" button at the right. Clicking the word copies. A password adds an
-  arrow beside it: reveal / conceal and large type. A website adds an arrow:
-  open and fill / open. Other fields have no arrow.); flashing (Return:
-  the button shows at 40 % for 0.3 s, then the value is copied and the panel
-  hides). Masked secrets show 8 to 16 bullets; holding Option or "reveal"
-  shows them in `body-code`. URLs are `accent`; notes wrap up to 8 lines.
+  button at the right. Clicking the word runs the field's primary action.
+  Username, password, notes, one-time password and custom fields say "copy".
+  A password adds an arrow: reveal / conceal and large type. A website says
+  "open" and adds an arrow: copy, open and fill. Other fields have no arrow.
+  In the pinned window the button stays visible without hover.); flashing
+  (Return: the button shows at 40 % for 0.3 s, then the primary action runs.
+  In the popover, copy and open hide the panel.) Masked secrets show 8 to 16
+  bullets; holding Option or "reveal" shows them in `body-code`. URLs are
+  `accent`; notes wrap up to 8 lines.
 - **OTP field** — grouped code in `code-lg` `accent` with a 14 pt countdown pie
   (ring at 35 %); both turn `system-red` in the last 5 s.
 - **Strength meter** — 5 pt capsule: ink 12 % track, fill in `system-red`,

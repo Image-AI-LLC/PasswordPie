@@ -41,6 +41,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotKeyHandlerInstalled = false
     private let hotKeySignature: OSType = 0x50506965
     private(set) var largeTypeWindow: NSWindow?
+    private var pinnedEntryWindow: PinnedEntryPanel?
+    private var pinnedModel: DetailsModel?
+    private var pinnedSnapshot: VaultEntry?
+    private var pinnedContentHeight: CGFloat = 0
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
@@ -75,6 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .sink { [weak self] _ in
                 self?.largeTypeWindow?.close()
                 self?.largeTypeWindow = nil
+                self?.pinnedEntryWindow?.close()
+            }
+            .store(in: &cancellables)
+        session.$entries
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] entries in
+                self?.refreshPinnedEntry(entries)
             }
             .store(in: &cancellables)
         applyDebugHooks()
@@ -134,6 +145,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         largeTypeWindow = window
     }
 
+    /// Shows `entry` in the floating window. Pinning another account reuses the window and keeps its place.
+    func showPinnedEntry(_ entry: VaultEntry) {
+        let sameAccount = pinnedModel?.entryID == entry.id
+        let model = DetailsModel(entry: entry, session: session, presentation: .pinned, done: {})
+        if sameAccount, let previous = pinnedModel {
+            model.focused = min(previous.focused, max(model.fields.count - 1, 0))
+            model.revealed = previous.revealed
+        }
+        pinnedModel = model
+        pinnedSnapshot = entry
+        let root = DetailsView(model: model) { [weak self] height in
+            self?.resizePinned(height: height)
+        }
+        let panel: PinnedEntryPanel
+        if let existing = pinnedEntryWindow {
+            panel = existing
+            if let host = existing.contentView as? FirstMouseHostingView<DetailsView> {
+                host.rootView = root
+            }
+        } else {
+            panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160))
+            panel.delegate = self
+            panel.contentView = FirstMouseHostingView(rootView: root)
+            pinnedEntryWindow = panel
+            pinnedContentHeight = 0
+            placePinned(panel)
+        }
+        panel.title = model.title
+        panel.orderFrontRegardless()
+    }
+
+    private func refreshPinnedEntry(_ entries: [VaultEntry]) {
+        guard let pinnedSnapshot else { return }
+        guard let entry = entries.first(where: { $0.id == pinnedSnapshot.id }) else {
+            pinnedEntryWindow?.close()
+            return
+        }
+        guard entry != pinnedSnapshot else { return }
+        showPinnedEntry(entry)
+    }
+
+    /// Keeps the title bar where the user put it while the content grows or shrinks.
+    private func resizePinned(height: CGFloat) {
+        guard height != pinnedContentHeight, let panel = pinnedEntryWindow else { return }
+        pinnedContentHeight = height
+        let oldMaxY = panel.frame.maxY
+        panel.setContentSize(NSSize(width: 400, height: height))
+        var frame = panel.frame
+        frame.origin.y += oldMaxY - frame.maxY
+        panel.setFrame(frame, display: true)
+    }
+
+    private func placePinned(_ panel: NSPanel) {
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let frame = panel.frame
+        let origin = NSPoint(x: visible.maxX - frame.width - 24, y: visible.maxY - frame.height - 24)
+        panel.setFrameOrigin(origin)
+    }
+
     /// The item editor is a detached window; the panel hides while it is open.
     private func editingChanged(_ entry: VaultEntry?) {
         guard let entry else {
@@ -184,6 +255,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
+        } else if window === pinnedEntryWindow {
+            pinnedEntryWindow = nil
+            pinnedModel = nil
+            pinnedSnapshot = nil
+            pinnedContentHeight = 0
         }
     }
 

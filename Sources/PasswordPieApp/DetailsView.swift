@@ -14,12 +14,13 @@ struct DetailField: Identifiable, Equatable {
     var secret: Bool
 }
 
-/// The word "copy" always copies. A menu exists only when the field has something besides copy.
-enum FieldCopyItem: Equatable {
-    case reveal, conceal, largeType, openAndFill, open
+/// One thing a details field can do. The button shows `primary`; the arrow lists `menu`.
+enum FieldAction: Equatable, Hashable {
+    case copy, reveal, conceal, largeType, openAndFill, open
 
     var title: String {
         switch self {
+        case .copy: "copy"
         case .reveal: "reveal"
         case .conceal: "conceal"
         case .largeType: "large type"
@@ -27,17 +28,57 @@ enum FieldCopyItem: Equatable {
         case .open: "open"
         }
     }
+
+    /// Tooltip for the primary button. Menu items keep the lower-case title.
+    var buttonHelp: String {
+        switch self {
+        case .copy: "Copy"
+        case .open: "Open"
+        default: title
+        }
+    }
 }
 
-func fieldCopyMenu(_ field: DetailField, revealed: Bool) -> [FieldCopyItem]? {
+struct FieldControl: Equatable {
+    var primary: FieldAction
+    var menu: [FieldAction]
+}
+
+/// A website opens. Copy is in the arrow, with open-and-fill. Every other field copies, and only a password has a menu.
+func fieldControl(_ field: DetailField, revealed: Bool) -> FieldControl {
     switch field.kind {
     case .password:
-        return [revealed ? .conceal : .reveal, .largeType]
+        return FieldControl(primary: .copy, menu: [revealed ? .conceal : .reveal, .largeType])
     case .url:
-        return [.openAndFill, .open]
+        return FieldControl(primary: .open, menu: [.copy, .openAndFill])
     default:
-        return nil
+        return FieldControl(primary: .copy, menu: [])
     }
+}
+
+enum DetailsPresentation: Equatable {
+    /// The menu popover. Copying or opening leaves, because the menu would cover the place being filled.
+    case popover
+    /// A floating window the user pinned. Field actions never dismiss it.
+    case pinned
+}
+
+/// Copying, opening, and open-and-fill close the popover. A pinned window stays until its close button.
+func fieldActionClosesDetails(_ action: FieldAction, presentation: DetailsPresentation) -> Bool {
+    guard presentation == .popover else { return false }
+    switch action {
+    case .copy, .open, .openAndFill: return true
+    case .reveal, .conceal, .largeType: return false
+    }
+}
+
+func showsPinButton(_ presentation: DetailsPresentation) -> Bool {
+    presentation == .popover
+}
+
+/// The popover shows its buttons on hover. The pinned window keeps them visible so a field can be copied while another app is in front.
+func fieldActionsStayVisible(_ presentation: DetailsPresentation) -> Bool {
+    presentation == .pinned
 }
 
 /// State of the details popover. The search field keeps keyboard focus, so the controller drives this model with up, down and return.
@@ -52,15 +93,17 @@ final class DetailsModel: ObservableObject {
     @Published var optionHeld = NSEvent.modifierFlags.contains(.option)
     @Published var flashing = false
     @Published var favorite: Bool
+    let presentation: DetailsPresentation
     unowned let session: VaultSession
     private let done: () -> Void
     private var monitor: Any?
 
-    init(entry: VaultEntry, session: VaultSession, done: @escaping () -> Void) {
+    init(entry: VaultEntry, session: VaultSession, presentation: DetailsPresentation = .popover, done: @escaping () -> Void) {
         entryID = entry.id
         title = entry.title.isEmpty ? "Untitled" : entry.title
         favorite = entry.favorite
         tags = entry.tagList.filter { $0.caseInsensitiveCompare("Favorite") != .orderedSame }
+        self.presentation = presentation
         self.session = session
         self.done = done
         var fields: [DetailField] = []
@@ -104,17 +147,28 @@ final class DetailsModel: ObservableObject {
         favorite.toggle()
     }
 
-    /// Copies the field, then the whole popup hides.
-    func copy(_ field: DetailField) {
-        switch field.kind {
-        case .username: session.copy(.username, of: entryID)
-        case .password: session.copy(.password, of: entryID)
-        case .url: session.copy(.url, of: entryID)
-        case .notes: session.copy(.notes, of: entryID)
-        case .oneTimePassword: session.copy(.oneTimePassword, of: entryID)
-        case .custom(let key): session.copy(.custom(key), of: entryID)
+    /// Runs the field's action. The popover then hides for copy and open; a pinned window never does.
+    func perform(_ action: FieldAction, on field: DetailField) {
+        switch action {
+        case .copy:
+            copyValue(field)
+        case .reveal, .conceal:
+            toggleReveal(field)
+        case .largeType:
+            session.showLargeType(field.value)
+        case .openAndFill:
+            session.fill(entryID, .openAndFill)
+        case .open:
+            session.openURL(of: entryID)
         }
-        done()
+        if fieldActionClosesDetails(action, presentation: presentation) {
+            done()
+        }
+    }
+
+    /// Opens this account in a floating window and puts the menu away.
+    func pin() {
+        session.pinEntry(entryID)
     }
 
     /// Editing happens in a detached window; the panel hides first.
@@ -123,25 +177,29 @@ final class DetailsModel: ObservableObject {
         session.edit(entryID)
     }
 
-    func largeType(_ field: DetailField) {
-        session.showLargeType(field.value)
-    }
-
-    func openURL(fill: Bool) {
-        if fill { session.fill(entryID, .openAndFill) } else { session.openURL(of: entryID); done() }
-    }
-
-    /// Return: flash the field's button twice (2 x 0.15 s), copy it, hide.
+    /// Return: flash the field's button (0.3 s), then run its primary action.
     func activateFocused() {
         guard fields.indices.contains(focused), !flashing else { return }
         let field = fields[focused]
+        let action = fieldControl(field, revealed: revealed.contains(field.id)).primary
         flashing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
             self.flashing = false
-            // Focus may have moved during the flash; copy only the field Return was pressed on.
+            // Focus may have moved during the flash; act only on the field Return was pressed on.
             guard self.fields.indices.contains(self.focused), self.fields[self.focused].id == field.id else { return }
-            self.copy(field)
+            self.perform(action, on: field)
+        }
+    }
+
+    private func copyValue(_ field: DetailField) {
+        switch field.kind {
+        case .username: session.copy(.username, of: entryID)
+        case .password: session.copy(.password, of: entryID)
+        case .url: session.copy(.url, of: entryID)
+        case .notes: session.copy(.notes, of: entryID)
+        case .oneTimePassword: session.copy(.oneTimePassword, of: entryID)
+        case .custom(let key): session.copy(.custom(key), of: entryID)
         }
     }
 }
@@ -153,6 +211,7 @@ private struct ContentHeightKey: PreferenceKey {
 
 struct DetailsView: View {
     @ObservedObject var model: DetailsModel
+    var onHeight: ((CGFloat) -> Void)? = nil
     @State private var contentHeight: CGFloat = 120
 
     var body: some View {
@@ -174,7 +233,11 @@ struct DetailsView: View {
             .background(GeometryReader { Color.clear.preference(key: ContentHeightKey.self, value: $0.size.height) })
         }
         .frame(width: 400, height: min(contentHeight, 500))
-        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+        .onPreferenceChange(ContentHeightKey.self) { height in
+            contentHeight = height
+            let fitted = min(height, 500)
+            DispatchQueue.main.async { onHeight?(fitted) }
+        }
     }
 
     private var header: some View {
@@ -187,6 +250,13 @@ struct DetailsView: View {
             }
             .buttonStyle(.plain)
             .help("Edit (⌘E)")
+            if showsPinButton(model.presentation) {
+                Button { model.pin() } label: {
+                    Image(systemName: "pin").font(.system(size: 13)).foregroundStyle(Color.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Pin window")
+            }
             Button { model.toggleFavorite() } label: {
                 Image(systemName: model.favorite ? "star.fill" : "star")
                     .font(.system(size: 15))
@@ -227,12 +297,14 @@ private struct DetailRow: View {
     @State private var hovering = false
 
     var body: some View {
+        let control = fieldControl(field, revealed: model.revealed.contains(field.id))
         DetailChrome(label: field.label, highlighted: focused) { value }
             .contentShape(Rectangle())
-            .onTapGesture { model.copy(field) }
+            .onTapGesture { model.perform(control.primary, on: field) }
+            .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
             .overlay(alignment: .trailing) {
-                if hovering || (focused && model.flashing) {
-                    actions
+                if fieldActionsStayVisible(model.presentation) || hovering || (focused && model.flashing) {
+                    actions(control)
                         .padding(.trailing, 10)
                         .opacity(focused && model.flashing ? 0.4 : 1)
                 }
@@ -258,37 +330,33 @@ private struct DetailRow: View {
         }
     }
 
-    private var actions: some View {
-        FieldCopyButton(items: fieldCopyMenu(field, revealed: model.revealed.contains(field.id)) ?? []) {
-            model.copy(field)
+    private func actions(_ control: FieldControl) -> some View {
+        FieldActionButton(primary: control.primary, items: control.menu) {
+            model.perform(control.primary, on: field)
         } onItem: { item in
-            switch item {
-            case .reveal, .conceal: model.toggleReveal(field)
-            case .largeType: model.largeType(field)
-            case .openAndFill: model.openURL(fill: true)
-            case .open: model.openURL(fill: false)
-            }
+            model.perform(item, on: field)
         }
     }
 }
 
-/// One control. The word copies. The arrow, present only when `items` is not empty, opens the menu.
-struct FieldCopyButton: View {
-    var items: [FieldCopyItem]
-    var onCopy: () -> Void
-    var onItem: (FieldCopyItem) -> Void
+/// The word runs `primary`. The arrow, present only when `items` is not empty, opens the menu.
+struct FieldActionButton: View {
+    var primary: FieldAction
+    var items: [FieldAction]
+    var onPrimary: () -> Void
+    var onItem: (FieldAction) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: onCopy) {
-                Text("copy")
+            Button(action: onPrimary) {
+                Text(primary.title)
                     .font(.system(size: 11))
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
                     .contentShape(Rectangle())
             }
             .buttonStyle(FieldCopyPressStyle())
-            .help("Copy")
+            .help(primary.buttonHelp)
             if !items.isEmpty {
                 Rectangle().fill(Color.primary.opacity(0.28)).frame(width: 0.5, height: 12)
                 Menu {
