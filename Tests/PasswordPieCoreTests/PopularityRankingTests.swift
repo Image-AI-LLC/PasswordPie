@@ -153,4 +153,28 @@ final class PopularityRankingTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(bundled.count, 9_000)
         XCTAssertLessThanOrEqual(bundled.count, 10_000)
     }
+
+    // MARK: The menu keeps the ranked order
+
+    func testMenuRowsKeepThePopularFirstOrder() {
+        // Alphabetical order would put "Alpha mail" first. The bundled table ranks google.com far above the .example site.
+        let items = [
+            entry("Alpha mail", url: "https://nobody.example"),
+            entry("Zeta mail", url: "https://mail.google.com")
+        ]
+        let rows = MenuBuilder.searchResults(entries: items, query: "mail", scope: .major)
+        let entryTitles = rows.filter { if case .entry = $0.kind { return true } else { return false } }.map(\.title)
+        XCTAssertEqual(entryTitles, ["Zeta mail", "Alpha mail"])
+    }
+
+    func testRowsFoldedIntoShowMoreKeepTheRankedOrder() {
+        var items = (1...7).map { entry("Alpha \($0) mail", url: "https://site\($0).example") }
+        items.append(entry("Zeta mail", url: "https://google.com"))
+        let rows = MenuBuilder.searchResults(entries: items, query: "mail", scope: .major)
+        let first = rows.first { if case .entry = $0.kind { return true } else { return false } }
+        XCTAssertEqual(first?.title, "Zeta mail")
+        let more = rows.first { $0.kind == .showMore }
+        XCTAssertEqual(more?.children.count, 3)
+        XCTAssertEqual(more?.children.map(\.title), ["Alpha 5 mail", "Alpha 6 mail", "Alpha 7 mail"])
+    }
 }
