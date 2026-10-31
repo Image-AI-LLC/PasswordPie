@@ -168,13 +168,19 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             .dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.refresh() } }
             .store(in: &cancellables)
-        session.$entries
+        // The session builds the menu and the search index in the background; each finished piece refreshes the list it feeds.
+        session.$topLevelRows
             .dropFirst()
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.refresh() } }
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.catalogUpdated(topLevel: true) } }
             .store(in: &cancellables)
-        session.$liveEntries
+        session.$searchIndex
             .dropFirst()
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.refresh() } }
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.catalogUpdated(topLevel: false) } }
+            .store(in: &cancellables)
+        session.$indexing
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.menu.catalogUpdated(topLevel: false) } }
             .store(in: &cancellables)
         session.$creating
             .removeDuplicates()
