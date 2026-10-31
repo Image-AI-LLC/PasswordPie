@@ -356,13 +356,15 @@ components:
     fit: 'largest window is the visible frame minus 48px in width and height; type shrinks from 54px'
 ---
 
-# PasswordPie — "Satin Vault"
+# PasswordPie — historical "Satin Vault" reference
+
+> Current branding and locked-panel styling: see [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). Metal-door descriptions below document the earlier visual design; unchanged native interaction contracts still apply.
 
 PasswordPie is a KeePass (KDBX) password manager that lives in the macOS menu bar.
-This file is the single source for its look. Code follows it: change this file
-first, then `Design.html`, then `Sources/PasswordPieApp/Palette.swift` and the
-views. `Design.html` (repo root) renders every token below; open it in a browser
-to see and edit the style.
+This file preserves the previous visual system and its machine-readable tokens.
+`Design.html` renders that historical token set, not the current brand. For current
+colors and locked-panel components, use `DESIGN_SYSTEM.md` and
+`Sources/PasswordPieApp/Palette.swift`; do not export these legacy values over them.
 
 ## Overview
 

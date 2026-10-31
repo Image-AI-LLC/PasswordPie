@@ -1,5 +1,7 @@
 # Icon proportions and own-brand mark
 
+> Historical shield-era screenshots. The current flat keyhole-pie assets and rebuild steps are documented in `art/README.md`.
+
 The Mini panel now uses the existing PasswordPie shield vector from `MenuBarIcon.path()`
 (the same outline as `art/source/menubar.svg`), not the former circular dial/keyhole
 artwork. `PasswordPieMark` supplies the silver lock-screen/Preferences treatment and a

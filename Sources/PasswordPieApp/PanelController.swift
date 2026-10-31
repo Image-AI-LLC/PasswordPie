@@ -149,7 +149,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         lockHost.frame = container.bounds
         lockHost.autoresizingMask = [.width, .height]
         lockHost.wantsLayer = true
-        lockHost.layer?.cornerRadius = 8
+        lockHost.layer?.cornerRadius = 16
         lockHost.layer?.masksToBounds = true
         container.addSubview(lockHost)
         lockHost.layoutSubtreeIfNeeded()
@@ -386,7 +386,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
     }
 
-    /// Doors close for 0.3 s and the key turns back, then the panel hides.
+    /// The lock form fades in and its mark settles, then the panel hides.
     private func lockAnimation() {
         guard panel.isVisible else {
             applyLayout(locked: true)
@@ -411,7 +411,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
     }
 
-    /// The key turns for 0.3 s, a 0.1 s pause, the doors part for 0.3 s, then the menu takes over in the same window.
+    /// The mark pulses, then the form fades for 0.3 s before the menu takes over.
     private func unlockAnimation() {
         header.searchField.stringValue = ""
         menu.reset()

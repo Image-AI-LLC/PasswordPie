@@ -1,5 +1,7 @@
 # Preferences redesign
 
+> Historical shield-era screenshots. The current flat keyhole-pie assets and rebuild steps are documented in `art/README.md`.
+
 `concept.png` was generated with the built-in `image_gen` tool; its full prompt is in
 `prompt.txt`. It is a visual reference, not a runtime asset. The implementation uses
 native SwiftUI/AppKit controls and semantic system colors, not the mockup bitmap.
