@@ -1,4 +1,5 @@
 import AppKit
+import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 
@@ -49,6 +50,15 @@ final class FieldCopyTests: XCTestCase {
     func testPinnedFieldActionsStayVisible() {
         XCTAssertFalse(fieldActionsStayVisible(.popover))
         XCTAssertTrue(fieldActionsStayVisible(.pinned))
+    }
+
+    func testTrashedOrRemovedAccountLeavesThePinnedWindow() {
+        var entry = VaultEntry()
+        entry.title = "Bank"
+        XCTAssertEqual(activePinnedEntry([entry], id: entry.id)?.id, entry.id)
+        entry.trashed = true
+        XCTAssertNil(activePinnedEntry([entry], id: entry.id))
+        XCTAssertNil(activePinnedEntry([], id: entry.id))
     }
 
     func testOnlyTheCloseButtonDismissesAPinnedWindow() {

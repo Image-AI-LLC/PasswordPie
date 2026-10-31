@@ -178,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func refreshPinnedEntry(_ entries: [VaultEntry]) {
         guard let pinnedSnapshot else { return }
-        guard let entry = entries.first(where: { $0.id == pinnedSnapshot.id }) else {
+        guard let entry = activePinnedEntry(entries, id: pinnedSnapshot.id) else {
             pinnedEntryWindow?.close()
             return
         }

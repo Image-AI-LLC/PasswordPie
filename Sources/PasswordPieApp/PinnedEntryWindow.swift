@@ -1,4 +1,5 @@
 import AppKit
+import PasswordPieCore
 import SwiftUI
 
 enum PinnedWindowCloseReason: Equatable {
@@ -9,6 +10,11 @@ enum PinnedWindowCloseReason: Equatable {
 /// Losing focus or pressing Escape must not dismiss it. Only the close button does.
 func pinnedWindowShouldClose(_ reason: PinnedWindowCloseReason) -> Bool {
     reason == .closeButton
+}
+
+/// The entry still shown in the pinned window. Trash and deletion both return nil, so the window closes.
+func activePinnedEntry(_ entries: [VaultEntry], id: UUID) -> VaultEntry? {
+    entries.first { $0.id == id && !$0.trashed }
 }
 
 /// Always-on-top panel for one opened account. Clicking it can focus PasswordPie, so the field
