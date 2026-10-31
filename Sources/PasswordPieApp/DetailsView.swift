@@ -76,7 +76,7 @@ func showsPinButton(_ presentation: DetailsPresentation) -> Bool {
     presentation == .popover
 }
 
-/// The popover shows its buttons on hover. The pinned window keeps them visible so a field can be copied while another app is in front.
+/// Field actions show on hover in the popover and in a pinned window.
 func fieldActionsStayVisible(_ presentation: DetailsPresentation) -> Bool {
     switch presentation {
     case .popover, .pinned:
