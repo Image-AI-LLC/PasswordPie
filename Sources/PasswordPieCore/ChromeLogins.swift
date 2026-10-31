@@ -275,7 +275,10 @@ public enum ChromeLogins {
         }
         defer { sqlite3_finalize(statement) }
         var rows: [Row] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
+        while true {
+            let rc = sqlite3_step(statement)
+            if rc == SQLITE_DONE { break }
+            guard rc == SQLITE_ROW else { throw ChromeLoginsError.database("Couldn't read Chrome's password store.") }
             let length = Int(sqlite3_column_bytes(statement, 2))
             guard length > 0, let bytes = sqlite3_column_blob(statement, 2) else { continue }
             rows.append(Row(

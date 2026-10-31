@@ -108,7 +108,9 @@ public enum BrowserImport {
     }
 
     private static func isManaged(_ entry: VaultEntry, by source: BrowserImportSource) -> Bool {
-        entry.tagList.contains { $0.caseInsensitiveCompare(source.label) == .orderedSame }
+        // A recycled entry has lost its group in the file, so only its tag can identify it.
+        (entry.trashed || entry.groupPath == [source.label])
+            && entry.tagList.contains { $0.caseInsensitiveCompare(source.label) == .orderedSame }
     }
 
     /// The same site and account in a new export. Scheme, `www.`, path and letter case do not matter.

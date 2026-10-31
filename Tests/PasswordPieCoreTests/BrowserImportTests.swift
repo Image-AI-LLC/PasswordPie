@@ -105,6 +105,18 @@ final class BrowserImportTests: XCTestCase {
         XCTAssertEqual(result.summary.added, 1)
     }
 
+    func testAUserEntryTaggedLikeTheSourceInAnotherGroupIsLeftAlone() {
+        var own = VaultEntry(groupPath: ["Personal"], tags: "Chrome")
+        own.title = "Mine"
+        own.url = "https://b.example"
+        own.username = "u"
+        own.password = "mine"
+        let result = BrowserImport.merge([entry("https://a.example", "u", "chrome")], into: [own], source: .chrome)
+        XCTAssertEqual(result.entries.first { $0.id == own.id }, own)
+        XCTAssertFalse(result.entries.first { $0.id == own.id }!.trashed)
+        XCTAssertEqual(result.summary.removed, 0)
+    }
+
     func testAnEntryTheUserDeletedStaysDeleted() {
         var deleted = entry("https://a.example", "u", "p")
         deleted.trashed = true
