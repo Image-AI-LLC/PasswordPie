@@ -72,13 +72,17 @@ public enum MenuBuilder {
     public static let groupLimit = 5
 
     /// The menu shown when the search field is empty: no items at the top level.
-    public static func topLevel(entries: [VaultEntry], categoryLimit: Int = MenuBuilder.categoryLimit) -> [MenuRow] {
+    public static func topLevel(
+        entries: [VaultEntry],
+        sources: [UUID: String] = [:],
+        categoryLimit: Int = MenuBuilder.categoryLimit
+    ) -> [MenuRow] {
         let visible = entries.filter { !$0.trashed }
         var rows: [MenuRow] = []
 
         let favorites = visible.filter(\.favorite)
         if !favorites.isEmpty {
-            rows.append(MenuRow(kind: .submenu, title: "Favorites", children: entryRows(favorites), icon: .favorites))
+            rows.append(MenuRow(kind: .submenu, title: "Favorites", children: entryRows(favorites, sources: sources), icon: .favorites))
         }
         rows.append(MenuRow(kind: .generator, title: "Password Generator", icon: .generator))
 
@@ -87,7 +91,7 @@ public enum MenuBuilder {
         if !categories.isEmpty {
             rows.append(.separator)
             let categoryRows = categories.map { category in
-                MenuRow(kind: .submenu, title: category.pluralName, children: entryRows(byCategory[category] ?? []), category: category)
+                MenuRow(kind: .submenu, title: category.pluralName, children: entryRows(byCategory[category] ?? [], sources: sources), category: category)
             }
             if categoryRows.count > categoryLimit + 1 {
                 rows += categoryRows.prefix(categoryLimit)
@@ -99,11 +103,11 @@ public enum MenuBuilder {
         }
 
         var tail: [MenuRow] = []
-        let folders = folderRows(visible, prefix: [])
+        let folders = folderRows(visible, prefix: [], sources: sources)
         if !folders.isEmpty {
             tail.append(MenuRow(kind: .submenu, title: "Folders", children: folders, icon: .folders))
         }
-        let tags = tagRows(visible)
+        let tags = tagRows(visible, sources: sources)
         if !tags.isEmpty {
             tail.append(MenuRow(kind: .submenu, title: "Tags", children: tags, icon: .tags))
         }
@@ -120,7 +124,8 @@ public enum MenuBuilder {
         query: String,
         scope: SearchScope,
         lastUsed: [UUID: Date] = [:],
-        now: Date = Date()
+        now: Date = Date(),
+        sources: [UUID: String] = [:]
     ) -> [MenuRow] {
         let found = searchEntries(entries, query: query, scope: scope, lastUsed: lastUsed, now: now)
         guard !found.isEmpty else {
@@ -131,7 +136,7 @@ public enum MenuBuilder {
         for category in ItemCategory.allCases {
             guard let group = byCategory[category] else { continue }
             rows.append(MenuRow(kind: .header, title: category.searchGroupTitle, category: category))
-            let all = entryRows(group, alreadySorted: true)
+            let all = entryRows(group, sources: sources, alreadySorted: true)
             rows += all.prefix(groupLimit)
             if all.count > groupLimit {
                 let rest = Array(all.dropFirst(groupLimit))
@@ -142,19 +147,33 @@ public enum MenuBuilder {
     }
 
     /// Rows for a list of entries; `alreadySorted` keeps the caller's order (search results sort favorites first).
-    static func entryRows(_ entries: [VaultEntry], alreadySorted: Bool = false) -> [MenuRow] {
+    static func entryRows(_ entries: [VaultEntry], sources: [UUID: String] = [:], alreadySorted: Bool = false) -> [MenuRow] {
         let sorted = alreadySorted ? entries : sortedForMenu(entries)
-        var counts: [String: Int] = [:]
-        for entry in sorted { counts[titleKey(entry.title), default: 0] += 1 }
         return sorted.map { entry in
             MenuRow(
                 kind: .entry(entry.id),
                 title: entry.title.isEmpty ? "Untitled" : entry.title,
                 category: entry.category,
                 favorite: entry.favorite,
-                username: counts[titleKey(entry.title), default: 0] > 1 ? entry.username : ""
+                username: rowDetail(entry, peers: sorted, sources: sources)
             )
         }
+    }
+
+    /// Same titles from different files show the file name. One file keeps the username.
+    static func rowDetail(_ entry: VaultEntry, peers: [VaultEntry], sources: [UUID: String]) -> String {
+        let key = titleKey(entry.title)
+        let sameTitle = peers.filter { titleKey($0.title) == key }
+        guard sameTitle.count > 1 else { return "" }
+        let paths = sameTitle.map { sources[$0.id] ?? "" }
+        let labels = DatabaseRoster.menuTitles(for: paths)
+        let distinct = Set(labels.filter { !$0.isEmpty })
+        guard distinct.count > 1, let index = sameTitle.firstIndex(where: { $0.id == entry.id }) else {
+            return entry.username
+        }
+        let label = labels[index]
+        if entry.username.isEmpty || label.isEmpty { return label.isEmpty ? entry.username : label }
+        return "\(entry.username) — \(label)"
     }
 
     /// Titles compare after Any-Latin; Latin-ASCII; Any-Lower, as the real menu does.
@@ -162,22 +181,22 @@ public enum MenuBuilder {
         title.applyingTransform(StringTransform("Any-Latin; Latin-ASCII; Any-Lower"), reverse: false) ?? title.lowercased()
     }
 
-    private static func folderRows(_ entries: [VaultEntry], prefix: [String]) -> [MenuRow] {
+    private static func folderRows(_ entries: [VaultEntry], prefix: [String], sources: [UUID: String]) -> [MenuRow] {
         let depth = prefix.count
         let inFolders = entries.filter { $0.groupPath.count > depth && Array($0.groupPath.prefix(depth)) == prefix }
         let names = Set(inFolders.map { $0.groupPath[depth] })
         let ordered = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         return ordered.map { name in
             let path = prefix + [name]
-            var children = folderRows(entries, prefix: path)
+            var children = folderRows(entries, prefix: path, sources: sources)
             let direct = entries.filter { $0.groupPath == path }
             if !children.isEmpty && !direct.isEmpty { children.append(.separator) }
-            children += entryRows(direct)
+            children += entryRows(direct, sources: sources)
             return MenuRow(kind: .submenu, title: name, children: children, icon: .folder)
         }
     }
 
-    private static func tagRows(_ entries: [VaultEntry]) -> [MenuRow] {
+    private static func tagRows(_ entries: [VaultEntry], sources: [UUID: String]) -> [MenuRow] {
         var byTag: [String: [VaultEntry]] = [:]
         var display: [String: String] = [:]
         for entry in entries {
@@ -188,7 +207,7 @@ public enum MenuBuilder {
             }
         }
         return byTag.keys.sorted { display[$0]!.localizedCaseInsensitiveCompare(display[$1]!) == .orderedAscending }.map { key in
-            MenuRow(kind: .submenu, title: display[key]!, children: entryRows(byTag[key]!), icon: .tag)
+            MenuRow(kind: .submenu, title: display[key]!, children: entryRows(byTag[key]!, sources: sources), icon: .tag)
         }
     }
 }

@@ -130,4 +130,15 @@ final class TouchIDSecretStoreTests: XCTestCase {
         XCTAssertEqual(TouchIDPromptMessage.message(for: .authenticationFailed), "Touch ID didn't match.")
         XCTAssertEqual(TouchIDPromptMessage.message(for: .biometryNotAvailable), "Touch ID is not available.")
     }
+
+    func testARememberedFileLoadsOnlyInsideItsOwnWindow() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let fresh = now.addingTimeInterval(-86_400)
+        let expired = now.addingTimeInterval(-8 * 86_400)
+        XCTAssertEqual(RememberedFile.access(enabled: true, stale: false, unlockedAt: fresh, now: now), .load(stampNow: false))
+        XCTAssertEqual(RememberedFile.access(enabled: true, stale: false, unlockedAt: expired, now: now), .expire)
+        XCTAssertEqual(RememberedFile.access(enabled: true, stale: false, unlockedAt: nil, now: now), .load(stampNow: true))
+        XCTAssertEqual(RememberedFile.access(enabled: false, stale: false, unlockedAt: fresh, now: now), .skip)
+        XCTAssertEqual(RememberedFile.access(enabled: true, stale: true, unlockedAt: fresh, now: now), .skip)
+    }
 }

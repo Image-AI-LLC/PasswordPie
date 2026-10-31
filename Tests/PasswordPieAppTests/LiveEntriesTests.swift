@@ -114,4 +114,35 @@ final class LiveEntriesTests: XCTestCase {
         let copyID = try XCTUnwrap(session.entries.first { $0.password == "chrome-secret" }?.id)
         XCTAssertEqual(try XCTUnwrap(session.lastUsedMap[copyID]).timeIntervalSince1970, used.timeIntervalSince1970, accuracy: 1)
     }
+
+    func testImportedPasswordsAreSavedIntoTheUnlockedFileAndShowInTheList() throws {
+        let session = unlockedSession()
+        var own = VaultEntry()
+        own.title = "Own"
+        session.saveEditing(own)
+
+        var imported = VaultEntry(groupPath: ["Chrome"], tags: "Chrome")
+        imported.title = "github.com"
+        imported.url = "https://github.com"
+        imported.username = "ann"
+        imported.password = "imported-secret"
+        let summary = session.mergeImported([imported], source: .chrome)
+
+        XCTAssertEqual(summary, BrowserImportSummary(added: 1, updated: 0, unchanged: 0, removed: 0))
+        XCTAssertEqual(Set(session.entries.map(\.title)), ["Own", "github.com"])
+        let saved = try savedEntries()
+        XCTAssertEqual(Set(saved.map(\.title)), ["Own", "github.com"])
+        XCTAssertEqual(saved.first { $0.title == "github.com" }?.groupPath, ["Chrome"])
+
+        // A second export without that site moves it to the recycle bin, and leaves the user's own entry alone.
+        var other = VaultEntry(groupPath: ["Chrome"], tags: "Chrome")
+        other.title = "news.example"
+        other.url = "https://news.example"
+        other.username = "bob"
+        other.password = "pw2"
+        let second = session.mergeImported([other], source: .chrome)
+        XCTAssertEqual(second, BrowserImportSummary(added: 1, updated: 0, unchanged: 0, removed: 1))
+        XCTAssertFalse(session.entries.contains { $0.title == "github.com" && !$0.trashed })
+        XCTAssertTrue(session.entries.contains { $0.title == "Own" && !$0.trashed })
+    }
 }

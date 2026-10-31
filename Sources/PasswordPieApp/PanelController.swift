@@ -80,6 +80,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private var contentWidth = MenuGeometry.rootWidth
     private var contentHeight: CGFloat = 0
     private var touchIDOffered = false
+    /// True while the system Touch ID sheet is up. That sheet is another process and must not close this panel.
+    private var touchIDPromptOpen = false
     private let positionKey = "panelTopLeft"
     /// Debug builds can keep the panel open when focus moves elsewhere, so screenshots are stable.
     private var autoHideEnabled: Bool {
@@ -178,6 +180,18 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             .removeDuplicates()
             .dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyLayout(locked: self?.session.locked ?? true) } }
+            .store(in: &cancellables)
+        session.$touchIDBusy
+            .removeDuplicates()
+            .sink { [weak self] busy in
+                guard let self else { return }
+                if busy {
+                    self.touchIDPromptOpen = true
+                    return
+                }
+                guard self.touchIDPromptOpen else { return }
+                self.restoreLockPanelAfterTouchID()
+            }
             .store(in: &cancellables)
         session.onWrongPassword = { [weak self] in self?.wrongPassword() }
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -281,11 +295,40 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         return body()
     }
 
+    /// Touch ID cancel returns focus to another app. Stay open until the password field is key again.
+    private func restoreLockPanelAfterTouchID() {
+        DispatchQueue.main.async { [weak self] in
+            self?.focusLockPanelIfNeeded()
+            DispatchQueue.main.async { [weak self] in
+                self?.focusLockPanelIfNeeded()
+                self?.touchIDPromptOpen = false
+            }
+        }
+    }
+
+    private func focusLockPanelIfNeeded() {
+        guard panel.isVisible, session.locked else { return }
+        NSApp.activate()
+        panel.makeKeyAndOrderFront(nil)
+        focusInitialField()
+    }
+
     @objc private func panelResignedKey() {
-        guard keepOpenDepth == 0, !session.recordingHotKey, autoHideEnabled else { return }
+        guard PanelPresence.hidesOnFocusLoss(
+            keepOpenDepth: keepOpenDepth,
+            touchIDBusy: touchIDPromptOpen,
+            recordingHotKey: session.recordingHotKey,
+            autoHideEnabled: autoHideEnabled
+        ) else { return }
         // Resign key closes the panel on the next pass, unless a child window, the popover or Large Type took key.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.panel.isVisible, !self.panel.isKeyWindow, self.keepOpenDepth == 0, NSApp.modalWindow == nil else { return }
+            guard PanelPresence.hidesOnFocusLoss(
+                keepOpenDepth: self.keepOpenDepth,
+                touchIDBusy: self.touchIDPromptOpen,
+                recordingHotKey: self.session.recordingHotKey,
+                autoHideEnabled: self.autoHideEnabled
+            ) else { return }
             if let key = NSApp.keyWindow, self.isAuxiliary(key) { return }
             self.hide(refocusPrevious: false)
         }
@@ -296,7 +339,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     }
 
     @objc private func appActivated(_ note: Notification) {
-        guard panel.isVisible, keepOpenDepth == 0, autoHideEnabled else { return }
+        guard panel.isVisible, PanelPresence.hidesOnFocusLoss(
+            keepOpenDepth: keepOpenDepth,
+            touchIDBusy: touchIDPromptOpen,
+            recordingHotKey: session.recordingHotKey,
+            autoHideEnabled: autoHideEnabled
+        ) else { return }
         let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
         guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
         hide(refocusPrevious: false)

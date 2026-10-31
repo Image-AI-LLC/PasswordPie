@@ -245,6 +245,25 @@ struct PreferencesView: View {
                 Button("Open…") { recorder.stop(); session.chooseDatabase() }
                 Button("New…") { recorder.stop(); session.newDatabase() }
             }
+            if session.databasePaths.count > 1 {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(session.databasePaths.enumerated()), id: \.element) { index, path in
+                        HStack(spacing: 8) {
+                            Text(session.databaseMenuTitles[index])
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            if path == session.databaseURL.path {
+                                Text("Current").font(.system(size: 11)).foregroundStyle(.secondary)
+                            } else {
+                                Button("Switch") { recorder.stop(); session.selectDatabase(path) }
+                            }
+                            Button("Remove") { recorder.stop(); session.forgetDatabase(path) }
+                                .help("Remove from the list. The file stays on disk.")
+                        }
+                    }
+                }
+            }
             Divider()
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -266,7 +285,7 @@ struct PreferencesView: View {
                         .padding(.top, 4)
                     Button(session.touchIDBusy ? "Waiting…" : "Turn Off") {
                         recorder.stop()
-                        session.disableTouchID()
+                        session.disableTouchID(declined: true)
                     }
                     .disabled(session.touchIDBusy)
                 } else if session.touchIDHardware {
@@ -375,7 +394,7 @@ struct PreferencesView: View {
         }
         if !session.touchIDHardware { return "Touch ID is not available on this Mac." }
         if session.touchIDEnabled { return "On for this database. It works for 7 days after a master-password unlock." }
-        if session.locked { return "Unlock with your master password to enable Touch ID." }
-        return "Available for 7 days after a master-password unlock."
+        if session.locked { return "Unlock with this file's password. PasswordPie then saves it for Touch ID for 7 days." }
+        return "Available for 7 days after you unlock with this file's password."
     }
 }
