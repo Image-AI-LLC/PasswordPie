@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>PasswordPie Satin Vault</title>
+<title>PasswordPie — historical Satin Vault reference</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <!--
-  PasswordPie design system preview. Everything below is rendered from TOKENS (the JS table near the end),
-  which mirrors the YAML front matter of DESIGN.md. Edit tokens in the Token manager, then export YAML/CSS
-  and copy the values back into DESIGN.md. Palette.swift holds only five of these colours (see DESIGN.md Known Gaps).
+  Historical PasswordPie design preview. Everything below is rendered from the legacy TOKENS table,
+  which mirrors DESIGN.md's archived YAML front matter. Its editor and exports are historical tools;
+  current implementation guidance is DESIGN_SYSTEM.md and Palette.swift. Do not overwrite them with these exports.
   Works offline; images use repo-relative paths.
 -->
 <style>
@@ -274,9 +274,10 @@
 <body>
 <main>
   <header class="masthead">
-    <img src="Assets/AppIcon.icon/Assets/tile.png" alt="PasswordPie app icon: satin shield with a keyhole on graphite">
+    <img src="Assets/AppIcon.icon/Assets/tile.png" alt="Current Password Pie keyhole-pie app icon">
     <div>
-      <h1 class="wordmark">PasswordPie <small>Satin Vault — design system. Source of truth: <code>DESIGN.md</code>. This page renders its tokens.</small></h1>
+      <h1 class="wordmark">PasswordPie <small>Historical Satin Vault reference — this page renders the previous tokens in <code>DESIGN.md</code>.</small></h1>
+      <p><strong>Archived visual system.</strong> Current branding and locked-panel styling live in <a href="DESIGN_SYSTEM.md">DESIGN_SYSTEM.md</a> and <code>Palette.swift</code>. Do not export these legacy tokens over the current palette.</p>
       <div class="toolbar">
         <button class="btn" id="theme-toggle" type="button">Page theme: system</button>
         <a class="btn" href="#tokens" style="text-decoration:none">Token manager ↓</a>
