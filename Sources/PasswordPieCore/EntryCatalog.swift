@@ -33,6 +33,18 @@ public enum EntryCatalog {
         merged.filter { $0.path == path }.map(\.entry)
     }
 
+    /// Position of each menu row inside its own file. Two copies of one UUID stay on different rows.
+    public static func indexes(in merged: [SourcedEntry]) -> [UUID: Int] {
+        var seen: [String: Int] = [:]
+        var slots: [UUID: Int] = [:]
+        for item in merged {
+            let index = seen[item.path, default: 0]
+            seen[item.path] = index + 1
+            slots[item.listID] = index
+        }
+        return slots
+    }
+
     private static func allocate(path: String, entryID: UUID, taken: inout Set<UUID>) -> UUID {
         if taken.insert(entryID).inserted { return entryID }
         var salt = 1

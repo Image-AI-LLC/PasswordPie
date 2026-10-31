@@ -37,6 +37,18 @@ public enum ImportRetarget {
     }
 }
 
+/// Which `.kdbx` an import writes. A path remembered from a failed secret move wins over a new name.
+public enum ImportDestination {
+    public static func url(
+        source: URL,
+        pending: String?,
+        exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> URL {
+        if let pending, !pending.isEmpty { return URL(fileURLWithPath: pending) }
+        return VaultFormat.importedKDBXURL(beside: source, exists: exists)
+    }
+}
+
 /// Whether a sibling vault that finished decrypting may join the list.
 public enum CatalogLoad {
     public enum Step: Equatable, Sendable {

@@ -159,6 +159,30 @@ final class EntryCatalogTests: XCTestCase {
         XCTAssertEqual(EntryCatalog.storedEntries(path: "/a/one.kdbx", merged: once).map(\.title), ["Bank"])
     }
 
+    func testTwoCopiesInOneFileKeepSeparateSlots() {
+        let shared = UUID()
+        var first = VaultEntry(id: shared)
+        first.title = "A"
+        var second = VaultEntry(id: shared)
+        second.title = "B"
+        let merged = EntryCatalog.merge([("/vaults/one.kdbx", [first, second])])
+        let slots = EntryCatalog.indexes(in: merged)
+        XCTAssertEqual(slots[merged[0].listID], 0)
+        XCTAssertEqual(slots[merged[1].listID], 1)
+        XCTAssertNotEqual(merged[0].listID, merged[1].listID)
+    }
+
+    func testTheSameIdInTwoFilesKeepsSlotZeroInEach() {
+        let shared = UUID()
+        let merged = EntryCatalog.merge([
+            ("/a/one.kdbx", [VaultEntry(id: shared)]),
+            ("/b/two.kdbx", [VaultEntry(id: shared)]),
+        ])
+        let slots = EntryCatalog.indexes(in: merged)
+        XCTAssertEqual(slots[merged[0].listID], 0)
+        XCTAssertEqual(slots[merged[1].listID], 0)
+    }
+
     func testSearchSeesEntriesFromEveryFile() {
         var home = VaultEntry()
         home.title = "Home Mail"

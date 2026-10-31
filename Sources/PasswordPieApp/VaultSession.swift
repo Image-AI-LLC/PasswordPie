@@ -113,6 +113,8 @@ final class VaultSession: ObservableObject {
     private var catalogGeneration: UInt = 0
     /// Menu id → id stored in that file. They differ only when two files share a UUID.
     private var listOrigins: [UUID: UUID] = [:]
+    /// Menu id → index in that file. Two entries in one file can share a stored UUID.
+    private var listSlots: [UUID: Int] = [:]
     private var listPaths: [UUID: String] = [:]
     private var keyFileData: Data?
     private var roster = DatabaseRoster(current: "")
@@ -373,6 +375,7 @@ final class VaultSession: ObservableObject {
         catalogGeneration &+= 1
         openedFiles = []
         listOrigins = [:]
+        listSlots = [:]
         listPaths = [:]
         entrySources = [:]
         entries = []
@@ -563,6 +566,7 @@ final class VaultSession: ObservableObject {
                 reportKeychainCleanupFailure(status, path: path)
             } else {
                 clearTouchIDDefaults(for: path)
+                clearPendingImport(source: path)
             }
         }
         let applied = next.keeping(blocked)
@@ -632,6 +636,25 @@ final class VaultSession: ObservableObject {
             }
         }
         return true
+    }
+
+    /// The sibling path has to outlive lock. The opened file is cleared, and a fresh name would skip the file already written.
+    private func pendingImportKey(for path: String) -> String { "importPending.\(path)" }
+
+    private func pendingImportPath(for path: String) -> String? {
+        guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return nil }
+        let saved = UserDefaults.standard.string(forKey: pendingImportKey(for: path))
+        return saved?.isEmpty == false ? saved : nil
+    }
+
+    private func rememberPendingImport(source: String, destination: String) {
+        guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return }
+        UserDefaults.standard.set(destination, forKey: pendingImportKey(for: source))
+    }
+
+    private func clearPendingImport(source: String) {
+        guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return }
+        UserDefaults.standard.removeObject(forKey: pendingImportKey(for: source))
     }
 
     private func clearTouchIDDefaults(for account: String) {
@@ -904,6 +927,7 @@ final class VaultSession: ObservableObject {
     private func publishCatalog() {
         let merged = EntryCatalog.merge(openedFiles.map { (path: $0.url.path, entries: $0.vault.entries) })
         listOrigins = Dictionary(uniqueKeysWithValues: merged.map { ($0.listID, $0.entry.id) })
+        listSlots = EntryCatalog.indexes(in: merged)
         listPaths = Dictionary(uniqueKeysWithValues: merged.map { ($0.listID, $0.path) })
         entrySources = listPaths
         entries = merged.map { item in
@@ -931,12 +955,14 @@ final class VaultSession: ObservableObject {
 
     private func replaceStored(_ entry: VaultEntry) {
         guard let path = listPaths[entry.id], let original = listOrigins[entry.id],
+              let slot = listSlots[entry.id],
               let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }),
-              let entryIndex = openedFiles[fileIndex].vault.entries.firstIndex(where: { $0.id == original })
+              openedFiles[fileIndex].vault.entries.indices.contains(slot),
+              openedFiles[fileIndex].vault.entries[slot].id == original
         else { return }
         var stored = entry
         stored.id = original
-        openedFiles[fileIndex].vault.entries[entryIndex] = stored
+        openedFiles[fileIndex].vault.entries[slot] = stored
     }
 
     private func save() {
@@ -966,8 +992,8 @@ final class VaultSession: ObservableObject {
             NSSound.beep()
             return
         }
-        let pending = index.flatMap { openedFiles[$0].pendingSaveURL }
-        let destination = writesKDBX ? fileURL : (pending ?? VaultFormat.importedKDBXURL(beside: fileURL))
+        let pending = index.flatMap { openedFiles[$0].pendingSaveURL?.path } ?? pendingImportPath(for: path)
+        let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
         do {
             let data = try KDBX.save(vault: &vault, password: password)
             try data.write(to: destination, options: .atomic)
@@ -990,11 +1016,13 @@ final class VaultSession: ObservableObject {
             if decision.retargetRoster {
                 // The sibling .kdbx is the file we will open next. Leaving the import in the
                 // roster would show the same entries twice.
+                clearPendingImport(source: path)
                 applyingRoster = true
                 if isCurrent { databaseURL = URL(fileURLWithPath: decision.openedPath) }
                 adopt(roster.replacing(path, with: destination.path))
                 applyingRoster = false
-            } else if destination.path != path {
+            } else if let pendingPath = decision.pendingPath {
+                rememberPendingImport(source: path, destination: pendingPath)
                 message = "Saved \(destination.lastPathComponent), but the saved password could not move to it."
             }
             if isCurrent {

@@ -43,6 +43,15 @@ final class SessionCatalogTests: XCTestCase {
         XCTAssertFalse(plain.retargetRoster)
     }
 
+    func testARememberedSiblingIsReusedAfterLock() {
+        let source = URL(fileURLWithPath: "/imports/work.opvault")
+        let pending = "/imports/work.kdbx"
+        let again = ImportDestination.url(source: source, pending: pending, exists: { _ in true })
+        XCTAssertEqual(again.path, pending)
+        let fresh = ImportDestination.url(source: source, pending: nil, exists: { $0 == "/imports/work.kdbx" })
+        XCTAssertEqual(fresh.lastPathComponent, "work PasswordPie.kdbx")
+    }
+
     func testALateSiblingLoadStopsAfterLockAndSkipsARemovedFile() {
         XCTAssertEqual(
             CatalogLoad.step(generation: 2, current: 2, pathStillListed: true),
