@@ -511,6 +511,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         let gear = NSMenu()
         if session.locked {
             add(to: gear, "Preferences…", #selector(openPreferences))
+            addDatabases(to: gear)
             add(to: gear, "Open Database…", #selector(openDatabase))
             gear.addItem(.separator())
             add(to: gear, "Quit PasswordPie", #selector(quit))
@@ -525,6 +526,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         add(to: gear, "Lock", #selector(lockNow))
         gear.addItem(.separator())
         add(to: gear, "Preferences…", #selector(openPreferences), key: ",")
+        addDatabases(to: gear)
         add(to: gear, "Open Database…", #selector(openDatabase))
         add(to: gear, "New Database…", #selector(newDatabase))
         gear.addItem(.separator())
@@ -544,6 +546,23 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     @objc private func newItem() { hide(refocusPrevious: false); session.newEntry() }
     @objc private func lockNow() { session.lock() }
     @objc private func openPreferences() { hide(refocusPrevious: false); AppDelegate.shared?.showPreferences() }
+    private func addDatabases(to menu: NSMenu) {
+        let paths = session.databasePaths
+        guard paths.count > 1 else { return }
+        let titles = session.databaseMenuTitles
+        for (index, path) in paths.enumerated() {
+            let item = add(to: menu, titles[index], #selector(selectDatabaseItem(_:)))
+            item.representedObject = path
+            item.state = path == session.databaseURL.path ? .on : .off
+        }
+        menu.addItem(.separator())
+    }
+
+    @objc private func selectDatabaseItem(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String else { return }
+        session.selectDatabase(path)
+    }
+
     @objc private func openDatabase() { session.chooseDatabase() }
     @objc private func newDatabase() { session.newDatabase() }
     @objc private func quit() { NSApp.terminate(nil) }

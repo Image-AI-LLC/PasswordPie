@@ -1,0 +1,81 @@
+import XCTest
+@testable import PasswordPieCore
+
+final class DatabaseRosterTests: XCTestCase {
+    func testOpeningAnotherFileKeepsThePreviousOne() {
+        let roster = DatabaseRoster(current: "/vaults/a.kdbx")
+            .selecting("/vaults/b.opvault")
+        XCTAssertEqual(roster.current, "/vaults/b.opvault")
+        XCTAssertEqual(roster.paths, ["/vaults/b.opvault", "/vaults/a.kdbx"])
+    }
+
+    func testSelectingAnExistingFileMovesItFirstWithoutDuplicating() {
+        let roster = DatabaseRoster(current: "/vaults/a.kdbx", remembered: ["/vaults/b.kdbx", "/vaults/a.kdbx"])
+            .selecting("/vaults/b.kdbx")
+        XCTAssertEqual(roster.paths, ["/vaults/b.kdbx", "/vaults/a.kdbx"])
+    }
+
+    func testRemovingTheCurrentFileSelectsTheNext() {
+        let roster = DatabaseRoster(current: "/vaults/a.kdbx", remembered: ["/vaults/b.kdbx", "/vaults/c.kdbx"])
+            .removing("/vaults/a.kdbx")
+        XCTAssertEqual(roster.current, "/vaults/b.kdbx")
+        XCTAssertEqual(roster.paths, ["/vaults/b.kdbx", "/vaults/c.kdbx"])
+    }
+
+    func testRemovingTheOnlyFileLeavesIt() {
+        let roster = DatabaseRoster(current: "/vaults/a.kdbx")
+        XCTAssertEqual(roster.removing("/vaults/a.kdbx"), roster)
+    }
+
+    func testTheListStopsAtTheLimitAndKeepsTheCurrentFile() {
+        var remembered: [String] = []
+        for index in 0..<40 { remembered.append("/vaults/\(index).kdbx") }
+        let roster = DatabaseRoster(current: "/vaults/current.kdbx", remembered: remembered)
+        XCTAssertEqual(roster.paths.count, DatabaseRoster.limit)
+        XCTAssertEqual(roster.paths.first, "/vaults/current.kdbx")
+    }
+
+    func testDuplicateNamesIncludeTheParentFolder() {
+        let titles = DatabaseRoster.menuTitles(for: [
+            "/work/vault.kdbx",
+            "/home/vault.kdbx",
+            "/home/other.opvault"
+        ])
+        XCTAssertEqual(titles, ["vault.kdbx — work", "vault.kdbx — home", "other.opvault"])
+    }
+
+    func testUnlockMemoryNeedsTouchIDAndConsent() {
+        XCTAssertTrue(UnlockMemory.shouldStore(hardware: true, declined: false))
+        XCTAssertFalse(UnlockMemory.shouldStore(hardware: false, declined: false))
+        XCTAssertFalse(UnlockMemory.shouldStore(hardware: true, declined: true))
+    }
+}
+
+final class StoredUnlockTests: XCTestCase {
+    func testPasswordOnlyStaysCompatibleWithTheOldKeychainItem() {
+        let stored = StoredUnlock(password: "secret")
+        XCTAssertEqual(stored.encoded, Data("secret".utf8))
+        XCTAssertEqual(StoredUnlock(stored: Data("secret".utf8)), stored)
+    }
+
+    func testKeyFileRoundTrip() {
+        let stored = StoredUnlock(password: "secret", keyFile: Data("key-bytes".utf8))
+        let decoded = StoredUnlock(stored: stored.encoded)
+        XCTAssertEqual(decoded, stored)
+    }
+
+    func testEmptyPasswordWithKeyFileRoundTrip() {
+        let stored = StoredUnlock(password: "", keyFile: Data([1, 2, 3, 4]))
+        XCTAssertEqual(StoredUnlock(stored: stored.encoded), stored)
+    }
+
+    func testAPasswordThatStartsWithTheMarkerStaysAPassword() {
+        let password = "PPKFnot-an-envelope"
+        let decoded = StoredUnlock(stored: Data(password.utf8))
+        XCTAssertEqual(decoded, StoredUnlock(password: password))
+    }
+
+    func testEmptyDataIsNotASecret() {
+        XCTAssertNil(StoredUnlock(stored: Data()))
+    }
+}

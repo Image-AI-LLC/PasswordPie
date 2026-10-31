@@ -26,5 +26,25 @@
   <string>PasswordPie uses Touch ID to unlock your database.</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.agilebits.opvault</string>
+      <key>UTTypeDescription</key>
+      <string>1Password Vault</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>com.apple.package</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>opvault</string>
+        </array>
+      </dict>
+    </dict>
+  </array>
 </dict>
 </plist>

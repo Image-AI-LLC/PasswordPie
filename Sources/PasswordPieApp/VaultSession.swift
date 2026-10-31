@@ -70,11 +70,12 @@ final class VaultSession: ObservableObject {
     }
     @Published var databaseURL: URL {
         didSet {
-            if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
-                UserDefaults.standard.set(databaseURL.path, forKey: "databasePath")
-            }
+            guard !applyingRoster else { return }
+            adopt(roster.selecting(databaseURL.path))
         }
     }
+    /// Every database the user has opened. The current file is first.
+    @Published private(set) var databasePaths: [String] = []
     /// Shown on the lock screen only for a KeePass 1 database.
     @Published private(set) var keyFileName = ""
 
@@ -92,8 +93,21 @@ final class VaultSession: ObservableObject {
     /// The opened database, including its decrypted XML. Cleared on lock so secrets do not outlive the session.
     private var opened: Vault?
     private var keyFileData: Data?
+    private var roster = DatabaseRoster(current: "")
+    private var applyingRoster = false
     private let clipboard: ClipboardGuard
     private let secretStore = TouchIDSecretStore()
+
+    var databaseMenuTitles: [String] { DatabaseRoster.menuTitles(for: databasePaths) }
+
+    /// File types the open panel may select. `.opvault` is a package once 1Password has registered it.
+    nonisolated static func databaseContentTypes() -> [UTType] {
+        var types: [UTType] = [.data, .json, .commaSeparatedText, .folder]
+        let opvault = UTType(filenameExtension: "opvault", conformingTo: .package)
+            ?? UTType(exportedAs: "com.agilebits.opvault", conformingTo: .package)
+        types.append(opvault)
+        return types
+    }
 
     var hasMasterPassword: Bool { !masterPassword.isEmpty }
     var showsKeyFile: Bool { !creating && databaseURL.pathExtension.lowercased() == "kdb" }
@@ -102,13 +116,15 @@ final class VaultSession: ObservableObject {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PasswordPie", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        let initialPath: String
         if let override = ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] {
-            databaseURL = URL(fileURLWithPath: override)
+            initialPath = override
         } else if let saved = UserDefaults.standard.string(forKey: "databasePath") {
-            databaseURL = URL(fileURLWithPath: saved)
+            initialPath = saved
         } else {
-            databaseURL = support.appendingPathComponent("PasswordPie.kdbx")
+            initialPath = support.appendingPathComponent("PasswordPie.kdbx").path
         }
+        databaseURL = URL(fileURLWithPath: initialPath)
         searchAll = UserDefaults.standard.bool(forKey: "searchAllFields")
         autoLock = AutoLockSettings.load()
         let timeout = UserDefaults.standard.object(forKey: "clipboardTimeout") as? Int ?? Int(ClipboardGuard.defaultTimeout)
@@ -117,6 +133,9 @@ final class VaultSession: ObservableObject {
             TimerCancellable(delay: delay, action: action)
         }
         hotKey = HotKeyConfig.load()
+        let remembered = UserDefaults.standard.stringArray(forKey: "databasePaths") ?? []
+        roster = DatabaseRoster(current: initialPath, remembered: remembered)
+        databasePaths = roster.paths
     }
 
     func restore() {
@@ -177,24 +196,35 @@ final class VaultSession: ObservableObject {
 
     private func didUnlock(withMasterPassword: Bool) {
         locked = false
-        if withMasterPassword, touchIDEnabled {
-            let secret = Data(masterPassword.utf8)
-            let status = secretStore.save(secret: secret, account: databaseURL.path)
-            switch TouchIDEnrollment.refreshAfterMasterUnlock(saveStatus: status) {
-            case .refreshed:
-                UserDefaults.standard.removeObject(forKey: touchIDStaleKey)
-                stampTouchIDUnlock()
-                touchIDAvailable = touchIDHardware
-                touchIDStatus = ""
-                touchIDStatusIsError = false
-            case .stale(let failed):
-                touchIDAvailable = false
-                UserDefaults.standard.set(true, forKey: touchIDStaleKey)
-                touchIDStatus = "Touch ID couldn't be refreshed (\(failed))."
-                touchIDStatusIsError = true
-            }
+        let declined = UserDefaults.standard.bool(forKey: touchIDDeclinedKey)
+        if withMasterPassword, UnlockMemory.shouldStore(hardware: touchIDHardware, declined: declined) || touchIDEnabled {
+            rememberUnlockSecret()
         }
         onActivity?()
+    }
+
+    /// The file keeps its own password. After this unlock, the login keychain holds it
+    /// so the next lock can open with Touch ID. A key file is stored with the password.
+    private func rememberUnlockSecret() {
+        let secret = StoredUnlock(password: masterPassword, keyFile: showsKeyFile ? keyFileData : nil).encoded
+        guard !secret.isEmpty else { return }
+        let status = secretStore.save(secret: secret, account: databaseURL.path)
+        switch TouchIDEnrollment.refreshAfterMasterUnlock(saveStatus: status) {
+        case .refreshed:
+            UserDefaults.standard.set(true, forKey: touchIDEnabledKey)
+            UserDefaults.standard.removeObject(forKey: touchIDDeclinedKey)
+            UserDefaults.standard.removeObject(forKey: touchIDStaleKey)
+            stampTouchIDUnlock()
+            touchIDEnabled = true
+            touchIDAvailable = touchIDHardware
+            touchIDStatus = ""
+            touchIDStatusIsError = false
+        case .stale(let failed):
+            touchIDAvailable = false
+            UserDefaults.standard.set(true, forKey: touchIDStaleKey)
+            touchIDStatus = "Touch ID couldn't be refreshed (\(failed))."
+            touchIDStatusIsError = true
+        }
     }
 
     func unlockWithTouchID() {
@@ -205,14 +235,18 @@ final class VaultSession: ObservableObject {
         touchIDBusy = true
         Task { @MainActor in
             defer { self.touchIDBusy = false }
-            guard let password = await self.authenticateTouchID(reason: "Unlock PasswordPie", account: account) else { return }
+            guard let stored = await self.authenticateTouchID(reason: "Unlock PasswordPie", account: account) else { return }
             guard self.databaseURL.path == account else {
                 self.message = "The open database changed. Try Touch ID again."
                 return
             }
+            if let keyFile = stored.keyFile {
+                self.keyFileData = keyFile
+                if self.keyFileName.isEmpty { self.keyFileName = "Saved key file" }
+            }
             do {
-                let vault = try VaultFormat.load(url: self.databaseURL, password: password, keyFile: self.keyFileForUnlock)
-                self.apply(vault, password: password)
+                let vault = try VaultFormat.load(url: self.databaseURL, password: stored.password, keyFile: self.keyFileForUnlock)
+                self.apply(vault, password: stored.password)
                 self.didUnlock(withMasterPassword: false)
             } catch {
                 if self.isWrongPassword(error) {
@@ -232,6 +266,7 @@ final class VaultSession: ObservableObject {
         }
         guard !touchIDBusy else { return }
         let password = masterPassword
+        let keyFile = showsKeyFile ? keyFileData : nil
         let account = databaseURL.path
         touchIDBusy = true
         touchIDStatus = ""
@@ -259,7 +294,8 @@ final class VaultSession: ObservableObject {
                 self.touchIDStatusIsError = true
                 return
             case .write(let target, let showOnCurrentDatabase):
-                let status = self.secretStore.save(secret: Data(password.utf8), account: target)
+                let stored = StoredUnlock(password: password, keyFile: keyFile)
+                let status = self.secretStore.save(secret: stored.encoded, account: target)
                 guard status == errSecSuccess else {
                     self.touchIDStatus = "Couldn't save the Touch ID unlock (\(status))."
                     self.touchIDStatusIsError = true
@@ -268,6 +304,7 @@ final class VaultSession: ObservableObject {
                 UserDefaults.standard.set(true, forKey: self.touchIDEnabledKey(for: target))
                 UserDefaults.standard.set(Date(), forKey: self.touchIDStampKey(for: target))
                 UserDefaults.standard.removeObject(forKey: self.touchIDStaleKey(for: target))
+                UserDefaults.standard.removeObject(forKey: self.touchIDDeclinedKey(for: target))
                 guard showOnCurrentDatabase else {
                     self.touchIDStatus = "Touch ID was turned on for the previous database."
                     self.touchIDStatusIsError = false
@@ -281,7 +318,7 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    func disableTouchID(quiet: Bool = false) {
+    func disableTouchID(quiet: Bool = false, declined: Bool = false) {
         let status = secretStore.delete(account: databaseURL.path)
         guard !TouchIDEnrollment.keepsPersistedFlag(deleteStatus: status) else {
             touchIDAvailable = false
@@ -292,6 +329,7 @@ final class VaultSession: ObservableObject {
         UserDefaults.standard.removeObject(forKey: touchIDEnabledKey)
         UserDefaults.standard.removeObject(forKey: touchIDStampKey)
         UserDefaults.standard.removeObject(forKey: touchIDStaleKey)
+        if declined { UserDefaults.standard.set(true, forKey: touchIDDeclinedKey) }
         touchIDEnabled = false
         touchIDAvailable = false
         if !quiet || touchIDStatusIsError {
@@ -318,9 +356,11 @@ final class VaultSession: ObservableObject {
     private var touchIDStampKey: String { touchIDStampKey(for: databaseURL.path) }
     private var touchIDEnabledKey: String { touchIDEnabledKey(for: databaseURL.path) }
     private var touchIDStaleKey: String { touchIDStaleKey(for: databaseURL.path) }
+    private var touchIDDeclinedKey: String { touchIDDeclinedKey(for: databaseURL.path) }
     private func touchIDStampKey(for account: String) -> String { "touchIDUnlockedAt.\(account)" }
     private func touchIDEnabledKey(for account: String) -> String { "touchIDEnabled.\(account)" }
     private func touchIDStaleKey(for account: String) -> String { "touchIDStale.\(account)" }
+    private func touchIDDeclinedKey(for account: String) -> String { "touchIDDeclined.\(account)" }
 
     private func stampTouchIDUnlock() {
         UserDefaults.standard.set(Date(), forKey: touchIDStampKey)
@@ -395,7 +435,7 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    private func authenticateTouchID(reason: String, account: String) async -> String? {
+    private func authenticateTouchID(reason: String, account: String) async -> StoredUnlock? {
         switch await promptForTouchID(reason: reason) {
         case .accepted:
             break
@@ -410,20 +450,21 @@ final class VaultSession: ObservableObject {
             return nil
         }
         let loaded = secretStore.load(account: account)
-        guard loaded.status == errSecSuccess, let secret = loaded.secret, let password = String(data: secret, encoding: .utf8) else {
+        guard loaded.status == errSecSuccess, let secret = loaded.secret, let stored = StoredUnlock(stored: secret) else {
             message = "Touch ID is on, but this version of PasswordPie can't read the saved password. Unlock with the master password."
             return nil
         }
-        return password
+        return stored
     }
 
     // MARK: Database files
 
     func chooseDatabase() {
         let chooser = NSOpenPanel()
+        chooser.allowedContentTypes = Self.databaseContentTypes()
         chooser.canChooseFiles = true
         chooser.canChooseDirectories = true
-        chooser.allowedContentTypes = [.data, .json, .commaSeparatedText, .folder]
+        chooser.treatsFilePackagesAsDirectories = false
         chooser.allowsOtherFileTypes = true
         chooser.message = "Choose a KeePass, Bitwarden, Proton Pass, PUX, OPVault, or CSV database"
         let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
@@ -431,7 +472,55 @@ final class VaultSession: ObservableObject {
             databaseURL = databaseURL(resolving: url)
             clearKeyFile()
             lock()
+            offerRememberedUnlock()
         }
+    }
+
+    /// Switches to a database already in the list. Its own password stays in the keychain.
+    func selectDatabase(_ path: String) {
+        let url = databaseURL(resolving: URL(fileURLWithPath: path))
+        guard url.path != databaseURL.path else { return }
+        databaseURL = url
+        clearKeyFile()
+        lock()
+        offerRememberedUnlock()
+    }
+
+    /// Drops a database from the list. The file on disk is left in place.
+    func forgetDatabase(_ path: String) {
+        let resolved = databaseURL(resolving: URL(fileURLWithPath: path)).path
+        let next = roster.removing(resolved)
+        guard next != roster else { return }
+        _ = secretStore.delete(account: resolved)
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: touchIDStampKey(for: resolved))
+        defaults.removeObject(forKey: touchIDEnabledKey(for: resolved))
+        defaults.removeObject(forKey: touchIDStaleKey(for: resolved))
+        defaults.removeObject(forKey: touchIDDeclinedKey(for: resolved))
+        guard next.current != databaseURL.path else {
+            adopt(next)
+            return
+        }
+        applyingRoster = true
+        adopt(next)
+        databaseURL = URL(fileURLWithPath: next.current)
+        applyingRoster = false
+        clearKeyFile()
+        lock()
+        offerRememberedUnlock()
+    }
+
+    private func adopt(_ next: DatabaseRoster) {
+        roster = next
+        databasePaths = next.paths
+        guard ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil else { return }
+        UserDefaults.standard.set(next.current, forKey: "databasePath")
+        UserDefaults.standard.set(next.paths, forKey: "databasePaths")
+    }
+
+    private func offerRememberedUnlock() {
+        guard touchIDAvailable, !creating else { return }
+        unlockWithTouchID()
     }
 
     func chooseKeyFile() {

@@ -50,6 +50,39 @@ struct DoorsView: View {
     }
 }
 
+/// One database shows its name. Several databases open a menu; each keeps its own keychain secret.
+private struct DatabaseTitle: View {
+    @ObservedObject var session: VaultSession
+
+    var body: some View {
+        Group {
+            if session.databasePaths.count > 1 {
+                Menu {
+                    ForEach(Array(session.databasePaths.enumerated()), id: \.element) { index, path in
+                        Button(session.databaseMenuTitles[index]) { session.selectDatabase(path) }
+                    }
+                } label: {
+                    title
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            } else {
+                title
+            }
+        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(Color(hex: 0x555555))
+        .shadow(color: .white.opacity(0.7), radius: 0, y: 1)
+        .lineLimit(1)
+    }
+
+    private var title: some View {
+        Text(session.databaseURL.lastPathComponent)
+            .lineLimit(1)
+            .truncationMode(.middle)
+    }
+}
+
 private struct TopDoor: View {
     var open: Bool
 
@@ -85,12 +118,7 @@ private struct BottomDoor: View {
                 Spacer(minLength: 0)
             }
             VStack(spacing: 0) {
-                Text(session.databaseURL.lastPathComponent)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0x555555))
-                    .shadow(color: .white.opacity(0.7), radius: 0, y: 1)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                DatabaseTitle(session: session)
                     .padding(.horizontal, 20)
                     .padding(.top, 58)
                 Text(session.creating ? "Choose a Master Password for the new database." : "Enter Master Password to unlock.")
