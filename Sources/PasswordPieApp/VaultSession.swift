@@ -75,6 +75,8 @@ final class VaultSession: ObservableObject {
     @Published var touchIDEnabled = false
     @Published var touchIDHardware = false
     @Published var touchIDBusy = false
+    /// True while a database decrypts off the main thread. The lock screen hides its form and turns the logo.
+    @Published private(set) var unlocking = false
     @Published var touchIDStatus = ""
     @Published var touchIDStatusIsError = false
     @Published var recordingHotKey = false
@@ -222,18 +224,42 @@ final class VaultSession: ObservableObject {
             didUnlock(withMasterPassword: true)
             return
         }
-        do {
-            let vault = try VaultFormat.load(url: databaseURL, password: password, keyFile: keyFileForUnlock)
-            apply(vault, password: password)
-            message = ""
-            didUnlock(withMasterPassword: true)
-        } catch {
-            if isWrongPassword(error) {
-                onWrongPassword?()
-                if onWrongPassword == nil { message = "Incorrect password. Please try again." }
-            } else {
-                message = openErrorText(error)
+        guard !unlocking else { return }
+        message = ""
+        decrypt(password: password) { session, result in
+            switch result {
+            case .success(let vault):
+                session.apply(vault, password: password)
+                session.didUnlock(withMasterPassword: true)
+            case .failure(let error):
+                if session.isWrongPassword(error) {
+                    session.onWrongPassword?()
+                    if session.onWrongPassword == nil { session.message = "Incorrect password. Please try again." }
+                } else {
+                    session.message = session.openErrorText(error)
+                }
             }
+        }
+    }
+
+    /// The key derivation can take a second, so it runs off the main thread and the lock screen keeps animating.
+    /// The result is dropped when the database changed or something else unlocked it in the meantime.
+    private func decrypt(password: String, then finish: @escaping @MainActor (VaultSession, Result<Vault, Error>) -> Void) {
+        let url = databaseURL
+        let keyFile = keyFileForUnlock
+        unlocking = true
+        Task { @MainActor [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<Vault, Error> in
+                Result { try VaultFormat.load(url: url, password: password, keyFile: keyFile) }
+            }.value
+            guard let self else { return }
+            self.unlocking = false
+            guard self.locked else { return }
+            guard self.databaseURL.path == url.path else {
+                self.message = "The open database changed. Try again."
+                return
+            }
+            finish(self, result)
         }
     }
 
@@ -280,7 +306,7 @@ final class VaultSession: ObservableObject {
     func unlockWithTouchID() {
         // Re-check the 7-day window: this process may have been locked for longer than that.
         refreshTouchID()
-        guard touchIDAvailable, !touchIDBusy else { return }
+        guard touchIDAvailable, !touchIDBusy, !unlocking else { return }
         let account = databaseURL.path
         touchIDBusy = true
         Task { @MainActor in
@@ -294,15 +320,18 @@ final class VaultSession: ObservableObject {
                 self.keyFileData = keyFile
                 if self.keyFileName.isEmpty { self.keyFileName = "Saved key file" }
             }
-            do {
-                let vault = try VaultFormat.load(url: self.databaseURL, password: stored.password, keyFile: self.keyFileForUnlock)
-                self.apply(vault, password: stored.password)
-                self.didUnlock(withMasterPassword: false)
-            } catch {
-                if self.isWrongPassword(error) {
-                    self.message = "The saved Touch ID password doesn't match this database. Unlock with the master password."
-                } else {
-                    self.message = self.openErrorText(error)
+            guard !self.unlocking else { return }
+            self.decrypt(password: stored.password) { session, result in
+                switch result {
+                case .success(let vault):
+                    session.apply(vault, password: stored.password)
+                    session.didUnlock(withMasterPassword: false)
+                case .failure(let error):
+                    if session.isWrongPassword(error) {
+                        session.message = "The saved Touch ID password doesn't match this database. Unlock with the master password."
+                    } else {
+                        session.message = session.openErrorText(error)
+                    }
                 }
             }
         }

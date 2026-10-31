@@ -33,6 +33,10 @@ struct LockScreenPresentation {
     var showsKeyFile = false
     var keyFileName = ""
     var touchIDAvailable = false
+    /// The database is decrypting: the logo's rim turns.
+    var unlocking = false
+    /// Decrypting or just opened: the form stays hidden so it never looks like it is still waiting for input.
+    var hidesForm = false
 }
 
 struct LockScreenActions {
@@ -66,7 +70,8 @@ struct DoorsView: View {
                 databaseName: session.databaseURL.lastPathComponent,
                 creating: session.creating, message: session.message,
                 showsKeyFile: session.showsKeyFile, keyFileName: session.keyFileName,
-                touchIDAvailable: session.touchIDAvailable),
+                touchIDAvailable: session.touchIDAvailable,
+                unlocking: session.unlocking, hidesForm: session.unlocking || !session.locked),
             password: $session.passwordDraft, confirmation: $session.confirmDraft,
             fields: lock.fields, turned: lock.turned,
             actions: LockScreenActions(
@@ -110,7 +115,7 @@ struct LockScreenContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PasswordPieMark(size: 64, turn: turned ? 1 : 0)
+            PasswordPieMark(size: 64, turn: turned ? 1 : 0, spinning: presentation.unlocking)
             Text("Password Pie")
                 .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundStyle(foreground)
@@ -123,6 +128,31 @@ struct LockScreenContent: View {
                 .minimumScaleFactor(0.85)
                 .padding(.top, 3)
 
+            controls
+                .opacity(presentation.hidesForm ? 0 : 1)
+                .allowsHitTesting(!presentation.hidesForm)
+                .accessibilityHidden(presentation.hidesForm)
+                .overlay(alignment: .top) {
+                    if presentation.hidesForm {
+                        Text("Unlocking…")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(secondary)
+                            .padding(.top, 24)
+                            .accessibilityIdentifier("lock.unlocking")
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: presentation.hidesForm)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.surface(dark: dark))
+    }
+
+    /// Everything below the title: the fields, buttons, error line and database links.
+    private var controls: some View {
+        VStack(spacing: 0) {
             VStack(spacing: 8) {
                 secureEntry(placeholder: "Master password", text: $password, isConfirm: false) {
                     if presentation.creating {
@@ -202,11 +232,6 @@ struct LockScreenContent: View {
             .foregroundStyle(secondary)
             .frame(height: 18)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.surface(dark: dark))
     }
 
     private func secureEntry(placeholder: String, text: Binding<String>, isConfirm: Bool,

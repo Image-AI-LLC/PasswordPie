@@ -193,6 +193,23 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
                 self.restoreLockPanelAfterTouchID()
             }
             .store(in: &cancellables)
+        session.$unlocking
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] busy in
+                guard let self, self.panel.isVisible else { return }
+                // The form is hidden while the database decrypts; no keystroke should land in it.
+                if busy {
+                    self.panel.makeFirstResponder(nil)
+                } else {
+                    // A failed unlock brings the form back. The success path is handled by the lock animation.
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.session.locked, !self.touchIDPromptOpen else { return }
+                        self.focusInitialField()
+                    }
+                }
+            }
+            .store(in: &cancellables)
         session.onWrongPassword = { [weak self] in self?.wrongPassword() }
         NSWorkspace.shared.notificationCenter.addObserver(
             self, selector: #selector(appActivated(_:)), name: NSWorkspace.didActivateApplicationNotification, object: nil
@@ -251,6 +268,11 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// The search field when unlocked, the master-password field when locked.
     func focusInitialField() {
         if session.locked {
+            // While the database decrypts the form is hidden; the end of unlocking focuses it again on failure.
+            guard !session.unlocking else {
+                panel.makeFirstResponder(nil)
+                return
+            }
             lockHost.layoutSubtreeIfNeeded()
             if let field = lockModel.fields.primary {
                 panel.makeFirstResponder(field)
