@@ -14,7 +14,7 @@ enum FillMode {
 }
 
 /// What a details field or shortcut copies.
-enum CopyTarget {
+enum CopyTarget: Equatable {
     case username
     case password
     case url

@@ -324,7 +324,7 @@ struct DetailsView: View {
                     Image(systemName: "pin").font(.system(size: 13)).foregroundStyle(Color.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Pin window")
+                .help("Pin window (⌘O)")
             }
             if !model.isLive {
                 Button { model.toggleFavorite() } label: {
