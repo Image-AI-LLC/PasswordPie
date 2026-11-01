@@ -193,6 +193,17 @@ final class EntryMergeTests: XCTestCase {
         XCTAssertEqual(live(rejoined).count, 2)
     }
 
+    func testSplitDropsEditsMadeAfterTheMerge() {
+        let work = account("GitHub", notes: "work", id: UUID(uuidString: "00000000-0000-0000-0000-000000000031")!)
+        let home = account("GitHub home", notes: "home", id: UUID(uuidString: "00000000-0000-0000-0000-000000000032")!)
+        var kept = live(EntryMerge.merged([work, home]))[0]
+        kept.title = "Changed after merge"
+        kept.password = "changed-secret"
+        let parts = EntryMerge.split(kept)
+        XCTAssertEqual(parts?.map(\.title).sorted(), ["GitHub", "GitHub home"])
+        XCTAssertEqual(parts?.map(\.password), ["secret", "secret"])
+    }
+
     func testMergeSurvivesASaveAndSplitStillRestoresGroups() throws {
         let work = account("GitHub", notes: "work note", path: ["Work"], id: UUID(uuidString: "00000000-0000-0000-0000-000000000021")!)
         var home = account("GitHub home", notes: "home note", path: ["Home"], id: UUID(uuidString: "00000000-0000-0000-0000-000000000022")!)
