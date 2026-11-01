@@ -27,12 +27,15 @@ struct PreferencesView: View {
                 }
                 .padding(24)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text("Changes are saved automatically.")
-                Text("Site popularity in search comes from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).")
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 12)
+                Button("About") { AppDelegate.shared?.showAbout() }
+                    .buttonStyle(.link)
+                    .accessibilityLabel("About PasswordPie")
             }
             .font(.system(size: 11))
-            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
             .padding(.bottom, 14)

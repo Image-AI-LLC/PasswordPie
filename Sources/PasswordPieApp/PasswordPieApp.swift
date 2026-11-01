@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var pinnedAccounts: [UUID: PinnedAccount] = [:]
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
+    private var aboutWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
     private var reporter: StatusReporter?
@@ -279,6 +280,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         preferencesWindow?.makeKeyAndOrderFront(nil)
     }
 
+    func showAbout() {
+        if aboutWindow == nil {
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = AboutCopy.menuTitle
+            window.isReleasedWhenClosed = false
+            let host = NSHostingView(rootView: AboutView())
+            host.sizingOptions = [.intrinsicContentSize]
+            window.contentView = host
+            window.layoutIfNeeded()
+            let fitted = host.fittingSize
+            if fitted.height > 80 {
+                window.setContentSize(NSSize(width: 440, height: fitted.height))
+            }
+            window.delegate = self
+            window.center()
+            aboutWindow = window
+        }
+        panelController.hide(refocusPrevious: false)
+        NSApp.activate(ignoringOtherApps: true)
+        aboutWindow?.makeKeyAndOrderFront(nil)
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === editorWindow {
@@ -286,6 +309,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
+        } else if window === aboutWindow {
+            aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
             pinnedAccounts[id] = nil
         }
@@ -319,6 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show PasswordPie", action: #selector(showCenteredAction), keyEquivalent: "")
         menu.addItem(withTitle: "Preferences…", action: #selector(showPreferencesAction), keyEquivalent: ",")
+        menu.addItem(withTitle: AboutCopy.menuTitle, action: #selector(showAboutAction), keyEquivalent: "")
         menu.addItem(withTitle: session.locked ? "Locked" : "Lock Now", action: #selector(lockNow), keyEquivalent: "")
         let hotkey = NSMenuItem(
             title: hotKey == nil ? "\(session.hotKey.display) is not registered" : "Shortcut \(session.hotKey.display)",
@@ -337,12 +363,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func lockNow() { session.lock() }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func showPreferencesAction() { showPreferences() }
+    @objc private func showAboutAction() { showAbout() }
 
     /// Without a main menu a menu-bar-only app has no Edit commands, so ⌘V and friends do nothing in text fields.
     private func buildMainMenu() {
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
+        appMenu.addItem(withTitle: AboutCopy.menuTitle, action: #selector(showAboutAction), keyEquivalent: "").target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Preferences…", action: #selector(showPreferencesAction), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit PasswordPie", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -384,7 +413,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     #if DEBUG
     static func suppressesPreviewHotkey(_ environment: [String: String]) -> Bool {
-        environment["PASSWORDPIE_PREFERENCES"] != nil || environment["PASSWORDPIE_DISABLE_HOTKEY"] != nil
+        environment["PASSWORDPIE_PREFERENCES"] != nil
+            || environment["PASSWORDPIE_ABOUT"] != nil
+            || environment["PASSWORDPIE_DISABLE_HOTKEY"] != nil
     }
     #endif
 
@@ -434,6 +465,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         reporter?.start()
         if env["PASSWORDPIE_APPEARANCE"] == "dark" { NSApp.appearance = NSAppearance(named: .darkAqua) }
         if env["PASSWORDPIE_APPEARANCE"] == "light" { NSApp.appearance = NSAppearance(named: .aqua) }
+        if env["PASSWORDPIE_ABOUT"] != nil {
+            showAbout()
+            return
+        }
         if env["PASSWORDPIE_PREFERENCES"] != nil {
             showPreferences()
             if let rawHeight = env["PASSWORDPIE_PREFERENCES_HEIGHT"], let height = Double(rawHeight), height.isFinite {
