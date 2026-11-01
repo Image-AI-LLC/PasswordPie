@@ -24,8 +24,8 @@ native SwiftUI/AppKit controls and semantic system colors, not the mockup bitmap
   disabled action. Enabled databases keep an Update… action for re-enrollment after
   an external master-password change. No vault or authentication policy changes.
 - The window is resizable, with a 560×480 minimum and scrollable content. Its initial
-  560×800 content size is limited to the current screen. The save-status footer stays
-  visible when scrolling.
+  560×800 content size is limited to the current screen. Credits and the repository
+  link live in About, not in this window.
 
 ## Verification
 
