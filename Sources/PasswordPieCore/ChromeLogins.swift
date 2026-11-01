@@ -12,6 +12,8 @@ public enum ChromeLoginsError: Error, Equatable, CustomStringConvertible {
     case wrongKey
     case keychain(OSStatus)
     case database(String)
+    /// macOS 27 denies another app's files (EPERM) and posts "Data Access Blocked" instead of asking.
+    case accessDenied
 
     public var description: String {
         switch self {
@@ -19,6 +21,8 @@ public enum ChromeLoginsError: Error, Equatable, CustomStringConvertible {
         case .wrongKey: return "Chrome's passwords could not be decrypted with the Chrome Safe Storage key."
         case .keychain(let status): return "Couldn't read the Chrome Safe Storage key from the keychain (\(status))."
         case .database(let message): return message
+        case .accessDenied:
+            return "macOS blocked PasswordPie from reading Chrome. Open Privacy & Security → Files & Folders → PasswordPie, and turn on Google Chrome. That notice calls Chrome's files data from other apps."
         }
     }
 }
@@ -159,10 +163,18 @@ public enum ChromeLogins {
 
     /// All profiles together. Throws only when nothing could be read; profiles that failed beside one that worked are listed in `failedProfiles`.
     public static func load(root: URL = defaultRoot, key: Data) throws -> ChromeLoginsResult {
+        // A permission error must stay a permission error. `profiles` turns a failed list into "no Chrome".
+        do {
+            _ = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        } catch {
+            if isAccessDenied(error) { throw ChromeLoginsError.accessDenied }
+            throw ChromeLoginsError.noChrome
+        }
         let profiles = profiles(root: root)
         guard !profiles.isEmpty else { throw ChromeLoginsError.noChrome }
         var combined = ChromeLoginsResult()
         var firstError: Error?
+        var sawAccessDenied = false
         for profile in profiles {
             do {
                 let part = try entries(in: profile, key: key)
@@ -171,12 +183,24 @@ public enum ChromeLogins {
                 combined.skipped += part.skipped
                 combined.profileCount += 1
             } catch {
+                if isAccessDenied(error) { sawAccessDenied = true }
                 firstError = firstError ?? error
                 combined.failedProfiles.append(profile.name)
             }
         }
+        if combined.profileCount == 0, sawAccessDenied { throw ChromeLoginsError.accessDenied }
         if combined.profileCount == 0, let firstError { throw firstError }
         return combined
+    }
+
+    /// macOS 27 returns EPERM for another app's files, and FileManager surfaces that as Cocoa 257 or 513.
+    static func isAccessDenied(_ error: Error) -> Bool {
+        let ns = error as NSError
+        if ns.domain == NSPOSIXErrorDomain && (ns.code == Int(EPERM) || ns.code == Int(EACCES)) { return true }
+        if ns.domain == NSCocoaErrorDomain
+            && (ns.code == NSFileReadNoPermissionError || ns.code == NSFileWriteNoPermissionError) { return true }
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error { return isAccessDenied(underlying) }
+        return false
     }
 
     /// Reads one profile's two login stores from private copies, so Chrome's locks are never contended and its files are never written.

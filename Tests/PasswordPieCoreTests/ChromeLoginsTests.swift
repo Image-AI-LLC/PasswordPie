@@ -189,6 +189,21 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertTrue(ChromeLogins.profiles(root: root.appendingPathComponent("absent")).isEmpty)
     }
 
+    /// macOS 27 denies the folder with EPERM and does not ask. That must not look like Chrome is missing.
+    func testAnUnreadableChromeFolderIsAccessDeniedRatherThanMissing() throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: root.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path) }
+        XCTAssertThrowsError(try ChromeLogins.load(root: root, key: Data(repeating: 1, count: 16))) { error in
+            XCTAssertEqual(error as? ChromeLoginsError, .accessDenied)
+        }
+    }
+
+    func testAMissingChromeFolderIsNotAnAccessDenial() {
+        XCTAssertThrowsError(try ChromeLogins.load(root: root.appendingPathComponent("no-such-chrome"), key: Data(repeating: 1, count: 16))) { error in
+            XCTAssertEqual(error as? ChromeLoginsError, .noChrome)
+        }
+    }
+
     func testAllProfilesAreCombinedAndReportTheirCounts() throws {
         let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
         _ = try makeProfile("Profile 1", name: "Work", rows: [Row(origin: "https://a.example/", realm: "r1", user: "u", password: "p1", key: key)])

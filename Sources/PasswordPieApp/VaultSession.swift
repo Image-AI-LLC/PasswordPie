@@ -83,6 +83,8 @@ final class VaultSession: ObservableObject {
     var menuWork: [Task<Void, Never>] = []
     @Published var chromeStatus = ""
     @Published var chromeStatusIsError = false
+    /// True when macOS blocked the Chrome folder. The preferences button opens Files & Folders.
+    @Published var chromeNeedsSettings = false
     @Published var chromeBusy = false
     @Published var chromeSyncEnabled = false
     /// Held in memory while unlocked so a refresh does not ask the keychain again.
