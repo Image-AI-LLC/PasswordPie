@@ -141,7 +141,7 @@ final class DetailsModel: ObservableObject {
         if !entry.url.isEmpty { fields.append(DetailField(id: "url", kind: .url, label: "website", value: entry.url, secret: false)) }
         if TOTP.parse(entry: entry) != nil { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
         let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
-        for field in entry.fields where !handled.contains(field.key.lowercased()) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") {
+        for field in entry.fields where !handled.contains(field.key.lowercased()) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
             fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))
         }
         if !entry.notes.isEmpty { fields.append(DetailField(id: "notes", kind: .notes, label: "notes", value: entry.notes, secret: false)) }

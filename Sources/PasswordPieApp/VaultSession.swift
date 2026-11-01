@@ -848,6 +848,38 @@ final class VaultSession: ObservableObject {
         editing = nil
     }
 
+    /// Restores the accounts from before this one was merged, and marks each so it stays separate.
+    func splitEditing() {
+        guard let current = editing else { return }
+        let path = listPaths[current.id] ?? databaseURL.path
+        let originalID = listOrigins[current.id] ?? current.id
+        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }),
+              let source = openedFiles[fileIndex].vault.entries.first(where: { $0.id == originalID }),
+              var parts = EntryMerge.split(source)
+        else { return }
+        if !parts.isEmpty { parts[0].id = originalID }
+        var entries = openedFiles[fileIndex].vault.entries
+        for part in parts {
+            if let slot = entries.firstIndex(where: { $0.id == part.id }) {
+                entries[slot] = part
+            } else {
+                entries.append(part)
+            }
+        }
+        openedFiles[fileIndex].vault.entries = entries
+        editing = nil
+        persist(path: path)
+    }
+
+    /// Writes the file when a merge folded accounts. A database with nothing to fold is left untouched.
+    private func autoMergeFile(at path: String) {
+        guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
+        let merged = EntryMerge.merged(openedFiles[index].vault.entries)
+        guard merged != openedFiles[index].vault.entries else { return }
+        openedFiles[index].vault.entries = merged
+        _ = persist(path: path)
+    }
+
     func deleteEditing() {
         guard let id = editing?.id, var entry = entry(id) else { return }
         entry.trashed = true
@@ -1102,6 +1134,7 @@ final class VaultSession: ObservableObject {
         } else {
             openedFiles.insert(file, at: 0)
         }
+        autoMergeFile(at: databaseURL.path)
         loadRememberedDatabases()
     }
 
@@ -1153,6 +1186,7 @@ final class VaultSession: ObservableObject {
                         url: url, vault: loaded, password: job.password, keyFile: key
                     ))
                     self.publishCatalog()
+                    self.autoMergeFile(at: job.path)
                 }
             }
         }
@@ -1219,6 +1253,7 @@ final class VaultSession: ObservableObject {
             vault.rootName = rootName
             vault.kdf = kdf
         }
+        vault.entries = EntryMerge.merged(vault.entries)
         // An imported CSV, PUX, OPVault, Bitwarden, Proton Pass, or KeePass 1 file stays untouched.
         // The first change is written as a sibling .kdbx, and later saves use that file.
         // A key-file-only database can open with an empty password. The new .kdbx cannot.

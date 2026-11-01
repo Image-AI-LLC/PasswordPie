@@ -9,6 +9,8 @@ struct EditorView: View {
     @State private var showPassword = false
     @State private var otpInput = ""
     @State private var tagsInput = ""
+    @State private var keepSeparate = false
+    @State private var confirmSplit = false
     @State private var loaded = false
 
     var body: some View {
@@ -37,11 +39,41 @@ struct EditorView: View {
                 }
                 TextField("Tags (comma separated)", text: $tagsInput)
                 Toggle("Favorite", isOn: favoriteBinding)
+                Toggle("Don't auto-merge", isOn: $keepSeparate)
+                if let entry = session.editing, EntryMerge.partCount(entry) >= 2 {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Merged from \(EntryMerge.partCount(entry)) accounts. Split restores them and keeps them separate.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        let extras = EntryMerge.extraFields(entry)
+                        if !extras.isEmpty {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(Array(extras.enumerated()), id: \.offset) { _, field in
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(field.key).font(.caption).foregroundStyle(.secondary)
+                                            Text(field.value)
+                                                .font(.system(.caption, design: field.protected ? .monospaced : .default))
+                                                .textSelection(.enabled)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(maxHeight: 160)
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
             HStack {
                 if !session.editingIsNew {
                     Button("Move to Trash", role: .destructive) { session.deleteEditing() }
+                }
+                if let entry = session.editing, EntryMerge.partCount(entry) >= 2 {
+                    Button("Split") { confirmSplit = true }
                 }
                 Spacer()
                 Button("Cancel") { session.cancelEditing() }.keyboardShortcut(.cancelAction)
@@ -49,11 +81,18 @@ struct EditorView: View {
             }
             .padding(12)
         }
-        .frame(width: 450, height: 560)
+        .frame(width: 450, height: 640)
+        .alert("Split these accounts?", isPresented: $confirmSplit) {
+            Button("Split") { session.splitEditing() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This restores the accounts from before the merge. They will not auto-merge again.")
+        }
         .onAppear {
             guard !loaded, let entry = session.editing else { return }
             otpInput = entry.otp
             tagsInput = entry.tagList.filter { $0.caseInsensitiveCompare("Favorite") != .orderedSame }.joined(separator: ", ")
+            keepSeparate = EntryMerge.keepsSeparate(entry)
             loaded = true
         }
     }
@@ -85,6 +124,7 @@ struct EditorView: View {
         tags.removeAll { $0.caseInsensitiveCompare("Favorite") == .orderedSame }
         entry.tags = tags.joined(separator: ",")
         entry.favorite = favorite
+        EntryMerge.setKeepSeparate(keepSeparate, on: &entry)
         session.saveEditing(entry)
     }
 }

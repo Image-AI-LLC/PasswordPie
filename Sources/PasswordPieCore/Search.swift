@@ -168,7 +168,7 @@ fileprivate struct SearchIndexEntry: Sendable {
         host = urlSearchString(entry.url)
         words = wordList(title) + wordList(host)
         var extra = [foldForSearch(entry.username), foldForSearch(entry.notes), foldForSearch(entry.tags)]
-        for field in entry.fields where !standardKeys.contains(field.key.lowercased()) {
+        for field in entry.fields where !standardKeys.contains(field.key.lowercased()) && !EntryMerge.isReservedKey(field.key) {
             extra.append(foldForSearch(field.key))
             extra.append(foldForSearch(field.value))
         }
