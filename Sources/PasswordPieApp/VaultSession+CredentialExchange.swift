@@ -1,14 +1,23 @@
 import AppKit
 import AuthenticationServices
 import PasswordPieCore
+import Security
 
 /// Apple Passwords hands its items over through Credential Exchange (macOS 26+): the user picks PasswordPie in
 /// Passwords > File > Export All Items to App, the system wakes this app with a one-time token, and the data
 /// comes straight from the system. No file is written, so no plain-text copy is left on disk.
 extension VaultSession {
+    /// Passwords lists only apps that ship an AutoFill credential provider, and that needs the entitlement and a
+    /// provisioning profile. A build signed without them (a plain `make install`) keeps the CSV import as the main path.
     static var credentialExchangeAvailable: Bool {
-        if #available(macOS 26.0, *) { return true }
-        return false
+        guard #available(macOS 26.0, *) else { return false }
+        return holdsEntitlement("com.apple.developer.authentication-services.autofill-credential-provider")
+    }
+
+    private static func holdsEntitlement(_ name: String) -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task, name as CFString, nil) else { return false }
+        return (value as? Bool) == true
     }
 
     /// True for the activity type Passwords sends. Must also be listed under NSUserActivityTypes in Info.plist.

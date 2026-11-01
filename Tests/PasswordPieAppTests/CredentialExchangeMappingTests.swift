@@ -45,3 +45,10 @@ final class CredentialExchangeMappingTests: XCTestCase {
         XCTAssertTrue(entries.isEmpty)
     }
 }
+
+final class CredentialExchangeAvailabilityTests: XCTestCase {
+    /// The test host carries no AutoFill entitlement, so the file import must stay the main path.
+    func testUnentitledBuildKeepsTheFileImport() {
+        XCTAssertFalse(VaultSession.credentialExchangeAvailable)
+    }
+}
