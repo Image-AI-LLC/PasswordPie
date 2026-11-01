@@ -91,6 +91,47 @@ final class EntryMergeSessionTests: XCTestCase {
         XCTAssertEqual(saved.entries.filter(\.trashed).count, 1)
     }
 
+    func testProtectedMergeFieldsStayMasked() {
+        let secret = VaultField(key: "PIN", value: "1234", protected: true)
+        let plain = VaultField(key: "Title (2)", value: "GitHub", protected: false)
+        XCTAssertFalse(mergedExtraFieldText(secret).contains("1234"))
+        XCTAssertEqual(mergedExtraFieldText(plain), "GitHub")
+    }
+
+    func testSplitUsesTheEditedRowWhenAnotherRowSharesItsIdentifier() async throws {
+        let shared = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        var plain = login("Plain")
+        plain.id = shared
+        plain.password = "other-secret"
+        var merged = login("Merged")
+        merged.id = shared
+        merged.password = "merged-secret"
+        merged.notes = "kept on the merged row"
+        var older = login("Older")
+        older.password = "merged-secret"
+        let folded = EntryMerge.merged([merged, older])
+        let survivor = try XCTUnwrap(folded.first { !$0.trashed })
+        XCTAssertEqual(survivor.id, shared)
+        var vault = Vault(entries: [plain, survivor] + folded.filter(\.trashed), kdf: .fastTest)
+        let url = directory.appendingPathComponent("test.kdbx")
+        try KDBX.save(vault: &vault, password: "pw").write(to: url)
+
+        let session = VaultSession()
+        session.restore()
+        session.passwordDraft = "pw"
+        session.unlock()
+        for _ in 0..<500 where session.unlocking {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(session.locked)
+        let edited = try XCTUnwrap(session.entries.first { $0.title == "Merged" && !$0.trashed })
+        session.edit(edited.id)
+        session.splitEditing()
+        let live = session.entries.filter { !$0.trashed }
+        XCTAssertTrue(live.contains { $0.title == "Plain" && $0.password == "other-secret" })
+        XCTAssertTrue(live.contains { $0.title == "Older" })
+    }
+
     func testDetailsHidesTheMergeRecordAndShowsNumberedFields() {
         let session = unlockedSession()
         var entry = VaultEntry()

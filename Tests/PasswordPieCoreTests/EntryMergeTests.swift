@@ -152,6 +152,15 @@ final class EntryMergeTests: XCTestCase {
         XCTAssertEqual(EntryMerge.merged(twice), twice)
     }
 
+    func testARowThatSharesTheSurvivorsIdentifierStays() {
+        let shared = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let first = account("GitHub", notes: "first", id: shared)
+        let twin = account("GitHub other", notes: "second", id: shared)
+        let merged = EntryMerge.merged([first, twin])
+        XCTAssertEqual(live(merged).count, 2)
+        XCTAssertEqual(live(merged).map(\.notes).sorted(), ["first", "second"])
+    }
+
     func testRestoringATrashedCopyDoesNotDuplicateSuffixes() {
         let first = account("GitHub")
         var second = account("GitHub copy", notes: "extra")

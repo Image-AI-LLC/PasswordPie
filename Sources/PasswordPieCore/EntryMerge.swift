@@ -53,21 +53,26 @@ public enum EntryMerge {
             var manifest = readManifest(entry) ?? Manifest(v: 1, parts: [Part(entry)])
             var taken = Set(entry.fields.map(\.key))
             var changed = false
-            func take(_ part: Part) {
-                guard part.id != entry.id, !manifest.parts.contains(where: { $0.id == part.id }) else { return }
+            func take(_ part: Part) -> Bool {
+                guard part.id != entry.id, !manifest.parts.contains(where: { $0.id == part.id }) else { return false }
                 let number = manifest.parts.count + 1
                 absorb(part, number: number, into: &entry, taken: &taken)
                 manifest.parts.append(part)
                 changed = true
+                return true
             }
             for index in indexes where index != survivorIndex {
                 let other = result[index]
+                let alreadyKept = manifest.parts.contains { $0.id == other.id && $0.id != entry.id }
+                var recorded = false
                 if let nested = readManifest(other) {
-                    for part in nested.parts { take(part) }
-                } else {
-                    take(Part(other))
+                    for part in nested.parts where take(part) { recorded = true }
+                } else if take(Part(other)) {
+                    recorded = true
                 }
-                result[index].trashed = true
+                if recorded || alreadyKept {
+                    result[index].trashed = true
+                }
             }
             if changed {
                 write(manifest, to: &entry)

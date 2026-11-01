@@ -853,15 +853,29 @@ final class VaultSession: ObservableObject {
         guard let current = editing else { return }
         let path = listPaths[current.id] ?? databaseURL.path
         let originalID = listOrigins[current.id] ?? current.id
-        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }),
-              let source = openedFiles[fileIndex].vault.entries.first(where: { $0.id == originalID }),
-              var parts = EntryMerge.split(source)
-        else { return }
-        if !parts.isEmpty { parts[0].id = originalID }
+        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
         var entries = openedFiles[fileIndex].vault.entries
-        for part in parts {
-            if let slot = entries.firstIndex(where: { $0.id == part.id }) {
+        let survivorSlot = listSlots[current.id]
+        let source: VaultEntry
+        if let survivorSlot, entries.indices.contains(survivorSlot), entries[survivorSlot].id == originalID {
+            source = entries[survivorSlot]
+        } else if let found = entries.first(where: { $0.id == originalID }) {
+            source = found
+        } else {
+            return
+        }
+        guard var parts = EntryMerge.split(source) else { return }
+        if !parts.isEmpty { parts[0].id = originalID }
+        var used = Set<Int>()
+        for (index, part) in parts.enumerated() {
+            if index == 0, let survivorSlot, entries.indices.contains(survivorSlot) {
+                entries[survivorSlot] = part
+                used.insert(survivorSlot)
+                continue
+            }
+            if let slot = entries.indices.first(where: { entries[$0].id == part.id && entries[$0].trashed && !used.contains($0) }) {
                 entries[slot] = part
+                used.insert(slot)
             } else {
                 entries.append(part)
             }

@@ -53,10 +53,16 @@ struct EditorView: View {
                                     ForEach(Array(extras.enumerated()), id: \.offset) { _, field in
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(field.key).font(.caption).foregroundStyle(.secondary)
-                                            Text(field.value)
-                                                .font(.system(.caption, design: field.protected ? .monospaced : .default))
-                                                .textSelection(.enabled)
-                                                .fixedSize(horizontal: false, vertical: true)
+                                            if field.protected {
+                                                Text(mergedExtraFieldText(field))
+                                                    .font(.system(.caption, design: .monospaced))
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            } else {
+                                                Text(field.value)
+                                                    .font(.system(.caption))
+                                                    .textSelection(.enabled)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
                                         }
                                     }
                                 }
@@ -127,4 +133,10 @@ struct EditorView: View {
         EntryMerge.setKeepSeparate(keepSeparate, on: &entry)
         session.saveEditing(entry)
     }
+}
+
+/// Protected merge extras stay masked, the same way the details view hides a secret.
+func mergedExtraFieldText(_ field: VaultField) -> String {
+    guard field.protected else { return field.value }
+    return String(repeating: "•", count: min(max(field.value.count, 8), 16))
 }
