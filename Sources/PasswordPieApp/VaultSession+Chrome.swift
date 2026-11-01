@@ -19,6 +19,7 @@ extension VaultSession {
         chromeBusy = false
         chromeStatus = ""
         chromeStatusIsError = false
+        chromeNeedsSettings = false
     }
 
     #if PP_DIRECT
@@ -75,12 +76,14 @@ extension VaultSession {
                 chromeLastUsed = loaded.result.lastUsed
                 chromeStatus = chromeSummary(loaded.result)
                 chromeStatusIsError = false
+                chromeNeedsSettings = false
             case .failure(let error):
                 liveEntries = []
                 chromeLastUsed = [:]
                 chromeKey = nil
                 chromeStatus = chromeErrorText(error)
                 chromeStatusIsError = true
+                chromeNeedsSettings = (error as? ChromeLoginsError) == .accessDenied
             }
         }
     }
@@ -104,6 +107,12 @@ extension VaultSession {
             return chrome.description
         }
         return error.localizedDescription
+    }
+
+    /// macOS 27 has no prompt for this. The switch is under Files & Folders, one row per app.
+    func openChromeFileAccessSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_FilesAndFolders") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     /// Chrome owns these logins, so changes happen there.

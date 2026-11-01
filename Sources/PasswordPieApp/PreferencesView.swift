@@ -333,7 +333,7 @@ struct PreferencesView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Sync Chrome passwords").fontWeight(.medium)
-                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. They stay in Chrome: nothing is copied into your database unless you choose Save to KeePass on one. macOS asks once to let PasswordPie use Chrome Safe Storage. Choose Always Allow.")
+                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. They stay in Chrome: nothing is copied into your database unless you choose Save to KeePass on one. macOS asks once for the Chrome Safe Storage key: choose Always Allow. Reading the files also needs Google Chrome turned on for PasswordPie under Privacy & Security → Files & Folders.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -358,6 +358,12 @@ struct PreferencesView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 4)
+                    if session.chromeNeedsSettings {
+                        Button("Open Files & Folders") {
+                            recorder.stop()
+                            session.openChromeFileAccessSettings()
+                        }
+                    }
                     Button(session.chromeBusy ? "Reading…" : "Refresh") {
                         recorder.stop()
                         session.refreshChrome()
