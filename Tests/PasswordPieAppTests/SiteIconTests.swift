@@ -134,6 +134,7 @@ final class SiteIconTests: XCTestCase {
         XCTAssertNil(GoogleFavicon.imageData(status: 404, body: png))
         XCTAssertNil(GoogleFavicon.imageData(status: 200, body: Data("nope".utf8)))
         XCTAssertNil(GoogleFavicon.imageData(status: 200, body: Data()))
+        XCTAssertNil(GoogleFavicon.imageData(status: 200, body: Data(count: GoogleFavicon.maxBytes + 1)))
     }
 
     func testARealIconIsCachedAndAMissIsNotFetchedAgain() async {

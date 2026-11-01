@@ -20,10 +20,7 @@ public func websiteHost(forWebsite raw: String) -> String? {
     return host.isEmpty ? nil : host
 }
 
-/// The entry's website host. A title that is itself a bare domain counts when the website field is empty.
+/// The entry's website host. Only the website field is used, so a note titled `backup.zip` is not looked up.
 public func websiteHost(of entry: VaultEntry) -> String? {
-    if let host = websiteHost(forWebsite: entry.url) { return host }
-    let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty, title.contains("."), !title.contains(where: { $0.isWhitespace || $0 == "/" }) else { return nil }
-    return websiteHost(forWebsite: title)
+    websiteHost(forWebsite: entry.url)
 }

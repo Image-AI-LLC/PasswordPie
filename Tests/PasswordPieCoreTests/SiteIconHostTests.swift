@@ -26,20 +26,17 @@ final class SiteIconHostTests: XCTestCase {
         XCTAssertEqual(websiteHost(forWebsite: "https://münchen.de/start"), "xn--mnchen-3ya.de")
     }
 
-    func testEntryUsesItsWebsiteAndOtherwiseABareDomainTitle() {
+    func testEntryUsesItsWebsiteAndNotItsTitle() {
         var entry = VaultEntry()
         entry.title = "github.com"
         entry.url = "https://www.gitlab.com/profile"
         XCTAssertEqual(websiteHost(of: entry), "gitlab.com")
 
         entry.url = ""
-        XCTAssertEqual(websiteHost(of: entry), "github.com")
-
-        entry.title = "GitHub"
-        XCTAssertNil(websiteHost(of: entry))
-
-        entry.title = "github.com/login"
-        XCTAssertNil(websiteHost(of: entry))
+        for title in ["github.com", "GitHub", "github.com/login", "backup.zip", "meeting-notes.md"] {
+            entry.title = title
+            XCTAssertNil(websiteHost(of: entry), title)
+        }
     }
 
     func testMenuRowsRememberTheWebsiteHost() {

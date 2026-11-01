@@ -44,12 +44,20 @@ enum GoogleFavicon {
         return components.url
     }
 
-    /// PNG (or other bitmap) bytes when Google has an icon. Nil for the 404 globe and for anything that is not an image.
+    /// Largest favicon accepted. Above this, the body is not decoded or cached.
+    static let maxBytes = 262_144
+    static let maxPixels = 512
+
+    /// PNG (or other bitmap) bytes when Google has an icon. Nil for the 404 globe, a non-image, or a body past the size cap.
     static func imageData(status: Int, body: Data) -> Data? {
-        guard status == 200, !body.isEmpty else { return nil }
+        guard status == 200, (1...maxBytes).contains(body.count) else { return nil }
         guard let source = CGImageSourceCreateWithData(body as CFData, nil),
               CGImageSourceGetCount(source) > 0,
-              CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else { return nil }
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              (1...maxPixels).contains(width), (1...maxPixels).contains(height),
+              CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary) != nil else { return nil }
         return body
     }
 }
@@ -304,7 +312,8 @@ final class SiteIconStore {
 
     private func readDisk(_ host: String) -> Data? {
         guard let file = fileURL(host) else { return nil }
-        return try? Data(contentsOf: file)
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return GoogleFavicon.imageData(status: 200, body: data)
     }
 
     private func writeDisk(_ host: String, _ data: Data) {
