@@ -67,8 +67,15 @@ public enum EntryMerge {
                 var recorded = false
                 if let nested = readManifest(other) {
                     for part in nested.parts where take(part) { recorded = true }
+                    if keepLiveEdits(other, number: manifest.parts.count + 1, into: &entry, taken: &taken) {
+                        recorded = true
+                        changed = true
+                    }
                 } else if take(Part(other)) {
                     recorded = true
+                } else if alreadyKept, keepLiveEdits(other, number: manifest.parts.count + 1, into: &entry, taken: &taken) {
+                    recorded = true
+                    changed = true
                 }
                 if recorded || alreadyKept {
                     result[index].trashed = true
@@ -197,6 +204,18 @@ public enum EntryMerge {
         if added.isEmpty || kept == added || kept.contains(added) { return .keep }
         if kept.isEmpty || added.contains(kept) { return .replace(incoming) }
         return .conflict
+    }
+
+    /// Copies fields edited after a merge onto the survivor. The manifest parts stay the pre-merge accounts.
+    private static func keepLiveEdits(
+        _ other: VaultEntry,
+        number: Int,
+        into entry: inout VaultEntry,
+        taken: inout Set<String>
+    ) -> Bool {
+        let before = entry
+        absorb(Part(other), number: number, into: &entry, taken: &taken)
+        return entry != before
     }
 
     private static func absorb(_ part: Part, number: Int, into entry: inout VaultEntry, taken: inout Set<String>) {

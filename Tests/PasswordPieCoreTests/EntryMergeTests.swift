@@ -152,6 +152,25 @@ final class EntryMergeTests: XCTestCase {
         XCTAssertEqual(EntryMerge.merged(twice), twice)
     }
 
+    func testALosingMergedRowKeepsEditsMadeAfterItsMerge() throws {
+        let first = account("GitHub", notes: "a", id: UUID(uuidString: "00000000-0000-0000-0000-000000000041")!)
+        let second = account("GitHub copy", notes: "b", id: UUID(uuidString: "00000000-0000-0000-0000-000000000042")!)
+        var left = EntryMerge.merged([first, second])
+        let keptSlot = try XCTUnwrap(left.firstIndex { !$0.trashed })
+        left[keptSlot].notes = "edited after merge"
+        var richer = account("GitHub other", notes: "c", id: UUID(uuidString: "00000000-0000-0000-0000-000000000043")!)
+        richer.setValue("1234", for: "PIN")
+        let fourth = account("GitHub four", notes: "d", id: UUID(uuidString: "00000000-0000-0000-0000-000000000044")!)
+        let right = EntryMerge.merged([richer, fourth])
+        let combined = EntryMerge.merged(left + right)
+        let survivor = live(combined)[0]
+        XCTAssertEqual(live(combined).count, 1)
+        XCTAssertTrue(survivor.fields.contains { $0.value == "edited after merge" })
+        XCTAssertEqual(EntryMerge.partCount(survivor), 4)
+        let restored = EntryMerge.split(survivor) ?? []
+        XCTAssertFalse(restored.contains { $0.notes == "edited after merge" })
+    }
+
     func testARowThatSharesTheSurvivorsIdentifierStays() {
         let shared = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
         let first = account("GitHub", notes: "first", id: shared)
