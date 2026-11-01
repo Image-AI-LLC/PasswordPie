@@ -82,6 +82,21 @@ final class VaultFileTests: XCTestCase {
         XCTAssertTrue(leftoverWrites(in: directory).isEmpty)
     }
 
+    func testAFailedSnapshotLeavesTheOriginalAndNoStagingFile() throws {
+        let url = directory.appendingPathComponent("Passwords.kdbx")
+        let original = try database(title: "Kept", password: "secret")
+        try original.write(to: url)
+        var vault = Vault(name: "After", entries: [account("After")], kdf: .fastTest)
+        let saved = try KDBX.save(vault: &vault, password: "secret")
+        XCTAssertThrowsError(try VaultFile.replace(
+            url, with: saved, password: "secret", entryIDs: vault.entries.map(\.id),
+            beforeSnapshotCommit: { throw VaultWriteError("stop") }, beforeReplace: {}
+        ))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        let staging = VaultFile.snapshotURL(for: url).appendingPathExtension("incoming")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staging.path))
+    }
+
     func testAnAmpersandInANoteRoundTrips() throws {
         var entry = account("Amp")
         entry.notes = "Tom & Jerry &#0 leftover"

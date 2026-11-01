@@ -23,6 +23,13 @@ enum CopyTarget {
     case custom(String)
 }
 
+enum SplitPlacement {
+    static func index(slot: Int?, entries: [VaultEntry], id: UUID) -> Int? {
+        if let slot, entries.indices.contains(slot), entries[slot].id == id { return slot }
+        return entries.firstIndex { $0.id == id }
+    }
+}
+
 private enum TouchIDGate {
     case accepted
     case cancelled
@@ -868,9 +875,9 @@ final class VaultSession: ObservableObject {
         if !parts.isEmpty { parts[0].id = originalID }
         var used = Set<Int>()
         for (index, part) in parts.enumerated() {
-            if index == 0, let survivorSlot, entries.indices.contains(survivorSlot) {
-                entries[survivorSlot] = part
-                used.insert(survivorSlot)
+            if index == 0, let slot = SplitPlacement.index(slot: survivorSlot, entries: entries, id: originalID) {
+                entries[slot] = part
+                used.insert(slot)
                 continue
             }
             if let slot = entries.indices.first(where: { entries[$0].id == part.id && entries[$0].trashed && !used.contains($0) }) {

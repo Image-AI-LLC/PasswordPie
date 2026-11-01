@@ -24,12 +24,13 @@ public enum VaultFile {
         with data: Data,
         password: String,
         entryIDs: [UUID],
+        beforeSnapshotCommit: () throws -> Void = {},
         beforeReplace: () throws -> Void
     ) throws {
         let manager = FileManager.default
         let exists = manager.fileExists(atPath: url.path)
         if exists {
-            try copySnapshot(of: url)
+            try copySnapshot(of: url, beforeCommit: beforeSnapshotCommit)
             try restrict(url)
         }
         let temp = url.deletingLastPathComponent()
@@ -68,20 +69,26 @@ public enum VaultFile {
         try restrict(url)
     }
 
-    private static func copySnapshot(of url: URL) throws {
+    private static func copySnapshot(of url: URL, beforeCommit: () throws -> Void) throws {
         let manager = FileManager.default
         let snapshot = snapshotURL(for: url)
         let staging = snapshot.appendingPathExtension("incoming")
         if manager.fileExists(atPath: staging.path) {
             try manager.removeItem(at: staging)
         }
+        var consumed = false
+        defer {
+            if !consumed, manager.fileExists(atPath: staging.path) { try? manager.removeItem(at: staging) }
+        }
         try manager.copyItem(at: url, to: staging)
         try restrict(staging)
+        try beforeCommit()
         if manager.fileExists(atPath: snapshot.path) {
             _ = try manager.replaceItemAt(snapshot, withItemAt: staging)
         } else {
             try manager.moveItem(at: staging, to: snapshot)
         }
+        consumed = true
         try restrict(snapshot)
     }
 

@@ -132,6 +132,16 @@ final class EntryMergeSessionTests: XCTestCase {
         XCTAssertTrue(live.contains { $0.title == "Older" })
     }
 
+    func testAStaleSplitSlotKeepsTheOtherAccount() {
+        let kept = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!
+        let other = UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!
+        var plain = VaultEntry()
+        plain.id = other
+        var merged = VaultEntry()
+        merged.id = kept
+        XCTAssertEqual(SplitPlacement.index(slot: 0, entries: [plain, merged], id: kept), 1)
+    }
+
     func testDetailsHidesTheMergeRecordAndShowsNumberedFields() {
         let session = unlockedSession()
         var entry = VaultEntry()
