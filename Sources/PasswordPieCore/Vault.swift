@@ -116,6 +116,10 @@ public struct Vault: Equatable, Sendable {
     public var kdf: KDFParameters
     /// Decrypted KDBX document for a file this process opened or created. Nil until the first save of a new database.
     var preserve: KDBXPreserve?
+    /// Set when this document was read by repairing damaged XML and the file on disk is still damaged.
+    public var recovery: KDBXRecovery?
+    /// One line for the person when opening the file repaired it or could not.
+    public var recoveryNotice: String?
 
     public init(
         name: String = "PasswordPie",

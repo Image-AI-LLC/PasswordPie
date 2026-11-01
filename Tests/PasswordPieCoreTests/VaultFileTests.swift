@@ -19,7 +19,7 @@ final class VaultFileTests: XCTestCase {
         let url = directory.appendingPathComponent("Passwords.kdbx")
         let original = try database(title: "Kept", password: "secret")
         try original.write(to: url)
-        XCTAssertThrowsError(try VaultFile.replace(url, with: Data("not a database".utf8), password: "secret", entryIDs: []))
+        XCTAssertThrowsError(try VaultFile.replace(url, with: Data("not a database".utf8), password: "secret", expecting: Vault(entries: [])))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertEqual(try Data(contentsOf: VaultFile.snapshotURL(for: url)), original)
         XCTAssertEqual(try mode(url), 0o600)
@@ -33,7 +33,7 @@ final class VaultFileTests: XCTestCase {
         try original.write(to: url)
         var vault = Vault(name: "After", entries: [account("After")], kdf: .fastTest)
         let saved = try KDBX.save(vault: &vault, password: "secret")
-        try VaultFile.replace(url, with: saved, password: "secret", entryIDs: vault.entries.map(\.id))
+        try VaultFile.replace(url, with: saved, password: "secret", expecting: vault)
         let loaded = try KDBX.load(data: Data(contentsOf: url), password: "secret")
         XCTAssertEqual(loaded.entries.map(\.title), ["After"])
         let previous = try KDBX.load(data: Data(contentsOf: VaultFile.snapshotURL(for: url)), password: "secret")
@@ -43,13 +43,13 @@ final class VaultFileTests: XCTestCase {
 
     func testANewFileIsCreatedOnlyAfterItReadsBack() throws {
         let url = directory.appendingPathComponent("New.kdbx")
-        XCTAssertThrowsError(try VaultFile.replace(url, with: Data("not a database".utf8), password: "secret", entryIDs: []))
+        XCTAssertThrowsError(try VaultFile.replace(url, with: Data("not a database".utf8), password: "secret", expecting: Vault(entries: [])))
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: VaultFile.snapshotURL(for: url).path))
 
         var vault = Vault(name: "New", entries: [account("Created")], kdf: .fastTest)
         let saved = try KDBX.save(vault: &vault, password: "secret")
-        try VaultFile.replace(url, with: saved, password: "secret", entryIDs: vault.entries.map(\.id))
+        try VaultFile.replace(url, with: saved, password: "secret", expecting: vault)
         let loaded = try KDBX.load(data: Data(contentsOf: url), password: "secret")
         XCTAssertEqual(loaded.entries.map(\.title), ["Created"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: VaultFile.snapshotURL(for: url).path))
@@ -62,7 +62,9 @@ final class VaultFileTests: XCTestCase {
         try original.write(to: url)
         var vault = Vault(name: "After", entries: [account("After")], kdf: .fastTest)
         let saved = try KDBX.save(vault: &vault, password: "secret")
-        XCTAssertThrowsError(try VaultFile.replace(url, with: saved, password: "secret", entryIDs: [UUID()]))
+        var other = vault
+        other.entries = [VaultEntry()]
+        XCTAssertThrowsError(try VaultFile.replace(url, with: saved, password: "secret", expecting: other))
         XCTAssertEqual(try Data(contentsOf: url), original)
         XCTAssertEqual(try Data(contentsOf: VaultFile.snapshotURL(for: url)), original)
     }
@@ -74,7 +76,7 @@ final class VaultFileTests: XCTestCase {
         var vault = Vault(name: "After", entries: [account("After")], kdf: .fastTest)
         let saved = try KDBX.save(vault: &vault, password: "secret")
         let intruder = Data("other-writer".utf8)
-        XCTAssertThrowsError(try VaultFile.replace(url, with: saved, password: "secret", entryIDs: vault.entries.map(\.id)) {
+        XCTAssertThrowsError(try VaultFile.replace(url, with: saved, password: "secret", expecting: vault) {
             try intruder.write(to: url)
         })
         XCTAssertEqual(try Data(contentsOf: url), intruder)
@@ -89,7 +91,7 @@ final class VaultFileTests: XCTestCase {
         var vault = Vault(name: "After", entries: [account("After")], kdf: .fastTest)
         let saved = try KDBX.save(vault: &vault, password: "secret")
         XCTAssertThrowsError(try VaultFile.replace(
-            url, with: saved, password: "secret", entryIDs: vault.entries.map(\.id),
+            url, with: saved, password: "secret", expecting: vault,
             beforeSnapshotCommit: { throw VaultWriteError("stop") }, beforeReplace: {}
         ))
         XCTAssertEqual(try Data(contentsOf: url), original)

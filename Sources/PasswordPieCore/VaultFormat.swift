@@ -53,7 +53,7 @@ public enum VaultFormat {
     public static func load(data: Data, password: String, keyFile: Data? = nil, fileName: String = "") throws -> Vault {
         switch sniff(data, fileName: fileName) {
         case .kdbx:
-            return try KDBX.load(data: data, password: password)
+            return try KDBX.loadRecovering(data: data, password: password)
         case .keepass1:
             return try loadKeePass1(data, password: password, keyFile: keyFile)
         case .pux:

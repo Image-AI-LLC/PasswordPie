@@ -5,7 +5,17 @@ import CArgon2
 import Security
 
 public enum KDBX {
+    /// Strict: a document the XML parser refuses is an error. A save's read-back uses this.
     public static func load(data: Data, password: String) throws -> Vault {
+        try load(data: data, password: password, repairing: false)
+    }
+
+    /// Opens a file the old writer damaged by repairing its XML in memory. `Vault.recovery` says what changed.
+    public static func loadRecovering(data: Data, password: String) throws -> Vault {
+        try load(data: data, password: password, repairing: true)
+    }
+
+    private static func load(data: Data, password: String, repairing: Bool) throws -> Vault {
         let parsed = try parseOuter(data)
         let composite = compositeKey(password)
         let transformed = try derive(composite, kdf: parsed.kdf, salt: parsed.kdfSalt)
@@ -17,7 +27,17 @@ public enum KDBX {
         let plain = try aesCBCDecrypt(cipherText, key: sha256(parsed.masterSeed + transformed), iv: parsed.iv)
         let inner = parsed.compressed ? try gzipDecompress(plain) : plain
         let split = try splitInner(inner)
-        let document = try parseKDBXDocument(split.xml)
+        let document: XMLDocument
+        var repair: KDBXXMLRepair.Result?
+        do {
+            document = try parseKDBXDocument(split.xml)
+        } catch {
+            guard repairing else { throw error }
+            let repaired = KDBXXMLRepair.repair(split.xml)
+            guard repaired.xml != split.xml, let fixed = try? parseKDBXDocument(repaired.xml) else { throw error }
+            document = fixed
+            repair = repaired
+        }
         try decryptProtectedValues(in: document, streamKey: split.streamKey)
         let preserve = KDBXPreserve(
             document: document,
@@ -27,10 +47,17 @@ public enum KDBX {
             compressed: parsed.compressed,
             kdfSaltRange: parsed.kdfSaltRange
         )
-        return preserve.makeVault(kdf: parsed.kdfParameters)
+        var vault = preserve.makeVault(kdf: parsed.kdfParameters)
+        if let repair {
+            var recovery = repair.recovery
+            preserve.locateRecovery(changedTexts: repair.changedTexts, uncertainTexts: repair.uncertainTexts, into: &recovery)
+            vault.recovery = recovery
+        }
+        return vault
     }
 
     public static func save(vault: inout Vault, password: String) throws -> Data {
+        normalizeForXML(&vault)
         if vault.preserve == nil {
             return try saveGenerated(vault: &vault, password: password)
         }
@@ -77,6 +104,70 @@ public enum KDBX {
         var vault = preserve.makeVault(kdf: kdf)
         return try save(vault: &vault, password: password)
     }
+
+    /// Packs XML bytes exactly as given, so a test can hold a file the old writer produced.
+    static func testingDatabase(rawXML: Data, streamKey: Data, password: String) throws -> Data {
+        let masterSeed = random(32)
+        let iv = random(16)
+        let kdf = KDFParameters.fastTest
+        let (kdfParameters, salt) = try writeKDF(kdf)
+        let fields = [
+            HeaderField(type: 2, payload: uuidBytes("31c1f2e6-bf71-4350-be58-05216afc5aff")),
+            HeaderField(type: 3, payload: le(UInt32(1))),
+            HeaderField(type: 4, payload: masterSeed),
+            HeaderField(type: 7, payload: iv),
+            HeaderField(type: 11, payload: kdfParametersBlob(kdfParameters, salt: salt)),
+            HeaderField(type: 0, payload: Data([0x0d, 0x0a, 0x0d, 0x0a]))
+        ]
+        return try packFile(
+            version: 0x00040000,
+            fields: fields,
+            masterSeed: masterSeed,
+            transformed: try derive(compositeKey(password), kdf: kdfParameters.kind, salt: salt),
+            iv: iv,
+            compressed: true,
+            xml: rawXML,
+            streamKey: streamKey,
+            pieces: []
+        )
+    }
+}
+
+/// Text XML cannot carry leaves the model too, so the model stays equal to what the file reads back as.
+/// Protected values are encrypted to base64 before they reach the XML, so they keep every character.
+private func normalizeForXML(_ vault: inout Vault) {
+    vault.name = storedXMLText(vault.name)
+    vault.rootName = storedXMLText(vault.rootName)
+    for index in vault.entries.indices {
+        vault.entries[index].tags = storedXMLText(vault.entries[index].tags)
+        vault.entries[index].groupPath = vault.entries[index].groupPath.map(storedXMLText)
+        vault.entries[index].fields = normalizedFields(vault.entries[index].fields)
+    }
+}
+
+/// A key that cleaning empties or makes equal to another key keeps its value under a new name. An empty key is
+/// not written, and KeePassXC refuses a database with a repeated key.
+private func normalizedFields(_ fields: [VaultField]) -> [VaultField] {
+    var result = fields
+    var taken = Set(fields.map(\.key).filter { storedXMLText($0) == $0 })
+    for index in result.indices {
+        if !result[index].protected {
+            result[index].value = storedXMLText(result[index].value)
+        }
+        let original = result[index].key
+        let cleaned = storedXMLText(original)
+        guard cleaned != original else { continue }
+        let base = cleaned.isEmpty ? "Field" : cleaned
+        var candidate = base
+        var number = 2
+        while taken.contains(candidate) {
+            candidate = "\(base) \(number)"
+            number += 1
+        }
+        taken.insert(candidate)
+        result[index].key = candidate
+    }
+    return result
 }
 
 private func saveGenerated(vault: inout Vault, password: String) throws -> Data {
@@ -98,7 +189,9 @@ private func saveGenerated(vault: inout Vault, password: String) throws -> Data 
     ]
     let parts = sha512SplitKey(protectedStreamKey: protectedKey)
     var stream = ChaCha20(key: parts.key, nonce: parts.nonce, counter: 0)
-    let xml = xmlDocument(vault, stream: &stream)
+    let xml = escapingCarriageReturns(xmlDocument(vault, stream: &stream))
+    // Same parser the next unlock uses. A document that fails here is not packed or written.
+    let document = try parseKDBXDocument(xml)
     let output = try packFile(
         version: 0x00040000,
         fields: fields,
@@ -110,7 +203,6 @@ private func saveGenerated(vault: inout Vault, password: String) throws -> Data 
         streamKey: protectedKey,
         pieces: []
     )
-    let document = try parseKDBXDocument(xml)
     try decryptProtectedValues(in: document, streamKey: protectedKey)
     let preserve = KDBXPreserve(
         document: document,

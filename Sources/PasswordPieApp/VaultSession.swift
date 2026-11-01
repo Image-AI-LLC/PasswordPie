@@ -285,10 +285,12 @@ final class VaultSession: ObservableObject {
         let generation = unlockGeneration
         Task { @MainActor [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<Vault, Error> in
-                Result { try VaultFormat.load(url: url, password: password, keyFile: keyFile) }
+                Result { try VaultFile.openRecovering(url: url, password: password, keyFile: keyFile) }
             }.value
             guard let self else { return }
             self.unlocking = false
+            // Before the checks below: the file may have been repaired even if this result is dropped.
+            if case .success(let opened) = result { self.showRecoveryNotice(opened.recoveryNotice) }
             guard self.unlockGeneration == generation else { return }
             guard self.locked else { return }
             guard self.databaseURL.path == url.path else {
@@ -297,6 +299,20 @@ final class VaultSession: ObservableObject {
             }
             // Keep the key file this decrypt used, even if the draft changed while it ran.
             finish(self, result.map { DecryptedVault(vault: $0, keyFile: keyFile) })
+        }
+    }
+
+    /// `message` only shows on the lock screen, which is gone by now.
+    private func showRecoveryNotice(_ notice: String?) {
+        guard let notice else { return }
+        let alert = NSAlert()
+        alert.messageText = "Database repair"
+        alert.informativeText = notice
+        alert.addButton(withTitle: "OK")
+        if let delegate = AppDelegate.shared {
+            _ = delegate.keepOpen { alert.runModal() }
+        } else {
+            alert.runModal()
         }
     }
 
@@ -1184,12 +1200,13 @@ final class VaultSession: ObservableObject {
                     pathStillListed: true
                 ) == .stop { return }
                 let loaded = await Task.detached { () -> Vault? in
-                    try? VaultFormat.load(
+                    try? VaultFile.openRecovering(
                         url: URL(fileURLWithPath: job.path),
                         password: job.password,
                         keyFile: job.keyFile
                     )
                 }.value
+                self.showRecoveryNotice(loaded?.recoveryNotice)
                 switch CatalogLoad.step(
                     generation: generation,
                     current: self.catalogGeneration,
@@ -1288,7 +1305,7 @@ final class VaultSession: ObservableObject {
         let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
         do {
             let data = try KDBX.save(vault: &vault, password: password)
-            try VaultFile.replace(destination, with: data, password: password, entryIDs: vault.entries.map(\.id))
+            try VaultFile.replace(destination, with: data, password: password, expecting: vault)
             // Move the secret before the opened file changes path. A failed move keeps the
             // source path, so the next save still finds this vault and rewrites the same sibling.
             let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
