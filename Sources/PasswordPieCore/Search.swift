@@ -39,13 +39,14 @@ public func searchTokens(_ query: String) -> [String] {
 }
 
 /// Alphabetical (localized, case-insensitive); search results also put favorites first.
+/// Each title is read once: `title` searches the entry's fields, and a sort compares every entry many times.
 public func sortedForMenu(_ entries: [VaultEntry], favoritesFirst: Bool = false) -> [VaultEntry] {
-    entries.sorted { lhs, rhs in
+    entries.map { (entry: $0, title: $0.title, favorite: $0.favorite) }.sorted { lhs, rhs in
         if favoritesFirst, lhs.favorite != rhs.favorite { return lhs.favorite }
         let order = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
         if order != .orderedSame { return order == .orderedAscending }
-        return lhs.id.uuidString < rhs.id.uuidString
-    }
+        return lhs.entry.id.uuidString < rhs.entry.id.uuidString
+    }.map(\.entry)
 }
 
 private func wordList(_ text: String) -> [String] {
@@ -69,34 +70,92 @@ public func searchEntries(
     lastUsed: [UUID: Date] = [:],
     now: Date = Date()
 ) -> [VaultEntry] {
+    guard !searchTokens(query).isEmpty else { return [] }
+    return searchEntries(in: SearchIndex(entries), query: query, scope: scope, popularity: popularity, lastUsed: lastUsed, now: now)
+}
+
+/// The same search over a prepared index. Only the entries already in `index` take part, so a search during
+/// indexing ranks what has been indexed so far.
+public func searchEntries(
+    in index: SearchIndex,
+    query: String,
+    scope: SearchScope,
+    popularity: DomainPopularity = .bundled,
+    lastUsed: [UUID: Date] = [:],
+    now: Date = Date()
+) -> [VaultEntry] {
     let tokens = searchTokens(query)
     guard !tokens.isEmpty else { return [] }
-    let candidates = entries.filter { !$0.trashed }.map { SearchIndexEntry($0) }
     for substring in [false, true] {
-        var hits: [(entry: VaultEntry, score: Double)] = []
-        for candidate in candidates {
+        var hits: [(item: SearchIndexEntry, score: Double)] = []
+        for candidate in index.items {
             guard let match = candidate.score(tokens, substring: substring, allFields: scope == .allFields) else { continue }
             let boost = RankingBoost.value(
                 recency: Recency.score(lastUsed: lastUsed[candidate.entry.id], now: now),
                 site: popularity.popularity(forHost: candidate.rankHost)
             )
-            hits.append((candidate.entry, match * (1 + boost)))
+            hits.append((candidate, match * (1 + boost)))
         }
         if !hits.isEmpty {
             return hits.sorted { lhs, rhs in
-                if lhs.entry.favorite != rhs.entry.favorite { return lhs.entry.favorite }
+                if lhs.item.entry.favorite != rhs.item.entry.favorite { return lhs.item.entry.favorite }
                 if abs(lhs.score - rhs.score) > 1e-9 { return lhs.score > rhs.score }
-                let order = lhs.entry.title.localizedCaseInsensitiveCompare(rhs.entry.title)
+                let order = lhs.item.displayTitle.localizedCaseInsensitiveCompare(rhs.item.displayTitle)
                 if order != .orderedSame { return order == .orderedAscending }
-                return lhs.entry.id.uuidString < rhs.entry.id.uuidString
-            }.map(\.entry)
+                return lhs.item.entry.id.uuidString < rhs.item.entry.id.uuidString
+            }.map(\.item.entry)
         }
     }
     return []
 }
 
-private struct SearchIndexEntry {
+/// Folded search text for each entry, prepared once instead of on every keystroke.
+/// It can be built a piece at a time: `adding` folds more entries, and `reusing` keeps the work done for entries that did not change.
+public struct SearchIndex: Sendable {
+    fileprivate var items: [SearchIndexEntry]
+
+    public init() {
+        items = []
+    }
+
+    /// Folds every entry that is not in the Recycle Bin.
+    public init<S: Sequence>(_ entries: S) where S.Element == VaultEntry {
+        items = entries.lazy.filter { !$0.trashed }.map(SearchIndexEntry.init)
+    }
+
+    /// The number of entries indexed so far.
+    public var count: Int { items.count }
+
+    /// This index with `other`'s entries added.
+    public func adding(_ other: SearchIndex) -> SearchIndex {
+        var copy = self
+        copy.items += other.items
+        return copy
+    }
+
+    /// An index for `entries` that keeps every prepared item whose entry did not change.
+    /// `pending` holds the entries that still need folding, in their list order.
+    public func reusing(for entries: [VaultEntry]) -> (index: SearchIndex, pending: [VaultEntry]) {
+        var previous: [UUID: Int] = [:]
+        previous.reserveCapacity(items.count)
+        for position in items.indices { previous[items[position].entry.id] = position }
+        var kept = SearchIndex()
+        var pending: [VaultEntry] = []
+        for entry in entries where !entry.trashed {
+            if let position = previous[entry.id], items[position].entry == entry {
+                kept.items.append(items[position])
+            } else {
+                pending.append(entry)
+            }
+        }
+        return (kept, pending)
+    }
+}
+
+fileprivate struct SearchIndexEntry: Sendable {
     let entry: VaultEntry
+    /// The title as shown, for the final alphabetical tie-break.
+    let displayTitle: String
     let title: String
     let host: String
     let words: [String]
@@ -104,7 +163,8 @@ private struct SearchIndexEntry {
 
     init(_ entry: VaultEntry) {
         self.entry = entry
-        title = foldForSearch(entry.title)
+        displayTitle = entry.title
+        title = foldForSearch(displayTitle)
         host = urlSearchString(entry.url)
         words = wordList(title) + wordList(host)
         var extra = [foldForSearch(entry.username), foldForSearch(entry.notes), foldForSearch(entry.tags)]

@@ -127,7 +127,22 @@ public enum MenuBuilder {
         now: Date = Date(),
         sources: [UUID: String] = [:]
     ) -> [MenuRow] {
-        let found = searchEntries(entries, query: query, scope: scope, lastUsed: lastUsed, now: now)
+        searchRows(searchEntries(entries, query: query, scope: scope, lastUsed: lastUsed, now: now), sources: sources)
+    }
+
+    /// Search results from a prepared index. While the index is still being built, only its entries so far take part.
+    public static func searchResults(
+        index: SearchIndex,
+        query: String,
+        scope: SearchScope,
+        lastUsed: [UUID: Date] = [:],
+        now: Date = Date(),
+        sources: [UUID: String] = [:]
+    ) -> [MenuRow] {
+        searchRows(searchEntries(in: index, query: query, scope: scope, lastUsed: lastUsed, now: now), sources: sources)
+    }
+
+    private static func searchRows(_ found: [VaultEntry], sources: [UUID: String]) -> [MenuRow] {
         guard !found.isEmpty else {
             return [MenuRow(kind: .disabled, title: "No items found")]
         }
@@ -149,36 +164,53 @@ public enum MenuBuilder {
     /// Rows for a list of entries; `alreadySorted` keeps the caller's order (search results sort favorites first).
     static func entryRows(_ entries: [VaultEntry], sources: [UUID: String] = [:], alreadySorted: Bool = false) -> [MenuRow] {
         let sorted = alreadySorted ? entries : sortedForMenu(entries)
-        return sorted.map { entry in
-            MenuRow(
+        let details = rowDetails(sorted, sources: sources)
+        return sorted.indices.map { index in
+            let entry = sorted[index]
+            let title = entry.title
+            return MenuRow(
                 kind: .entry(entry.id),
-                title: entry.title.isEmpty ? "Untitled" : entry.title,
+                title: title.isEmpty ? "Untitled" : title,
                 category: entry.category,
                 favorite: entry.favorite,
-                username: rowDetail(entry, peers: sorted, sources: sources)
+                username: details[index]
             )
         }
     }
 
-    /// Same titles from different files show the file name. One file keeps the username.
-    static func rowDetail(_ entry: VaultEntry, peers: [VaultEntry], sources: [UUID: String]) -> String {
-        let key = titleKey(entry.title)
-        let sameTitle = peers.filter { titleKey($0.title) == key }
-        guard sameTitle.count > 1 else { return "" }
-        let paths = sameTitle.map { sources[$0.id] ?? "" }
-        let labels = DatabaseRoster.menuTitles(for: paths)
-        let distinct = Set(labels.filter { !$0.isEmpty })
-        guard distinct.count > 1, let index = sameTitle.firstIndex(where: { $0.id == entry.id }) else {
-            return entry.username
+    /// The text after each row's title. Same titles from different files show the file name. One file keeps the username.
+    /// Each title is keyed once and grouped, so a list of thousands of entries stays linear.
+    static func rowDetails(_ entries: [VaultEntry], sources: [UUID: String]) -> [String] {
+        var groups: [String: [Int]] = [:]
+        for index in entries.indices {
+            groups[titleKey(entries[index].title), default: []].append(index)
         }
-        let label = labels[index]
-        if entry.username.isEmpty || label.isEmpty { return label.isEmpty ? entry.username : label }
-        return "\(entry.username) — \(label)"
+        var details = Array(repeating: "", count: entries.count)
+        for members in groups.values where members.count > 1 {
+            let labels = DatabaseRoster.menuTitles(for: members.map { sources[entries[$0].id] ?? "" })
+            let distinct = Set(labels.filter { !$0.isEmpty })
+            for (position, index) in members.enumerated() {
+                let username = entries[index].username
+                guard distinct.count > 1 else {
+                    details[index] = username
+                    continue
+                }
+                let label = labels[position]
+                if username.isEmpty || label.isEmpty {
+                    details[index] = label.isEmpty ? username : label
+                } else {
+                    details[index] = "\(username) — \(label)"
+                }
+            }
+        }
+        return details
     }
 
     /// Titles compare after Any-Latin; Latin-ASCII; Any-Lower, as the real menu does.
+    /// Plain ASCII skips the ICU transform, which gives the same lowercase result and costs far more.
     static func titleKey(_ title: String) -> String {
-        title.applyingTransform(StringTransform("Any-Latin; Latin-ASCII; Any-Lower"), reverse: false) ?? title.lowercased()
+        if title.utf8.allSatisfy({ $0 < 0x80 }) { return title.lowercased() }
+        return title.applyingTransform(StringTransform("Any-Latin; Latin-ASCII; Any-Lower"), reverse: false) ?? title.lowercased()
     }
 
     private static func folderRows(_ entries: [VaultEntry], prefix: [String], sources: [UUID: String]) -> [MenuRow] {

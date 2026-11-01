@@ -59,12 +59,28 @@ final class VaultSession: ObservableObject {
     @Published var searchAll: Bool {
         didSet { UserDefaults.standard.set(searchAll, forKey: "searchAllFields") }
     }
-    @Published var entries: [VaultEntry] = []
+    @Published var entries: [VaultEntry] = [] {
+        didSet { catalogChanged() }
+    }
     @Published var message = ""
     @Published var importStatus = ""
     @Published var importStatusIsError = false
     /// Chrome logins read live. Never part of `entries`, so no save can copy them into the database.
-    @Published var liveEntries: [VaultEntry] = []
+    @Published var liveEntries: [VaultEntry] = [] {
+        didSet { catalogChanged() }
+    }
+    /// The database's entries plus live Chrome logins that the database does not already hold. Search and menus read this.
+    /// Kept up to date when either list changes, so lookups do not merge the lists again.
+    @Published private(set) var allEntries: [VaultEntry] = []
+    /// The menu shown with an empty search, built off the main thread. Nil until the first build for this catalog finishes.
+    @Published private(set) var topLevelRows: [MenuRow]?
+    /// Search text for `allEntries`, built off the main thread a piece at a time. A search uses what is indexed so far.
+    @Published private(set) var searchIndex = SearchIndex()
+    /// True while entries are still being added to `searchIndex`.
+    @Published private(set) var indexing = false
+    /// Bumped on every catalog change; background work from an older catalog does not publish.
+    var menuGeneration: UInt = 0
+    var menuWork: [Task<Void, Never>] = []
     @Published var chromeStatus = ""
     @Published var chromeStatusIsError = false
     @Published var chromeBusy = false
@@ -779,9 +795,6 @@ final class VaultSession: ObservableObject {
 
     // MARK: Entries
 
-    /// The database's entries plus live Chrome logins that the database does not already hold. Search and menus read this.
-    var allEntries: [VaultEntry] { Self.visibleEntries(saved: entries, live: liveEntries) }
-
     /// Shared by `allEntries` and the pinned windows, which build it from the values a publisher just emitted.
     static func visibleEntries(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
         #if PP_DIRECT
@@ -1285,6 +1298,68 @@ final class VaultSession: ObservableObject {
         if let open = error as? VaultOpenError { return open.description }
         if let kdbx = error as? KDBXError { return kdbx.description }
         return error.localizedDescription
+    }
+}
+
+// MARK: Menu catalog
+/// Keeps the menu and the search index in step with the entries without blocking the main thread.
+/// The panel opens at once: it shows what is ready, and the rest arrives as the background work finishes.
+extension VaultSession {
+    /// Up to this many entries are folded or laid out on the main thread, which takes a few milliseconds.
+    static let inlineCatalogLimit = 300
+    /// Entries folded per background step. Each step makes them searchable.
+    static let indexChunkSize = 500
+
+    /// Called whenever `entries` or `liveEntries` changes.
+    func catalogChanged() {
+        let visible = Self.visibleEntries(saved: entries, live: liveEntries)
+        allEntries = visible
+        menuGeneration &+= 1
+        menuWork.forEach { $0.cancel() }
+        menuWork = []
+
+        // Entries that did not change keep their prepared search text, so an edit or a favorite refolds one entry.
+        let (kept, pending) = searchIndex.reusing(for: visible)
+        let sources = entrySources
+        if visible.count <= Self.inlineCatalogLimit {
+            searchIndex = kept.adding(SearchIndex(pending))
+            indexing = false
+            topLevelRows = MenuBuilder.topLevel(entries: visible, sources: sources)
+            return
+        }
+
+        var queue = pending
+        if queue.count <= Self.inlineCatalogLimit {
+            searchIndex = kept.adding(SearchIndex(queue))
+            queue = []
+        } else {
+            searchIndex = kept
+        }
+        indexing = !queue.isEmpty
+        // A brand-new catalog (just unlocked) shows "Loading…"; a change to the open one keeps the old rows until the new ones are ready.
+        if kept.count == 0 { topLevelRows = nil }
+
+        let generation = menuGeneration
+        menuWork.append(Task { @MainActor [weak self] in
+            let rows = await Task.detached(priority: .userInitiated) {
+                MenuBuilder.topLevel(entries: visible, sources: sources)
+            }.value
+            guard let self, self.menuGeneration == generation else { return }
+            self.topLevelRows = rows
+        })
+        guard !queue.isEmpty else { return }
+        menuWork.append(Task { @MainActor [weak self] in
+            var remaining = queue[...]
+            while !remaining.isEmpty {
+                let chunk = Array(remaining.prefix(Self.indexChunkSize))
+                remaining = remaining.dropFirst(chunk.count)
+                let piece = await Task.detached(priority: .userInitiated) { SearchIndex(chunk) }.value
+                guard let self, self.menuGeneration == generation else { return }
+                self.searchIndex = self.searchIndex.adding(piece)
+            }
+            guard let self, self.menuGeneration == generation else { return }
+            self.indexing = false
+        })
     }
 }
 

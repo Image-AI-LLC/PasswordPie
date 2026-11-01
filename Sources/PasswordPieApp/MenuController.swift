@@ -119,14 +119,36 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     }
 
     private func rebuildRoot(selectFirst first: Bool) {
-        let sources = session.entrySources
-        let rows = query.isEmpty
-            ? MenuBuilder.topLevel(entries: session.allEntries, sources: sources)
-            : MenuBuilder.searchResults(entries: session.allEntries, query: query, scope: session.searchAll ? .allFields : .major, lastUsed: session.lastUsedMap, sources: sources)
+        let rows = query.isEmpty ? topLevelRows() : searchRows()
         root.rows = rows
         root.list.setRows(rows)
         if first { selectFirst(in: root) }
         layoutRoot()
+    }
+
+    /// Built in the background by the session. Until the first build for this unlock is done, one placeholder row shows.
+    private func topLevelRows() -> [MenuRow] {
+        session.topLevelRows ?? [MenuRow(kind: .disabled, title: "Loading…")]
+    }
+
+    /// Searches what the session has indexed so far. More results appear as indexing goes on.
+    private func searchRows() -> [MenuRow] {
+        let rows = MenuBuilder.searchResults(
+            index: session.searchIndex,
+            query: query,
+            scope: session.searchAll ? .allFields : .major,
+            lastUsed: session.lastUsedMap,
+            sources: session.entrySources
+        )
+        guard session.indexing, rows.count == 1, rows[0].kind == .disabled else { return rows }
+        return [MenuRow(kind: .disabled, title: "Searching…")]
+    }
+
+    /// The session finished more background work. Only the visible list is rebuilt, so an open submenu is not closed by
+    /// indexing that does not change it.
+    func catalogUpdated(topLevel: Bool) {
+        guard topLevel == query.isEmpty else { return }
+        refresh()
     }
 
     private func layoutRoot() {
