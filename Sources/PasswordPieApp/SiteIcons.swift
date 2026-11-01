@@ -13,11 +13,14 @@ enum GoogleFavicon {
         let labels = host.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2, labels.allSatisfy(isDNSLabel) else { return false }
         if labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return false }
-        let blocked = [
-            "local", "localhost", "localdomain", "home.arpa", "internal", "lan", "intranet",
-            "invalid", "test", "onion", "home", "corp",
+        // IANA special-use names (registry of 2026-05-22) and the private suffixes used on local networks.
+        // One `arpa` entry covers every special-use name under it, including reverse DNS.
+        let reserved = [
+            "alt", "arpa", "example", "example.com", "example.net", "example.org",
+            "invalid", "local", "localhost", "localdomain", "onion", "test",
+            "corp", "home", "internal", "intranet", "lan",
         ]
-        return !blocked.contains { host == $0 || host.hasSuffix("." + $0) }
+        return !reserved.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 
     private static func isDNSLabel(_ label: Substring) -> Bool {

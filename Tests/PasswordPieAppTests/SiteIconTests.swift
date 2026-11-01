@@ -52,7 +52,7 @@ final class SiteIconTests: XCTestCase {
     }
 
     func testPrivateHostsAreNotSentToGoogle() {
-        for host in ["localhost", "printer", "127.0.0.1", "10.1.2.3", "192.168.1.1", "172.16.0.1", "169.254.1.1", "nas.local", "router.lan", "db.internal", "home.arpa", "::1"] {
+        for host in ["localhost", "printer", "127.0.0.1", "10.1.2.3", "192.168.1.1", "172.16.0.1", "169.254.1.1", "nas.local", "router.lan", "db.internal", "home.arpa", "nas.1.168.192.in-addr.arpa", "printer.example", "docs.example.com", "docs.example.net", "docs.example.org", "name.alt", "::1"] {
             XCTAssertNil(GoogleFavicon.requestURL(forHost: host), host)
         }
         XCTAssertNotNil(GoogleFavicon.requestURL(forHost: "github.com"))
@@ -149,17 +149,17 @@ final class SiteIconTests: XCTestCase {
         XCTAssertEqual(countAfterHit, 1)
 
         await probe.set(status: 404, body: png)
-        let missing = await store.load("missing.example")
+        let missing = await store.load("missing.lookup.net")
         XCTAssertNil(missing)
-        let missingAgain = await store.load("missing.example")
+        let missingAgain = await store.load("missing.lookup.net")
         XCTAssertNil(missingAgain)
         let countAfterMiss = await probe.count
         XCTAssertEqual(countAfterMiss, 2)
 
         await probe.set(status: 200, body: png, thrown: URLError(.notConnectedToInternet))
-        let offline = await store.load("offline.example")
+        let offline = await store.load("offline.lookup.net")
         XCTAssertNil(offline)
-        let offlineAgain = await store.load("offline.example")
+        let offlineAgain = await store.load("offline.lookup.net")
         XCTAssertNil(offlineAgain)
         let countAfterFailure = await probe.count
         XCTAssertEqual(countAfterFailure, 3)
@@ -194,7 +194,7 @@ final class SiteIconTests: XCTestCase {
             await gate.leave()
             return (200, png)
         }, cacheDirectory: nil, maxActive: 6)
-        let hosts = (0..<8).map { "site\($0).example" }
+        let hosts = (0..<8).map { "site\($0).lookup.net" }
         await withTaskGroup(of: NSImage?.self) { group in
             for host in hosts {
                 group.addTask { await store.load(host) }
