@@ -46,6 +46,7 @@ final class CredentialExchangeMappingTests: XCTestCase {
     }
 }
 
+@MainActor
 final class CredentialExchangeAvailabilityTests: XCTestCase {
     /// The test host carries no AutoFill entitlement, so the file import must stay the main path.
     func testUnentitledBuildKeepsTheFileImport() {
