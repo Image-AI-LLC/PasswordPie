@@ -620,7 +620,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         keepOpen { _ = menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX, y: view.bounds.maxY), in: view) }
     }
 
-    func gearMenu() -> NSMenu {
+    private func gearMenu() -> NSMenu {
         let gear = NSMenu()
         if session.locked {
             add(to: gear, "Preferences…", #selector(openPreferences))

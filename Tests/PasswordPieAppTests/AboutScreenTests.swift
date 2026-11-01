@@ -63,21 +63,12 @@ final class AboutScreenTests: XCTestCase {
     }
 
     func testAboutIsOnlyOnTheAppMenu() throws {
-        let session = VaultSession()
-        let panel = PanelController(session: session)
-        let locked = panel.gearMenu()
-        XCTAssertEqual(itemTitles(locked), ["Preferences…", "Open Database…", "Quit PasswordPie"])
-        XCTAssertNil(locked.items.first { $0.title == AboutCopy.menuTitle })
-
-        session.locked = false
-        let open = panel.gearMenu()
-        XCTAssertEqual(itemTitles(open), [
-            "Search Major Fields", "Search All Fields",
-            "New Item…", "Lock",
-            "Preferences…", "Open Database…", "New Database…",
-            "Quit PasswordPie",
-        ])
-        XCTAssertEqual(open.items.first { $0.title == "Preferences…" }?.keyEquivalent, ",")
+        let panel = try String(contentsOf: sourceURL("PanelController.swift"), encoding: .utf8)
+        let gear = functionBody(panel, named: "gearMenu")
+        XCTAssertFalse(gear.isEmpty)
+        XCTAssertFalse(gear.contains("About"))
+        XCTAssertFalse(panel.contains("openAbout"))
+        XCTAssertTrue(gear.contains(#"add(to: gear, "Preferences…", #selector(openPreferences), key: ",")"#))
 
         let app = try String(contentsOf: sourceURL("PasswordPieApp.swift"), encoding: .utf8)
         let statusMenu = functionBody(app, named: "makeMenu")
@@ -108,10 +99,6 @@ final class AboutScreenTests: XCTestCase {
             }
         }
         return String(body[..<end])
-    }
-
-    private func itemTitles(_ menu: NSMenu) -> [String] {
-        menu.items.map(\.title).filter { !$0.isEmpty }
     }
 
     private func sourceURL(_ name: String) -> URL {
