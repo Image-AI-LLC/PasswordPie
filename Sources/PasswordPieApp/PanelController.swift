@@ -74,6 +74,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var attached = false
     private var keepOpenDepth = 0
+    /// True after the first file panel has been scheduled. The first one has to wait a turn.
+    private var hasPresentedFilePanel = false
+    /// A second click before the deferred panel appears must not open another one.
+    private var filePanelQueued = false
     private var animatingLock = false
     private var previousApp: NSRunningApplication?
     private var topLeft = NSPoint.zero
@@ -321,6 +325,35 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             }
         }
         return body()
+    }
+
+    /// Presents a file panel after the app is active.
+    ///
+    /// This panel is non-activating, so the app is often inactive when Open Database
+    /// is clicked. The first open panel built then selects the current folder and
+    /// ignores clicks. The modal session activates the app, which is why cancelling
+    /// and opening again works. Activation is requested first, and the panel is
+    /// created on the next turn.
+    func presentFilePanel(_ show: @escaping () -> Void) {
+        guard !filePanelQueued else { return }
+        let deferral = FilePanelTiming.deferPresentation(
+            appIsActive: NSApp.isActive,
+            hasPresentedFilePanel: hasPresentedFilePanel
+        )
+        hasPresentedFilePanel = true
+        if !deferral {
+            keepOpen(show)
+            return
+        }
+        filePanelQueued = true
+        keepOpenDepth += 1
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.filePanelQueued = false
+            self.keepOpen(show)
+            self.keepOpenDepth -= 1
+        }
     }
 
     /// Touch ID cancel returns focus to another app. Stay open until the password field is key again.

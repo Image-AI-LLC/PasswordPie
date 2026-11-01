@@ -111,6 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Runs `body` (typically a modal file chooser) without the panel hiding when it loses key status.
     func keepOpen<T>(_ body: () -> T) -> T { panelController.keepOpen(body) }
 
+    /// Shows a file panel once this app is active. See `FilePanelTiming`.
+    func presentFilePanel(_ show: @escaping () -> Void) {
+        panelController.presentFilePanel(show)
+    }
+
     func passwordTyped() { panelController.passwordTyped() }
 
     private func showUnderStatusItem() {

@@ -164,9 +164,10 @@ final class VaultSession: ObservableObject {
 
     var databaseMenuTitles: [String] { DatabaseRoster.menuTitles(for: databasePaths) }
 
-    /// File types the open panel may select. `.opvault` is a package once 1Password has registered it.
+    /// File types the open panel may select. `.opvault` is a package, declared in Info.plist,
+    /// so the panel can choose that directory without treating every folder as a database.
     nonisolated static func databaseContentTypes() -> [UTType] {
-        var types: [UTType] = [.data, .json, .commaSeparatedText, .folder]
+        var types: [UTType] = [.data, .json, .commaSeparatedText]
         let opvault = UTType(filenameExtension: "opvault", conformingTo: .package)
             ?? UTType(importedAs: "com.agilebits.opvault", conformingTo: .package)
         types.append(opvault)
@@ -575,19 +576,15 @@ final class VaultSession: ObservableObject {
     // MARK: Database files
 
     func chooseDatabase() {
-        let chooser = NSOpenPanel()
-        chooser.allowedContentTypes = Self.databaseContentTypes()
-        chooser.canChooseFiles = true
-        chooser.canChooseDirectories = true
-        chooser.treatsFilePackagesAsDirectories = false
-        chooser.allowsOtherFileTypes = true
-        chooser.message = "Choose a KeePass, Bitwarden, Proton Pass, PUX, OPVault, or CSV database"
-        let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
-        if accepted, let url = chooser.url {
-            databaseURL = databaseURL(resolving: url)
-            clearKeyFile()
-            lock()
-            offerRememberedUnlock()
+        AppDelegate.shared?.presentFilePanel { [weak self] in
+            guard let self else { return }
+            let chooser = NSOpenPanel()
+            DatabaseChooser.configure(chooser)
+            guard chooser.runModal() == .OK, let url = chooser.url else { return }
+            self.databaseURL = self.databaseURL(resolving: url)
+            self.clearKeyFile()
+            self.lock()
+            self.offerRememberedUnlock()
         }
     }
 
@@ -763,33 +760,36 @@ final class VaultSession: ObservableObject {
     }
 
     func chooseKeyFile() {
-        let chooser = NSOpenPanel()
-        chooser.canChooseFiles = true
-        chooser.canChooseDirectories = false
-        chooser.allowsOtherFileTypes = true
-        chooser.message = "Choose the KeePass 1 key file"
-        let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
-        guard accepted, let url = chooser.url else { return }
-        do {
-            keyFileData = try Data(contentsOf: url)
-            keyFileName = url.lastPathComponent
-            message = ""
-        } catch {
-            keyFileData = nil
-            keyFileName = ""
-            message = "The key file could not be read."
+        AppDelegate.shared?.presentFilePanel { [weak self] in
+            guard let self else { return }
+            let chooser = NSOpenPanel()
+            chooser.canChooseFiles = true
+            chooser.canChooseDirectories = false
+            chooser.allowsOtherFileTypes = true
+            chooser.message = "Choose the KeePass 1 key file"
+            guard chooser.runModal() == .OK, let url = chooser.url else { return }
+            do {
+                self.keyFileData = try Data(contentsOf: url)
+                self.keyFileName = url.lastPathComponent
+                self.message = ""
+            } catch {
+                self.keyFileData = nil
+                self.keyFileName = ""
+                self.message = "The key file could not be read."
+            }
         }
     }
 
     func newDatabase() {
-        let chooser = NSSavePanel()
-        chooser.nameFieldStringValue = "PasswordPie.kdbx"
-        chooser.message = "Choose where to create the new KeePass database"
-        let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
-        if accepted, let url = chooser.url {
-            databaseURL = url
-            clearKeyFile()
-            lock()
+        AppDelegate.shared?.presentFilePanel { [weak self] in
+            guard let self else { return }
+            let chooser = NSSavePanel()
+            chooser.nameFieldStringValue = "PasswordPie.kdbx"
+            chooser.message = "Choose where to create the new KeePass database"
+            guard chooser.runModal() == .OK, let url = chooser.url else { return }
+            self.databaseURL = url
+            self.clearKeyFile()
+            self.lock()
         }
     }
 
@@ -902,14 +902,20 @@ final class VaultSession: ObservableObject {
             setImportStatus("Unlock the database first.", isError: true)
             return
         }
-        let chooser = NSOpenPanel()
-        chooser.canChooseFiles = true
-        chooser.canChooseDirectories = false
-        chooser.allowedContentTypes = [.commaSeparatedText]
-        chooser.allowsOtherFileTypes = true
-        chooser.message = "Choose the \(source.label) password export (.csv)"
-        let accepted = AppDelegate.shared?.keepOpen { chooser.runModal() == .OK } ?? false
-        guard accepted, let url = chooser.url else { return }
+        AppDelegate.shared?.presentFilePanel { [weak self] in
+            guard let self else { return }
+            let chooser = NSOpenPanel()
+            chooser.canChooseFiles = true
+            chooser.canChooseDirectories = false
+            chooser.allowedContentTypes = [.commaSeparatedText]
+            chooser.allowsOtherFileTypes = true
+            chooser.message = "Choose the \(source.label) password export (.csv)"
+            guard chooser.runModal() == .OK, let url = chooser.url else { return }
+            self.importChosenPasswords(from: url, source: source)
+        }
+    }
+
+    private func importChosenPasswords(from url: URL, source: BrowserImportSource) {
 
         let imported: [VaultEntry]
         do {
@@ -1298,6 +1304,25 @@ final class VaultSession: ObservableObject {
         if let open = error as? VaultOpenError { return open.description }
         if let kdbx = error as? KDBXError { return kdbx.description }
         return error.localizedDescription
+    }
+}
+
+/// Open-panel settings for choosing a database.
+///
+/// A plain folder is not a database. `UTType.folder` makes the first panel select
+/// the folder it is showing, and the file list ignores clicks until the panel is
+/// opened again. An OPVault is a package, so it stays selectable with directories off.
+/// `canChooseDirectories` is set after the content types: on macOS 27 those types
+/// can turn directory selection back on.
+enum DatabaseChooser {
+    static func configure(_ panel: NSOpenPanel) {
+        panel.allowedContentTypes = VaultSession.databaseContentTypes()
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowsOtherFileTypes = true
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.message = "Choose a KeePass, Bitwarden, Proton Pass, PUX, OPVault, or CSV database"
     }
 }
 
