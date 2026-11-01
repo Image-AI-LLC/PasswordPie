@@ -595,7 +595,27 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         return menu.handle(key)
     }
 
-    func headerEscape() { hide() }
+    func headerShortcut(_ shortcut: QuickAccessShortcut) -> Bool {
+        guard !session.locked else { return true }
+        runQuickAccess(shortcut)
+        return true
+    }
+
+    func headerEscape() {
+        switch quickAccessEscape(searchIsEmpty: searchText.isEmpty) {
+        case .clearSearch:
+            header.searchField.stringValue = ""
+            header.searchField.currentEditor()?.string = ""
+            headerSearchChanged("")
+        case .close:
+            hide()
+        }
+    }
+
+    /// The field editor holds the text while the search field is focused.
+    private var searchText: String {
+        header.searchField.currentEditor()?.string ?? header.searchField.stringValue
+    }
 
     func headerLogoClicked(_ view: NSView) {
         let menu = NSMenu()
@@ -667,7 +687,22 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags.contains(.command), let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
         let shift = flags.contains(.shift)
+        let option = flags.contains(.option)
+        let control = flags.contains(.control)
+        if !session.locked,
+           let shortcut = quickAccessShortcut(QuickAccessKeyPress(
+               key: key,
+               command: true,
+               shift: shift,
+               option: option,
+               control: control,
+               searchTextIsSelected: searchFieldHasSelection()
+           )) {
+            runQuickAccess(shortcut)
+            return true
+        }
         // No main menu is relied on: the standard edit commands go straight down the responder chain.
+        // Item shortcuts above already consumed ⌘C and ⌥⌘C.
         if !shift, let action = Self.editActions[key] {
             return NSApp.sendAction(action, to: nil, from: nil)
         }
@@ -682,14 +717,41 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             guard let id = menu.currentEntryID else { return true }
             hide(refocusPrevious: false)
             session.edit(id)
-        case ("c", true):
-            guard let id = menu.currentEntryID else { return true }
-            session.copy(.password, of: id)
-            hide()
         default:
             return false
         }
         return true
+    }
+
+    private func searchFieldHasSelection() -> Bool {
+        guard let editor = header.searchField.currentEditor() else { return false }
+        return editor.selectedRange.length > 0
+    }
+
+    /// Copies dismiss Quick Access only when there is something to put on the clipboard.
+    private func runQuickAccess(_ shortcut: QuickAccessShortcut) {
+        guard let id = menu.currentEntryID else { return }
+        switch shortcut {
+        case .copyPrimary:
+            guard let entry = session.entry(id), let target = quickAccessPrimaryCopy(entry) else { return }
+            copyAndHide(target, of: id)
+        case .copyPassword:
+            copyAndHide(.password, of: id)
+        case .copyOneTimePassword:
+            copyAndHide(.oneTimePassword, of: id)
+        case .pinItem:
+            session.pinEntry(id)
+        case .openAndFill:
+            session.fill(id, .openAndFill)
+        case .fillFocusedApp:
+            session.fill(id, .fill)
+        }
+    }
+
+    private func copyAndHide(_ target: CopyTarget, of id: UUID) {
+        guard let entry = session.entry(id), !session.value(of: target, in: entry).isEmpty else { return }
+        session.copy(target, of: id)
+        hide()
     }
 
     private static let editActions: [String: Selector] = [

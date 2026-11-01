@@ -5,6 +5,7 @@ import SwiftUI
 protocol HeaderDelegate: AnyObject {
     func headerSearchChanged(_ text: String)
     func headerKey(_ key: MenuKey) -> Bool
+    func headerShortcut(_ shortcut: QuickAccessShortcut) -> Bool
     func headerEscape()
     func headerLogoClicked(_ view: NSView)
     func headerGearClicked(_ view: NSView)
@@ -111,7 +112,20 @@ final class HeaderView: NSView, NSTextFieldDelegate {
             return delegate?.headerKey(.right) ?? false
         case #selector(NSResponder.moveLeft(_:)):
             return delegate?.headerKey(.left) ?? false
-        case #selector(NSResponder.insertNewline(_:)):
+        case #selector(NSResponder.insertNewline(_:)),
+             #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
+             #selector(NSResponder.insertLineBreak(_:)):
+            let flags = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) ?? []
+            let press = QuickAccessKeyPress(
+                key: "\r",
+                command: flags.contains(.command),
+                shift: flags.contains(.shift),
+                option: flags.contains(.option),
+                control: flags.contains(.control)
+            )
+            if let shortcut = quickAccessShortcut(press) {
+                return delegate?.headerShortcut(shortcut) ?? false
+            }
             return delegate?.headerKey(.enter) ?? false
         case #selector(NSResponder.cancelOperation(_:)):
             delegate?.headerEscape()
