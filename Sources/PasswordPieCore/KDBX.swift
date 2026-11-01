@@ -159,6 +159,8 @@ private func savePreserved(vault: inout Vault, password: String) throws -> Data 
     let composite = compositeKey(password)
     let transformed = try derive(composite, kdf: parsed.kind, salt: parsed.salt)
     let xml = try preserve.encryptedXML(streamKey: streamKey)
+    // Same parser the next unlock uses. A document that fails here is not packed or written.
+    _ = try parseKDBXDocument(xml)
     let output = try packFile(
         version: preserve.version,
         fields: fields,

@@ -23,6 +23,13 @@ enum CopyTarget {
     case custom(String)
 }
 
+enum SplitPlacement {
+    static func index(slot: Int?, entries: [VaultEntry], id: UUID) -> Int? {
+        if let slot, entries.indices.contains(slot), entries[slot].id == id { return slot }
+        return entries.firstIndex { $0.id == id }
+    }
+}
+
 private enum TouchIDGate {
     case accepted
     case cancelled
@@ -848,6 +855,52 @@ final class VaultSession: ObservableObject {
         editing = nil
     }
 
+    /// Restores the accounts from before this one was merged, and marks each so it stays separate.
+    func splitEditing() {
+        guard let current = editing else { return }
+        let path = listPaths[current.id] ?? databaseURL.path
+        let originalID = listOrigins[current.id] ?? current.id
+        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
+        var entries = openedFiles[fileIndex].vault.entries
+        let survivorSlot = listSlots[current.id]
+        let source: VaultEntry
+        if let survivorSlot, entries.indices.contains(survivorSlot), entries[survivorSlot].id == originalID {
+            source = entries[survivorSlot]
+        } else if let found = entries.first(where: { $0.id == originalID }) {
+            source = found
+        } else {
+            return
+        }
+        guard var parts = EntryMerge.split(source) else { return }
+        if !parts.isEmpty { parts[0].id = originalID }
+        var used = Set<Int>()
+        for (index, part) in parts.enumerated() {
+            if index == 0, let slot = SplitPlacement.index(slot: survivorSlot, entries: entries, id: originalID) {
+                entries[slot] = part
+                used.insert(slot)
+                continue
+            }
+            if let slot = entries.indices.first(where: { entries[$0].id == part.id && entries[$0].trashed && !used.contains($0) }) {
+                entries[slot] = part
+                used.insert(slot)
+            } else {
+                entries.append(part)
+            }
+        }
+        openedFiles[fileIndex].vault.entries = entries
+        editing = nil
+        persist(path: path)
+    }
+
+    /// Writes the file when a merge folded accounts. A database with nothing to fold is left untouched.
+    private func autoMergeFile(at path: String) {
+        guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
+        let merged = EntryMerge.merged(openedFiles[index].vault.entries)
+        guard merged != openedFiles[index].vault.entries else { return }
+        openedFiles[index].vault.entries = merged
+        _ = persist(path: path)
+    }
+
     func deleteEditing() {
         guard let id = editing?.id, var entry = entry(id) else { return }
         entry.trashed = true
@@ -1102,6 +1155,7 @@ final class VaultSession: ObservableObject {
         } else {
             openedFiles.insert(file, at: 0)
         }
+        autoMergeFile(at: databaseURL.path)
         loadRememberedDatabases()
     }
 
@@ -1153,6 +1207,7 @@ final class VaultSession: ObservableObject {
                         url: url, vault: loaded, password: job.password, keyFile: key
                     ))
                     self.publishCatalog()
+                    self.autoMergeFile(at: job.path)
                 }
             }
         }
@@ -1219,6 +1274,7 @@ final class VaultSession: ObservableObject {
             vault.rootName = rootName
             vault.kdf = kdf
         }
+        vault.entries = EntryMerge.merged(vault.entries)
         // An imported CSV, PUX, OPVault, Bitwarden, Proton Pass, or KeePass 1 file stays untouched.
         // The first change is written as a sibling .kdbx, and later saves use that file.
         // A key-file-only database can open with an empty password. The new .kdbx cannot.
@@ -1232,7 +1288,7 @@ final class VaultSession: ObservableObject {
         let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
         do {
             let data = try KDBX.save(vault: &vault, password: password)
-            try data.write(to: destination, options: .atomic)
+            try VaultFile.replace(destination, with: data, password: password, entryIDs: vault.entries.map(\.id))
             // Move the secret before the opened file changes path. A failed move keeps the
             // source path, so the next save still finds this vault and rewrites the same sibling.
             let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
@@ -1270,6 +1326,9 @@ final class VaultSession: ObservableObject {
             publishCatalog()
             return true
         } catch {
+            message = (error as? VaultWriteError)?.description
+                ?? (error as? KDBXError)?.description
+                ?? "The database could not be saved."
             NSSound.beep()
             return false
         }
