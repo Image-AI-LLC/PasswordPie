@@ -58,6 +58,22 @@ final class MenuListView: NSView {
         setFrameSize(NSSize(width: frame.width, height: contentHeight))
         enclosingScrollView?.contentView.scroll(to: .zero)
         needsDisplay = true
+        SiteIconStore.shared.observe(self) { [weak self] in self?.needsDisplay = true }
+        SiteIconStore.shared.prepare(Self.siteHosts(in: rows), visible: rows.compactMap(\.siteHost))
+    }
+
+    /// Hosts in this list and in submenus that are not open yet, so those icons are ready when the submenu opens.
+    private static func siteHosts(in rows: [MenuRow]) -> [String] {
+        var hosts: [String] = []
+        var seen = Set<String>()
+        func walk(_ rows: [MenuRow]) {
+            for row in rows {
+                if let host = row.siteHost, seen.insert(host).inserted { hosts.append(host) }
+                if !row.children.isEmpty { walk(row.children) }
+            }
+        }
+        walk(rows)
+        return hosts
     }
 
     var contentHeight: CGFloat { max(offsets.last ?? 0, MenuMetrics.minimumListHeight) }
@@ -310,13 +326,16 @@ final class MenuListView: NSView {
     }
 }
 
-/// Row icons drawn from SF Symbols and generated tiles; no third-party artwork.
+/// Row icons. An entry uses its site favicon when Google has one, and a letter tile when it does not.
 @MainActor
 enum MenuIcons {
     private static var tiles: [String: NSImage] = [:]
 
     static func image(for row: MenuRow, selected: Bool) -> NSImage? {
-        if row.entryID != nil { return tile(row.title) }
+        if row.entryID != nil {
+            if let icon = SiteIconStore.shared.image(forHost: row.siteHost) { return icon }
+            return tile(row.title)
+        }
         let name: String
         let tint: NSColor
         switch row.icon {
@@ -350,7 +369,7 @@ enum MenuIcons {
 
     static let favoriteBadge: NSImage? = symbol("star.fill", color: NSColor(red: 0.96, green: 0.72, blue: 0.2, alpha: 1), size: 8)
 
-    /// Letter tile tinted by a stable hash of the title, standing in for a site icon.
+    /// Letter tile tinted by a stable hash of the title. Shown until a favicon arrives, and kept when none does.
     static func tile(_ title: String) -> NSImage {
         if let cached = tiles[title] { return cached }
         let letter = title.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "•"
