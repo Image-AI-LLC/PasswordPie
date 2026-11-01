@@ -18,7 +18,31 @@ enum MenuBarIcon {
     static func path() -> NSBezierPath {
         let path = NSBezierPath()
         path.windingRule = .evenOdd
+        appendRim(to: path)
+        appendKeyhole(to: path)
+        return scaled(path)
+    }
 
+    /// The scalloped outer pie alone, filled solid. It turns while a database decrypts.
+    static func rimPath() -> NSBezierPath {
+        let path = NSBezierPath()
+        appendRim(to: path)
+        return scaled(path)
+    }
+
+    /// The keyhole alone, so a turning rim can keep it still.
+    static func keyholePath() -> NSBezierPath {
+        let path = NSBezierPath()
+        appendKeyhole(to: path)
+        return scaled(path)
+    }
+
+    private static func scaled(_ path: NSBezierPath) -> NSBezierPath {
+        path.transform(using: AffineTransform(scale: size.width / 24))
+        return path
+    }
+
+    private static func appendRim(to path: NSBezierPath) {
         // The SVG's first 30 polygon vertices; exact quarter-turn copies give all 120.
         let quarter: [NSPoint] = [
             .init(x: 12.0000, y: 1.9000), .init(x: 12.5236, y: 2.0092),
@@ -46,7 +70,9 @@ enum MenuBarIcon {
             }
         }
         path.close()
+    }
 
+    private static func appendKeyhole(to path: NSBezierPath) {
         // M10.65 11.6 A3 3 0 1 1 13.35 11.6: the long, positive-sweep circle arc.
         // Cubics of at most 15 degrees keep radial error below 2e-8 SVG units.
         let radius: CGFloat = 3
@@ -77,9 +103,5 @@ enum MenuBarIcon {
                    controlPoint1: NSPoint(x: 10 - 0.5 * 2 / 3, y: 17),
                    controlPoint2: NSPoint(x: 9.6 - 0.1 * 2 / 3, y: 16.6 + 0.4 * 2 / 3))
         path.close()
-
-        let scale = AffineTransform(scale: size.width / 24)
-        path.transform(using: scale)
-        return path
     }
 }
