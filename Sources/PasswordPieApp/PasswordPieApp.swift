@@ -344,7 +344,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show PasswordPie", action: #selector(showCenteredAction), keyEquivalent: "")
         menu.addItem(withTitle: "Preferences…", action: #selector(showPreferencesAction), keyEquivalent: ",")
-        menu.addItem(withTitle: AboutCopy.menuTitle, action: #selector(showAboutAction), keyEquivalent: "")
         menu.addItem(withTitle: session.locked ? "Locked" : "Lock Now", action: #selector(lockNow), keyEquivalent: "")
         let hotkey = NSMenuItem(
             title: hotKey == nil ? "\(session.hotKey.display) is not registered" : "Shortcut \(session.hotKey.display)",

@@ -12,34 +12,19 @@ struct PreferencesView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    header
-                    section("Quick access") { shortcut }
-                    section("Security") { security }
-                    section("Everyday") { everyday }
-                    section("Database") { database }
-                    section("Import passwords") { importPasswords }
-                    #if PP_DIRECT
-                    section("Chrome") { chromeSync }
-                    #endif
-                }
-                .padding(24)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                section("Quick access") { shortcut }
+                section("Security") { security }
+                section("Everyday") { everyday }
+                section("Database") { database }
+                section("Import passwords") { importPasswords }
+                #if PP_DIRECT
+                section("Chrome") { chromeSync }
+                #endif
             }
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Changes are saved automatically.")
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 12)
-                Button("About") { AppDelegate.shared?.showAbout() }
-                    .buttonStyle(.link)
-                    .accessibilityLabel("About PasswordPie")
-            }
-            .font(.system(size: 11))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 14)
-            .padding(.top, 4)
+            .padding(24)
         }
         .font(.system(size: 13))
         .background(Color(nsColor: .windowBackgroundColor))

@@ -46,8 +46,8 @@ final class AboutScreenTests: XCTestCase {
         let preferences = try String(contentsOf: sourceURL("PreferencesView.swift"), encoding: .utf8)
         XCTAssertFalse(preferences.contains("Majestic"))
         XCTAssertFalse(preferences.contains("creativecommons.org"))
-        XCTAssertTrue(preferences.contains("Changes are saved automatically."))
-        XCTAssertTrue(preferences.contains("showAbout()"))
+        XCTAssertFalse(preferences.contains("Changes are saved automatically."))
+        XCTAssertFalse(preferences.contains("showAbout"))
     }
 
     func testAboutViewHugsItsContent() {
@@ -62,22 +62,52 @@ final class AboutScreenTests: XCTestCase {
         XCTAssertLessThan(fitted.height, 420)
     }
 
-    func testGearMenuOffersAboutNextToPreferences() {
+    func testAboutIsOnlyOnTheAppMenu() throws {
         let session = VaultSession()
         let panel = PanelController(session: session)
         let locked = panel.gearMenu()
-        XCTAssertEqual(itemTitles(locked), ["Preferences…", "About PasswordPie", "Open Database…", "Quit PasswordPie"])
-        XCTAssertEqual(locked.items.first { $0.title == AboutCopy.menuTitle }?.action, #selector(PanelController.openAbout))
+        XCTAssertEqual(itemTitles(locked), ["Preferences…", "Open Database…", "Quit PasswordPie"])
+        XCTAssertNil(locked.items.first { $0.title == AboutCopy.menuTitle })
 
         session.locked = false
         let open = panel.gearMenu()
         XCTAssertEqual(itemTitles(open), [
             "Search Major Fields", "Search All Fields",
             "New Item…", "Lock",
-            "Preferences…", "About PasswordPie", "Open Database…", "New Database…",
+            "Preferences…", "Open Database…", "New Database…",
             "Quit PasswordPie",
         ])
         XCTAssertEqual(open.items.first { $0.title == "Preferences…" }?.keyEquivalent, ",")
+
+        let app = try String(contentsOf: sourceURL("PasswordPieApp.swift"), encoding: .utf8)
+        let statusMenu = functionBody(app, named: "makeMenu")
+        let appMenu = functionBody(app, named: "buildMainMenu")
+        XCTAssertFalse(statusMenu.contains("About"))
+        XCTAssertTrue(appMenu.contains("AboutCopy.menuTitle"))
+    }
+
+    private func functionBody(_ source: String, named name: String) -> String {
+        guard let start = source.range(of: "func \(name)") else { return "" }
+        var depth = 0
+        var sawBrace = false
+        let body = source[start.lowerBound...]
+        var end = body.endIndex
+        for index in body.indices {
+            switch body[index] {
+            case "{":
+                depth += 1
+                sawBrace = true
+            case "}":
+                depth -= 1
+                if sawBrace && depth == 0 {
+                    end = body.index(after: index)
+                    return String(body[..<end])
+                }
+            default:
+                break
+            }
+        }
+        return String(body[..<end])
     }
 
     private func itemTitles(_ menu: NSMenu) -> [String] {
