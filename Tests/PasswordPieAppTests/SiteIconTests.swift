@@ -1,4 +1,5 @@
 import AppKit
+import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 
@@ -58,6 +59,52 @@ final class SiteIconTests: XCTestCase {
         XCTAssertNotNil(GoogleFavicon.requestURL(forHost: "mail.google.com"))
         XCTAssertNil(GoogleFavicon.requestURL(forHost: "git hub.com"))
         XCTAssertNil(GoogleFavicon.requestURL(forHost: "github..com"))
+    }
+
+    func testANetworkFailureRetriesAfterThePause() async {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var time = start
+        let probe = Probe()
+        await probe.set(status: 503, body: Data())
+        let store = SiteIconStore(
+            fetch: { try await probe.call($0) },
+            cacheDirectory: nil,
+            now: { time },
+            initialRetry: 30
+        )
+        let first = await store.load("github.com")
+        XCTAssertNil(first)
+        time = start.addingTimeInterval(29)
+        let early = await store.load("github.com")
+        XCTAssertNil(early)
+        var count = await probe.count
+        XCTAssertEqual(count, 1)
+
+        time = start.addingTimeInterval(30)
+        let second = await store.load("github.com")
+        XCTAssertNil(second)
+        count = await probe.count
+        XCTAssertEqual(count, 2)
+
+        time = start.addingTimeInterval(89)
+        let stillWaiting = await store.load("github.com")
+        XCTAssertNil(stillWaiting)
+        count = await probe.count
+        XCTAssertEqual(count, 2)
+
+        time = start.addingTimeInterval(90)
+        await probe.set(status: 200, body: png)
+        let image = await store.load("github.com")
+        XCTAssertNotNil(image)
+        count = await probe.count
+        XCTAssertEqual(count, 3)
+    }
+
+    func testOnlyTheOpenListAsksForIcons() {
+        let hidden = MenuRow(kind: .entry(UUID()), title: "GitHub", siteHost: "github.com")
+        let folder = MenuRow(kind: .submenu, title: "Work", children: [hidden])
+        let shown = MenuRow(kind: .entry(UUID()), title: "Apple", siteHost: "apple.com")
+        XCTAssertEqual(MenuListView.visibleSiteHosts(in: [folder, shown]), ["apple.com"])
     }
 
     func testAPrivateHostIsNotFetched() async {
@@ -165,7 +212,8 @@ final class SiteIconTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("passwordpie-favicons-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try png.write(to: directory.appendingPathComponent("github.com.png"))
+        let name = try XCTUnwrap(SiteIconStore.cacheFileName(forHost: "github.com"))
+        try png.write(to: directory.appendingPathComponent(name))
         let probe = Probe()
         await probe.set(status: 500, body: Data())
         let store = SiteIconStore(fetch: { try await probe.call($0) }, cacheDirectory: directory)
@@ -185,8 +233,20 @@ final class SiteIconTests: XCTestCase {
         let store = SiteIconStore(fetch: { try await probe.call($0) }, cacheDirectory: directory)
         let image = await store.load("github.com")
         XCTAssertNotNil(image)
-        let saved = try Data(contentsOf: directory.appendingPathComponent("github.com.png"))
+        let name = try XCTUnwrap(SiteIconStore.cacheFileName(forHost: "github.com"))
+        XCTAssertFalse(name.contains("github"))
+        let saved = try Data(contentsOf: directory.appendingPathComponent(name))
         XCTAssertEqual(saved, png)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("github.com.png").path))
+        let fileMode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: directory.appendingPathComponent(name).path)[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(fileMode.uint16Value, 0o600)
+        let directoryMode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? NSNumber)
+        XCTAssertEqual(directoryMode.uint16Value, 0o700)
+
+        let short = await store.load("a.io")
+        XCTAssertNotNil(short)
+        let shortName = try XCTUnwrap(SiteIconStore.cacheFileName(forHost: "a.io"))
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(shortName)), png)
 
         let next = SiteIconStore(fetch: { _ in throw URLError(.cancelled) }, cacheDirectory: directory)
         next.prepare(["github.com"], visible: ["github.com"])

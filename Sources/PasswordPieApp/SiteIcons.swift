@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import ImageIO
 
 /// Google's public favicon service. `https://www.google.com/s2/favicons?domain=…&sz=64`
@@ -71,7 +72,8 @@ private enum FaviconHTTP {
 }
 
 /// Fetches site icons and keeps them in memory, with a disk cache for the next launch.
-/// A miss keeps the letter tile. Network failures are remembered for this session so a menu redraw does not retry immediately.
+/// A miss keeps the letter tile. A site Google does not have is remembered for this session.
+/// A network failure or a 5xx response waits, then the next menu open tries again.
 @MainActor
 final class SiteIconStore {
     static let shared = SiteIconStore(
@@ -92,12 +94,16 @@ final class SiteIconStore {
     private let maxActive: Int
     private var images: [String: NSImage] = [:]
     private var missing: Set<String> = []
+    private var retryAfter: [String: Date] = [:]
+    private var retryDelay: [String: TimeInterval] = [:]
     private var loading: Set<String> = []
     private var queued: Set<String> = []
     private var queue: [String] = []
     private var active = 0
     private var waiters: [String: [() -> Void]] = [:]
     private var observers: [ObjectIdentifier: ObserverBox] = [:]
+    private let now: () -> Date
+    private let initialRetry: TimeInterval
 
     private final class ObserverBox {
         weak var owner: AnyObject?
@@ -114,11 +120,29 @@ final class SiteIconStore {
         case failed
     }
 
-    init(fetch: @escaping (URL) async throws -> (Int, Data), cacheDirectory: URL?, allowsNetwork: Bool = true, maxActive: Int = 6) {
+    init(
+        fetch: @escaping (URL) async throws -> (Int, Data),
+        cacheDirectory: URL?,
+        allowsNetwork: Bool = true,
+        maxActive: Int = 6,
+        now: @escaping () -> Date = { Date() },
+        initialRetry: TimeInterval = 30
+    ) {
         self.fetch = fetch
         self.cacheDirectory = cacheDirectory
         self.allowsNetwork = allowsNetwork
         self.maxActive = max(1, maxActive)
+        self.now = now
+        self.initialRetry = initialRetry
+    }
+
+    /// Cache file name for a public host. The host itself is not in the name, so a directory listing is not a site list.
+    static func cacheFileName(forHost host: String) -> String? {
+        let host = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard GoogleFavicon.isPublicSite(host) else { return nil }
+        let digest = SHA256.hash(data: Data(host.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return hex + ".png"
     }
 
     func image(forHost host: String?) -> NSImage? {
@@ -144,6 +168,7 @@ final class SiteIconStore {
         if missing.contains(host) || !allowsNetwork { return nil }
         warm(host)
         if let image = images[host] { return image }
+        if coolingDown(host) { return nil }
         return await withCheckedContinuation { continuation in
             waiters[host, default: []].append { [weak self] in
                 continuation.resume(returning: self?.images[host])
@@ -165,7 +190,7 @@ final class SiteIconStore {
     }
 
     private func enqueue(_ host: String?) {
-        guard let host else { return }
+        guard let host, !coolingDown(host) else { return }
         if images[host] != nil || missing.contains(host) || loading.contains(host) || queued.contains(host) {
             if images[host] != nil || missing.contains(host) { flush(host) }
             return
@@ -199,6 +224,7 @@ final class SiteIconStore {
         guard let url = GoogleFavicon.requestURL(forHost: host) else { return .absent }
         do {
             let (status, data) = try await fetch(url)
+            if status == 408 || status == 429 || (500...599).contains(status) { return .failed }
             guard let image = GoogleFavicon.imageData(status: status, body: data) else { return .absent }
             writeDisk(host, image)
             return .image(image)
@@ -207,20 +233,45 @@ final class SiteIconStore {
         }
     }
 
+    /// A dropped connection or a 5xx waits before the next try. The wait doubles, up to ten minutes.
+    private func scheduleRetry(_ host: String) {
+        let delay = min(max(retryDelay[host] ?? initialRetry, 0), 600)
+        retryAfter[host] = now().addingTimeInterval(delay)
+        retryDelay[host] = min(max(delay * 2, 0), 600)
+    }
+
+    private func clearRetry(_ host: String) {
+        retryAfter.removeValue(forKey: host)
+        retryDelay.removeValue(forKey: host)
+    }
+
+    private func coolingDown(_ host: String) -> Bool {
+        guard let until = retryAfter[host] else { return false }
+        if now() >= until {
+            retryAfter.removeValue(forKey: host)
+            return false
+        }
+        return true
+    }
+
     private func finish(_ host: String, _ outcome: Outcome) {
         active -= 1
         loading.remove(host)
         var stored = false
         switch outcome {
         case .image(let data):
+            clearRetry(host)
             if let image = makeImage(data) {
                 images[host] = image
                 stored = true
             } else {
                 missing.insert(host)
             }
-        case .absent, .failed:
+        case .absent:
+            clearRetry(host)
             missing.insert(host)
+        case .failed:
+            scheduleRetry(host)
         }
         flush(host)
         if stored { publish() }
@@ -242,13 +293,10 @@ final class SiteIconStore {
         return image
     }
 
-    /// Only a dotted hostname is a cache file name. Anything else stays in memory, so `..` cannot escape the cache directory.
+    /// A public host caches under the hash of its name. `..` and other non-names never become a path.
     private func fileURL(_ host: String) -> URL? {
-        guard let cacheDirectory else { return nil }
-        guard host.range(of: #"^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*$"#, options: .regularExpression) != nil else {
-            return nil
-        }
-        return cacheDirectory.appendingPathComponent(host).appendingPathExtension("png")
+        guard let cacheDirectory, let name = Self.cacheFileName(forHost: host) else { return nil }
+        return cacheDirectory.appendingPathComponent(name)
     }
 
     private func readDisk(_ host: String) -> Data? {
@@ -259,8 +307,11 @@ final class SiteIconStore {
     private func writeDisk(_ host: String, _ data: Data) {
         guard let file = fileURL(host), !data.isEmpty else { return }
         do {
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let directory = file.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
             try data.write(to: file, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
         } catch {
             // The icon is already in memory. A cache miss on the next launch just fetches it again.
         }

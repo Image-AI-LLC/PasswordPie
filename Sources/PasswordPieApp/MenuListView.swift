@@ -59,20 +59,17 @@ final class MenuListView: NSView {
         enclosingScrollView?.contentView.scroll(to: .zero)
         needsDisplay = true
         SiteIconStore.shared.observe(self) { [weak self] in self?.needsDisplay = true }
-        SiteIconStore.shared.prepare(Self.siteHosts(in: rows), visible: rows.compactMap(\.siteHost))
+        let hosts = Self.visibleSiteHosts(in: rows)
+        SiteIconStore.shared.prepare(hosts, visible: hosts)
     }
 
-    /// Hosts in this list and in submenus that are not open yet, so those icons are ready when the submenu opens.
-    private static func siteHosts(in rows: [MenuRow]) -> [String] {
+    /// Hosts drawn in this list. A submenu or a "show more" row is fetched when that list opens.
+    static func visibleSiteHosts(in rows: [MenuRow]) -> [String] {
         var hosts: [String] = []
         var seen = Set<String>()
-        func walk(_ rows: [MenuRow]) {
-            for row in rows {
-                if let host = row.siteHost, seen.insert(host).inserted { hosts.append(host) }
-                if !row.children.isEmpty { walk(row.children) }
-            }
+        for row in rows {
+            if let host = row.siteHost, seen.insert(host).inserted { hosts.append(host) }
         }
-        walk(rows)
         return hosts
     }
 
