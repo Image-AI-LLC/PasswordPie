@@ -962,12 +962,12 @@ final class VaultSession: ObservableObject {
         return merged.summary
     }
 
-    private func setImportStatus(_ text: String, isError: Bool) {
+    func setImportStatus(_ text: String, isError: Bool) {
         importStatus = text
         importStatusIsError = isError
     }
 
-    private func importSummaryText(_ summary: BrowserImportSummary, source: BrowserImportSource) -> String {
+    func importSummaryText(_ summary: BrowserImportSummary, source: BrowserImportSource) -> String {
         var parts: [String] = []
         if summary.added > 0 { parts.append("\(summary.added) added") }
         if summary.updated > 0 { parts.append("\(summary.updated) updated") }

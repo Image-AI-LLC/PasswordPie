@@ -95,6 +95,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applyDebugHooks()
     }
 
+    // MARK: Apple Passwords hand-off
+
+    func application(_ application: NSApplication, willContinueUserActivityWithType userActivityType: String) -> Bool {
+        VaultSession.isCredentialExchange(userActivityType)
+    }
+
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard VaultSession.isCredentialExchange(userActivity.activityType),
+              let token = VaultSession.credentialExchangeToken(from: userActivity.userInfo) else { return false }
+        session.importFromCredentialExchange(token: token)
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         session.flushClipboard()
     }
