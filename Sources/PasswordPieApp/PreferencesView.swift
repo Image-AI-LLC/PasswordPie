@@ -297,11 +297,15 @@ struct PreferencesView: View {
                 source: .chrome
             )
             Divider()
-            importRow(
-                "Apple Passwords",
-                steps: "In the Passwords app, choose File > Export All Passwords. Then pick the file here.",
-                source: .applePasswords
-            )
+            if VaultSession.credentialExchangeAvailable {
+                applePasswordsRow
+            } else {
+                importRow(
+                    "Apple Passwords",
+                    steps: "In the Passwords app, choose File > Export All Passwords. Then pick the file here.",
+                    source: .applePasswords
+                )
+            }
             Text("Passwords go into a \"Chrome\" or \"Apple Passwords\" group. Import again to update them: new sites are added, changed passwords are updated, and sites that are gone move to the Recycle Bin. Your own entries are never changed.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -363,6 +367,32 @@ struct PreferencesView: View {
         .controlSize(.regular)
     }
     #endif
+
+    /// macOS 26+: Passwords sends the items to this app directly, with no file. The file import stays as a fallback.
+    private var applePasswordsRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Apple Passwords").fontWeight(.medium)
+                Text("In the Passwords app, choose File > Export All Items to App, then pick PasswordPie. No file is saved. Do this again whenever you want to update.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Import from a CSV file instead…") {
+                    recorder.stop()
+                    session.importPasswords(from: .applePasswords)
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 11))
+                .disabled(session.locked)
+            }
+            Spacer(minLength: 4)
+            Button("Open Passwords") {
+                recorder.stop()
+                session.openPasswordsApp()
+            }
+            .disabled(session.locked)
+            .help(session.locked ? "Unlock this database first." : "Open the Passwords app")
+        }
+    }
 
     private func importRow(_ title: String, steps: String, source: BrowserImportSource) -> some View {
         HStack(alignment: .top, spacing: 12) {

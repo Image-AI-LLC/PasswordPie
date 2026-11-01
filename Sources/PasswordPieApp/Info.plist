@@ -24,6 +24,10 @@
   <true/>
   <key>NSFaceIDUsageDescription</key>
   <string>PasswordPie uses Touch ID to unlock your database.</string>
+  <key>NSUserActivityTypes</key>
+  <array>
+    <string>ASCredentialExchangeActivity</string>
+  </array>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>UTImportedTypeDeclarations</key>

@@ -69,7 +69,14 @@ public enum TOTP {
         return String(format: "%0*u", digits, value)
     }
 
-    public static func otpAuthURL(secretBase32: String, title: String, username: String) -> String {
+    public static func otpAuthURL(
+        secretBase32: String,
+        title: String,
+        username: String,
+        period: Int = 30,
+        digits: Int = 6,
+        algorithm: String = "sha1"
+    ) -> String {
         let label = [title, username].filter { !$0.isEmpty }.joined(separator: ":")
         var parts = URLComponents()
         parts.scheme = "otpauth"
@@ -78,9 +85,12 @@ public enum TOTP {
         parts.queryItems = [
             URLQueryItem(name: "secret", value: secretBase32.filter { !$0.isWhitespace }.uppercased()),
             URLQueryItem(name: "issuer", value: title),
-            URLQueryItem(name: "period", value: "30"),
-            URLQueryItem(name: "digits", value: "6")
+            URLQueryItem(name: "period", value: String(period)),
+            URLQueryItem(name: "digits", value: String(digits))
         ]
+        if algorithm.lowercased() != "sha1" {
+            parts.queryItems?.append(URLQueryItem(name: "algorithm", value: algorithm.uppercased()))
+        }
         return parts.string ?? "otpauth://totp?secret=\(secretBase32)"
     }
 
@@ -98,6 +108,24 @@ public enum TOTP {
         let period = Int(items["period"] ?? "") ?? Int(items["step"] ?? "") ?? 30
         let algorithm = OTPAlgorithm(rawValue: (items["algorithm"] ?? "sha1").lowercased()) ?? .sha1
         return OTPSettings(secret: secret, digits: digits, period: max(period, 1), algorithm: algorithm)
+    }
+
+    public static func base32Encode(_ data: Data) -> String {
+        let alphabet = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567")
+        var output = ""
+        var buffer = 0
+        var bits = 0
+        for byte in data {
+            buffer = (buffer << 8) | Int(byte)
+            bits += 8
+            while bits >= 5 {
+                bits -= 5
+                output.append(alphabet[(buffer >> bits) & 0x1f])
+            }
+            buffer &= (1 << bits) - 1
+        }
+        if bits > 0 { output.append(alphabet[(buffer << (5 - bits)) & 0x1f]) }
+        return output
     }
 
     public static func base32Decode(_ text: String) -> Data? {
