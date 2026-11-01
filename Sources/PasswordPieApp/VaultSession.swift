@@ -1281,7 +1281,7 @@ final class VaultSession: ObservableObject {
         let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
         do {
             let data = try KDBX.save(vault: &vault, password: password)
-            try data.write(to: destination, options: .atomic)
+            try VaultFile.replace(destination, with: data, password: password, entryIDs: vault.entries.map(\.id))
             // Move the secret before the opened file changes path. A failed move keeps the
             // source path, so the next save still finds this vault and rewrites the same sibling.
             let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
@@ -1319,6 +1319,9 @@ final class VaultSession: ObservableObject {
             publishCatalog()
             return true
         } catch {
+            message = (error as? VaultWriteError)?.description
+                ?? (error as? KDBXError)?.description
+                ?? "The database could not be saved."
             NSSound.beep()
             return false
         }
