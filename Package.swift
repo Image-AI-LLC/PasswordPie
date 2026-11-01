@@ -12,7 +12,8 @@ let package = Package(
     name: "PasswordPie",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "PasswordPie", targets: ["PasswordPie"])
+        .executable(name: "PasswordPie", targets: ["PasswordPie"]),
+        .executable(name: "PasswordPieAutoFill", targets: ["PasswordPieAutoFill"])
     ],
     targets: [
         .target(
@@ -53,6 +54,24 @@ let package = Package(
                     "-Xlinker", "__TEXT",
                     "-Xlinker", "__info_plist",
                     "-Xlinker", "Sources/PasswordPieApp/Info.plist"
+                ])
+            ]
+        ),
+        // AutoFill credential provider app extension (PlugIns/PasswordPieAutoFill.appex): makes Passwords offer
+        // PasswordPie for Export All Items to App. Entry point is NSExtensionMain, not main().
+        .executableTarget(
+            name: "PasswordPieAutoFill",
+            path: "Sources/PasswordPieAutoFill",
+            exclude: ["Info.plist"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                .linkedFramework("AuthenticationServices"),
+                .unsafeFlags([
+                    "-Xlinker", "-e", "-Xlinker", "_NSExtensionMain",
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/PasswordPieAutoFill/Info.plist"
                 ])
             ]
         ),

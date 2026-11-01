@@ -32,9 +32,14 @@ extension VaultSession {
             return
         }
         setImportStatus("Reading Apple Passwords…", isError: false)
+        let path = databaseURL.path
         Task { @MainActor in
             do {
                 let data = try await ASCredentialImportManager().importCredentials(token: token)
+                guard !locked, databaseURL.path == path else {
+                    setImportStatus("The database was locked or changed while reading Apple Passwords. Choose Export All Items to App again.", isError: true)
+                    return
+                }
                 finishCredentialExchange(Self.exchangedItems(from: data))
             } catch {
                 setImportStatus("Couldn't read the passwords from Apple Passwords. Try Export All Items to App again. (\(error.localizedDescription))", isError: true)
@@ -67,8 +72,8 @@ extension VaultSession {
             for credential in item.credentials {
                 switch credential {
                 case .basicAuthentication(let login):
-                    result.username = login.userName?.value
-                    result.password = login.password?.value
+                    if let userName = login.userName?.value, !userName.isEmpty { result.username = userName }
+                    if let password = login.password?.value, !password.isEmpty { result.password = password }
                 case .generatedPassword(let generated):
                     if result.password?.isEmpty ?? true { result.password = generated.password }
                 case .totp(let code):

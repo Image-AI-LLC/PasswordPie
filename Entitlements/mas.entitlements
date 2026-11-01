@@ -10,5 +10,7 @@
   <!-- Remember the chosen database across launches (not wired up yet: see docs/CHANNELS.md). -->
   <key>com.apple.security.files.bookmarks.app-scope</key>
   <true/>
+  <key>com.apple.developer.authentication-services.autofill-credential-provider</key>
+  <true/>
 </dict>
 </plist>
