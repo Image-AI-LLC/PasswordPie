@@ -20,4 +20,11 @@ final class PanelPresenceTests: XCTestCase {
             keepOpenDepth: 0, touchIDBusy: true, recordingHotKey: false, autoHideEnabled: false
         ))
     }
+
+    func testFirstFilePanelWaitsUntilTheAppIsActive() {
+        XCTAssertTrue(FilePanelTiming.deferPresentation(appIsActive: false, hasPresentedFilePanel: false))
+        XCTAssertTrue(FilePanelTiming.deferPresentation(appIsActive: true, hasPresentedFilePanel: false))
+        XCTAssertTrue(FilePanelTiming.deferPresentation(appIsActive: false, hasPresentedFilePanel: true))
+        XCTAssertFalse(FilePanelTiming.deferPresentation(appIsActive: true, hasPresentedFilePanel: true))
+    }
 }
