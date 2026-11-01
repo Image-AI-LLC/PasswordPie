@@ -50,6 +50,38 @@ final class SiteIconTests: XCTestCase {
         XCTAssertNil(GoogleFavicon.requestURL(forHost: "github.com/login"))
     }
 
+    func testPrivateHostsAreNotSentToGoogle() {
+        for host in ["localhost", "printer", "127.0.0.1", "10.1.2.3", "192.168.1.1", "172.16.0.1", "169.254.1.1", "nas.local", "router.lan", "db.internal", "home.arpa", "::1"] {
+            XCTAssertNil(GoogleFavicon.requestURL(forHost: host), host)
+        }
+        XCTAssertNotNil(GoogleFavicon.requestURL(forHost: "github.com"))
+        XCTAssertNotNil(GoogleFavicon.requestURL(forHost: "mail.google.com"))
+        XCTAssertNil(GoogleFavicon.requestURL(forHost: "git hub.com"))
+        XCTAssertNil(GoogleFavicon.requestURL(forHost: "github..com"))
+    }
+
+    func testAPrivateHostIsNotFetched() async {
+        let probe = Probe()
+        await probe.set(status: 200, body: png)
+        let store = SiteIconStore(fetch: { try await probe.call($0) }, cacheDirectory: nil)
+        store.prepare(["localhost", "10.0.0.1", "nas.local"])
+        let image = await store.load("localhost")
+        XCTAssertNil(image)
+        let count = await probe.count
+        XCTAssertEqual(count, 0)
+    }
+
+    func testAStoreThatCannotUseTheNetworkDoesNotFetch() async {
+        let probe = Probe()
+        await probe.set(status: 200, body: png)
+        let store = SiteIconStore(fetch: { try await probe.call($0) }, cacheDirectory: nil, allowsNetwork: false)
+        store.prepare(["github.com"], visible: ["github.com"])
+        let image = await store.load("github.com")
+        XCTAssertNil(image)
+        let count = await probe.count
+        XCTAssertEqual(count, 0)
+    }
+
     func testOnlyARealBitmapIsAnIcon() {
         XCTAssertEqual(GoogleFavicon.imageData(status: 200, body: png), png)
         XCTAssertNil(GoogleFavicon.imageData(status: 404, body: png))
@@ -168,7 +200,9 @@ final class SiteIconTests: XCTestCase {
         await probe.set(status: 200, body: png)
         let store = SiteIconStore(fetch: { try await probe.call($0) }, cacheDirectory: directory)
         let image = await store.load("..")
-        XCTAssertNotNil(image)
+        XCTAssertNil(image)
+        let count = await probe.count
+        XCTAssertEqual(count, 0)
         var isDirectory: ObjCBool = false
         let escaped = directory.deletingLastPathComponent().appendingPathComponent("..png")
         XCTAssertFalse(FileManager.default.fileExists(atPath: escaped.path, isDirectory: &isDirectory))

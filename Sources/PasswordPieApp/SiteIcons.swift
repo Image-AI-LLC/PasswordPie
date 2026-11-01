@@ -6,9 +6,29 @@ import ImageIO
 enum GoogleFavicon {
     static let pixelSize = 64
 
+    /// A public DNS name. Local and private names stay on the letter tile: Google has no icon for them, and the query would publish the vault's internal hosts.
+    static func isPublicSite(_ host: String) -> Bool {
+        guard !host.isEmpty, host.contains(".") else { return false }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.allSatisfy(isDNSLabel) else { return false }
+        if labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return false }
+        let blocked = [
+            "local", "localhost", "localdomain", "home.arpa", "internal", "lan", "intranet",
+            "invalid", "test", "onion", "home", "corp",
+        ]
+        return !blocked.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
+
+    private static func isDNSLabel(_ label: Substring) -> Bool {
+        guard (1...63).contains(label.count), label.first != "-", label.last != "-" else { return false }
+        return label.allSatisfy { character in
+            character.isASCII && (character.isLetter || character.isNumber || character == "-")
+        }
+    }
+
     static func requestURL(forHost host: String) -> URL? {
         let host = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !host.isEmpty, !host.contains(where: { $0.isWhitespace || $0 == "/" }) else { return nil }
+        guard isPublicSite(host) else { return nil }
         var components = URLComponents()
         components.scheme = "https"
         components.host = "www.google.com"
@@ -31,11 +51,15 @@ enum GoogleFavicon {
 }
 
 private enum FaviconHTTP {
+    /// Ephemeral, and it neither sends nor stores cookies. The shared cookie jar can hold a Google login, which would tie these domain lookups to that account.
     static let session: URLSession = {
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 8
         config.timeoutIntervalForResource = 15
         config.waitsForConnectivity = false
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.httpCookieStorage = nil
         return URLSession(configuration: config)
     }()
 
@@ -52,7 +76,8 @@ private enum FaviconHTTP {
 final class SiteIconStore {
     static let shared = SiteIconStore(
         fetch: FaviconHTTP.fetch,
-        cacheDirectory: SiteIconStore.defaultCacheDirectory
+        cacheDirectory: SiteIconStore.defaultCacheDirectory,
+        allowsNetwork: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
     )
 
     private static var defaultCacheDirectory: URL? {
@@ -63,6 +88,7 @@ final class SiteIconStore {
 
     private let fetch: (URL) async throws -> (Int, Data)
     private let cacheDirectory: URL?
+    private let allowsNetwork: Bool
     private let maxActive: Int
     private var images: [String: NSImage] = [:]
     private var missing: Set<String> = []
@@ -88,9 +114,10 @@ final class SiteIconStore {
         case failed
     }
 
-    init(fetch: @escaping (URL) async throws -> (Int, Data), cacheDirectory: URL?, maxActive: Int = 6) {
+    init(fetch: @escaping (URL) async throws -> (Int, Data), cacheDirectory: URL?, allowsNetwork: Bool = true, maxActive: Int = 6) {
         self.fetch = fetch
         self.cacheDirectory = cacheDirectory
+        self.allowsNetwork = allowsNetwork
         self.maxActive = max(1, maxActive)
     }
 
@@ -107,13 +134,14 @@ final class SiteIconStore {
     /// Load icons for `hosts`. `visible` is read from disk before the view draws, so a cached icon does not flash the letter tile.
     func prepare(_ hosts: [String], visible: [String] = []) {
         for host in visible { warm(normalize(host)) }
+        guard allowsNetwork else { return }
         for host in hosts { enqueue(normalize(host)) }
     }
 
     func load(_ host: String?) async -> NSImage? {
         guard let host = normalize(host) else { return nil }
         if let image = images[host] { return image }
-        if missing.contains(host) { return nil }
+        if missing.contains(host) || !allowsNetwork { return nil }
         warm(host)
         if let image = images[host] { return image }
         return await withCheckedContinuation { continuation in
