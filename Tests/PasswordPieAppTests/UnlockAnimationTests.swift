@@ -141,6 +141,16 @@ final class UnlockAnimationTests: XCTestCase {
         XCTAssertEqual(wrong, 1)
     }
 
+    func testLockDuringDecryptKeepsTheVaultLocked() async throws {
+        let session = lockedSession(password: "pw")
+        session.passwordDraft = "pw"
+        session.unlock()
+        XCTAssertTrue(session.unlocking)
+        session.lock()
+        try await waitUntilIdle(session)
+        XCTAssertTrue(session.locked)
+    }
+
     func testDecryptResultIsDroppedWhenTheDatabaseChanged() async throws {
         let session = lockedSession(password: "pw")
         session.passwordDraft = "pw"

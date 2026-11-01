@@ -38,6 +38,12 @@ private struct OpenedFile {
     var pendingSaveURL: URL?
 }
 
+/// A decrypted database and the key file that opened it.
+private struct DecryptedVault {
+    let vault: Vault
+    let keyFile: Data?
+}
+
 private struct SiblingJob: Sendable {
     let path: String
     let password: String
@@ -127,6 +133,8 @@ final class VaultSession: ObservableObject {
     private var openedFiles: [OpenedFile] = []
     /// Bumped on lock and on each unlock. A sibling decrypt still running from the previous generation must not publish.
     private var catalogGeneration: UInt = 0
+    /// Bumped by lock(). A decrypt that started before a lock must not unlock the vault afterwards.
+    private var unlockGeneration: UInt = 0
     /// Menu id → id stored in that file. They differ only when two files share a UUID.
     private var listOrigins: [UUID: UUID] = [:]
     /// Menu id → index in that file. Two entries in one file can share a stored UUID.
@@ -228,8 +236,8 @@ final class VaultSession: ObservableObject {
         message = ""
         decrypt(password: password) { session, result in
             switch result {
-            case .success(let vault):
-                session.apply(vault, password: password)
+            case .success(let opened):
+                session.apply(opened.vault, password: password, keyFile: opened.keyFile)
                 session.didUnlock(withMasterPassword: true)
             case .failure(let error):
                 if session.isWrongPassword(error) {
@@ -244,22 +252,25 @@ final class VaultSession: ObservableObject {
 
     /// The key derivation can take a second, so it runs off the main thread and the lock screen keeps animating.
     /// The result is dropped when the database changed or something else unlocked it in the meantime.
-    private func decrypt(password: String, then finish: @escaping @MainActor (VaultSession, Result<Vault, Error>) -> Void) {
+    private func decrypt(password: String, then finish: @escaping @MainActor (VaultSession, Result<DecryptedVault, Error>) -> Void) {
         let url = databaseURL
         let keyFile = keyFileForUnlock
         unlocking = true
+        let generation = unlockGeneration
         Task { @MainActor [weak self] in
             let result = await Task.detached(priority: .userInitiated) { () -> Result<Vault, Error> in
                 Result { try VaultFormat.load(url: url, password: password, keyFile: keyFile) }
             }.value
             guard let self else { return }
             self.unlocking = false
+            guard self.unlockGeneration == generation else { return }
             guard self.locked else { return }
             guard self.databaseURL.path == url.path else {
                 self.message = "The open database changed. Try again."
                 return
             }
-            finish(self, result)
+            // Keep the key file this decrypt used, even if the draft changed while it ran.
+            finish(self, result.map { DecryptedVault(vault: $0, keyFile: keyFile) })
         }
     }
 
@@ -323,8 +334,8 @@ final class VaultSession: ObservableObject {
             guard !self.unlocking else { return }
             self.decrypt(password: stored.password) { session, result in
                 switch result {
-                case .success(let vault):
-                    session.apply(vault, password: stored.password)
+                case .success(let opened):
+                    session.apply(opened.vault, password: stored.password, keyFile: opened.keyFile)
                     session.didUnlock(withMasterPassword: false)
                 case .failure(let error):
                     if session.isWrongPassword(error) {
@@ -418,6 +429,7 @@ final class VaultSession: ObservableObject {
     }
 
     func lock() {
+        unlockGeneration &+= 1
         catalogGeneration &+= 1
         openedFiles = []
         listOrigins = [:]
@@ -1057,13 +1069,13 @@ final class VaultSession: ObservableObject {
         clipboard.flush()
     }
 
-    private func apply(_ vault: Vault, password: String) {
+    private func apply(_ vault: Vault, password: String, keyFile: Data?) {
         vaultName = vault.name
         rootName = vault.rootName
         kdf = vault.kdf
         masterPassword = password
         passwordDraft = ""
-        let file = OpenedFile(url: databaseURL, vault: vault, password: password, keyFile: keyFileForUnlock)
+        let file = OpenedFile(url: databaseURL, vault: vault, password: password, keyFile: keyFile)
         if let index = openedFiles.firstIndex(where: { $0.url.path == databaseURL.path }) {
             openedFiles[index] = file
         } else {

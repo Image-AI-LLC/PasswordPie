@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session = VaultSession()
         session.restore()
         autoLock = AutoLockMonitor(settings: session.autoLock) { [weak self] in
-            guard let self, !self.session.locked else { return }
+            guard let self, !self.session.locked || self.session.unlocking else { return }
             self.session.lock()
         }
         autoLock.start()
