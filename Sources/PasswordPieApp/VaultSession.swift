@@ -291,7 +291,7 @@ final class VaultSession: ObservableObject {
             self.unlocking = false
             // Before the checks below: the file may have been repaired even if this result is dropped.
             if case .success(let opened) = result {
-                self.showRecoveryNotice(opened.recoveryNotice, detailed: self.unlockGeneration == generation)
+                self.showRecoveryNotice(opened.recoveryNotice, path: url.path, detailed: self.unlockGeneration == generation)
             }
             guard self.unlockGeneration == generation else { return }
             guard self.locked else { return }
@@ -304,15 +304,17 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    /// Hashes of notices already shown this run. Not cleared by lock(), so no titles stay in memory.
-    private var shownRecoveryNotices = Set<Int>()
+    /// Database path plus outcome of notices already shown this run. Not cleared by lock(), and holds no titles.
+    /// Keyed on the path, not the text: a failure reason names a per-attempt file, so the text differs every time.
+    private var shownRecoveryNotices = Set<String>()
 
     /// `message` only shows on the lock screen, which is gone by now.
     /// Not `detailed` (the vault locked meanwhile): only the first paragraph, which names no entries.
-    private func showRecoveryNotice(_ notice: String?, detailed: Bool) {
+    private func showRecoveryNotice(_ notice: String?, path: String, detailed: Bool) {
         guard var notice else { return }
         if !detailed, let split = notice.range(of: "\n\n") { notice = String(notice[..<split.lowerBound]) }
-        guard shownRecoveryNotices.insert(notice.hashValue).inserted else { return }
+        let failed = notice.contains("The file was not changed")
+        guard shownRecoveryNotices.insert("\(path)|\(failed)").inserted else { return }
         let alert = NSAlert()
         alert.messageText = "Database repair"
         alert.informativeText = notice
@@ -1214,7 +1216,7 @@ final class VaultSession: ObservableObject {
                         keyFile: job.keyFile
                     )
                 }.value
-                self.showRecoveryNotice(loaded?.recoveryNotice, detailed: !self.locked)
+                self.showRecoveryNotice(loaded?.recoveryNotice, path: job.path, detailed: !self.locked)
                 switch CatalogLoad.step(
                     generation: generation,
                     current: self.catalogGeneration,
