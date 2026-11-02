@@ -116,14 +116,49 @@ public struct ChromeProfile: Equatable, Sendable {
 }
 
 public struct ChromeLoginsResult: Sendable {
-    public var entries: [VaultEntry] = []
+    public var entries: [VaultEntry]
     /// Passwords that were saved but could not be decrypted.
-    public var skipped = 0
-    public var profileCount = 0
+    public var skipped: Int
+    public var profileCount: Int
     /// Display names of profiles that could not be read while another profile could.
-    public var failedProfiles: [String] = []
+    public var failedProfiles: [String]
     /// When Chrome last used each login (its `date_last_used`). Logins Chrome never used, or older Chrome without the column, are absent.
-    public var lastUsed: [UUID: Date] = [:]
+    public var lastUsed: [UUID: Date]
+
+    public init(
+        entries: [VaultEntry] = [],
+        skipped: Int = 0,
+        profileCount: Int = 0,
+        failedProfiles: [String] = [],
+        lastUsed: [UUID: Date] = [:]
+    ) {
+        self.entries = entries
+        self.skipped = skipped
+        self.profileCount = profileCount
+        self.failedProfiles = failedProfiles
+        self.lastUsed = lastUsed
+    }
+}
+
+/// Size and modification time of Chrome's login stores. Unchanged files mean the passwords on disk are the ones already read.
+public struct ChromeStoreSignature: Equatable, Sendable {
+    public struct File: Equatable, Sendable {
+        public var relativePath: String
+        public var byteCount: Int
+        public var modifiedAt: TimeInterval
+
+        public init(relativePath: String, byteCount: Int, modifiedAt: TimeInterval) {
+            self.relativePath = relativePath
+            self.byteCount = byteCount
+            self.modifiedAt = modifiedAt
+        }
+    }
+
+    public var files: [File]
+
+    public init(files: [File] = []) {
+        self.files = files
+    }
 }
 
 public enum ChromeLogins {
@@ -137,16 +172,42 @@ public enum ChromeLogins {
     /// Every profile folder that has a login store, named as Chrome shows it. Chrome does not always create `Default`.
     public static func profiles(root: URL = defaultRoot) -> [ChromeProfile] {
         let names = profileNames(root: root)
-        let children = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-        let folders = children.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted { lhs, rhs in
-            if lhs == "Default" { return true }
-            if rhs == "Default" { return false }
-            return lhs.compare(rhs, options: .numeric) == .orderedAscending
-        }
-        return folders.compactMap { folder in
+        return profileFolders(root: root).compactMap { folder in
             let directory = root.appendingPathComponent(folder, isDirectory: true)
             guard storeNames.contains(where: { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }) else { return nil }
             return ChromeProfile(directoryName: folder, name: names[folder] ?? folder, directory: directory)
+        }
+    }
+
+    /// Login stores and their `-wal` and `-journal` files. Other Chrome files are left out, so a cookie write is not a password change.
+    public static func storeSignature(root: URL = defaultRoot) -> ChromeStoreSignature {
+        var files: [ChromeStoreSignature.File] = []
+        for folder in profileFolders(root: root) {
+            let directory = root.appendingPathComponent(folder, isDirectory: true)
+            for store in storeNames {
+                for suffix in ["", "-wal", "-journal"] {
+                    let name = store + suffix
+                    let url = directory.appendingPathComponent(name)
+                    guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                          let byteCount = values.fileSize,
+                          let modified = values.contentModificationDate else { continue }
+                    files.append(ChromeStoreSignature.File(
+                        relativePath: "\(folder)/\(name)",
+                        byteCount: byteCount,
+                        modifiedAt: modified.timeIntervalSince1970
+                    ))
+                }
+            }
+        }
+        return ChromeStoreSignature(files: files)
+    }
+
+    private static func profileFolders(root: URL) -> [String] {
+        let children = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        return children.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted { lhs, rhs in
+            if lhs == "Default" { return true }
+            if rhs == "Default" { return false }
+            return lhs.compare(rhs, options: .numeric) == .orderedAscending
         }
     }
 

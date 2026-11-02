@@ -372,6 +372,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
+        // Chrome is compared after the panel is up, so the menu is already showing the passwords from last time.
+        session.noteChromePanelShown()
     }
 
     @objc private func panelResignedKey() {
@@ -532,6 +534,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             applyLayout(locked: false)
             return
         }
+        // Unlocking in the open panel is the moment Chrome may ask. The menu stays up while the read runs.
+        session.noteChromePanelShown()
         animatingLock = true
         effect.isHidden = false
         header.isHidden = false

@@ -99,6 +99,13 @@ final class VaultSession: ObservableObject {
     var chromeGeneration = 0
     /// Chrome's own last-used times for the live logins. Replaced on every refresh, cleared on lock.
     var chromeLastUsed: [UUID: Date] = [:]
+    #if PP_DIRECT
+    /// Login-file signature from the last successful read. Nil until then, and again after lock, so the next open reads.
+    var chromeStoreSignature: ChromeStoreSignature?
+    /// The panel opened again while a read was running. Check the files once more when that read finishes.
+    var chromeRecheckAfterRead = false
+    var chromeSource = ChromeSnapshotSource.live
+    #endif
     private let usage: UsageStore
     @Published var editing: VaultEntry?
     @Published var editingIsNew = false
@@ -301,6 +308,8 @@ final class VaultSession: ObservableObject {
     }
 
     private func didUnlock(withMasterPassword: Bool) {
+        // The open panel starts its Chrome check inside the lock subscriber, so the switch has to be loaded first.
+        startChromeSyncIfEnabled()
         locked = false
         let declined = UserDefaults.standard.bool(forKey: touchIDDeclinedKey)
         // touchIDHardware stays true when a sensor exists but no fingerprint is enrolled.
@@ -313,7 +322,6 @@ final class VaultSession: ObservableObject {
             rememberUnlockSecret()
         }
         onActivity?()
-        startChromeSyncIfEnabled()
     }
 
     /// The file keeps its own password. After this unlock, the login keychain holds it

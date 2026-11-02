@@ -2,6 +2,28 @@ import AppKit
 import PasswordPieCore
 
 /// Live Chrome logins. Direct channel only: the App Store build has the same methods as no-ops, and no reader code.
+#if PP_DIRECT
+/// Where a Chrome read comes from. Tests substitute a store that never touches the keychain or the real Chrome folder.
+struct ChromeSnapshotSource: Sendable {
+    var signature: @Sendable () -> ChromeStoreSignature
+    var load: @Sendable (_ cachedKey: Data?) throws -> (key: Data, result: ChromeLoginsResult)
+
+    static let live = ChromeSnapshotSource(
+        signature: { ChromeLogins.storeSignature() },
+        load: { cached in
+            let key: Data
+            if let cached {
+                key = cached
+            } else {
+                let secret = ChromeSafeStorage.keychainPassword()
+                guard let password = secret.password else { throw ChromeLoginsError.keychain(secret.status) }
+                key = try ChromeSafeStorage.deriveKey(password: password)
+            }
+            return (key, try ChromeLogins.load(key: key))
+        }
+    )
+}
+#endif
 extension VaultSession {
     var chromeSyncAvailable: Bool {
         #if PP_DIRECT
@@ -20,6 +42,10 @@ extension VaultSession {
         chromeStatus = ""
         chromeStatusIsError = false
         chromeNeedsSettings = false
+        #if PP_DIRECT
+        chromeStoreSignature = nil
+        chromeRecheckAfterRead = false
+        #endif
     }
 
     #if PP_DIRECT
@@ -38,54 +64,112 @@ extension VaultSession {
 
     func startChromeSyncIfEnabled() {
         chromeSyncEnabled = UserDefaults.standard.bool(forKey: Self.chromeSyncKey)
-        if chromeSyncEnabled { refreshChrome() }
+    }
+
+    /// The panel is on screen. Compare the login files and, when they changed, read them without blocking the menu.
+    func noteChromePanelShown() {
+        guard chromeSyncEnabled, !locked else { return }
+        if chromeBusy {
+            chromeRecheckAfterRead = true
+            return
+        }
+        let source = chromeSource
+        Task { @MainActor [weak self] in
+            let current = await Task.detached(priority: .utility) { source.signature() }.value
+            guard let self else { return }
+            self.refreshChromeIfStoreChanged(current)
+        }
+    }
+
+    /// Reads only when `current` is not the signature of the last successful read.
+    func refreshChromeIfStoreChanged(_ current: ChromeStoreSignature) {
+        guard chromeSyncEnabled, !locked else { return }
+        if chromeBusy {
+            chromeRecheckAfterRead = true
+            return
+        }
+        guard current != chromeStoreSignature else { return }
+        refreshChrome()
     }
 
     /// Reads Chrome again. Uses the key from this session when there is one, so the keychain prompt shows once per unlock at most.
+    /// The menu keeps its current passwords until this finishes. A failed read leaves them in place.
     func refreshChrome() {
-        guard !locked, !chromeBusy else { return }
+        guard !locked, chromeSyncEnabled else { return }
+        if chromeBusy {
+            chromeRecheckAfterRead = true
+            return
+        }
         chromeBusy = true
-        chromeStatus = "Reading Chrome…"
-        chromeStatusIsError = false
         chromeGeneration += 1
         let generation = chromeGeneration
         let cached = chromeKey
-        Task {
-            let outcome: Result<(key: Data, result: ChromeLoginsResult), Error> = await Task.detached(priority: .userInitiated) {
-                do {
-                    let key: Data
-                    if let cached {
-                        key = cached
-                    } else {
-                        let secret = ChromeSafeStorage.keychainPassword()
-                        guard let password = secret.password else { throw ChromeLoginsError.keychain(secret.status) }
-                        key = try ChromeSafeStorage.deriveKey(password: password)
+        let source = chromeSource
+        Task { @MainActor [weak self] in
+            let outcome: Result<(key: Data, result: ChromeLoginsResult, signature: ChromeStoreSignature), Error> =
+                await Task.detached(priority: .userInitiated) {
+                    let signature = source.signature()
+                    do {
+                        let loaded = try source.load(cached)
+                        return .success((loaded.key, loaded.result, signature))
+                    } catch {
+                        return .failure(error)
                     }
-                    return .success((key, try ChromeLogins.load(key: key)))
-                } catch {
-                    return .failure(error)
-                }
-            }.value
+                }.value
+            guard let self else { return }
             // A lock or a newer refresh while this ran makes the result stale. Drop it.
-            guard generation == chromeGeneration, !locked else { return }
-            chromeBusy = false
+            guard generation == self.chromeGeneration, !self.locked else { return }
+            self.chromeBusy = false
             switch outcome {
             case .success(let loaded):
-                chromeKey = loaded.key
-                liveEntries = loaded.result.entries
-                chromeLastUsed = loaded.result.lastUsed
-                chromeStatus = chromeSummary(loaded.result)
-                chromeStatusIsError = false
-                chromeNeedsSettings = false
+                self.applyChromeSuccess(loaded)
             case .failure(let error):
-                liveEntries = []
-                chromeLastUsed = [:]
-                chromeKey = nil
-                chromeStatus = chromeErrorText(error)
-                chromeStatusIsError = true
-                chromeNeedsSettings = (error as? ChromeLoginsError) == .accessDenied
+                self.applyChromeFailure(error)
             }
+            guard self.chromeRecheckAfterRead, !self.locked else { return }
+            self.chromeRecheckAfterRead = false
+            self.noteChromePanelShown()
         }
+    }
+
+    private func applyChromeSuccess(_ loaded: (key: Data, result: ChromeLoginsResult, signature: ChromeStoreSignature)) {
+        chromeKey = loaded.key
+        chromeStoreSignature = loaded.signature
+        chromeNeedsSettings = false
+        chromeStatusIsError = false
+        chromeStatus = chromeSummary(loaded.result)
+        if loaded.result.lastUsed != chromeLastUsed {
+            chromeLastUsed = loaded.result.lastUsed
+        }
+        // Same logins: leave `liveEntries` alone so the open menu is not rebuilt.
+        if loaded.result.entries != liveEntries {
+            liveEntries = loaded.result.entries
+        }
+    }
+
+    private func applyChromeFailure(_ error: Error) {
+        let chrome = error as? ChromeLoginsError
+        // Nothing was shown yet, so this failure is the whole result.
+        guard !liveEntries.isEmpty else {
+            chromeKey = nil
+            chromeLastUsed = [:]
+            chromeStatus = chromeErrorText(error)
+            chromeStatusIsError = true
+            chromeNeedsSettings = chrome == .accessDenied
+            return
+        }
+        // A torn read while Chrome is writing must not wipe the passwords already on screen.
+        switch chrome {
+        case .keychain, .wrongKey:
+            chromeKey = nil
+        case .database, nil:
+            return
+        case .accessDenied, .noChrome:
+            break
+        }
+        chromeStatus = chromeErrorText(error)
+        chromeStatusIsError = true
+        chromeNeedsSettings = chrome == .accessDenied
     }
 
     private func chromeSummary(_ result: ChromeLoginsResult) -> String {
@@ -124,6 +208,7 @@ extension VaultSession {
     #else
     func setChromeSync(_ enabled: Bool) {}
     func startChromeSyncIfEnabled() {}
+    func noteChromePanelShown() {}
     func refreshChrome() {}
     func editInChrome() {}
     #endif
