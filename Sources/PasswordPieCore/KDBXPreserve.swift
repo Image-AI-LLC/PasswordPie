@@ -13,7 +13,11 @@ struct HeaderField: Equatable, Sendable {
     var payload: Data
 }
 
-let kdbxXMLOptions: XMLNode.Options = [.nodePreserveAll, .nodeLoadExternalEntitiesNever]
+/// `.nodePreserveAll` minus entity and character-reference preservation. With those two on, XMLDocument
+/// keeps a raw copy of text that mixes `&amp;` and `&#13;`, and writes it back unescaped and partly repeated.
+let kdbxXMLOptions: XMLNode.Options = XMLNode.Options.nodePreserveAll
+    .subtracting([.nodePreserveEntities, .nodePreserveCharacterReferences])
+    .union(.nodeLoadExternalEntitiesNever)
 
 /// Plaintext KeePass XML plus the header and binary pool needed to write the same file back.
 /// Protected values stay decrypted here. A save encrypts a copy so the next edit cannot encrypt twice.
@@ -102,7 +106,56 @@ final class KDBXPreserve: @unchecked Sendable {
             throw KDBXError.xml("Could not copy the database XML.")
         }
         try cryptProtectedValues(in: copy, streamKey: streamKey, encrypting: true)
-        return copy.xmlData(options: .nodePreserveAll)
+        return escapingCarriageReturns(copy.xmlData(options: kdbxXMLOptions))
+    }
+
+    // MARK: Recovery report
+
+    /// Finds the fields a repair changed and any that still look wrong, including history. Holds no values.
+    func locateRecovery(changedTexts: Set<String>, uncertainTexts: Set<String>, into recovery: inout KDBXRecovery) {
+        guard let root = document.rootElement() else { return }
+        var located = Set<String>()
+        var found = recovery
+        func visitEntry(_ entry: XMLElement, inHistory: Bool) {
+            let strings = direct(entry, "String")
+            let titleValue = strings.first { direct($0, "Key").first?.stringValue == "Title" }.flatMap { direct($0, "Value").first }
+            let title = isInnerProtected(titleValue) ? "(protected title)" : titleValue?.stringValue ?? ""
+            for string in strings {
+                guard let value = direct(string, "Value").first else { continue }
+                let text = value.stringValue ?? ""
+                let location = KDBXRecovery.Location(
+                    entryTitle: title,
+                    fieldKey: direct(string, "Key").first?.stringValue ?? "",
+                    inHistory: inHistory
+                )
+                if isInnerProtected(value) {
+                    if text.unicodeScalars.contains("\u{FFFD}") {
+                        found.unreadableProtectedFields.append(location)
+                    }
+                } else if uncertainTexts.contains(text) {
+                    found.uncertainFields.append(location)
+                    located.insert(text)
+                } else if changedTexts.contains(text) {
+                    found.repairedFields.append(location)
+                    located.insert(text)
+                } else if text.range(of: "&(#[0-9]+|#x[0-9a-fA-F]+|amp|lt|gt|quot|apos);", options: .regularExpression) != nil {
+                    found.suspectFields.append(location)
+                }
+            }
+            for history in direct(entry, "History") {
+                for old in direct(history, "Entry") {
+                    visitEntry(old, inHistory: true)
+                }
+            }
+        }
+        walkElements(root) { element in
+            guard element.name == "Group" else { return }
+            for entry in direct(element, "Entry") {
+                visitEntry(entry, inHistory: false)
+            }
+        }
+        found.otherRepairedTexts = changedTexts.subtracting(located).count
+        recovery = found
     }
 
     // MARK: Walking
@@ -704,10 +757,29 @@ func cryptProtectedValues(in document: XMLDocument, streamKey: Data, encrypting:
 }
 
 func parseKDBXDocument(_ data: Data) throws -> XMLDocument {
+    let document: XMLDocument
     do {
-        return try XMLDocument(data: data, options: kdbxXMLOptions)
+        document = try XMLDocument(data: data, options: kdbxXMLOptions)
     } catch {
         throw KDBXError.xml(error.localizedDescription)
+    }
+    try requireTextOnlyValues(in: document)
+    return document
+}
+
+/// The old writer could turn `&lt;b&gt;` in a note into a real element. A nested `Value Protected="True"` would then
+/// shift the decryption stream for every later password, so such a document is damage even though it parses.
+private func requireTextOnlyValues(in document: XMLDocument) throws {
+    guard let root = document.rootElement() else { return }
+    var damaged = false
+    walkElements(root) { element in
+        guard !damaged, element.name == "String" else { return }
+        for value in direct(element, "Value") where value.children?.contains(where: { $0.kind == .element }) == true {
+            damaged = true
+        }
+    }
+    if damaged {
+        throw KDBXError.xml("A field value contains XML elements.")
     }
 }
 
@@ -740,7 +812,7 @@ func direct(_ element: XMLElement, _ name: String) -> [XMLElement] {
     }
 }
 
-private func walkElements(_ element: XMLElement, _ body: (XMLElement) -> Void) {
+func walkElements(_ element: XMLElement, _ body: (XMLElement) -> Void) {
     body(element)
     for child in element.children ?? [] {
         guard let element = child as? XMLElement else { continue }

@@ -7,3 +7,4 @@ PasswordPie.app/
 build/
 .build-mas/
 .build-home/
+.review-tmp/
