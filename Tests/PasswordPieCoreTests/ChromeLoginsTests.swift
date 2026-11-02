@@ -270,6 +270,21 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertNotEqual(first, ChromeLogins.storeSignature(root: root))
     }
 
+    func testAProfileRenameChangesTheSignature() throws {
+        let dir = root.appendingPathComponent("Default", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("db".utf8).write(to: dir.appendingPathComponent("Login Data"))
+        try updateLocalState("Default", "Work")
+        let named = ChromeLogins.storeSignature(root: root)
+        XCTAssertEqual(named.profileNames, ["Default": "Work"])
+
+        try updateLocalState("Default", "Home")
+        let renamed = ChromeLogins.storeSignature(root: root)
+        XCTAssertEqual(renamed.files, named.files, "a rename does not pretend the login store itself changed")
+        XCTAssertNotEqual(renamed, named)
+        XCTAssertEqual(renamed.profileNames, ["Default": "Home"])
+    }
+
     func testMissingChromeFolderHasAnEmptySignature() {
         let missing = ChromeLogins.storeSignature(root: root.appendingPathComponent("absent"))
         XCTAssertEqual(missing.files, [])

@@ -269,6 +269,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
         panel.invalidateShadow()
+        // Compare Chrome after the menu is up. A locked panel returns immediately, so the keychain prompt waits for unlock.
+        session.noteChromePanelShown()
         if session.locked, session.touchIDAvailable, !session.creating, !touchIDOffered {
             touchIDOffered = true
             session.unlockWithTouchID()
@@ -372,8 +374,6 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
-        // Chrome is compared after the panel is up, so the menu is already showing the passwords from last time.
-        session.noteChromePanelShown()
     }
 
     @objc private func panelResignedKey() {

@@ -165,6 +165,105 @@ final class ChromeRefreshTests: XCTestCase {
         XCTAssertEqual(titles, ["beta.example", "alpha.example"])
     }
 
+    func testShowingAnUnlockedPanelComparesTheStore() async {
+        let session = unlockedSession()
+        session.chromeSyncEnabled = true
+        let signature = sampleSignature(byteCount: 4)
+        session.chromeStoreSignature = signature
+        let script = ChromeScript()
+        session.chromeSource = script.source(signature: signature)
+        let panel = PanelController(session: session)
+        defer { panel.hide() }
+
+        panel.show(.hotkey)
+        await waitUntil { script.signatures == 1 }
+
+        XCTAssertEqual(script.loads, 0, "opening the panel only stats an unchanged store")
+    }
+
+    func testShowingALockedPanelDoesNotReadChrome() async {
+        UserDefaults.standard.set(true, forKey: "chromeSyncEnabled")
+        let session = VaultSession()
+        let script = ChromeScript()
+        session.chromeSource = script.source()
+        session.chromeSyncEnabled = true
+        let panel = PanelController(session: session)
+        defer { panel.hide() }
+
+        panel.show(.hotkey)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(script.signatures, 0)
+        XCTAssertEqual(script.loads, 0)
+    }
+
+    func testACompletedReadReplacesAChangedPassword() async {
+        let session = unlockedSession()
+        let old = login(title: "alpha.example", username: "ann", password: "old-secret")
+        var current = old
+        current.password = "new-secret"
+        session.liveEntries = [old]
+        session.chromeSyncEnabled = true
+        let script = ChromeScript()
+        script.success = (Data(repeating: 3, count: 16), ChromeLoginsResult(entries: [current], profileCount: 1))
+        session.chromeSource = script.source(signature: sampleSignature(byteCount: 9))
+
+        session.refreshChrome()
+        await waitUntil { !session.chromeBusy }
+
+        XCTAssertEqual(session.liveEntries, [current])
+        XCTAssertFalse(session.liveEntries.contains { $0.password == "old-secret" })
+    }
+
+    func testACompletedReadDropsARenamedAccount() async {
+        let session = unlockedSession()
+        let old = login(title: "alpha.example", username: "ann", password: "pw")
+        let renamed = login(title: "alpha.example", username: "ann-new", password: "pw")
+        session.liveEntries = [old]
+        session.chromeSyncEnabled = true
+        let script = ChromeScript()
+        script.success = (Data(repeating: 3, count: 16), ChromeLoginsResult(entries: [renamed], profileCount: 1))
+        session.chromeSource = script.source(signature: sampleSignature(byteCount: 9))
+
+        session.refreshChrome()
+        await waitUntil { !session.chromeBusy }
+
+        XCTAssertEqual(session.liveEntries, [renamed])
+        XCTAssertFalse(session.liveEntries.contains { $0.id == old.id })
+    }
+
+    func testAChangedLastUsedRebuildsSearchOrder() async {
+        let session = unlockedSession()
+        let older = login(title: "alpha.example", username: "ann", password: "a")
+        let newer = login(title: "beta.example", username: "bea", password: "b")
+        session.liveEntries = [older, newer]
+        let early = Date(timeIntervalSince1970: 1_000)
+        let late = Date(timeIntervalSince1970: 1_800_000_000)
+        session.chromeLastUsed = [older.id: early, newer.id: late]
+        session.chromeSyncEnabled = true
+        let generation = session.menuGeneration
+        let now = late
+        let script = ChromeScript()
+        script.success = (
+            Data(repeating: 3, count: 16),
+            ChromeLoginsResult(
+                entries: [older, newer],
+                profileCount: 1,
+                lastUsed: [older.id: late, newer.id: early]
+            )
+        )
+        session.chromeSource = script.source(signature: sampleSignature(byteCount: 9))
+
+        session.refreshChrome()
+        await waitUntil { !session.chromeBusy }
+
+        XCTAssertNotEqual(session.menuGeneration, generation, "a new last-used time has to reach the open search")
+        let titles = entryTitles(MenuBuilder.searchResults(
+            index: session.searchIndex, query: "example", scope: .major, lastUsed: session.lastUsedMap, now: now
+        ))
+        XCTAssertEqual(titles, ["alpha.example", "beta.example"])
+    }
+
     func testTheSameLoginsDoNotRebuildTheMenu() async {
         let session = unlockedSession()
         let kept = login(title: "alpha.example", username: "ann", password: "kept")
@@ -241,6 +340,7 @@ final class ChromeRefreshTests: XCTestCase {
 private final class ChromeScript: @unchecked Sendable {
     private let lock = NSLock()
     private var loadCount = 0
+    private var signatureCount = 0
     var block = false
     var failure: Error?
     var success: (key: Data, result: ChromeLoginsResult)?
@@ -252,9 +352,20 @@ private final class ChromeScript: @unchecked Sendable {
         return loadCount
     }
 
+    var signatures: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return signatureCount
+    }
+
     func source(signature: ChromeStoreSignature = ChromeStoreSignature()) -> ChromeSnapshotSource {
         ChromeSnapshotSource(
-            signature: { signature },
+            signature: { [self] in
+                lock.lock()
+                signatureCount += 1
+                lock.unlock()
+                return signature
+            },
             load: { [self] cached in
                 lock.lock()
                 loadCount += 1

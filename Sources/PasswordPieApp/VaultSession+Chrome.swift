@@ -138,12 +138,16 @@ extension VaultSession {
         chromeNeedsSettings = false
         chromeStatusIsError = false
         chromeStatus = chromeSummary(loaded.result)
-        if loaded.result.lastUsed != chromeLastUsed {
+        let lastUsedChanged = loaded.result.lastUsed != chromeLastUsed
+        if lastUsedChanged {
             chromeLastUsed = loaded.result.lastUsed
         }
         // Same logins: leave `liveEntries` alone so the open menu is not rebuilt.
+        // A new last-used time still has to reach search, which reads it when the catalog is rebuilt.
         if loaded.result.entries != liveEntries {
             liveEntries = loaded.result.entries
+        } else if lastUsedChanged {
+            catalogChanged()
         }
     }
 

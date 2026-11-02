@@ -140,7 +140,8 @@ public struct ChromeLoginsResult: Sendable {
     }
 }
 
-/// Size and modification time of Chrome's login stores. Unchanged files mean the passwords on disk are the ones already read.
+/// Size and modification time of Chrome's login stores, plus each profile's display name.
+/// Unchanged files and names mean the passwords already read are still current.
 public struct ChromeStoreSignature: Equatable, Sendable {
     public struct File: Equatable, Sendable {
         public var relativePath: String
@@ -155,9 +156,12 @@ public struct ChromeStoreSignature: Equatable, Sendable {
     }
 
     public var files: [File]
+    /// Folder name to the name Chrome shows. A rename leaves the login files untouched.
+    public var profileNames: [String: String]
 
-    public init(files: [File] = []) {
+    public init(files: [File] = [], profileNames: [String: String] = [:]) {
         self.files = files
+        self.profileNames = profileNames
     }
 }
 
@@ -179,10 +183,15 @@ public enum ChromeLogins {
         }
     }
 
-    /// Login stores and their `-wal` and `-journal` files. Other Chrome files are left out, so a cookie write is not a password change.
+    /// Login stores and their `-wal` and `-journal` files, plus profile display names.
+    /// Other Chrome files are left out, so a cookie write is not a password change.
+    /// Names come from the parsed `Local State` map, not that file's mtime, so unrelated Chrome settings do not force a read.
     public static func storeSignature(root: URL = defaultRoot) -> ChromeStoreSignature {
         var files: [ChromeStoreSignature.File] = []
+        let knownNames = profileNames(root: root)
+        var names: [String: String] = [:]
         for folder in profileFolders(root: root) {
+            if let shown = knownNames[folder] { names[folder] = shown }
             let directory = root.appendingPathComponent(folder, isDirectory: true)
             for store in storeNames {
                 for suffix in ["", "-wal", "-journal"] {
@@ -199,7 +208,7 @@ public enum ChromeLogins {
                 }
             }
         }
-        return ChromeStoreSignature(files: files)
+        return ChromeStoreSignature(files: files, profileNames: names)
     }
 
     private static func profileFolders(root: URL) -> [String] {
