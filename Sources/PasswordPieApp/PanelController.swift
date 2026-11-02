@@ -246,7 +246,11 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         if !session.locked { menu.reset() }
         applyLayout(locked: session.locked)
 
-        let screen = screen(for: anchor)
+        // A test process can have no screens. Still compare Chrome; there is nowhere to place the panel.
+        guard let screen = screen(for: anchor) else {
+            session.noteChromePanelShown()
+            return
+        }
         var origin: NSPoint
         switch anchor {
         case .statusItem(let rect):
@@ -269,6 +273,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
         panel.invalidateShadow()
+        // Compare Chrome after the menu is up. A locked panel returns immediately, so the keychain prompt waits for unlock.
+        session.noteChromePanelShown()
         if session.locked, session.touchIDAvailable, !session.creating, !touchIDOffered {
             touchIDOffered = true
             session.unlockWithTouchID()
@@ -413,31 +419,32 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     // MARK: Layout and placement
 
-    private func screen(for anchor: PanelAnchor) -> NSScreen {
+    private func screen(for anchor: PanelAnchor) -> NSScreen? {
         switch anchor {
         case .statusItem(let rect):
-            return NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main ?? NSScreen.screens[0]
+            return NSScreen.screens.first { $0.frame.intersects(rect) } ?? NSScreen.main ?? NSScreen.screens.first
         case .hotkey:
             let mouse = NSEvent.mouseLocation
-            return NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
+            return NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first
         }
     }
 
-    private var currentScreen: NSScreen {
-        panel.screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
+    private var currentScreen: NSScreen? {
+        panel.screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens.first
     }
 
     private func applyLayout(locked: Bool) {
         lockHost.isHidden = !(locked || animatingLock)
         effect.isHidden = locked && !animatingLock
-        if locked, !animatingLock { setFrame(animated: false, screen: currentScreen) }
+        if locked, !animatingLock, let screen = currentScreen { setFrame(animated: false, screen: screen) }
     }
 
     private var panelSize: NSSize {
         if session.locked || animatingLock {
             return NSSize(width: Metrics.width, height: session.creating ? Metrics.createHeight : Metrics.lockedHeight)
         }
-        let area = MenuGeometry.confinement(visibleFrame: currentScreen.visibleFrame)
+        let visible = currentScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let area = MenuGeometry.confinement(visibleFrame: visible)
         let height = HeaderView.height + min(max(contentHeight, MenuMetrics.minimumListHeight), max(area.height - HeaderView.height, 0))
         return NSSize(width: max(contentWidth, MenuGeometry.rootWidth), height: height)
     }
@@ -462,8 +469,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         self.contentWidth = contentWidth
         self.contentHeight = contentHeight
         header.showsSeparator = menu.query.isEmpty
-        guard !session.locked, !animatingLock else { return }
-        setFrame(animated: panel.isVisible, screen: currentScreen)
+        guard !session.locked, !animatingLock, let screen = currentScreen else { return }
+        setFrame(animated: panel.isVisible, screen: screen)
     }
 
     // MARK: Dragging
@@ -476,14 +483,14 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     private func dragEnded() {
         menu.closeAll()
-        guard !attached else { return }
+        guard !attached, let screen = currentScreen else { return }
         let origin = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
-        let centered = MenuGeometry.centeredTopLeft(screenFrame: currentScreen.frame)
+        let centered = MenuGeometry.centeredTopLeft(screenFrame: screen.frame)
         topLeft = origin
         if MenuGeometry.shouldSnapToCenter(topLeft: origin, centered: centered) {
             UserDefaults.standard.removeObject(forKey: positionKey)
             topLeft = centered
-            setFrame(animated: true, screen: currentScreen)
+            setFrame(animated: true, screen: screen)
         } else {
             UserDefaults.standard.set(NSStringFromPoint(origin), forKey: positionKey)
         }
@@ -532,6 +539,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             applyLayout(locked: false)
             return
         }
+        // Unlocking in the open panel is the moment Chrome may ask. The menu stays up while the read runs.
+        session.noteChromePanelShown()
         animatingLock = true
         effect.isHidden = false
         header.isHidden = false
@@ -545,7 +554,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
                 guard let self else { return }
                 self.animatingLock = false
                 self.applyLayout(locked: false)
-                self.setFrame(animated: true, screen: self.currentScreen)
+                if let screen = self.currentScreen { self.setFrame(animated: true, screen: screen) }
                 self.panel.makeFirstResponder(self.header.searchField)
             }
         }
