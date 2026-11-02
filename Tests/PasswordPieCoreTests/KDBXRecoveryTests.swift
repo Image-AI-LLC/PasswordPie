@@ -424,6 +424,23 @@ final class KDBXRecoveryTests: XCTestCase {
         XCTAssertTrue(text.contains("T&C"), text)
     }
 
+    func testACarriageReturnInsideCDATAAfterAGreaterThanSurvivesASave() throws {
+        let xml = wrap("""
+        <Entry><UUID>\(base64UUID(UUID()))</UUID>
+        <String><Key>Title</Key><Value>Site</Value></String>
+        <String><Key>Notes</Key><Value><![CDATA[a>b\rc]]></Value></String>
+        </Entry>
+        """)
+        let streamKey = Data((0..<64).map { UInt8($0) })
+        let data = try KDBX.testingDatabase(rawXML: Data(xml.utf8), streamKey: streamKey, password: "s")
+        var vault = try KDBX.load(data: data, password: "s")
+        XCTAssertEqual(vault.entries.first?.notes, "a>b\rc")
+        let saved = try KDBX.save(vault: &vault, password: "s")
+        let url = directory.appendingPathComponent("Passwords.kdbx")
+        try VaultFile.replace(url, with: saved, password: "s", expecting: vault)
+        XCTAssertEqual(try KDBX.load(data: saved, password: "s").entries.first?.notes, "a>b\rc")
+    }
+
     func testAHealThatCannotKeepABackupLeavesTheFileAlone() throws {
         let url = directory.appendingPathComponent("Passwords.kdbx")
         let damaged = try damagedDatabase(notes: "A&amp;#B&#13;C", password: "pw")

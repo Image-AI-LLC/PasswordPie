@@ -425,9 +425,26 @@ func removingInvalidXMLCharacters(_ text: String) -> String {
 /// Only text is rewritten: XMLDocument can keep a raw CR inside a tag (`<Value\r/>`), where a reference is illegal.
 func escapingCarriageReturns(_ xml: Data) -> Data {
     guard xml.contains(0x0D) else { return xml }
+    let bytes = [UInt8](xml)
+    let cdataOpen = Array("<![CDATA[".utf8)
+    let cdataClose = Array("]]>".utf8)
+    func matches(_ pattern: [UInt8], at index: Int) -> Bool {
+        index + pattern.count <= bytes.count && bytes[index..<index + pattern.count].elementsEqual(pattern)
+    }
     var output = Data(capacity: xml.count + 64)
     var insideTag = false
-    for byte in xml {
+    var index = 0
+    while index < bytes.count {
+        let byte = bytes[index]
+        if byte == UInt8(ascii: "<"), matches(cdataOpen, at: index) {
+            // CDATA keeps a raw CR as a CR, and its '>' does not end a tag. Copy it through unchanged.
+            var end = index + cdataOpen.count
+            while end < bytes.count, !matches(cdataClose, at: end) { end += 1 }
+            end = min(end + cdataClose.count, bytes.count)
+            output.append(contentsOf: bytes[index..<end])
+            index = end
+            continue
+        }
         if byte == UInt8(ascii: "<") {
             insideTag = true
         } else if byte == UInt8(ascii: ">") {
@@ -438,6 +455,7 @@ func escapingCarriageReturns(_ xml: Data) -> Data {
         } else {
             output.append(byte)
         }
+        index += 1
     }
     return output
 }

@@ -290,7 +290,9 @@ final class VaultSession: ObservableObject {
             guard let self else { return }
             self.unlocking = false
             // Before the checks below: the file may have been repaired even if this result is dropped.
-            if case .success(let opened) = result { self.showRecoveryNotice(opened.recoveryNotice) }
+            if case .success(let opened) = result {
+                self.showRecoveryNotice(opened.recoveryNotice, detailed: self.unlockGeneration == generation)
+            }
             guard self.unlockGeneration == generation else { return }
             guard self.locked else { return }
             guard self.databaseURL.path == url.path else {
@@ -302,9 +304,15 @@ final class VaultSession: ObservableObject {
         }
     }
 
+    /// Hashes of notices already shown this run. Not cleared by lock(), so no titles stay in memory.
+    private var shownRecoveryNotices = Set<Int>()
+
     /// `message` only shows on the lock screen, which is gone by now.
-    private func showRecoveryNotice(_ notice: String?) {
-        guard let notice else { return }
+    /// Not `detailed` (the vault locked meanwhile): only the first paragraph, which names no entries.
+    private func showRecoveryNotice(_ notice: String?, detailed: Bool) {
+        guard var notice else { return }
+        if !detailed, let split = notice.range(of: "\n\n") { notice = String(notice[..<split.lowerBound]) }
+        guard shownRecoveryNotices.insert(notice.hashValue).inserted else { return }
         let alert = NSAlert()
         alert.messageText = "Database repair"
         alert.informativeText = notice
@@ -1206,7 +1214,7 @@ final class VaultSession: ObservableObject {
                         keyFile: job.keyFile
                     )
                 }.value
-                self.showRecoveryNotice(loaded?.recoveryNotice)
+                self.showRecoveryNotice(loaded?.recoveryNotice, detailed: !self.locked)
                 switch CatalogLoad.step(
                     generation: generation,
                     current: self.catalogGeneration,
