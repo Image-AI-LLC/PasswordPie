@@ -111,6 +111,8 @@ func optionRevealHeld(after change: OptionRevealChange) -> Bool {
 final class DetailsModel: ObservableObject {
     let entryID: UUID
     let title: String
+    /// Website host for the favicon. Nil when the entry has no website.
+    let siteHost: String?
     let fields: [DetailField]
     let tags: [String]
     @Published var focused = 0
@@ -129,6 +131,7 @@ final class DetailsModel: ObservableObject {
     init(entry: VaultEntry, session: VaultSession, presentation: DetailsPresentation = .popover, done: @escaping () -> Void) {
         entryID = entry.id
         title = entry.title.isEmpty ? "Untitled" : entry.title
+        siteHost = websiteHost(of: entry)
         favorite = entry.favorite
         isLive = session.isLive(entry.id)
         tags = entry.tagList.filter { $0.caseInsensitiveCompare("Favorite") != .orderedSame }
@@ -265,6 +268,27 @@ private struct ContentHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
+/// The site favicon, or the letter tile when Google has none.
+private struct SiteIconView: View {
+    var host: String?
+    var title: String
+    var side: CGFloat
+    @State private var logo: NSImage?
+
+    var body: some View {
+        Image(nsImage: logo ?? SiteIconStore.shared.image(forHost: host) ?? MenuIcons.tile(title))
+            .resizable()
+            .scaledToFit()
+            .frame(width: side, height: side)
+            .accessibilityHidden(true)
+            .task(id: host ?? "") {
+                logo = SiteIconStore.shared.image(forHost: host)
+                let image = await SiteIconStore.shared.load(host)
+                if !Task.isCancelled { logo = image }
+            }
+    }
+}
+
 struct DetailsView: View {
     @ObservedObject var model: DetailsModel
     var onHeight: ((CGFloat) -> Void)? = nil
@@ -298,7 +322,7 @@ struct DetailsView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(nsImage: MenuIcons.tile(model.title)).resizable().scaledToFit().frame(width: 32, height: 32)
+            SiteIconView(host: model.siteHost, title: model.title, side: 32)
             Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
             Spacer(minLength: 0)
             if model.isLive {

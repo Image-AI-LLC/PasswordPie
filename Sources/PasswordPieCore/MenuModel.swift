@@ -26,6 +26,8 @@ public struct MenuRow: Equatable, Sendable {
     public var favorite: Bool
     /// Shown after the title as " — username" when another row in the same list has the same title.
     public var username: String
+    /// Website host for the favicon lookup. Nil when the row is not a site, or the entry has no website.
+    public var siteHost: String?
 
     public init(
         kind: Kind,
@@ -34,7 +36,8 @@ public struct MenuRow: Equatable, Sendable {
         category: ItemCategory? = nil,
         icon: Icon? = nil,
         favorite: Bool = false,
-        username: String = ""
+        username: String = "",
+        siteHost: String? = nil
     ) {
         self.kind = kind
         self.title = title
@@ -43,6 +46,7 @@ public struct MenuRow: Equatable, Sendable {
         self.icon = icon
         self.favorite = favorite
         self.username = username
+        self.siteHost = siteHost
     }
 
     public static let separator = MenuRow(kind: .separator)
@@ -173,7 +177,8 @@ public enum MenuBuilder {
                 title: title.isEmpty ? "Untitled" : title,
                 category: entry.category,
                 favorite: entry.favorite,
-                username: details[index]
+                username: details[index],
+                siteHost: websiteHost(of: entry)
             )
         }
     }
