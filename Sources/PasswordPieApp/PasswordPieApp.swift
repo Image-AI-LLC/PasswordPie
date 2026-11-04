@@ -181,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .openNew(let index):
             let model = pinnedModel(for: entry, previous: nil)
             let panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160))
+            panel.applyWarmTitlebar()
             panel.delegate = self
             panel.title = model.title
             panel.contentView = FirstMouseHostingView(rootView: pinnedRoot(model))
@@ -264,6 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if editorWindow == nil {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.applyWarmTitlebar()
             window.contentView = NSHostingView(rootView: EditorView(session: session))
             window.delegate = self
             window.center()
@@ -280,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.styleMask.insert(.resizable)
             window.title = "PasswordPie Preferences"
+            window.applyWarmTitlebar()
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: PreferencesView(session: session))
             window.setContentSize(NSSize(width: 560, height: 800))
@@ -301,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if aboutWindow == nil {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.title = AboutCopy.menuTitle
+            window.applyWarmTitlebar()
             window.isReleasedWhenClosed = false
             let host = NSHostingView(rootView: AboutView())
             host.sizingOptions = [.intrinsicContentSize]
@@ -494,7 +498,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         guard env["PASSWORDPIE_SHOW"] != nil else { return }
         if env["PASSWORDPIE_ANCHOR"] == "status" { showUnderStatusItem() } else { panelController.show(.hotkey) }
-        guard !session.locked else { return }
+        applyUnlockedDebugHooks(env)
+        #endif
+    }
+
+    #if DEBUG
+    /// Unlocking with `PASSWORDPIE_PASSWORD` finishes on a background task, so these wait for it instead of finding the panel still locked.
+    private func applyUnlockedDebugHooks(_ env: [String: String]) {
+        if session.locked {
+            guard env["PASSWORDPIE_PASSWORD"] != nil else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.applyUnlockedDebugHooks(env) }
+            return
+        }
         if let text = env["PASSWORDPIE_QUERY"] {
             panelController.header.searchField.stringValue = text
             panelController.headerSearchChanged(text)
@@ -512,10 +527,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.panelController.menu.debugOpen(path: path.split(separator: "/").map(String.init))
             }
         }
-        #endif
     }
 
-    #if DEBUG
     private func statusSnapshot() -> [String: Any] {
         guard let panelController else { return [:] }
         let panel = panelController.panel

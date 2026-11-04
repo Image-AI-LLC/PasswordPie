@@ -15,13 +15,8 @@ enum MenuMetrics {
     static let headerFont = NSFont.menuFont(ofSize: 11)
 }
 
-/// Black lines and fills on a light menu, white on a dark one.
-func menuInk(_ alpha: CGFloat) -> NSColor {
-    NSColor(name: nil) { appearance in
-        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        return (dark ? NSColor.white : NSColor.black).withAlphaComponent(alpha)
-    }
-}
+/// Warm brown lines and fills on a light menu, cream on a dark one.
+func menuInk(_ alpha: CGFloat) -> NSColor { MenuPalette.ink(alpha) }
 
 @MainActor
 protocol MenuListDelegate: AnyObject {
@@ -233,22 +228,17 @@ final class MenuListView: NSView {
         case .header:
             drawHeader(row, in: rect)
         case .disabled:
-            drawText(row.title, in: rect, x: MenuMetrics.titleX, color: NSColor(white: 0.4, alpha: 1), width: rect.width - MenuMetrics.titleX - 10)
+            drawText(row.title, in: rect, x: MenuMetrics.titleX, color: MenuPalette.disabledText, width: rect.width - MenuMetrics.titleX - 10)
         case .showMore:
             if selected { fillSelection(rect) }
-            drawText(row.title, in: rect, x: 42, color: selected ? .white : .tertiaryLabelColor, width: rect.width - 52)
+            drawText(row.title, in: rect, x: 42, color: selected ? MenuPalette.selectionInk : MenuPalette.tertiaryText, width: rect.width - 52)
         case .entry, .submenu, .generator:
             drawItem(row, in: rect, selected: selected)
         }
     }
 
-    /// Selection fill: the translucent keyboard-focus blue in light appearance, the alternate selection color in dark.
-    private static let selectionColor = NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .selectedContentBackgroundColor :.keyboardFocusIndicatorColor
-    }
-
     private func fillSelection(_ rect: NSRect) {
-        Self.selectionColor.setFill()
+        MenuPalette.selectionFill.setFill()
         rect.fill()
     }
 
@@ -258,8 +248,7 @@ final class MenuListView: NSView {
         menuInk(0.2).setFill()
         NSRect(x: 0, y: rect.minY, width: rect.width, height: 1).fill()
         NSRect(x: 0, y: rect.maxY - 1, width: rect.width, height: 1).fill()
-        let color = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 0.9, alpha: 1) : NSColor(white: 0.2, alpha: 1) }
-        drawText(row.title.uppercased(), in: rect, x: 6, color: color, width: rect.width - 12, font: MenuMetrics.headerFont)
+        drawText(row.title.uppercased(), in: rect, x: 6, color: MenuPalette.secondaryText, width: rect.width - 12, font: MenuMetrics.headerFont)
     }
 
     private func drawItem(_ row: MenuRow, in rect: NSRect, selected: Bool) {
@@ -268,12 +257,12 @@ final class MenuListView: NSView {
         if let icon = MenuIcons.image(for: row, selected: selected) {
             let iconRect = NSRect(x: MenuMetrics.iconX, y: rect.midY - 8, width: 16, height: 16)
             icon.draw(in: IconGeometry.aspectFit(icon.size, in: iconRect), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            if row.favorite, row.entryID != nil, let star = MenuIcons.favoriteBadge {
+            if row.favorite, row.entryID != nil, let star = selected ? MenuIcons.selectedFavoriteBadge : MenuIcons.favoriteBadge {
                 let badgeSlot = NSRect(x: iconRect.maxX - 7, y: iconRect.maxY - 7, width: 9, height: 9)
                 star.draw(in: IconGeometry.aspectFit(star.size, in: badgeSlot), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
             }
         }
-        let textColor: NSColor = selected ? .white : .labelColor
+        let textColor: NSColor = selected ? MenuPalette.selectionInk : MenuPalette.text
         let reserved: CGFloat = hasArrow ? 28 : 10
         let available = rect.width - MenuMetrics.titleX - reserved
         let titleWidth = min(ceil(Self.textWidth(row.title, MenuMetrics.font)), available)
@@ -283,7 +272,7 @@ final class MenuListView: NSView {
                 " — " + row.username,
                 in: rect,
                 x: MenuMetrics.titleX + titleWidth,
-                color: selected ? .white : .secondaryLabelColor,
+                color: selected ? MenuPalette.selectionInk : MenuPalette.secondaryText,
                 width: available - titleWidth,
                 truncation: .byTruncatingTail
             )
@@ -301,7 +290,7 @@ final class MenuListView: NSView {
         triangle.line(to: NSPoint(x: originX + width, y: slot.midY))
         triangle.line(to: NSPoint(x: originX, y: slot.midY + height / 2))
         triangle.close()
-        (selected ? NSColor.white : NSColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 1)).setFill()
+        (selected ? MenuPalette.selectionInk : MenuPalette.arrow).setFill()
         triangle.fill()
     }
 
@@ -336,25 +325,25 @@ enum MenuIcons {
         let name: String
         let tint: NSColor
         switch row.icon {
-        case .favorites: name = "star.fill"; tint = NSColor(red: 0.96, green: 0.72, blue: 0.2, alpha: 1)
-        case .generator: name = "key.fill"; tint = .secondaryLabelColor
-        case .folders, .folder: name = "folder.fill"; tint = NSColor(red: 0.35, green: 0.62, blue: 0.9, alpha: 1)
-        case .tags, .tag: name = "tag.fill"; tint = NSColor(red: 0.45, green: 0.7, blue: 0.4, alpha: 1)
+        case .favorites: name = "star.fill"; tint = MenuPalette.favorite
+        case .generator: name = "key.fill"; tint = MenuPalette.neutralIcon
+        case .folders, .folder: name = "folder.fill"; tint = MenuPalette.folder
+        case .tags, .tag: name = "tag.fill"; tint = MenuPalette.tag
         case nil:
             guard let category = row.category else { return nil }
             (name, tint) = symbol(for: category)
         }
-        return symbol(name, color: selected ? .white : tint)
+        return symbol(name, color: selected ? MenuPalette.selectionInk : tint)
     }
 
     private static func symbol(for category: ItemCategory) -> (String, NSColor) {
         switch category {
-        case .login: return ("lock.square.fill", NSColor(red: 0.45, green: 0.5, blue: 0.58, alpha: 1))
-        case .secureNote: return ("note.text", NSColor(red: 0.9, green: 0.7, blue: 0.2, alpha: 1))
-        case .creditCard: return ("creditcard.fill", NSColor(red: 0.5, green: 0.55, blue: 0.62, alpha: 1))
-        case .identity: return ("person.crop.rectangle.fill", NSColor(red: 0.4, green: 0.6, blue: 0.85, alpha: 1))
-        case .password: return ("key.fill", .secondaryLabelColor)
-        case .document: return ("doc.fill", NSColor(red: 0.5, green: 0.55, blue: 0.62, alpha: 1))
+        case .login: return ("lock.square.fill", MenuPalette.neutralIcon)
+        case .secureNote: return ("note.text", MenuPalette.note)
+        case .creditCard: return ("creditcard.fill", MenuPalette.neutralIcon)
+        case .identity: return ("person.crop.rectangle.fill", MenuPalette.identity)
+        case .password: return ("key.fill", MenuPalette.neutralIcon)
+        case .document: return ("doc.fill", MenuPalette.neutralIcon)
         }
     }
 
@@ -364,7 +353,9 @@ enum MenuIcons {
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     }
 
-    static let favoriteBadge: NSImage? = symbol("star.fill", color: NSColor(red: 0.96, green: 0.72, blue: 0.2, alpha: 1), size: 8)
+    static let favoriteBadge: NSImage? = symbol("star.fill", color: MenuPalette.favorite, size: 8)
+    /// The gold star disappears on the orange selection.
+    static let selectedFavoriteBadge: NSImage? = symbol("star.fill", color: MenuPalette.selectionInk, size: 8)
 
     /// Letter tile tinted by a stable hash of the title. Shown until a favicon arrives, and kept when none does.
     static func tile(_ title: String) -> NSImage {
@@ -372,7 +363,7 @@ enum MenuIcons {
         let letter = title.trimmingCharacters(in: .whitespaces).first.map { String($0).uppercased() } ?? "•"
         var hash: UInt32 = 2166136261
         for byte in title.lowercased().utf8 { hash = (hash ^ UInt32(byte)) &* 16777619 }
-        let hue = CGFloat(hash % 360) / 360
+        let hue = MenuPalette.tileHues[Int(hash % UInt32(MenuPalette.tileHues.count))]
         let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
             let shape = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 3.5, yRadius: 3.5)
             NSGradient(

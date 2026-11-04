@@ -32,9 +32,7 @@ struct AboutView: View {
     var version = AboutCopy.versionLabel()
     @Environment(\.colorScheme) private var colorScheme
 
-    private var cardColor: Color {
-        colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : .white
-    }
+    private var cardColor: Color { Palette.card(dark: colorScheme == .dark) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -45,7 +43,8 @@ struct AboutView: View {
         .padding(24)
         .frame(width: 440)
         .font(.system(size: 13))
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.windowSurface(dark: colorScheme == .dark))
+        .tint(Palette.accentText(dark: colorScheme == .dark))
         .fixedSize(horizontal: true, vertical: true)
     }
 
@@ -82,6 +81,7 @@ struct AboutView: View {
     private var repository: some View {
         Link(destination: AboutCopy.repositoryURL) {
             Text(AboutCopy.repositoryLabel)
+                .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
         }
         .accessibilityLabel("GitHub repository")
         .accessibilityValue(AboutCopy.repositoryURL.absoluteString)

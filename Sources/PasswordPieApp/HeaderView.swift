@@ -48,9 +48,10 @@ final class HeaderView: NSView, NSTextFieldDelegate {
         searchField.drawsBackground = false
         searchField.focusRingType = .none
         searchField.font = .systemFont(ofSize: 18)
+        searchField.textColor = MenuPalette.text
         searchField.placeholderAttributedString = NSAttributedString(
             string: "Search PasswordPie",
-            attributes: [.font: NSFont.systemFont(ofSize: 18), .foregroundColor: NSColor.secondaryLabelColor]
+            attributes: [.font: NSFont.systemFont(ofSize: 18), .foregroundColor: MenuPalette.secondaryText]
         )
         searchField.cell?.usesSingleLineMode = true
         searchField.cell?.isScrollable = true
@@ -59,7 +60,7 @@ final class HeaderView: NSView, NSTextFieldDelegate {
 
         gear.setAccessibilityLabel("Settings")
         gear.isBordered = false
-        gear.image = MenuIcons.symbol("gearshape.fill", color: .secondaryLabelColor, size: 16)
+        gear.image = MenuIcons.symbol("gearshape.fill", color: MenuPalette.secondaryText, size: 16)
         gear.imageScaling = .scaleProportionallyDown
         gear.target = self
         gear.action = #selector(gearClicked)
@@ -74,10 +75,9 @@ final class HeaderView: NSView, NSTextFieldDelegate {
     /// Own-brand pie, rendered once and tinted by AppKit for the current appearance.
     @MainActor
     private static let logoImage: NSImage? = {
-        let renderer = ImageRenderer(content: PasswordPieMark(size: 32, style: .monochrome).environment(\.colorScheme, .light))
+        let renderer = ImageRenderer(content: PasswordPieMark(size: 32))
         renderer.scale = 2
         let image = renderer.nsImage
-        image?.isTemplate = true
         return image
     }()
 

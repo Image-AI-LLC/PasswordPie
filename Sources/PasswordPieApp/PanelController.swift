@@ -17,6 +17,16 @@ final class KeyPanel: NSPanel {
         onEscape?()
     }
 
+    /// The search and master-password fields share this editor, and both keep the brand caret and selection.
+    override func fieldEditor(_ createFlag: Bool, for object: Any?) -> NSText? {
+        let editor = super.fieldEditor(createFlag, for: object)
+        if let text = editor as? NSTextView {
+            text.insertionPointColor = MenuPalette.caret
+            text.selectedTextAttributes = [.backgroundColor: MenuPalette.textSelection]
+        }
+        return editor
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if onKeyEquivalent?(event) == true { return true }
         return super.performKeyEquivalent(with: event)
@@ -68,6 +78,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         view.state = .active
         view.wantsLayer = true
         view.layer?.masksToBounds = true
+        view.applyMenuBackdrop()
         return view
     }()
     private let lockHost: NSHostingView<DoorsView>

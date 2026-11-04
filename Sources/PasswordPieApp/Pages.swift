@@ -74,6 +74,7 @@ struct EditorView: View {
                 }
             }
             .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
             HStack {
                 if !session.editingIsNew {
                     Button("Move to Trash", role: .destructive) { session.deleteEditing() }
@@ -83,11 +84,14 @@ struct EditorView: View {
                 }
                 Spacer()
                 Button("Cancel") { session.cancelEditing() }.keyboardShortcut(.cancelAction)
-                Button("Save") { commit() }.keyboardShortcut(.defaultAction)
+                Button("Save") { commit() }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(BrandPrimaryButtonStyle())
             }
             .padding(12)
         }
         .frame(width: 450, height: 640)
+        .tint(Palette.brandAccent)
         .alert("Split these accounts?", isPresented: $confirmSplit) {
             Button("Split") { session.splitEditing() }
             Button("Cancel", role: .cancel) {}

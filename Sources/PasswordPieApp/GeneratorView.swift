@@ -41,6 +41,7 @@ final class GeneratorModel: ObservableObject {
 
 struct GeneratorView: View {
     @ObservedObject var model: GeneratorModel
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -51,7 +52,7 @@ struct GeneratorView: View {
                     .truncationMode(.middle)
                     .padding(.horizontal, 8)
                     .frame(width: 310, height: 28, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 5).fill(Color(nsColor: .textBackgroundColor)))
+                    .background(RoundedRectangle(cornerRadius: 5).fill(Palette.card(dark: colorScheme == .dark)))
                     .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
                 HStack(spacing: 0) {
                     Button("Copy") { model.copyAndHide() }
@@ -97,6 +98,7 @@ struct GeneratorView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(width: 412, height: 300, alignment: .topLeading)
+        .tint(Palette.brandAccent)
     }
 
     private func stepperRow(_ title: String, value: Binding<Int>, range: ClosedRange<Int>) -> some View {

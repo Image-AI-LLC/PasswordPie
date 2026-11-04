@@ -428,6 +428,12 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         details = model
         detailsLevel = level
         popover.show(relativeTo: level.list.rect(of: index), of: level.list, preferredEdge: .maxX)
+        // Behind the content, inside the popover's frame view, so the arrow takes the same fill.
+        if let frameView = controller.view.window?.contentView?.superview {
+            let backdrop = BackdropView(color: MenuPalette.backdrop)
+            backdrop.frame = frameView.bounds
+            frameView.addSubview(backdrop, positioned: .below, relativeTo: nil)
+        }
     }
 
     func closePopover() {
@@ -579,5 +585,6 @@ func menuEffectView() -> NSVisualEffectView {
     view.state = .active
     view.wantsLayer = true
     view.layer?.masksToBounds = true
+    view.applyMenuBackdrop()
     return view
 }

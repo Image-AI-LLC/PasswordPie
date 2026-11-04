@@ -1,759 +1,346 @@
 ---
-version: 1
-name: PasswordPie — Satin Vault
+version: 2
+name: PasswordPie
 description: >-
-  A pocket-sized steel vault in the menu bar. Two layers: the brand (graphite
-  tile, satin-silver shield with a keyhole cut through it) used for the app
-  icon, the menu bar mark and anything outside the app; and the app UI. While
-  locked, the UI is a light brushed-grey vault door with a dial. After unlock
-  it is a native macOS menu: the system menu material, 14 pt rows, cascading
-  submenu windows and a details popover beside the selected item. Restrained,
-  tactile, quiet: the shield and the door are the only "objects"; everything
-  after unlock is system material, system colours and hairlines, and follows
-  the light or dark appearance.
-lineage: >-
-  Door tokens are #D6D6D6 for the door and #E6E6E6 for the seam band
-  (Sources/PasswordPieApp/Palette.swift). Menu metrics are 21 pt rows, 11 pt
-  separators, 16 pt group headers, a flat selection fill, and short hover
-  delays (MenuListView.swift, MenuController.swift). Every surface is drawn
-  in code. The brand layer comes from the round-5 icon decision (2026-10-31,
-  option X6: Codex-generated satin shield on graphite, art/README.md). The
-  brand mark is the shield; graphite and satin are the brand colours; the
-  type scale and every colour that is a literal in code is named here.
+  A warm, flat password menu in the menu bar. The keyhole pie is the only brand
+  object. Locked, the panel is a compact cream or warm-dark form. Unlocked, the
+  same surfaces carry a native-feeling menu: 14 pt rows, cascading submenu
+  windows and a details popover beside the selected item.
+source-of-truth: >-
+  Colours in code live in Sources/PasswordPieApp/Palette.swift (Palette for
+  SwiftUI, MenuPalette for AppKit). Mark geometry lives in art/source/mark.svg.
+  Change this file and the code together.
 
 colors:
-  # Brand — app icon, menu bar mark, website, README. Not used inside the panel.
-  brand-graphite: '#3A3F46'
-  brand-graphite-deep: '#15181B'
-  brand-satin: '#D7DCE1'
-  brand-satin-shade: '#9AA3AD'
-  on-brand: '#F4F6F8'
-  # Door (lock screen). Light in both appearances.
-  door: '#D6D6D6'
-  door-band: '#E6E6E6'
-  door-band-highlight: '#FAFAFA'
-  door-band-line: '#666666'
-  door-edge-light: '#EFEFEF'
-  door-edge-dark: '#737373'
-  door-field: '#FFFFFF'
-  door-field-shade: 'rgba(0, 0, 0, 0.22)'
-  door-field-frame: '#2B2B2B'
-  door-field-split: '#3A3A3A'
-  door-button-top: '#FCFCFC'
-  door-button-bottom: '#E2E2E2'
-  door-button-pressed-top: '#D2D2D2'
-  door-button-pressed-bottom: '#E6E6E6'
-  door-button-glyph: '#8C8C8C'
-  text-door: '#555555'
-  text-door-hint: '#6F6F6F'
-  danger: '#C8372D'
-  # Dial (on the door seam; also the 32 pt logo in the header)
-  dial-rim-top: '#F0F0F0'
-  dial-rim-bottom: '#C4C4C4'
-  dial-rim-stroke: '#7A7A7A'
-  dial-ring: '#FFFFFF'
-  dial-inner-top: '#B8B8B8'
-  dial-inner-bottom: '#D8D8D8'
-  dial-inner-stroke: '#9A9A9A'
-  dial-face-top: '#F6F6F6'
-  dial-face-bottom: '#DEDEDE'
-  dial-hub: '#E4E4E4'
-  dial-hub-stroke: '#D0D0D0'
-  dial-key: '#626262'
-  dial-lug: '#8E8E8E'
-  # Menu (unlocked panel, submenus, details popover, generator). Most are
-  # system colours, resolved on macOS 27 with the default blue accent; a
-  # -dark token is the same role in the dark appearance.
-  menu-material: 'rgba(246, 246, 246, 0.85)'
-  menu-material-dark: 'rgba(38, 38, 40, 0.85)'
-  label: 'rgba(0, 0, 0, 0.85)'
-  label-dark: 'rgba(255, 255, 255, 0.85)'
-  label-secondary: 'rgba(0, 0, 0, 0.5)'
-  label-secondary-dark: 'rgba(255, 255, 255, 0.55)'
-  label-tertiary: 'rgba(0, 0, 0, 0.26)'
-  label-tertiary-dark: 'rgba(255, 255, 255, 0.25)'
-  label-disabled: '#666666'
-  group-header-text: '#333333'
-  group-header-text-dark: '#E6E6E6'
-  ink: '#000000'
-  ink-dark: '#FFFFFF'
-  menu-arrow: '#999999'
-  selection: 'rgba(0, 103, 244, 0.5)'
-  selection-dark: '#0059D1'
-  on-selection: '#FFFFFF'
-  accent: '#007AFF'
-  field-focus: 'rgba(0, 122, 255, 0.14)'
-  well: '#FFFFFF'
-  well-dark: '#1E1E1E'
-  # Item icons (SF Symbol tints and letter tiles)
-  favorite: '#F5B833'
-  tint-login: '#738094'
-  tint-note: '#E6B333'
-  tint-card: '#808C9E'
-  tint-identity: '#6699D9'
-  tint-folder: '#599EE6'
-  tint-tag: '#73B366'
-  tile-stroke: 'rgba(0, 0, 0, 0.25)'
-  on-tile: '#FFFFFF'
-  # Status (system colours, light appearance)
-  system-red: '#FF383C'
-  system-orange: '#FF8D28'
-  system-green: '#34C759'
-  # Overlay
-  large-type-bg: 'rgba(0, 0, 0, 0.88)'
-  on-large-type: '#FFFFFF'
-  on-large-type-digit: '#5CB3FF'
-  on-large-type-symbol: '#FFBF59'
-  on-large-type-space: 'rgba(255, 255, 255, 0.55)'
-  large-type-stripe: 'rgba(255, 255, 255, 0.18)'
-  large-type-stripe-alt: 'rgba(255, 255, 255, 0.09)'
+  # Brand and selection. Same in both appearances.
+  brand-accent: '#EE8C32'
+  on-accent: '#302315'
+  selection: '#EE8C32'
+  on-selection: '#302315'
+  # Roles with a light and a dark value.
+  surface: '#FFF6E7'
+  surface-dark: '#28231F'
+  field-surface: '#FFFFFF'
+  field-surface-dark: '#37302A'
+  text: '#302A24'
+  text-dark: '#FFF6E7'
+  text-secondary: '#70604F'
+  text-secondary-dark: '#D4C4B2'
+  text-tertiary: '#8F7F6E'
+  text-tertiary-dark: '#A39585'
+  text-disabled: '#8F7F6E'
+  text-disabled-dark: '#8F8172'
+  border: '#C8BBAA'
+  border-dark: '#776858'
+  focus: '#A65312'
+  focus-dark: '#F6B469'
+  accent-text: '#A65312'
+  accent-text-dark: '#F6B469'
+  caret: '#A65312'
+  caret-dark: '#F6B469'
+  text-selection: '#F6C993'
+  text-selection-dark: '#7A4E22'
+  menu-arrow: '#A89A8A'
+  menu-arrow-dark: '#94877A'
+  # Errors. Never use orange to mean failure.
+  error: '#AA3027'
+  error-dark: '#FFA396'
+  # Password strength.
+  strength-weak: '#D6453A'
+  strength-medium: '#E3B505'
+  strength-strong: '#4C9F5B'
+  # Item icons.
+  favorite: '#F4B400'
+  tint-folder: '#D18A32'
+  tint-folder-dark: '#E2A052'
+  tint-tag: '#6F9A58'
+  tint-tag-dark: '#8DB877'
+  tint-neutral: '#8B7A69'
+  tint-neutral-dark: '#B3A493'
+  tint-note: '#D9A520'
+  tint-note-dark: '#E8BC4C'
+  tint-identity: '#B8694A'
+  tint-identity-dark: '#D48A6B'
+  # Large Type, always on its dark panel.
+  large-type-letter: '#FFF6E7'
+  large-type-digit: '#FFAD5C'
+  large-type-symbol: '#8CD6C3'
 
 typography:
-  # SF Pro is the macOS system font (`.system(size:weight:)`, `NSFont.systemFont`,
-  # `NSFont.menuFont`); SF Mono is `.system(..., design: .monospaced)`. The app
-  # never sets line spacing, so line height is the font default: ascender plus
-  # descender, measured at 1.178 for SF Pro and SF Mono at every size used, written
-  # here as 1.18. Tracking is the SF tracking for the size; the app sets none, so
-  # the system applies the same default. The one hand-set value is brand-wordmark,
-  # a web-only lockup.
-  display-code:
-    fontFamily: 'SF Mono, ui-monospace, Menlo, monospace'
-    fontSize: 54px
-    fontWeight: 500
-    lineHeight: 1.18
-    letterSpacing: 0
-  brand-wordmark:
-    fontFamily: 'SF Pro Display, -apple-system, system-ui, sans-serif'
-    fontSize: 28px
-    fontWeight: 600
-    lineHeight: 1.1
-    letterSpacing: -0.4px
-  search:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 18px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: -0.44px
-  code-lg:
-    fontFamily: 'SF Mono, ui-monospace, Menlo, monospace'
-    fontSize: 17px
-    fontWeight: 500
-    lineHeight: 1.18
-    letterSpacing: 0
-  title:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 16px
-    fontWeight: 600
-    lineHeight: 1.18
-    letterSpacing: -0.31px
-  menu-item:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: -0.15px
-  code-md:
-    fontFamily: 'SF Mono, ui-monospace, Menlo, monospace'
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: 0
-  body:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: -0.08px
-  body-code:
-    fontFamily: 'SF Mono, ui-monospace, Menlo, monospace'
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: 0
-  control:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: 0
-  caption-strong:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 11px
-    fontWeight: 600
-    lineHeight: 1.18
-    letterSpacing: 0.06px
-  caption:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 11px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: 0.06px
-  caption-code:
-    fontFamily: 'SF Mono, ui-monospace, Menlo, monospace'
-    fontSize: 11px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: 0
-  label:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 10px
-    fontWeight: 400
-    lineHeight: 1.18
-    letterSpacing: 0.12px
-  tile-letter:
-    fontFamily: 'SF Pro Text, -apple-system, system-ui, sans-serif'
-    fontSize: 9.5px
-    fontWeight: 600
-    lineHeight: 1.18
-    letterSpacing: 0
+  # SF Pro and SF Mono are the macOS system fonts. The app never sets tracking or
+  # line spacing, except the rounded lock-screen wordmark.
+  wordmark: { family: 'SF Pro Rounded', size: 22, weight: 700 }
+  display-code: { family: 'SF Mono', size: 54, weight: 500 }
+  search: { family: 'SF Pro', size: 18, weight: 400 }
+  code-lg: { family: 'SF Mono', size: 17, weight: 500 }
+  title: { family: 'SF Pro', size: 16, weight: 600 }
+  menu-item: { family: 'SF Pro', size: 14, weight: 400 }
+  code-md: { family: 'SF Mono', size: 14, weight: 400 }
+  body: { family: 'SF Pro', size: 13, weight: 400 }
+  body-code: { family: 'SF Mono', size: 13, weight: 400 }
+  control: { family: 'SF Pro', size: 12, weight: 400 }
+  caption: { family: 'SF Pro', size: 11, weight: 400 }
+  label: { family: 'SF Pro', size: 10, weight: 400 }
+  tile-letter: { family: 'SF Pro', size: 9.5, weight: 600 }
 
 rounded:
-  menu: 5px
-  panel-locked: 8px
-  field-group: 6px
-  well: 5px
-  editor-well: 4px
-  item-icon: 22%
-  large-type: 14px
-  capsule: 999px
-  app-icon: system squircle (macOS applies the mask)
+  panel-locked: 16
+  control-locked: 9
+  menu: 5
+  card: 12
+  well: 5
+  large-type: 14
+  large-type-stripe: 8
+  item-icon: 3.5
 
 spacing:
-  # Panel (Metrics in Palette.swift, MenuGeometry.swift)
-  panel-width: 300px
-  menu-max-width: screen width / 4
-  screen-margin: 8px
-  locked-height: 280px
-  create-height: 330px
-  door-height: 96px
-  dial-size: 96px
-  door-field-width: 260px
-  door-field-height: 42px
-  # Header (HeaderView.swift)
-  header-height: 45px
-  logo-size: 32px
-  search-field-height: 24px
-  # Menu rows (MenuMetrics in MenuListView.swift)
-  row-height: 21px
-  separator-height: 11px
-  group-header-height: 16px
-  list-min-height: 24px
-  row-icon: 16px
-  row-icon-x: 16px
-  row-title-x: 38px
-  arrow-inset: 26px
-  submenu-inset: 5px
-  # Details popover, generator, Large Type
-  details-width: 400px
-  details-max-height: 500px
-  details-row-min-height: 38px
-  details-tile: 32px
-  generator-width: 412px
-  generator-height: 300px
-  # Large Type sizes to the password. Its largest size is the visible frame
-  # minus 48 px in width and in height. The type starts at 54 px and shrinks until it fits.
-  large-type-padding: 24px
-  large-type-group: 4
-  large-type-gap: 8px
-  # Rhythm
-  space-1: 4px
-  space-2: 5px
-  space-3: 8px
-  space-4: 10px
-  space-5: 12px
-  space-6: 14px
-  space-7: 20px
-  space-8: 24px
-  menu-bar-icon: 18px
-
-components:
-  panel-locked:
-    background: '{colors.door}'
-    rounded: '{rounded.panel-locked}'
-    size: '{spacing.panel-width} × {spacing.locked-height} ({spacing.create-height} while creating)'
-  door:
-    background: '{colors.door}'
-    seam: 'door-edge-light 0.5 · door-edge-dark 1 · door-band 18 · door-band-highlight 1 · door-band-line 0.5'
-  door-field:
-    background: '{colors.door-field}'
-    inner-shade: 'door-field-shade to clear, 6px deep'
-    frame: '1px {colors.door-field-frame}'
-    rounded: '{rounded.field-group}'
-    size: '{spacing.door-field-width} × {spacing.door-field-height}'
-    typography: '{typography.menu-item}'
-  door-button:
-    background: 'linear-gradient(door-button-top, door-button-bottom)'
-    pressed: 'linear-gradient(door-button-pressed-top, door-button-pressed-bottom)'
-    glyph: '{colors.door-button-glyph}'
-    split: '1px {colors.door-field-split}'
-  panel-menu:
-    background: 'system menu material ({colors.menu-material} stand-in)'
-    rounded: '{rounded.menu}'
-    width: '{spacing.panel-width} to {spacing.menu-max-width}'
-  header:
-    height: '{spacing.header-height}'
-    logo: 'dial at {spacing.logo-size}'
-    search: '{typography.search} {colors.label}; placeholder {colors.label-secondary}'
-    gear: 'gearshape.fill 16pt {colors.label-secondary}'
-    separator: '1px ink 25 %, hidden while a query is typed'
-  menu-row:
-    height: '{spacing.row-height}'
-    typography: '{typography.menu-item}'
-    text: '{colors.label}'
-    username: '" — username" in {colors.label-secondary}'
-    selected: '{colors.selection} ({colors.selection-dark} in dark), {colors.on-selection} text and icons'
-    arrow: '{colors.menu-arrow}'
-  group-header:
-    height: '{spacing.group-header-height}'
-    background: 'ink 3 %, 1px ink 20 % above and below'
-    typography: '{typography.caption} uppercase, {colors.group-header-text}'
-  menu-separator:
-    height: '{spacing.separator-height}'
-    line: '1px ink 25 %'
-  submenu-window:
-    background: 'system menu material'
-    rounded: '{rounded.menu}'
-    inset: '{spacing.submenu-inset} top and bottom'
-  details-popover:
-    width: '{spacing.details-width}'
-    max-height: '{spacing.details-max-height}'
-    title: '{typography.title} {colors.label}'
-    tile: '{spacing.details-tile}'
-  detail-field:
-    label: '{typography.label} {colors.label-secondary}'
-    value: '{typography.body} {colors.label}'
-    focused: '{colors.field-focus}'
-    divider: '0.5px ink 10 %'
-    min-height: '{spacing.details-row-min-height}'
-  otp:
-    code: '{typography.code-lg} {colors.accent}'
-    urgent: '{colors.system-red}'
-    pie: 14px
-  strength-meter:
-    track: 'ink 12 %'
-    fill: 'system-red below 0.4 · system-orange below 0.7 · system-green'
-    height: 5px
-    rounded: '{rounded.capsule}'
-  generator:
-    size: '{spacing.generator-width} × {spacing.generator-height}'
-    password: '{typography.code-md} in a {rounded.well} {colors.well} well, 0.5px ink 25 %'
-    typography: '{typography.control}'
-  letter-tile:
-    size: '{spacing.row-icon}'
-    rounded: '{rounded.item-icon}'
-    letter: '{typography.tile-letter} {colors.on-tile}'
-    stroke: '0.5px {colors.tile-stroke}'
-  large-type:
-    background: '{colors.large-type-bg}'
-    rounded: '{rounded.large-type}'
-    typography: '{typography.display-code}'
-    letters: '{colors.on-large-type}'
-    digits: '{colors.on-large-type-digit}'
-    symbols: '{colors.on-large-type-symbol}'
-    space: '␣ in {colors.on-large-type-space}'
-    groups: '4 characters on alternating {colors.large-type-stripe} / {colors.large-type-stripe-alt}'
-    glyph: 'each character is as wide as its own glyph'
-    fit: 'largest window is the visible frame minus 48px in width and height; type shrinks from 54px'
+  panel-width: 300
+  locked-height: 360
+  create-height: 410
+  header-height: 45
+  logo-size: 32
+  row-height: 21
+  separator-height: 11
+  group-header-height: 16
+  details-width: 400
+  details-max-height: 500
+  generator-width: 412
+  generator-height: 300
+  preferences-width: 560
+  preferences-height: 800
+  about-width: 440
+  editor-width: 450
+  editor-height: 640
+  menu-bar-icon: 18
 ---
 
-# PasswordPie — historical "Satin Vault" reference
-
-> Current branding and locked-panel styling: see [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). Metal-door descriptions below document the earlier visual design; unchanged native interaction contracts still apply.
+# PasswordPie design
 
 PasswordPie is a KeePass (KDBX) password manager that lives in the macOS menu bar.
-This file preserves the previous visual system and its machine-readable tokens.
-`Design.html` renders that historical token set, not the current brand. For current
-colors and locked-panel components, use `DESIGN_SYSTEM.md` and
-`Sources/PasswordPieApp/Palette.swift`; do not export these legacy values over them.
+This is the one design document. The front matter lists the tokens; the sections
+below say where they go and how the interface behaves.
 
-## Overview
+## Direction
 
-PasswordPie has two faces. Locked, it is a vault door: a 300 × 280 pt panel of
-brushed grey with a dial on the seam and a master password field. Unlocked, the
-same window becomes a native menu: a header with the dial
-logo, a large search field and a gear, then menu rows. Rows open submenu
-windows to the right (Favorites, Password Generator, the item categories,
-Folders, Tags). An item row opens a details popover with its fields. Typing in
-the search field replaces the menu with results grouped by category.
-
-- **One object, many hairlines.** The vault is the only skeuomorphic thing: the
-  satin shield in the brand, the brushed door and dial on the lock screen.
-  After unlock everything is the system menu material, system colours and
-  0.5–1 px lines.
-- **A menu, not a window.** Rows are 21 pt, the text is 14 pt, selection is a
-  flat full-width fill, and the keyboard stays in the search field. Width and
-  height follow the content, not a fixed frame.
-- **macOS-native behaviour.** System font, SF Symbols, system materials and
-  semantic colours, template menu bar image. The menu, popover and generator
-  follow the light or dark appearance. PasswordPie should feel like it shipped
-  with the Mac.
-- **Brand stays outside the panel.** Graphite and satin are for the app icon,
-  menu bar mark, website and README. The door keeps its light greys in both
-  appearances.
+- **Warm, flat and compact.** Cream and warm charcoal surfaces, one orange accent,
+  hairlines. No metal, seams, bevels or vault-door metaphor.
+- **One brand object.** The keyhole pie: a flat orange scalloped pie with a
+  transparent keyhole. No baked-food texture, gradient or shadow.
+- **A menu, not a window.** Rows are 21 pt, text is 14 pt, selection is a flat
+  full-width fill, and the keyboard stays in the search field.
+- **Native behavior, brand colors.** Secure input, keyboard focus, dialogs,
+  biometrics and appearance changes stay platform-native. Layout and controls stay
+  native; only their colors change. PasswordPie follows light and dark.
 
 ## Colors
 
-All values are sRGB. The front matter is the full list; this section says
-where each group goes.
+All values are sRGB.
 
-### Brand
+| Role | Light | Dark | Use |
+|---|---|---|---|
+| `brand-accent` | `#EE8C32` | same | Pie mark, primary action, toggles and control tint. Not for text. |
+| `on-accent` | `#302315` | same | Label on the primary action. |
+| `selection` / `on-selection` | `#EE8C32` / `#302315` | same | Selected row, and its text, icon, arrow and favorite badge. White fails contrast on this orange. |
+| `surface` | `#FFF6E7` | `#28231F` | Lock screen, panel, submenus, details, generator, Preferences, About, editor, pinned windows. |
+| `field-surface` | `#FFFFFF` | `#37302A` | Inputs, cards, generator well. |
+| `text` | `#302A24` | `#FFF6E7` | Headings, row titles, search text. |
+| `text-secondary` | `#70604F` | `#D4C4B2` | Placeholder, gear, " — username", guidance, group headers. |
+| `text-tertiary` | `#8F7F6E` | `#A39585` | "Show N more" rows. |
+| `text-disabled` | `#8F7F6E` | `#8F8172` | "No items found". |
+| `border` | `#C8BBAA` | `#776858` | Quiet outlines on the lock screen. |
+| `focus` | `#A65312` | `#F6B469` | Active field outline, shortcut recorder outline. |
+| `accent-text` | `#A65312` | `#F6B469` | Links, website values, one-time codes, shortcut prompt. |
+| `caret` / `text-selection` | `#A65312` / `#F6C993` | `#F6B469` / `#7A4E22` | Search and master-password fields. |
+| `menu-arrow` | `#A89A8A` | `#94877A` | Submenu triangle. |
+| `error` | `#AA3027` | `#FFA396` | Lock-screen errors, Preferences status errors and the shortcut hint, and a one-time code in its last 5 s. |
 
-| Token | Hex | Use |
-|---|---|---|
-| `brand-graphite` | `#3A3F46` | Icon tile centre, website hero ground, README badges |
-| `brand-graphite-deep` | `#15181B` | Icon tile corners, dark ground |
-| `brand-satin` | `#D7DCE1` | Shield face, wordmark on graphite |
-| `brand-satin-shade` | `#9AA3AD` | Shield bevel, secondary text on graphite |
-| `on-brand` | `#F4F6F8` | Text on graphite |
-
-The shield artwork itself is a raster (`Assets/AppIcon.icon/Assets/tile.png`);
-never redraw it in flat colours. The menu bar mark is one-colour
-(`MenuBarIcon.swift`, template image) and is tinted by the system.
-
-### Door and dial
-
-The lock screen is two door halves (`door #D6D6D6`) meeting at a seam band
-(`door-band #E6E6E6` with a `#FAFAFA` highlight, a `#666666` line and
-`#EFEFEF` / `#737373` edges). The password row is a white field
-(`door-field`) with a 6 pt `door-field-shade` (black 22 % to clear) at its top,
-framed in `door-field-frame #2B2B2B`. Door buttons are `#FCFCFC → #E2E2E2`,
-pressed `#D2D2D2 → #E6E6E6`, with `#8C8C8C` glyphs and `#3A3A3A` splits.
-Door text is `text-door #555555` (database name) and `text-door-hint #6F6F6F`
-(hint and links), engraved with a white shadow 1 pt below. Errors are
-`danger #C8372D`.
-
-The dial uses a top-lit rim (`#F0F0F0 → #C4C4C4`, stroke `#7A7A7A`), a white
-ring, an inner ring (`#B8B8B8 → #D8D8D8`, stroke `#9A9A9A`), a face
-(`#F6F6F6 → #DEDEDE`), a hub (`#E4E4E4`, stroke `#D0D0D0`), a `#626262` key
-slot and two `#8E8E8E` lugs. The same drawing, at 32 pt, is the header logo.
-
-### Menu
-
-The unlocked panel, submenu windows, the details popover and the generator use
-the system menu material and semantic colours, so they follow the appearance.
-Values were resolved on macOS 27 with the default blue accent; another accent
-colour changes `selection`, `accent` and `field-focus`.
-
-| Token | Light | Dark | Code source | Use |
-|---|---|---|---|---|
-| `menu-material` | stand-in | stand-in | `NSVisualEffectView.Material.menu` | Panel, submenus, generator. The rgba values are a preview stand-in only. |
-| `label` | black 85 % | white 85 % | `labelColor` | Row titles, search text, field values |
-| `label-secondary` | black 50 % | white 55 % | `secondaryLabelColor` | Search placeholder, gear, " — username", field labels, key icons, edit pencil |
-| `label-tertiary` | black 26 % | white 25 % | `tertiaryLabelColor` | "Show N more …" rows |
-| `label-disabled` | `#666666` | `#666666` | `NSColor(white: 0.4)` | "No items found" |
-| `group-header-text` | `#333333` | `#E6E6E6` | `NSColor(white: 0.2 / 0.9)` | Search group headers |
-| `ink` | black | white | `menuInk(_:)`, `Color.primary` | Lines and fills at an alpha (below) |
-| `menu-arrow` | `#999999` | `#999999` | `NSColor(red: 0.6, …)` | Submenu triangle |
-| `selection` | `#0067F4` at 50 % | `selection-dark #0059D1` | `keyboardFocusIndicatorColor` / `alternateSelectedControlColor` | Selected row fill |
-| `on-selection` | `#FFFFFF` | `#FFFFFF` | `.white` | Text, icons and arrow on the selection |
-| `accent` | `#007AFF` | `#007AFF` | `Color.accentColor` | URL values, OTP code and pie |
-| `field-focus` | accent 14 % | accent 14 % | `accentColor.opacity(0.14)` | Focused details field |
-| `well` | `#FFFFFF` | `well-dark #1E1E1E` | `textBackgroundColor` | Generator password well |
-
-`ink` is used at these alphas only: 3 % (group header fill), 10 % (details
-field divider), 12 % (strength meter track), 20 % (group header lines, notes
-editor stroke) and 25 % (header separator, menu separators, generator well
-stroke).
-
-### Item icons
-
-Rows that open a submenu show a 13 pt SF Symbol in a tint; selected rows draw
-it white. Entry rows show a letter tile instead.
-
-| Token | Hex | Symbol |
-|---|---|---|
-| `favorite` | `#F5B833` | `star.fill` (Favorites row, 8 pt badge on a favourite's tile, details star) |
-| `tint-login` | `#738094` | `lock.square.fill` (Logins) |
-| `tint-note` | `#E6B333` | `note.text` (Secure Notes) |
-| `tint-card` | `#808C9E` | `creditcard.fill` (Credit Cards), `doc.fill` (Documents) |
-| `tint-identity` | `#6699D9` | `person.crop.rectangle.fill` (Identities) |
-| `tint-folder` | `#599EE6` | `folder.fill` (Folders and each folder) |
-| `tint-tag` | `#73B366` | `tag.fill` (Tags and each tag) |
-| `label-secondary` | — | `key.fill` (Password Generator, Passwords) |
-
-The code gives these as float components (`NSColor(red: 0.96, green: 0.72,
-blue: 0.2)` and so on); the hex is rounded half up.
-
-Letter tiles take their hue from a stable FNV-1a hash of the title and run
-from saturation 0.45 / brightness 0.95 at the top to 0.7 / 0.78 at the bottom,
-with a 0.5 pt `tile-stroke` (black 25 %) and an `on-tile` white letter.
-
-### Status and overlay
-
-- `system-red #FF383C`, `system-orange #FF8D28`, `system-green #34C759`: the
-  strength meter, and `system-red` for an OTP in its last 5 s. Dark values are
-  `#FF4245`, `#FF9230` and `#30D158`.
-- `large-type-bg` (black 88 %). Letters are `on-large-type` white, digits
-  `on-large-type-digit` (`#5CB3FF`), other symbols `on-large-type-symbol`
-  (`#FFBF59`). Stripes alternate white 18 % and white 9 %. A real space is
-  drawn as ␣ at white 55 %.
-
-## Typography
-
-One family pair: **SF Pro** (system) and **SF Mono**. Never ship a web font in
-the app. Size is the hierarchy; weights are 400, 500 and 600.
-
-### Latin scale
-
-| Token | Family | Size | Weight | Line | Tracking | Use |
-|---|---|---|---|---|---|---|
-| `display-code` | SF Mono | 54 | 500 | 1.18 | 0 | Large Type overlay (starts at 54 pt and shrinks to fit the screen) |
-| `brand-wordmark` | SF Pro Display | 28 | 600 | 1.1 | −0.4 px | "PasswordPie" on website / README / About |
-| `search` | SF Pro Text | 18 | 400 | 1.18 | −0.44 px | Header search field and its placeholder |
-| `code-lg` | SF Mono | 17 | 500 | 1.18 | 0 | Live OTP code in the details popover |
-| `title` | SF Pro Text | 16 | 600 | 1.18 | −0.31 px | Details popover title (entry name) |
-| `menu-item` | SF Pro Text | 14 | 400 | 1.18 | −0.15 px | Menu rows, " — username", "Show N more", "No items found"; master password field |
-| `code-md` | SF Mono | 14 | 400 | 1.18 | 0 | Generated password |
-| `body` | SF Pro Text | 13 | 400 | 1.18 | −0.08 px | Details values (username, URL, notes, tags, masked dots); Editor and Preferences form text (system default) |
-| `body-code` | SF Mono | 13 | 400 | 1.18 | 0 | Revealed secrets in details, revealed password in the Editor |
-| `control` | SF Pro Text | 12 | 400 | 1.18 | 0 | Generator labels, buttons and toggles (values use monospaced digits); Editor notes |
-| `caption-strong` | SF Pro Text | 11 | 600 | 1.18 | +0.06 px | Database name on the door |
-| `caption` | SF Pro Text | 11 | 400 | 1.18 | +0.06 px | Door hint and error, the details "copy" menu button, search group headers (upper case) |
-| `caption-code` | SF Mono | 11 | 400 | 1.18 | 0 | Database path in Preferences |
-| `label` | SF Pro Text | 10 | 400 | 1.18 | +0.12 px | Details field labels, door links, form footnotes (`.caption`) |
-| `tile-letter` | SF Pro Text | 9.5 | 600 | 1.18 | 0 | Letter on a 16 pt tile (drawn 2× in the 32 pt popover tile) |
-
-Tracking values are the SF tracking for each size. The app sets none, so the
-system uses the same default. Web renderings (website, Design.html) set the
-values explicitly. `tile-letter` is a single glyph, so it has none. The
-exception is `brand-wordmark`, a web-only lockup with its own −0.4 px.
+Lines and fills use `ink` (`MenuPalette.ink`): `#302A24` on light, `#FFF6E7` on dark,
+at 3 % (group header fill), 20 % (group header lines) and 25 % (separators). The
+details views use `Color.primary` at 10 % (dividers), 12 % (strength track) and
+25–28 % (well and button strokes).
 
 Rules:
 
-- Secrets (revealed passwords, OTP, generated strings, paths) are SF Mono.
-  Masked secrets are bullets in `body`.
-- Built-in details labels are lower case ("username", "one-time password");
-  menu labels are title case. Search group headers are the only upper-case text ("OPEN
-  LOGIN", "SECURE NOTES").
-- Engraved door text: `text-door` or `text-door-hint` + white shadow at y = 1.
-- Readable copy is ≥ 10 pt. The 9.5 pt tile letter is an icon label.
-- Glyphs are not type tokens. SF Symbols are 13 pt in rows, 8 pt for the
-  favourite badge, 13 pt (edit) and 15 pt (star) in the popover, 16 pt for the
-  gear and the unlock lock, and 19 pt light for Touch ID. The submenu arrow is a
-  drawn 8.5 × 10 pt triangle.
+- **Never use the system accent.** No `Color.accentColor` or system selection colors:
+  a Mac set to a blue accent would bring blue back. `ThemePaletteTests` enforces this.
+- **Tint system controls explicitly** with `.tint(Palette.brandAccent)`. A default-action
+  button ignores tint, so it uses `BrandPrimaryButtonStyle`: `on-accent` text on `brand-accent`.
+- **Orange is never a status.** Medium password strength is `strength-medium` yellow,
+  and failure is red.
+- **The menu-bar icon stays a monochrome template.** macOS owns its tints.
 
-### CJK (简体中文) table
+### Item icons
 
-The UI is English today. When strings are localised, CJK text uses the system
-cascade; no CJK font is bundled.
+Rows that open a submenu show a 13 pt SF Symbol; on a selected row it uses
+`on-selection`. Tints are in the front matter: `favorite` for `star.fill`,
+`tint-folder` for `folder.fill`, `tint-tag` for `tag.fill`, `tint-note` for
+`note.text`, `tint-identity` for `person.crop.rectangle.fill`, and `tint-neutral` for
+`lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`.
 
-| Role | Latin | CJK fallback | Notes |
-|---|---|---|---|
-| Body, titles, captions, menu rows | SF Pro Text | PingFang SC | Same size as Latin. Line height +0.1 (e.g. `body` 1.28) so 汉字 do not touch. |
-| Display / wordmark | SF Pro Display | PingFang SC Semibold | The wordmark stays Latin "PasswordPie"; never translate it. |
-| Code | SF Mono | PingFang SC (system fallback) | Secrets are Latin by nature; CJK in a password field falls back without styling. |
-| Weights | 400 / 500 / 600 | Regular / Medium / Semibold | Never synthesize bold or italic for CJK. |
-| Tracking | as table | 0 | CJK is set without letter-spacing. |
-| Minimum | 9.5 pt (tile letter) | 10 pt | A CJK first letter on a tile goes up to 10 pt. |
+Entry rows show the site favicon. A letter tile stands in until it arrives, and stays
+when none does. The tile takes one of six hues (14°, 28°, 42°, 95°, 168°, 345°) from a
+stable FNV-1a hash of the title. It runs from saturation 0.45 / brightness 0.95 to
+0.7 / 0.78, with a 0.5 pt black 25 % stroke and a white letter. Favorites get an 8 pt
+star badge: `favorite`, or `on-selection` on a selected row.
 
-Search group headers are upper-cased in code; CJK has no case, so the header
-shows as written.
+### Large Type
+
+Black 88 % panel. Letters, digits and symbols use the three `large-type-*` inks, so
+digits and symbols stay distinct at a glance. Stripes alternate white 18 % and 9 %. A
+real space is drawn as ␣ at white 55 %.
+
+## Typography
+
+One family pair: **SF Pro** (system) and **SF Mono**. Never ship a web font in the
+app. Size is the hierarchy.
+
+| Token | Family | Size | Weight | Use |
+|---|---|---|---|---|
+| `wordmark` | SF Pro Rounded | 22 | 700 | "Password Pie" on the lock screen |
+| `display-code` | SF Mono | 54 | 500 | Large Type (starts at 54 pt, shrinks to fit) |
+| `search` | SF Pro | 18 | 400 | Header search field and placeholder |
+| `code-lg` | SF Mono | 17 | 500 | Live one-time code |
+| `title` | SF Pro | 16 | 600 | Details title |
+| `menu-item` | SF Pro | 14 | 400 | Menu rows, " — username" |
+| `code-md` | SF Mono | 14 | 400 | Generated password |
+| `body` | SF Pro | 13 | 400 | Details values, masked dots, editor and Preferences text |
+| `body-code` | SF Mono | 13 | 400 | Revealed secrets |
+| `control` | SF Pro | 12 | 400 | Generator labels and controls |
+| `caption` | SF Pro | 11 | 400 | Lock-screen guidance, search group headers (upper case) |
+| `label` | SF Pro | 10 | 400 | Details field labels, lock-screen errors |
+| `tile-letter` | SF Pro | 9.5 | 600 | Letter on a 16 pt tile |
+
+- Secrets (revealed passwords, one-time codes, generated strings) are SF Mono. Masked
+  secrets are bullets in `body`.
+- Built-in details labels are lower case ("username", "one-time password"); menu labels
+  are title case. Search group headers are the only upper-case text.
+- Readable copy is at least 10 pt. The 9.5 pt tile letter is an icon label.
+- SF Symbols are 13 pt in rows, 8 pt for the favorite badge, 13 pt (edit, pin) and 15 pt
+  (star) in details, and 16 pt for the gear. The submenu arrow is a drawn 8.5 × 10 pt
+  triangle.
+
+### CJK (简体中文)
+
+The UI is English today. When strings are localized, CJK uses the system cascade with
+PingFang SC and no bundled font: same size as Latin, line height +0.1, no letter-spacing,
+no synthesized bold or italic, at least 10 pt. The wordmark stays Latin. Search group
+headers are upper-cased in code; CJK has no case, so they show as written.
 
 ## Layout
 
-- **Locked panel**: 300 × 280 pt (330 while creating a database), corner
-  radius 8. The top door is 96 pt; the 96 pt dial sits centred on the seam; the
-  database name starts 58 pt below the seam; the password row is 260 × 42 pt
-  with a 38 pt Touch ID button and a 40 pt unlock button. Links sit 12 pt above
-  the bottom.
-- **Unlocked panel**: corner radius 5. Header 45 pt (a 40 pt bar and a 5 pt
-  band whose 1 pt separator line sits at y = 40): dial logo 32 pt at (4, 4),
-  search field at x 38, 24 pt tall, gear 30 × 30 pt at the right edge minus 34.
-  Below it the menu list, at least 24 pt tall.
-- **Menu rows**: item 21 pt, separator 11 pt, group header 16 pt. Icon 16 pt at
-  x 16, title at x 38, arrow slot 16 pt, 26 pt from the right edge. Group header
-  text at x 6; "Show N more" text at x 42.
-- **Width**: the widest row (title + 20 rounded up, + 16 + 22, + " — username",
-  + 28 when it has an arrow), at least 300 pt, at most a quarter of the screen.
-  The width never shrinks while the panel is open.
-- **Height**: header + rows, kept inside the screen's visible frame inset 8 pt
-  on the left, right and bottom. Longer lists scroll; hovering within 30 pt of
-  the top or bottom edge auto-scrolls.
-- **Placement**: from the menu bar icon, the panel hangs from the icon's left
-  edge flush under the menu bar, with square top corners. From the shortcut, it
-  opens at the saved position, or centred 20 % down the screen; it can be
-  dragged, and a drop within 300 pt of the centre snaps back.
-- **Submenus**: child windows to the right of the parent (to the left when they
-  do not fit), with 5 pt of material above and below the rows so the first row
-  lines up with its parent row. Width is the widest row, at least 50 pt.
-- **Details popover**: a system popover on the right edge of the row, 400 pt
-  wide and up to 500 pt tall (it scrolls). Header: 32 pt tile, title, edit and
-  star buttons, 14 pt side padding, 10 pt vertical. Fields: 14 pt side padding,
-  5 pt vertical, at least 38 pt tall.
-- **Generator**: a 412 × 300 pt child window, 14 pt side padding, 12 pt
-  vertical, 12 pt between rows; the password well is 310 × 28 pt.
-- **Detached windows**: Editor 450 × 560 pt and Preferences 440 × 600 pt are
-  standard titled windows with grouped forms. Large Type is a borderless
-  window at screen-saver level, sized to the password. Its largest size is
-  the visible frame minus 48 pt in width and in height.
-- **Spacing rhythm**: 4 · 5 · 8 · 10 · 12 · 14 · 20 · 24.
-- **Menu bar mark**: 18 × 18 pt, square status item.
+- **Locked panel**: 300 × 360 pt (410 while creating a database), corner radius 16,
+  20 pt horizontal inset. Stacked: 64 pt pie, wordmark, truncated database name with full
+  name in help, one line of guidance. Inputs are 38 pt tall and the primary button 36 pt,
+  both radius 9. Key-file and Touch ID actions have their own rows. Errors reserve up to
+  three lines, with the full message in help. Open / New stay visible at the bottom.
+- **Unlocked panel**: corner radius 5. Header 45 pt (a 40 pt bar and a 5 pt band whose 1 pt
+  line sits at y = 40): 32 pt pie at (4, 4), search field at x 38, 24 pt tall, gear
+  30 × 30 pt at the right edge minus 34. Below it the menu list, at least 24 pt tall.
+- **Menu rows**: item 21 pt, separator 11 pt, group header 16 pt. Icon 16 pt at x 16, title
+  at x 38, arrow slot 16 pt, 26 pt from the right edge. Group header text at x 6; "Show N
+  more" at x 42.
+- **Width**: the widest row, at least 300 pt, at most a quarter of the screen. It never
+  shrinks while the panel is open.
+- **Height**: header + rows, inside the visible frame inset 8 pt on the left, right and
+  bottom. Longer lists scroll; hovering within 30 pt of the top or bottom auto-scrolls.
+- **Placement**: from the menu bar icon, the panel hangs from the icon's left edge flush
+  under the menu bar, with square top corners. From the shortcut, it opens at the saved
+  position, or centered 20 % down the screen; it can be dragged, and a drop within 300 pt of
+  the center snaps back.
+- **Submenus**: child windows to the right of the parent (left when they do not fit), with
+  5 pt above and below the rows so the first row lines up with its parent. Radius 5.
+- **Details popover**: a system popover on the right edge of the row, 400 pt wide, up to
+  500 pt tall (it scrolls). The warm surface fills the popover frame, arrow included. Header:
+  32 pt tile, title, edit, pin and star, 14 pt side padding, 10 pt vertical. Fields: 14 pt side
+  padding, 5 pt vertical, at least 38 pt tall.
+- **Generator**: a 412 × 300 pt child window; the password well is 310 × 28 pt, radius 5.
+- **Detached windows**: Preferences is 560 × 800 pt (minimum height 480), About 440 pt wide,
+  Editor 450 × 640 pt. The warm surface runs under a transparent title bar. Preferences and
+  About use radius 12 cards.
+- **Large Type**: a borderless window at screen-saver level, sized to the password. Its largest
+  size is the visible frame minus 48 pt in width and height.
+- **Spacing rhythm**: 4 · 5 · 8 · 10 · 12 · 14 · 20 · 24. **Menu bar mark**: 18 × 18 pt.
 
-## Elevation & Depth
+## Depth and shape
 
-- The door and dial draw depth with gradients and 1 pt highlight lines.
-- The menu, submenus and generator use the system menu material (a
-  behind-window blur). This is the only blur besides the shadows below.
-- The complete list of drawn shadows. Nothing else may have one:
-  - dial: black 35 %, radius 3 (scaled with the dial: 1 at the 32 pt logo), y 1
-  - top door while opening or closing: black 35 %, radius 6, y 1
-  - engraved door text and the password row: white, radius 0, y 1 (a highlight
-    line, not a blur)
-- The panel, submenu windows and the popover use the system window shadow and
-  the system popover chrome. Design.html draws stand-ins for preview only.
-
-## Shapes
-
-- Radii: 4 (Editor notes stroke), 5 (unlocked panel, submenus, generator window,
-  generator well), 6 (door field row), 8 (locked panel), 14 (Large Type), 22 %
-  (letter tiles: 3.5 pt on 16 pt), capsule (strength meter). The app icon uses
-  the system squircle: ship full-bleed art and let macOS mask it.
-- When the panel hangs from the menu bar icon, only its bottom corners are
-  rounded.
-- Circles: dial, OTP countdown pie.
+- Surfaces are opaque and flat. No drawn shadows and no blur besides system window and
+  popover chrome.
+- The only gradients are on letter tiles. Generated bitmaps are never interactive backgrounds.
+- When the panel hangs from the menu bar icon, only its bottom corners are rounded.
+- The app icon is a full-bleed cream tile with the pie at 84.2 % of its width; macOS applies
+  the mask. See `art/README.md`.
 
 ## Components
 
-- **Door field row** — white field with a 6 pt top shade, in a `#2B2B2B` 1 pt
-  frame (radius 6), joined to door buttons (Touch ID on the left when
-  available, unlock on the right) by `#3A3A3A` 1 pt splits. Buttons: normal and
-  pressed gradients.
-- **Dial** — rim, white ring, inner ring, face, hub, staggered key slot and two
-  lugs. Unlock: the key turns 90° (0.35 s ease-in-out), 0.4 s later the doors
-  part (0.3 s ease-in) while the dial fades and scales to 1.25, then the menu
-  takes over. Lock runs it in reverse and hides the panel. A wrong password
-  shakes the window (8 pt, three swings, 0.5 s) and then shows the error.
-- **Header** — dial logo (opens Open / New Database), search field without
-  chrome, gear (search scope, New Item, Lock, Preferences, databases, Quit).
-  The separator shows only while the field is empty.
-- **Menu row** — 16 pt icon, `menu-item` title (middle-truncated), optional
-  " — username" for duplicate titles, optional arrow. States: normal; selected
-  (flat `selection` fill, everything white). Activating an item flashes the
-  selection off for 50 ms, back on, and acts 150 ms later. Entry rows show a letter tile, with an 8 pt
-  `favorite` star badge on its bottom-right corner for favourites.
-- **Submenu arrow** — `menu-arrow` grey triangle, white when the row is
-  selected.
-- **Group header** — 16 pt band, ink 3 % fill, ink 20 % lines above and below,
-  `caption` upper case in `group-header-text`. Not selectable.
+- **Lock form** — one secure field and Unlock, or two fields and Create Database. Return moves
+  from the first field to confirmation, then submits. Never disable Unlock just because the
+  password is empty: a key file may be sufficient.
+- **Unlock and lock motion** — the pie pulses, then 0.4 s later the form fades and scales to 0.97
+  over 0.3 s and the menu takes over. Locking runs in reverse and hides the panel. While a database
+  opens, the pie's rim spins (not with Reduce Motion). A wrong password shakes the window (8 pt, three
+  swings, 0.5 s), then shows the error and selects the password.
+- **Header** — pie (opens Open / New Database), search field without chrome, gear (search scope, New
+  Item, Lock, Preferences, databases, Quit). The separator shows only while the field is empty.
+- **Menu row** — icon, `menu-item` title (middle-truncated), optional " — username" for duplicate
+  titles, optional arrow. Selected is a flat `selection` fill. Activating an item flashes the selection
+  off for 50 ms, back on, and acts 150 ms later.
+- **Group header** — 16 pt band, ink 3 % fill, ink 20 % lines above and below, `caption` upper case.
+  Not selectable.
 - **Separator** — 11 pt row with a 1 pt ink 25 % line at its middle.
-- **Show N more** — `label-tertiary` text at x 42; selectable, replaces itself
-  with the hidden rows.
-- **No items found** — `label-disabled`, not selectable.
-- **Hover timing** — a submenu or the generator opens 0.2 s after the pointer
-  rests on its row; the first details popover since launch waits 0.7 s (and
-  animates in), later ones open at once without animation. Moving towards an open submenu delays the change of
-  selection by 0.2 s.
-- **Details popover** — header (32 pt tile, `title`, edit pencil, pin, favourite
-  star in `favorite` or `label-secondary`), then one field per value:
-  username, password (+ strength), website, one-time password, custom fields,
-  notes, tags. Pin opens that account in its own utility window and hides the
-  menu. Each account has one window: pinning it again brings that window
-  forward and leaves it where it is. A new window starts at the top-right of
-  the current screen; each further window steps 28 pt down and left. The level
-  matches a detached 1Password mini: main-menu level minus 2, so it stays above
-  normal windows and under PasswordPie's menu, including after PasswordPie
-  deactivates. Only its close button dismisses it. Command-W, Escape, clicking
-  elsewhere, and copying or opening a field do not. Locking the vault, or
-  trashing the account, does.
-- **Detail field** — `label` over the value, 0.5 pt ink 10 % line on top.
-  States: normal; focused (keyboard, `field-focus` tint); hover (a small
-  button at the right. Clicking the word runs the field's primary action.
-  Username, password, notes, one-time password and custom fields say "copy".
-  A password adds an arrow: reveal / conceal and large type. A website says
-  "open" and adds an arrow: copy, open and fill. Other fields have no arrow.
-  The pinned window uses the same hover as the popover.); flashing
-  (Return: the button shows at 40 % for 0.3 s, then the primary action runs.
-  In the popover, copy and open hide the panel.) Masked secrets show 8 to 16
-  bullets; holding Option or "reveal" shows them in `body-code`. The pinned
-  window does not inherit a held Option, and that reveal clears when
-  PasswordPie resigns active. An explicit reveal stays until conceal. URLs are
-  `accent`; notes wrap up to 8 lines.
-- **OTP field** — grouped code in `code-lg` `accent` with a 14 pt countdown pie
-  (ring at 35 %); both turn `system-red` in the last 5 s.
-- **Strength meter** — 5 pt capsule: ink 12 % track, fill in `system-red`,
-  `system-orange` or `system-green` by strength, at least 6 pt wide.
-- **Password Generator** — child window: password well (`code-md`, `well`,
-  0.5 pt ink 25 % stroke, radius 5), Copy button with a menu (Copy, Save as
-  Password Item), Characters / Words segmented control, slider rows (70 pt
-  label, 24 pt value), "Avoid ambiguous characters" toggle or a separator
-  picker, Regenerate Password and a system progress bar for strength. All
-  controls are system controls in `control`.
-- **Editor and Preferences** — standard windows with grouped forms and system
-  controls; footnotes in `label` (`.caption`) `label-secondary`, the
-  unregistered-shortcut warning in `danger`.
-- **Large Type** — `display-code` on `large-type-bg`, radius 14, 24 pt
-  padding. Characters stay in groups of 4 on alternating stripes. Nothing is
-  inserted between groups. Letters, digits and other symbols use the three
-  overlay inks above. A space in the password is ␣. Each character is as wide
-  as its own glyph. The window sizes to the password and wraps whole groups.
-  The largest window is the visible frame minus 48 pt in width and in height.
-  The type starts at 54 pt and shrinks until the window fits. It closes on
-  any key, when it loses focus, and when the vault locks.
-- **Letter tile** — first letter in `tile-letter` white on the hashed hue
-  gradient, radius 22 %, 0.5 pt `tile-stroke`.
+- **Show N more** — selectable; replaces itself with the hidden rows.
+- **Hover timing** — a submenu or the generator opens 0.2 s after the pointer rests on its row. The first
+  details popover since launch waits 0.7 s and animates in; later ones open at once. Moving towards an
+  open submenu delays the change of selection by 0.2 s.
+- **Details popover** — header, then one field per value: username, password (+ strength), website,
+  one-time password, custom fields, notes, tags. Pin opens that account in its own utility window and
+  hides the menu.
+- **Pinned window** — one window per account; pinning again brings it forward and leaves it in place. A
+  new window starts at the top-right of the screen; each further one steps 28 pt down and left. Its level
+  is the main-menu level minus 2, so it stays above normal windows and under PasswordPie's menu, also after
+  PasswordPie deactivates. Only its close button dismisses it; Command-W, Escape, clicking elsewhere and
+  copying or opening a field do not. Locking the vault or trashing the account does.
+- **Detail field** — `label` over the value, with a hairline on top. States: normal; focused (keyboard,
+  `brand-accent` 20 % fill); hover (a small button at the right whose word runs the primary action:
+  "copy" for most fields, "open" for a website; a password's arrow adds reveal / conceal and large type, a
+  website's adds copy, open and fill); flashing (Return shows the button at 40 % for 0.3 s, then runs the
+  primary action). In the popover, copy and open hide the panel. Masked secrets show 8 to 16 bullets; holding
+  Option or "reveal" shows them in `body-code`. The pinned window does not inherit a held Option, and that
+  reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
+- **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
+  in the last 5 s.
+- **Strength meter** — 5 pt capsule on a 12 % track, at least 6 pt wide: `strength-weak` below 0.4,
+  `strength-medium` below 0.7, otherwise `strength-strong`.
+- **Password Generator** — password well (`code-md`), Copy with a menu (Copy, Save as Password Item),
+  Characters / Words segmented control, slider rows (70 pt label, 24 pt value), "Avoid ambiguous characters"
+  or a separator picker, Regenerate Password and a system progress bar for strength. All system controls.
+- **Large Type** — `display-code`, radius 14, 24 pt padding. Characters stay in groups of 4 on alternating
+  stripes, with nothing inserted between groups. The window wraps whole groups. It closes on any key, when it
+  loses focus, and when the vault locks.
 
-## Do's and Don'ts
+## Do's and don'ts
 
 Do:
 
-- Use the token names above in new code; add a token here before using a new
-  colour. Existing `Palette.swift` names that differ are listed under Known Gaps.
-- Use system semantic colours and materials in the menu, popover and generator
-  so they follow light and dark.
-- Keep secrets in SF Mono and keep labels small and grey.
-- Keep the door light; let macOS tint the menu bar mark.
+- Add a token here and in `Palette.swift` before using a new color.
+- Check contrast: at least 4.5:1 for text.
+- Keep secrets in SF Mono and labels small.
 
 Don't:
 
-- Don't use the brand graphite inside the panel or the door greys in the brand.
-- Don't add a second accent colour; the system accent is selection, URLs, the
-  OTP and the focused field only.
-- Don't add shadows or blurs beyond the ones listed, or gradients outside the
-  door, its buttons, the dial and the letter tiles.
-- Don't add a separate keyhole badge in the brand; the brand mark is the
-  shield.
+- Don't bring back the silver shield, metal seams, door or dial.
+- Don't use blue as an accent, or look like 1Password (circle with keyhole, blue).
+- Don't add a second accent color. Don't use `brand-accent` as text on cream.
+- Don't add shadows, blurs or gradients beyond the ones listed.
 - Don't use a web font, emoji or illustrations in the panel.
 
-## Responsive Behavior
+## Responsive behavior
 
-The unlocked panel sizes itself to its rows: width from the widest row (300 pt
-to a quarter of the screen), height from the row count (capped by the screen,
-then it scrolls). Resizes animate in 0.075 s. The locked panel is fixed at
-300 × 280 pt (330 pt while creating). The menu, submenus, popover, generator,
-Editor and Preferences follow the light and dark appearance; the door does
-not. Dynamic Type is not supported; the menu bar mark follows the system tint
-for light, dark and highlighted menu bars.
+The unlocked panel sizes itself to its rows, and resizes animate in 0.075 s. The locked panel has its two fixed
+heights. Every surface follows light and dark. Dynamic Type is not supported.
 
-## Known Gaps
+## Known gaps
 
-The front matter matches the code today. These are the places where the code
-is inconsistent with itself or with the rules above. Each needs a code change
-or a decision.
-
-- **Door in dark mode**: the door and dial are light-only, while the menu that
-  replaces them follows the appearance. In dark mode, unlocking goes from a
-  light door to a dark menu. A dark door palette is not designed.
-- **Two panel radii**: the locked panel is 8 (`PanelController.swift:152`), the
-  unlocked panel and submenus are 5 (`PanelController.swift:138`,
-  `MenuController.swift:316`). The corners change during the unlock animation.
-- **Two reds**: errors on the door and in Preferences use `danger #C8372D`
-  (`Palette.danger`); the urgent OTP and the weak strength meter use the system
-  red (`DetailsView.swift:276`, `:293`).
-- **Two strength meters**: the details popover draws its own red / orange /
-  green capsule (`DetailsView.swift:257`); the generator uses a system
-  `ProgressView` (`GeneratorView.swift:92`) tinted by the accent.
-- **Palette names**: `Palette.swift` holds five colours, three named
-  differently. `band` is `door-band`, `bandHighlight` is
-  `door-band-highlight`, `bandLine` is `door-band-line`. Rename them when the
-  file is next touched.
-- **Literal colours**: 23 distinct hex values in `LockScreen.swift` and 11
-  `NSColor` / `Color` float colours in `MenuListView.swift` and
-  `DetailsView.swift` are not in `Palette.swift`. All have tokens here; move
-  them into `Palette` (the favourite yellow alone is written three times:
-  `MenuListView.swift:322`, `:350`, `DetailsView.swift:167`).
-- **Engraved highlight alphas**: the white highlight under door text and the
-  password row is 70 %, 60 % and 90 % (`LockScreen.swift:91`, `:105`, `:169`).
-  Pick one.
-- **Lock screen dial and header logo** still draw a keyhole badge
-  (`LockScreen.swift:249`, `HeaderView.swift:74`); they could adopt the
-  shield mark in a later change.
+- **Two panel radii**: the locked panel is 16 and the unlocked panel 5, so corners change during unlock.
+- **Two reds**: `error` and `strength-weak` are close but separate.
+- **Two strength meters**: details draws its own capsule; the generator uses a system `ProgressView`.
+- **Shortcut recorder well** still uses the system text background (`PreferencesView.swift`).

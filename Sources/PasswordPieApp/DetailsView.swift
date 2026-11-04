@@ -354,7 +354,7 @@ struct DetailsView: View {
                 Button { model.toggleFavorite() } label: {
                     Image(systemName: model.favorite ? "star.fill" : "star")
                         .font(.system(size: 15))
-                        .foregroundStyle(model.favorite ? Color(red: 0.96, green: 0.72, blue: 0.2) : Color.secondary)
+                        .foregroundStyle(model.favorite ? Palette.favorite : Color.secondary)
                 }
                 .buttonStyle(.plain)
                 .help(model.favorite ? "Remove from Favorites" : "Add to Favorites")
@@ -380,12 +380,13 @@ private struct DetailChrome<Content: View>: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
         .frame(minHeight: 38)
-        .background(highlighted ? Color.accentColor.opacity(0.14) : Color.clear)
+        .background(highlighted ? Palette.brandAccent.opacity(0.2) : Color.clear)
         .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
     }
 }
 
 private struct DetailRow: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: DetailsModel
     var field: DetailField
     var focused: Bool
@@ -413,7 +414,7 @@ private struct DetailRow: View {
         case .oneTimePassword:
             OneTimePasswordValue(entryID: model.entryID, session: model.session)
         case .url:
-            Text(field.value).font(.system(size: 13)).foregroundStyle(Color.accentColor).lineLimit(1).truncationMode(.middle)
+            Text(field.value).font(.system(size: 13)).foregroundStyle(Palette.accentText(dark: colorScheme == .dark)).lineLimit(1).truncationMode(.middle)
         case .notes:
             Text(field.value).font(.system(size: 13)).lineLimit(8)
         default:
@@ -436,6 +437,7 @@ private struct DetailRow: View {
 
 /// The word runs `primary`. The arrow, present only when `items` is not empty, opens the menu.
 struct FieldActionButton: View {
+    @Environment(\.colorScheme) private var colorScheme
     var primary: FieldAction
     var items: [FieldAction]
     var onPrimary: () -> Void
@@ -470,7 +472,7 @@ struct FieldActionButton: View {
                 .help("More actions")
             }
         }
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(Palette.card(dark: colorScheme == .dark)))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.primary.opacity(0.28), lineWidth: 0.5))
         .fixedSize()
     }
@@ -502,11 +504,12 @@ private struct StrengthRow: View {
     }
 
     private func color(_ strength: Double) -> Color {
-        strength < 0.4 ? .red : strength < 0.7 ? .orange : .green
+        strength < 0.4 ? Palette.strengthWeak : strength < 0.7 ? Palette.strengthMedium : Palette.strengthStrong
     }
 }
 
 private struct OneTimePasswordValue: View {
+    @Environment(\.colorScheme) private var colorScheme
     var entryID: UUID
     @ObservedObject var session: VaultSession
 
@@ -519,8 +522,8 @@ private struct OneTimePasswordValue: View {
                 HStack(spacing: 8) {
                     Text(groupedCode(TOTP.code(settings: settings, at: context.date)))
                         .font(.system(size: 17, weight: .medium, design: .monospaced))
-                        .foregroundStyle(urgent ? Color.red : Color.accentColor)
-                    CountdownPie(fraction: remaining / period, color: urgent ? .red : .accentColor).frame(width: 14, height: 14)
+                        .foregroundStyle(urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark))
+                    CountdownPie(fraction: remaining / period, color: urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark)).frame(width: 14, height: 14)
                 }
             }
         }
