@@ -243,9 +243,9 @@ struct LargeTypeView: View {
 
     private func ink(_ kind: LargeTypeCell.Kind) -> Color {
         switch kind {
-        case .letter: Color(hex: 0xFFFFFF)
-        case .digit: Color(hex: 0x5CB3FF)
-        case .symbol: Color(hex: 0xFFBF59)
+        case .letter: Palette.largeTypeLetter
+        case .digit: Palette.largeTypeDigit
+        case .symbol: Palette.largeTypeSymbol
         case .space: Color.white.opacity(0.55)
         }
     }

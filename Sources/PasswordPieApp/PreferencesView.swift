@@ -7,9 +7,7 @@ struct PreferencesView: View {
     @StateObject private var recorder = ShortcutRecorder()
     @Environment(\.colorScheme) private var colorScheme
 
-    private var cardColor: Color {
-        colorScheme == .dark ? Color(nsColor: .controlBackgroundColor) : .white
-    }
+    private var cardColor: Color { Palette.card(dark: colorScheme == .dark) }
 
     var body: some View {
         ScrollView {
@@ -27,7 +25,8 @@ struct PreferencesView: View {
             .padding(24)
         }
         .font(.system(size: 13))
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Palette.windowSurface(dark: colorScheme == .dark))
+        .tint(Palette.brandAccent)
         .frame(minWidth: 560, idealWidth: 560, maxWidth: .infinity,
                minHeight: 480, idealHeight: 800, maxHeight: .infinity)
         .onDisappear { recorder.stop() }
@@ -89,7 +88,7 @@ struct PreferencesView: View {
                         Image(systemName: "keyboard").foregroundStyle(.secondary)
                         Spacer(minLength: 0)
                         if recorder.isRecording {
-                            Text("Press a shortcut…").font(.system(size: 14, weight: .medium)).foregroundStyle(Color.accentColor)
+                            Text("Press a shortcut…").font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
                         } else {
                             HStack(spacing: 5) {
                                 ForEach(Array(session.hotKey.keycaps.enumerated()), id: \.offset) { _, key in
@@ -129,7 +128,7 @@ struct PreferencesView: View {
             }
             .background(Color(nsColor: .textBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(
-                recorder.isRecording ? Color.accentColor : Color.primary.opacity(0.16),
+                recorder.isRecording ? Palette.focus(dark: colorScheme == .dark) : Color.primary.opacity(0.16),
                 lineWidth: recorder.isRecording ? 2 : 1))
 
             Text(shortcutHint)
@@ -381,6 +380,7 @@ struct PreferencesView: View {
                     session.importPasswords(from: .applePasswords)
                 }
                 .buttonStyle(.link)
+                .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
                 .font(.system(size: 11))
                 .disabled(session.locked)
             }

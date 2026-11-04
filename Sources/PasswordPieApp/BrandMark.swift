@@ -88,29 +88,21 @@ struct RimSpin: Equatable {
     }
 }
 
-/// Flat orange own-brand artwork, or monochrome for the header/template buttons.
+/// Flat orange own-brand artwork.
 struct PasswordPieMark: View {
-    enum Style {
-        case orange
-        case monochrome
-    }
-
     var size: CGFloat
     var turn: Double = 0
-    var style: Style = .orange
     /// Turns the outer rim while the keyhole stays still.
     var spinning = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var spin = RimSpin()
 
-    private var color: Color { style == .monochrome ? Color.primary : Palette.brandAccent }
-
     var body: some View {
         TimelineView(.animation(paused: !spin.isMoving)) { context in
             ZStack {
                 PasswordPieRimShape()
-                    .fill(color)
+                    .fill(Palette.brandAccent)
                     .rotationEffect(.degrees(spin.angle(at: context.date)))
                 PasswordPieKeyholeShape()
                     .fill(Color.black)

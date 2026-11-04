@@ -10,8 +10,8 @@ background: the production screen is native SwiftUI with NSSecureTextField.
 The existing lock-panel interface and controller lifecycle remain. The new visual
 system uses the shared brand accent, semantic light/dark surfaces and text, flat
 inputs, separate Unlock/Create action and a fade/scale transition. The selected
-pie geometry and 18pt menu template are unchanged. See `DESIGN_SYSTEM.md` for
-implemented components and the explicitly unchanged native screens.
+pie geometry and 18pt menu template are unchanged. See `DESIGN.md` for
+the current components.
 
 Open/New, key-file-only unlock, conditional Touch ID, first-responder handling,
 Return-to-confirm/submit, wrong-password feedback and draft clearing are retained.
