@@ -45,7 +45,6 @@ colors:
   # Errors. Never use orange to mean failure.
   error: '#AA3027'
   error-dark: '#FFA396'
-  danger: '#C8372D'
   # Password strength.
   strength-weak: '#D6453A'
   strength-medium: '#E3B505'
@@ -153,8 +152,7 @@ All values are sRGB.
 | `accent-text` | `#A65312` | `#F6B469` | Links, website values, one-time codes, shortcut prompt. |
 | `caret` / `text-selection` | `#A65312` / `#F6C993` | `#F6B469` / `#7A4E22` | Search and master-password fields. |
 | `menu-arrow` | `#A89A8A` | `#94877A` | Submenu triangle. |
-| `error` | `#AA3027` | `#FFA396` | Lock-screen errors, and a one-time code in its last 5 s. |
-| `danger` | `#C8372D` | same | Status errors in Preferences. |
+| `error` | `#AA3027` | `#FFA396` | Lock-screen errors, Preferences status errors and the shortcut hint, and a one-time code in its last 5 s. |
 
 Lines and fills use `ink` (`MenuPalette.ink`): `#302A24` on light, `#FFF6E7` on dark,
 at 3 % (group header fill), 20 % (group header lines) and 25 % (separators). The
@@ -343,6 +341,6 @@ heights. Every surface follows light and dark. Dynamic Type is not supported.
 ## Known gaps
 
 - **Two panel radii**: the locked panel is 16 and the unlocked panel 5, so corners change during unlock.
-- **Three reds**: `error`, `danger` and `strength-weak` are close but separate.
+- **Two reds**: `error` and `strength-weak` are close but separate.
 - **Two strength meters**: details draws its own capsule; the generator uses a system `ProgressView`.
 - **Shortcut recorder well** still uses the system text background (`PreferencesView.swift`).

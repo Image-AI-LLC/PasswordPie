@@ -44,6 +44,7 @@ final class ThemePaletteTests: XCTestCase {
     func testErrorRedIsReadableOnEveryWarmSurface() throws {
         for dark in [false, true] {
             XCTAssertGreaterThanOrEqual(try contrast(Palette.error(dark: dark), Palette.surface(dark: dark)), 4.5)
+            XCTAssertGreaterThanOrEqual(try contrast(Palette.error(dark: dark), Palette.fieldSurface(dark: dark)), 4.5)
         }
     }
 
@@ -63,7 +64,7 @@ final class ThemePaletteTests: XCTestCase {
         let sources = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/PasswordPieApp")
-        let banned = ["Color.accentColor", ".accentColor", "selectedContentBackgroundColor", "keyboardFocusIndicatorColor"]
+        let banned = ["Color.accentColor", ".accentColor", "selectedContentBackgroundColor", "keyboardFocusIndicatorColor", "controlAccentColor"]
         let files = try FileManager.default.contentsOfDirectory(at: sources, includingPropertiesForKeys: nil)
         for file in files where file.pathExtension == "swift" {
             let text = try String(contentsOf: file, encoding: .utf8)

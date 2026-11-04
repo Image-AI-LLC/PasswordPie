@@ -367,7 +367,6 @@ struct DetailsView: View {
 
 /// Label above a value with a hairline under it; the shell shared by every details row.
 private struct DetailChrome<Content: View>: View {
-    @Environment(\.colorScheme) private var colorScheme
     var label: String
     var highlighted = false
     @ViewBuilder var content: Content

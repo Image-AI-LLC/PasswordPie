@@ -133,7 +133,7 @@ struct PreferencesView: View {
 
             Text(shortcutHint)
                 .font(.system(size: 11))
-                .foregroundStyle(!recorder.isRecording && !session.hotKeyActive ? Color(nsColor: .systemRed) : .secondary)
+                .foregroundStyle(!recorder.isRecording && !session.hotKeyActive ? Palette.error(dark: colorScheme == .dark) : .secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("shortcut-hint")
         }
@@ -261,7 +261,7 @@ struct PreferencesView: View {
                     if !session.touchIDStatus.isEmpty {
                         Text(session.touchIDStatus)
                             .font(.system(size: 11))
-                            .foregroundStyle(session.touchIDStatusIsError ? Palette.danger : Color.secondary)
+                            .foregroundStyle(session.touchIDStatusIsError ? Palette.error(dark: colorScheme == .dark) : Color.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -311,7 +311,7 @@ struct PreferencesView: View {
             if !session.importStatus.isEmpty {
                 Text(session.importStatus)
                     .font(.system(size: 11))
-                    .foregroundStyle(session.importStatusIsError ? Palette.danger : Color.secondary)
+                    .foregroundStyle(session.importStatusIsError ? Palette.error(dark: colorScheme == .dark) : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -345,7 +345,7 @@ struct PreferencesView: View {
                     if !session.chromeStatus.isEmpty {
                         Text(session.chromeStatus)
                             .font(.system(size: 11))
-                            .foregroundStyle(session.chromeStatusIsError ? Palette.danger : Color.secondary)
+                            .foregroundStyle(session.chromeStatusIsError ? Palette.error(dark: colorScheme == .dark) : Color.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 4)

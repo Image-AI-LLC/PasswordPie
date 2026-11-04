@@ -30,7 +30,6 @@ enum Palette {
     static func border(dark: Bool) -> Color { Color(hex: dark ? 0x776858 : 0xC8BBAA) }
     static func focus(dark: Bool) -> Color { Color(hex: dark ? 0xF6B469 : 0xA65312) }
     static func error(dark: Bool) -> Color { Color(hex: dark ? 0xFFA396 : 0xAA3027) }
-    static let danger = Color(hex: 0xC8372D)
 
     // MARK: Selection and accents. The system accent colour is never used: a blue Mac would bring blue back.
 
