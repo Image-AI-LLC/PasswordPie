@@ -196,25 +196,65 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertEqual(session.entry(live.id)?.favorite, false)
     }
 
-    func testSavingALiveLoginThatCannotBeWrittenLeavesNoHiddenDraft() throws {
+    private func lockDatabaseFolder() throws {
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        addTeardownBlock { [directory] in
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory!.path)
+        }
+    }
+
+    func testAFailedSaveOfADraftKeepsTheEditorOpenAndLeavesNoHiddenEntry() throws {
         let session = unlockedSession()
         let live = liveLogin()
         session.liveEntries = [live]
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
-
         session.edit(live.id)
+        session.editing?.password = "typed-secret"
         let draft = try XCTUnwrap(session.editing)
+        try lockDatabaseFolder()
+
         session.saveEditing(draft)
 
+        XCTAssertEqual(session.editing?.password, "typed-secret", "what the user typed stays in the open editor")
         XCTAssertTrue(session.isLive(live.id))
         XCTAssertTrue(session.entries.isEmpty)
 
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        session.edit(live.id)
         session.saveEditing(try XCTUnwrap(session.editing))
 
-        XCTAssertEqual(try savedEntries().filter { $0.id == live.id }.count, 1)
+        XCTAssertNil(session.editing)
+        let saved = try savedEntries().filter { $0.id == live.id }
+        XCTAssertEqual(saved.map(\.password), ["typed-secret"], "saving again writes one row")
+    }
+
+    func testAFailedSaveOfADraftOverItsTrashedCopyKeepsTheEditorOpen() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        session.toggleFavorite(live.id)
+        session.edit(live.id)
+        session.deleteEditing()
+        session.edit(live.id)
+        session.editing?.password = "typed-secret"
+        let draft = try XCTUnwrap(session.editing)
+        try lockDatabaseFolder()
+
+        session.saveEditing(draft)
+
+        XCTAssertEqual(session.editing?.password, "typed-secret")
+        XCTAssertTrue(session.isLive(live.id), "the trashed row stays trashed")
+    }
+
+    func testAFailedSaveOfANewItemKeepsTheEditorOpen() throws {
+        let session = unlockedSession()
+        session.newEntry()
+        session.editing?.title = "Typed"
+        let draft = try XCTUnwrap(session.editing)
+        try lockDatabaseFolder()
+
+        session.saveEditing(draft)
+
+        XCTAssertEqual(session.editing?.title, "Typed")
+        XCTAssertTrue(session.entries.isEmpty)
     }
 
     func testAnEntryAlreadyInTheDatabaseAbsorbsItsChromeLogin() throws {

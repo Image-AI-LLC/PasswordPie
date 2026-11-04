@@ -258,10 +258,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The item editor is a detached window; the panel hides while it is open.
     private func editingChanged(_ entry: VaultEntry?) {
         guard let entry else {
-            // Detach first so windowWillClose does not cancel an entry saveEditing just restored.
-            let window = editorWindow
+            editorWindow?.close()
             editorWindow = nil
-            window?.close()
             return
         }
         if editorWindow == nil {

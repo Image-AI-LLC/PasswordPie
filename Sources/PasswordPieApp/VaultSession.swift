@@ -900,22 +900,25 @@ final class VaultSession: ObservableObject {
         var entry = entry
         if entry.title.isEmpty { entry.title = "Untitled" }
         let path = listPaths[entry.id] ?? databaseURL.path
+        // A new item, or a Chrome draft that may reuse the row of its trashed copy. A failed write has nothing else holding it,
+        // so it comes back out of the database and the editor stays open with what the user typed.
+        let isDraft = storedEntry(entry.id) == nil
         let before = openedFiles.first { $0.url.path == path }?.vault.entries ?? []
-        let isNew = listPaths[entry.id] == nil
-        if isNew {
-            appendStored(entry, to: path)
-        } else {
+        if listPaths[entry.id] != nil {
             replaceStored(entry)
+        } else {
+            appendStored(entry, to: path)
         }
-        editing = nil
         if persist(path: path) {
+            editing = nil
             keepChromeLastUsed(entry.id)
-        } else if isNew {
+        } else if isDraft {
             if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
                 openedFiles[index].vault.entries = before
             }
             publishCatalog()
-            editing = entry
+        } else {
+            editing = nil
         }
     }
 
