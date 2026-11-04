@@ -145,6 +145,7 @@ private struct ArrowSegment: View {
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
             .help("More actions")
+            .accessibilityLabel("More actions")
         }
     }
 }
