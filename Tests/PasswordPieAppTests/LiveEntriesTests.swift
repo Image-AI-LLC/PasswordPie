@@ -196,6 +196,27 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertEqual(session.entry(live.id)?.favorite, false)
     }
 
+    func testSavingALiveLoginThatCannotBeWrittenLeavesNoHiddenDraft() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        session.edit(live.id)
+        let draft = try XCTUnwrap(session.editing)
+        session.saveEditing(draft)
+
+        XCTAssertTrue(session.isLive(live.id))
+        XCTAssertTrue(session.entries.isEmpty)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        session.edit(live.id)
+        session.saveEditing(try XCTUnwrap(session.editing))
+
+        XCTAssertEqual(try savedEntries().filter { $0.id == live.id }.count, 1)
+    }
+
     func testAnEntryAlreadyInTheDatabaseAbsorbsItsChromeLogin() throws {
         let session = unlockedSession()
         var own = VaultEntry()

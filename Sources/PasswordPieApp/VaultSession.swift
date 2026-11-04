@@ -900,13 +900,23 @@ final class VaultSession: ObservableObject {
         var entry = entry
         if entry.title.isEmpty { entry.title = "Untitled" }
         let path = listPaths[entry.id] ?? databaseURL.path
-        if listPaths[entry.id] != nil {
-            replaceStored(entry)
-        } else {
+        let before = openedFiles.first { $0.url.path == path }?.vault.entries ?? []
+        let isNew = listPaths[entry.id] == nil
+        if isNew {
             appendStored(entry, to: path)
+        } else {
+            replaceStored(entry)
         }
         editing = nil
-        if persist(path: path) { keepChromeLastUsed(entry.id) }
+        if persist(path: path) {
+            keepChromeLastUsed(entry.id)
+        } else if isNew {
+            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
+                openedFiles[index].vault.entries = before
+            }
+            publishCatalog()
+            editing = entry
+        }
     }
 
     func cancelEditing() {
