@@ -3,7 +3,7 @@ import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 
-/// Live Chrome logins are read-only and must stay out of the saved KeePass file.
+/// Chrome is only ever read. A login reaches the KeePass file when the user edits or favorites it, and stays one entry.
 @MainActor
 final class LiveEntriesTests: XCTestCase {
     private var directory: URL!
@@ -46,7 +46,7 @@ final class LiveEntriesTests: XCTestCase {
         try KDBX.load(data: Data(contentsOf: databaseURL), password: "pw").entries
     }
 
-    func testLiveLoginsAreSearchableButNeverSaved() throws {
+    func testLiveLoginsAreSearchableButNotSavedUntilTheUserActsOnOne() throws {
         let session = unlockedSession()
         XCTAssertFalse(session.locked)
         let live = liveLogin()
@@ -56,7 +56,6 @@ final class LiveEntriesTests: XCTestCase {
         own.title = "Own"
         session.saveEditing(own)
         session.toggleFavorite(own.id)
-        session.toggleFavorite(live.id)
 
         XCTAssertTrue(session.isLive(live.id))
         XCTAssertFalse(session.entries.contains { $0.id == live.id })
@@ -77,32 +76,196 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertTrue(session.liveEntries.isEmpty)
     }
 
-    func testSaveToDatabaseWritesOneTaggedCopyAndHidesTheLiveOne() throws {
+    #if PP_DIRECT
+    /// The store channel never has live Chrome logins.
+    func testEditingALiveLoginOpensAnUnsavedDraftAndCancelLeavesTheFileAlone() throws {
         let session = unlockedSession()
         let live = liveLogin()
         session.liveEntries = [live]
-        session.saveToDatabase(live.id)
+
+        session.edit(live.id)
+
+        let draft = try XCTUnwrap(session.editing)
+        XCTAssertEqual(draft.id, live.id)
+        XCTAssertEqual(draft.password, "chrome-secret")
+        XCTAssertEqual(draft.groupPath, ["Chrome"])
+        XCTAssertEqual(draft.tagList, ["Chrome"])
+        XCTAssertTrue(session.editingIsNew, "there is nothing in the database to move to the trash yet")
+        session.cancelEditing()
+        XCTAssertTrue(session.entries.isEmpty)
+    }
+
+    func testSavingAnEditKeepsOneEntryWithTheSameIdentity() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+
+        session.edit(live.id)
+        session.saveEditing(try XCTUnwrap(session.editing))
 
         let saved = try savedEntries()
         XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(saved[0].id, live.id)
         XCTAssertEqual(saved[0].password, "chrome-secret")
         XCTAssertEqual(saved[0].groupPath, ["Chrome"])
         XCTAssertEqual(saved[0].tagList, ["Chrome"])
-        XCTAssertNotEqual(saved[0].id, live.id)
-        #if PP_DIRECT
-        XCTAssertEqual(session.allEntries.filter { $0.password == "chrome-secret" }.count, 1, "the copy hides the live login")
-        #endif
+        XCTAssertEqual(session.allEntries.filter { !$0.trashed }.count, 1)
+        XCTAssertFalse(session.isLive(live.id))
+        XCTAssertEqual(session.entry(live.id)?.groupPath, ["Chrome"], "open details and pinned windows keep working")
     }
 
-    #if PP_DIRECT
-    /// The store channel never has live Chrome logins, so the already-saved check exists only in the direct channel.
-    func testSavingALiveLoginTwiceKeepsOneCopy() throws {
+    func testChangingTheUsernameAndPasswordKeepsOneEntryAndShowsChromesValues() throws {
         let session = unlockedSession()
         let live = liveLogin()
         session.liveEntries = [live]
-        session.saveToDatabase(live.id)
-        session.saveToDatabase(live.id)
-        XCTAssertEqual(try savedEntries().filter { $0.password == "chrome-secret" }.count, 1)
+
+        session.edit(live.id)
+        var draft = try XCTUnwrap(session.editing)
+        draft.username = "ann-renamed"
+        draft.password = "my-own-secret"
+        session.saveEditing(draft)
+
+        XCTAssertEqual(session.allEntries.filter { !$0.trashed }.count, 1)
+        let shown = try XCTUnwrap(session.entry(live.id))
+        XCTAssertEqual(shown.username, "ann-renamed")
+        XCTAssertEqual(shown.password, "my-own-secret")
+        XCTAssertEqual(shown.value(for: ChromeLogins.usernameFieldName), "ann")
+        XCTAssertEqual(shown.value(for: ChromeLogins.passwordFieldName), "chrome-secret")
+        XCTAssertEqual(session.value(of: .custom(ChromeLogins.passwordFieldName), in: shown), "chrome-secret")
+    }
+
+    func testChromesValuesAreOnlyDisplayedAndNeverReachTheFile() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        session.edit(live.id)
+        var draft = try XCTUnwrap(session.editing)
+        draft.password = "my-own-secret"
+        session.saveEditing(draft)
+
+        session.toggleFavorite(live.id)
+        session.edit(live.id)
+        let reopened = try XCTUnwrap(session.editing)
+        XCTAssertFalse(reopened.fields.contains { $0.value == "chrome-secret" }, "the editor edits what is stored")
+        XCTAssertFalse(session.editingIsNew)
+        session.saveEditing(reopened)
+
+        for entry in try savedEntries() {
+            XCTAssertFalse(entry.fields.contains { $0.value == "chrome-secret" })
+        }
+        XCTAssertEqual(session.entry(live.id)?.favorite, true)
+        XCTAssertEqual(session.entry(live.id)?.value(for: ChromeLogins.passwordFieldName), "chrome-secret")
+
+        session.edit(live.id)
+        session.deleteEditing()
+        let bin = try KDBX.load(data: Data(contentsOf: databaseURL), password: "pw").entries
+        XCTAssertFalse(bin.contains { entry in entry.fields.contains { $0.value == "chrome-secret" } }, "moving it to the trash writes the stored entry too")
+    }
+
+    func testFavoritingALiveLoginSavesItFavoritedAsTheSameEntry() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+
+        session.toggleFavorite(live.id)
+
+        let saved = try savedEntries()
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(saved[0].id, live.id)
+        XCTAssertTrue(saved[0].favorite)
+        XCTAssertEqual(saved[0].tagList.filter { $0 != "Favorite" }, ["Chrome"])
+        XCTAssertEqual(session.allEntries.filter { !$0.trashed }.count, 1)
+        XCTAssertEqual(session.entry(live.id)?.favorite, true)
+
+        session.toggleFavorite(live.id)
+        XCTAssertEqual(session.entry(live.id)?.favorite, false, "the second star only changes the saved entry")
+        XCTAssertEqual(try savedEntries().count, 1)
+    }
+
+    func testFavoritingALiveLoginThatCannotBeWrittenLeavesItLive() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        session.toggleFavorite(live.id)
+
+        XCTAssertTrue(session.isLive(live.id))
+        XCTAssertTrue(session.entries.isEmpty)
+        XCTAssertEqual(session.entry(live.id)?.favorite, false)
+    }
+
+    func testAnEntryAlreadyInTheDatabaseAbsorbsItsChromeLogin() throws {
+        let session = unlockedSession()
+        var own = VaultEntry()
+        own.title = "GitHub"
+        own.url = "https://github.com"
+        own.username = "ann"
+        own.password = "my-own-secret"
+        session.saveEditing(own)
+        session.liveEntries = [liveLogin()]
+
+        XCTAssertEqual(session.allEntries.filter { !$0.trashed }.map(\.id), [own.id])
+        XCTAssertEqual(session.entry(own.id)?.value(for: ChromeLogins.passwordFieldName), "chrome-secret")
+    }
+
+    func testAChromePasswordChangedLaterShowsBesideTheSavedOne() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        session.toggleFavorite(live.id)
+
+        var changed = live
+        changed.password = "changed-in-chrome"
+        session.liveEntries = [changed]
+
+        XCTAssertEqual(session.entry(live.id)?.password, "chrome-secret")
+        XCTAssertEqual(session.entry(live.id)?.value(for: ChromeLogins.passwordFieldName), "changed-in-chrome")
+        XCTAssertEqual(session.allEntries.filter { !$0.trashed }.count, 1)
+    }
+
+    func testTrashingTheSavedEntryBringsBackTheLiveLoginAndSavingAgainReusesItsRow() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        session.liveEntries = [live]
+        session.toggleFavorite(live.id)
+
+        session.edit(live.id)
+        session.deleteEditing()
+        XCTAssertTrue(session.isLive(live.id), "Chrome still has it")
+        XCTAssertEqual(session.entry(live.id)?.password, "chrome-secret")
+
+        session.edit(live.id)
+        session.saveEditing(try XCTUnwrap(session.editing))
+
+        XCTAssertEqual(session.entries.filter { $0.id == live.id }.count, 1, "a KeePass UUID stays unique")
+        XCTAssertFalse(session.isLive(live.id))
+        XCTAssertEqual(try savedEntries().filter { !$0.trashed && $0.id == live.id }.count, 1)
+    }
+
+    func testPinnedWindowsSeeTheSameCombinedEntry() {
+        let live = liveLogin()
+        var saved = live
+        saved.password = "my-own-secret"
+        let shown = VaultSession.visibleEntries(saved: [saved], live: [live])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "chrome-secret")
+    }
+
+    func testTheChromePasswordFieldCanBeRevealedAndCopied() throws {
+        let session = unlockedSession()
+        let live = liveLogin()
+        var saved = live
+        saved.password = "my-own-secret"
+        session.saveEditing(saved)
+        session.liveEntries = [live]
+
+        let model = DetailsModel(entry: try XCTUnwrap(session.entry(live.id)), session: session) {}
+        let field = try XCTUnwrap(model.fields.first { $0.label == ChromeLogins.passwordFieldName })
+        XCTAssertTrue(field.secret)
+        XCTAssertFalse(model.isShown(field), "masked until asked")
+        XCTAssertEqual(fieldControl(field, revealed: false), FieldControl(primary: .copy, menu: [.reveal, .largeType]))
     }
     #endif
 
@@ -116,16 +279,29 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertTrue(session.lastUsedMap.isEmpty, "locking forgets Chrome's times")
     }
 
-    func testSavingALiveLoginCarriesItsLastUsedTimeToTheCopy() throws {
+    #if PP_DIRECT
+    private func assertKeepsLastUsedTime(save: (VaultSession, UUID) throws -> Void) throws {
         let session = unlockedSession()
         let live = liveLogin()
         let used = Date(timeIntervalSince1970: 1_700_000_000)
         session.liveEntries = [live]
         session.chromeLastUsed = [live.id: used]
-        session.saveToDatabase(live.id)
-        let copyID = try XCTUnwrap(session.entries.first { $0.password == "chrome-secret" }?.id)
-        XCTAssertEqual(try XCTUnwrap(session.lastUsedMap[copyID]).timeIntervalSince1970, used.timeIntervalSince1970, accuracy: 1)
+        try save(session, live.id)
+        session.chromeLastUsed = [:]
+        XCTAssertEqual(try XCTUnwrap(session.lastUsedMap[live.id]).timeIntervalSince1970, used.timeIntervalSince1970, accuracy: 1)
     }
+
+    func testSavingAnEditKeepsChromesLastUsedTimeAfterChromeIsOff() throws {
+        try assertKeepsLastUsedTime { session, id in
+            session.edit(id)
+            session.saveEditing(try XCTUnwrap(session.editing))
+        }
+    }
+
+    func testFavoritingKeepsChromesLastUsedTimeAfterChromeIsOff() throws {
+        try assertKeepsLastUsedTime { session, id in session.toggleFavorite(id) }
+    }
+    #endif
 
     func testImportedPasswordsAreSavedIntoTheUnlockedFileAndShowInTheList() throws {
         let session = unlockedSession()

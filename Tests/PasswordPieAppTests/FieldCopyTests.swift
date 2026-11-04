@@ -20,6 +20,12 @@ final class FieldCopyTests: XCTestCase {
         XCTAssertFalse(fieldControl(field, revealed: false).menu.contains(.open))
     }
 
+    func testAProtectedCustomFieldHasTheSameMenuAsThePassword() {
+        let field = DetailField(id: "custom:PIN", kind: .custom("PIN"), label: "PIN", value: "1234", secret: true)
+        XCTAssertEqual(fieldControl(field, revealed: false), FieldControl(primary: .copy, menu: [.reveal, .largeType]))
+        XCTAssertEqual(fieldControl(field, revealed: true), FieldControl(primary: .copy, menu: [.conceal, .largeType]))
+    }
+
     func testWebsiteOpensByDefaultAndCopiesFromTheMenu() {
         let field = DetailField(id: "url", kind: .url, label: "website", value: "https://example.com", secret: false)
         let control = fieldControl(field, revealed: false)

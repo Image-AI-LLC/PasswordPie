@@ -44,16 +44,12 @@ struct FieldControl: Equatable {
     var menu: [FieldAction]
 }
 
-/// A website opens. Copy is in the arrow, with open-and-fill. Every other field copies, and only a password has a menu.
+/// A website opens. Copy is in the arrow, with open-and-fill. Every other field copies, and only a secret has a menu.
 func fieldControl(_ field: DetailField, revealed: Bool) -> FieldControl {
-    switch field.kind {
-    case .password:
-        return FieldControl(primary: .copy, menu: [revealed ? .conceal : .reveal, .largeType])
-    case .url:
+    if field.kind == .url {
         return FieldControl(primary: .open, menu: [.copy, .openAndFill])
-    default:
-        return FieldControl(primary: .copy, menu: [])
     }
+    return FieldControl(primary: .copy, menu: field.secret ? [revealed ? .conceal : .reveal, .largeType] : [])
 }
 
 enum DetailsPresentation: Equatable {
@@ -120,8 +116,6 @@ final class DetailsModel: ObservableObject {
     @Published var optionHeld = false
     @Published var flashing = false
     @Published var favorite: Bool
-    /// A live Chrome login: read-only here. The user edits it in Chrome or saves a copy to the database.
-    let isLive: Bool
     let presentation: DetailsPresentation
     unowned let session: VaultSession
     private let done: () -> Void
@@ -133,7 +127,6 @@ final class DetailsModel: ObservableObject {
         title = entry.title.isEmpty ? "Untitled" : entry.title
         siteHost = websiteHost(of: entry)
         favorite = entry.favorite
-        isLive = session.isLive(entry.id)
         tags = entry.tagList.filter { $0.caseInsensitiveCompare("Favorite") != .orderedSame }
         self.presentation = presentation
         self.session = session
@@ -198,7 +191,7 @@ final class DetailsModel: ObservableObject {
 
     func toggleFavorite() {
         session.toggleFavorite(entryID)
-        favorite.toggle()
+        favorite = session.entry(entryID)?.favorite ?? favorite
     }
 
     /// Runs the field's action. The popover then hides for copy and open; a pinned window never does.
@@ -225,15 +218,10 @@ final class DetailsModel: ObservableObject {
         session.pinEntry(entryID)
     }
 
-    /// Editing happens in a detached window; the panel hides first. A live Chrome login opens Chrome instead.
+    /// Editing happens in a detached window; the panel hides first.
     func edit() {
         done()
         session.edit(entryID)
-    }
-
-    func saveToDatabase() {
-        done()
-        session.saveToDatabase(entryID)
     }
 
     /// Return: flash the field's button (0.3 s), then run its primary action.
@@ -325,24 +313,11 @@ struct DetailsView: View {
             SiteIconView(host: model.siteHost, title: model.title, side: 32)
             Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
             Spacer(minLength: 0)
-            if model.isLive {
-                Button { model.saveToDatabase() } label: {
-                    Image(systemName: "tray.and.arrow.down").font(.system(size: 13)).foregroundStyle(Color.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Save a copy to your KeePass database")
-                Button { model.edit() } label: {
-                    Image(systemName: "arrow.up.right.square").font(.system(size: 13)).foregroundStyle(Color.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Edit in Chrome (⌘E)")
-            } else {
-                Button { model.edit() } label: {
-                    Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(Color.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Edit (⌘E)")
+            Button { model.edit() } label: {
+                Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(Color.secondary)
             }
+            .buttonStyle(.plain)
+            .help("Edit (⌘E)")
             if showsPinButton(model.presentation) {
                 Button { model.pin() } label: {
                     Image(systemName: "pin").font(.system(size: 13)).foregroundStyle(Color.secondary)
@@ -350,15 +325,13 @@ struct DetailsView: View {
                 .buttonStyle(.plain)
                 .help("Pin window (⌘O)")
             }
-            if !model.isLive {
-                Button { model.toggleFavorite() } label: {
-                    Image(systemName: model.favorite ? "star.fill" : "star")
-                        .font(.system(size: 15))
-                        .foregroundStyle(model.favorite ? Palette.favorite : Color.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(model.favorite ? "Remove from Favorites" : "Add to Favorites")
+            Button { model.toggleFavorite() } label: {
+                Image(systemName: model.favorite ? "star.fill" : "star")
+                    .font(.system(size: 15))
+                    .foregroundStyle(model.favorite ? Palette.favorite : Color.secondary)
             }
+            .buttonStyle(.plain)
+            .help(model.favorite ? "Remove from Favorites" : "Add to Favorites")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)

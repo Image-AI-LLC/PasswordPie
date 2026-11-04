@@ -324,7 +324,7 @@ struct PreferencesView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Sync Chrome passwords").fontWeight(.medium)
-                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. Opening PasswordPie checks those files again, and reads them only when they have changed. They stay in Chrome: nothing is copied into your database unless you choose Save to KeePass on one. macOS asks once for the Chrome Safe Storage key: choose Always Allow. Reading the files also needs Google Chrome turned on for PasswordPie under Privacy & Security → Files & Folders.")
+                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. Opening PasswordPie checks those files again, and reads them only when they have changed. PasswordPie never changes Chrome. A password is saved to your database only when you edit or favorite it, and it stays one item: if the saved values later differ, the item also shows what Chrome holds. macOS asks once for the Chrome Safe Storage key: choose Always Allow. Reading the files also needs Google Chrome turned on for PasswordPie under Privacy & Security → Files & Folders.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

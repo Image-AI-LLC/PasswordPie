@@ -203,17 +203,10 @@ extension VaultSession {
         NSWorkspace.shared.open(url)
     }
 
-    /// Chrome owns these logins, so changes happen there.
-    func editInChrome() {
-        guard let page = URL(string: "chrome://password-manager/passwords"),
-              let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else { return }
-        NSWorkspace.shared.open([page], withApplicationAt: chrome, configuration: NSWorkspace.OpenConfiguration())
-    }
     #else
     func setChromeSync(_ enabled: Bool) {}
     func startChromeSyncIfEnabled() {}
     func noteChromePanelShown() {}
     func refreshChrome() {}
-    func editInChrome() {}
     #endif
 }
