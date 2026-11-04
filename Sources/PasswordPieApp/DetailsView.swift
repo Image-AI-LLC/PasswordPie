@@ -20,21 +20,12 @@ enum FieldAction: Equatable, Hashable {
 
     var title: String {
         switch self {
-        case .copy: "copy"
-        case .reveal: "reveal"
-        case .conceal: "conceal"
-        case .largeType: "large type"
-        case .openAndFill: "open and fill"
-        case .open: "open"
-        }
-    }
-
-    /// Tooltip for the primary button. Menu items keep the lower-case title.
-    var buttonHelp: String {
-        switch self {
         case .copy: "Copy"
+        case .reveal: "Reveal"
+        case .conceal: "Conceal"
+        case .largeType: "Large Type"
+        case .openAndFill: "Open and Fill"
         case .open: "Open"
-        default: title
         }
     }
 }
@@ -427,61 +418,14 @@ private struct DetailRow: View {
     }
 
     private func actions(_ control: FieldControl) -> some View {
-        FieldActionButton(primary: control.primary, items: control.menu) {
+        SplitActionButton(
+            title: control.primary.title,
+            items: control.menu.map { item in
+                SplitActionButton.Item(title: item.title) { model.perform(item, on: field) }
+            }
+        ) {
             model.perform(control.primary, on: field)
-        } onItem: { item in
-            model.perform(item, on: field)
         }
-    }
-}
-
-/// The word runs `primary`. The arrow, present only when `items` is not empty, opens the menu.
-struct FieldActionButton: View {
-    @Environment(\.colorScheme) private var colorScheme
-    var primary: FieldAction
-    var items: [FieldAction]
-    var onPrimary: () -> Void
-    var onItem: (FieldAction) -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            Button(action: onPrimary) {
-                Text(primary.title)
-                    .font(.system(size: 11))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(FieldCopyPressStyle())
-            .help(primary.buttonHelp)
-            if !items.isEmpty {
-                Rectangle().fill(Color.primary.opacity(0.28)).frame(width: 0.5, height: 12)
-                Menu {
-                    ForEach(items, id: \.self) { item in
-                        Button(item.title) { onItem(item) }
-                    }
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .semibold))
-                        .frame(width: 16, height: 16)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More actions")
-            }
-        }
-        .background(RoundedRectangle(cornerRadius: 4).fill(Palette.card(dark: colorScheme == .dark)))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.primary.opacity(0.28), lineWidth: 0.5))
-        .fixedSize()
-    }
-}
-
-private struct FieldCopyPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(configuration.isPressed ? Color.primary.opacity(0.14) : Color.clear)
     }
 }
 
