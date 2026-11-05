@@ -20,8 +20,9 @@ enum PasswordPieMain {
     }
 }
 
-/// A borderless window that can take key status: Large Type closes on any key press or when it loses focus.
-final class LargeTypeWindow: NSWindow {
+/// A borderless panel that can take key status: Large Type closes on any key press or when it loses focus.
+/// It takes the keys without activating the app, because a pinned window can open it while another app is in front.
+final class LargeTypeWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override func keyDown(with event: NSEvent) { close() }
     override func resignKey() {
@@ -38,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private(set) var panelController: PanelController!
     private var autoLock: AutoLockMonitor!
     private var hotKey: EventHotKeyRef?
+    private var pinnedHotKeys: [EventHotKeyRef] = []
     private var hotKeyHandlerInstalled = false
     private let hotKeySignature: OSType = 0x50506965
     private(set) var largeTypeWindow: NSWindow?
@@ -48,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var contentHeight: CGFloat
     }
     private var pinnedAccounts: [UUID: PinnedAccount] = [:]
+    /// Back to front. `NSApp.orderedWindows` is empty while another app is in front, which is when the shortcuts run.
+    private var pinnedOrder: [UUID] = []
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var aboutWindow: NSWindow?
@@ -155,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let size = LargeTypeMetrics.fit(text: text, maxWidth: maxWidth, maxHeight: maxHeight).size
         let window = LargeTypeWindow(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -177,7 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch pinnedWindowPlacement(openIDs: Array(pinnedAccounts.keys), id: entry.id) {
         case .orderFront:
             updatePinned(entry)
-            pinnedAccounts[entry.id]?.panel.orderFrontRegardless()
+            raisePinned(entry.id)
         case .openNew(let index):
             let model = pinnedModel(for: entry, previous: nil)
             let panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 160))
@@ -185,10 +189,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel.delegate = self
             panel.title = model.title
             panel.contentView = FirstMouseHostingView(rootView: pinnedRoot(model))
+            // A panel that cannot be key does not rise by itself. The window on top is the one the shortcuts copy.
+            let id = entry.id
+            panel.onMouseDown = { [weak self] in
+                self?.raisePinned(id)
+                self?.panelController.pinnedWindowClicked()
+            }
             pinnedAccounts[entry.id] = PinnedAccount(panel: panel, model: model, snapshot: entry, contentHeight: 0)
             placePinned(panel, index: index)
-            panel.orderFrontRegardless()
+            raisePinned(entry.id)
+            syncPinnedHotKeys()
         }
+    }
+
+    private func raisePinned(_ id: UUID) {
+        pinnedOrder = pinnedOrderRaising(id, in: pinnedOrder)
+        pinnedAccounts[id]?.panel.orderFrontRegardless()
     }
 
     private func updatePinned(_ entry: VaultEntry) {
@@ -335,6 +351,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
             pinnedAccounts[id] = nil
+            pinnedOrder.removeAll { $0 == id }
+            syncPinnedHotKeys()
         }
     }
 
@@ -424,6 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             UnregisterEventHotKey(hotKey)
         }
         hotKey = nil
+        syncPinnedHotKeys()
     }
 
     /// Registers the configured shortcut again, replacing any earlier registration.
@@ -444,29 +463,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         #if DEBUG
         // Preview bundles have separate defaults, but Carbon shortcuts are system-wide.
         // Apply this at the shared registration boundary, including recorder completion.
-        let env = ProcessInfo.processInfo.environment
-        if Self.suppressesPreviewHotkey(env) {
+        if Self.suppressesPreviewHotkey(ProcessInfo.processInfo.environment) {
             hotKeyStatus = "disabled in preview"
             return
         }
         #endif
         if hotKey != nil || session.recordingHotKey { return }
-        let target = GetEventDispatcherTarget()
-        if !hotKeyHandlerInstalled {
-            var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-            let installed = InstallEventHandler(target, { _, event, _ in
-                var hotKeyID = EventHotKeyID()
-                GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
-                if hotKeyID.signature == 0x50506965 {
-                    DispatchQueue.main.async { AppDelegate.shared?.toggleFromHotkey() }
-                }
-                return noErr
-            }, 1, &eventType, nil, nil)
-            hotKeyHandlerInstalled = installed == noErr
-        }
+        installHotKeyHandlerIfNeeded()
         let config = session.hotKey
-        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
-        let status = RegisterEventHotKey(config.keyCode, config.modifiers, hotKeyID, target, 0, &hotKey)
+        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: menuHotKeyID)
+        let status = RegisterEventHotKey(config.keyCode, config.modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &hotKey)
         if status != noErr {
             hotKey = nil
         }
@@ -474,6 +480,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         #if DEBUG
         hotKeyStatus = "\(config.display) status \(status)"
         #endif
+        syncPinnedHotKeys()
+    }
+
+    private func installHotKeyHandlerIfNeeded() {
+        guard !hotKeyHandlerInstalled else { return }
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let installed = InstallEventHandler(GetEventDispatcherTarget(), { _, event, _ in
+            var hotKeyID = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+            if hotKeyID.signature == 0x50506965 {
+                let id = hotKeyID.id
+                DispatchQueue.main.async { AppDelegate.shared?.hotKeyPressed(id: id) }
+            }
+            return noErr
+        }, 1, &eventType, nil, nil)
+        hotKeyHandlerInstalled = installed == noErr
+    }
+
+    private func hotKeyPressed(id: UInt32) {
+        if id == menuHotKeyID {
+            toggleFromHotkey()
+        } else if let shortcut = pinnedCopyShortcut(id: id) {
+            copyFromPinnedHotKey(shortcut)
+        }
+    }
+
+    /// The copy shortcuts belong to the system only while an account is pinned. Recording a new menu shortcut
+    /// releases them so the recorder can see those keys.
+    private func syncPinnedHotKeys() {
+        pinnedHotKeys.forEach { UnregisterEventHotKey($0) }
+        pinnedHotKeys = []
+        #if DEBUG
+        guard !Self.suppressesPreviewHotkey(ProcessInfo.processInfo.environment) else { return }
+        #endif
+        guard !pinnedAccounts.isEmpty, !session.recordingHotKey else { return }
+        installHotKeyHandlerIfNeeded()
+        for hotKey in pinnedCopyHotKeys(excluding: session.hotKey) {
+            var ref: EventHotKeyRef?
+            let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: hotKey.id)
+            let status = RegisterEventHotKey(hotKey.config.keyCode, hotKey.config.modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &ref)
+            if status == noErr, let ref { pinnedHotKeys.append(ref) }
+        }
+    }
+
+    /// While the menu is open it owns these keys, as it does when no account is pinned.
+    private func copyFromPinnedHotKey(_ shortcut: QuickAccessShortcut) {
+        if panelController.isVisible {
+            _ = panelController.headerShortcut(shortcut)
+            return
+        }
+        guard let id = pinnedOrder.last,
+              let entry = session.entry(id),
+              let target = quickAccessCopyTarget(shortcut, of: entry),
+              !session.value(of: target, in: entry).isEmpty else { return }
+        session.copy(target, of: id)
     }
 
     // MARK: Debug hooks

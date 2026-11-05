@@ -1,5 +1,6 @@
 import AppKit
 import PasswordPieCore
+import Carbon.HIToolbox
 import XCTest
 @testable import PasswordPie
 
@@ -83,20 +84,56 @@ final class FieldCopyTests: XCTestCase {
         XCTAssertTrue(optionRevealHeld(after: .appBecameActive(optionDown: true)))
     }
 
-    func testOnlyTheCloseButtonDismissesAPinnedWindow() {
-        XCTAssertFalse(pinnedWindowShouldClose(.resignKey))
-        XCTAssertFalse(pinnedWindowShouldClose(.escape))
-        XCTAssertFalse(pinnedWindowShouldClose(.commandW))
-        XCTAssertTrue(pinnedWindowShouldClose(.closeButton))
+    @MainActor
+    func testPinnedWindowNeverTakesFocusFromTheAppBeingFilled() {
+        let panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 120))
+        XCTAssertFalse(panel.canBecomeKey)
+        XCTAssertFalse(panel.canBecomeMain)
+        XCTAssertTrue(panel.styleMask.contains(.nonactivatingPanel))
     }
 
-    func testCommandWIsNotAPinnedClose() {
-        let commandW = keyEvent(characters: "w", modifiers: .command)
-        let shifted = keyEvent(characters: "w", modifiers: [.command, .shift])
-        XCTAssertTrue(pinnedEventIsCommandW(commandW))
-        XCTAssertTrue(pinnedEventIsCommandW(shifted))
-        XCTAssertFalse(pinnedEventIsCommandW(keyEvent(characters: "w", modifiers: [])))
-        XCTAssertFalse(pinnedEventIsCommandW(keyEvent(characters: "q", modifiers: .command)))
+    @MainActor
+    func testClickingAPinnedWindowReportsItBeforeTheClickIsHandled() {
+        let panel = PinnedEntryPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 120))
+        var clicks = 0
+        panel.onMouseDown = { clicks += 1 }
+        panel.sendEvent(mouseEvent(.leftMouseDown, in: panel))
+        panel.sendEvent(mouseEvent(.leftMouseUp, in: panel))
+        XCTAssertEqual(clicks, 1)
+    }
+
+    func testTheLastRaisedPinnedWindowIsOnTop() {
+        let first = UUID()
+        let second = UUID()
+        XCTAssertEqual(pinnedOrderRaising(first, in: []), [first])
+        XCTAssertEqual(pinnedOrderRaising(second, in: [first]), [first, second])
+        XCTAssertEqual(pinnedOrderRaising(first, in: [first, second]), [second, first])
+        XCTAssertEqual(pinnedOrderRaising(first, in: [second, first]), [second, first])
+    }
+
+    func testPinnedHotKeysAreTheQuickAccessCopyShortcuts() {
+        let command = UInt32(cmdKey)
+        XCTAssertEqual(pinnedCopyHotKeys(excluding: .default).map(\.shortcut), [.copyPrimary, .copyPassword, .copyOneTimePassword])
+        XCTAssertEqual(pinnedCopyHotKeys(excluding: .default).map(\.config), [
+            HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: command | UInt32(controlKey)),
+            HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: command | UInt32(shiftKey)),
+            HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: command | UInt32(optionKey)),
+        ])
+    }
+
+    func testPinnedHotKeysNeverTakeOverTheMenuShortcut() {
+        let password = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey) | UInt32(shiftKey))
+        XCTAssertEqual(pinnedCopyHotKeys(excluding: password).map(\.shortcut), [.copyPrimary, .copyOneTimePassword])
+    }
+
+    func testPinnedHotKeyIDsAreDistinctFromTheMenuShortcutAndResolveBack() {
+        let hotKeys = pinnedCopyHotKeys(excluding: .default)
+        XCTAssertEqual(Set(hotKeys.map(\.id)).count, hotKeys.count)
+        XCTAssertFalse(hotKeys.map(\.id).contains(menuHotKeyID))
+        for hotKey in hotKeys {
+            XCTAssertEqual(pinnedCopyShortcut(id: hotKey.id), hotKey.shortcut)
+        }
+        XCTAssertNil(pinnedCopyShortcut(id: menuHotKeyID))
     }
 
     func testEachAccountGetsItsOwnPinnedWindow() {
@@ -132,17 +169,17 @@ final class FieldCopyTests: XCTestCase {
     }
 }
 
-private func keyEvent(characters: String, modifiers: NSEvent.ModifierFlags) -> NSEvent {
-    NSEvent.keyEvent(
-        with: .keyDown,
+@MainActor
+private func mouseEvent(_ type: NSEvent.EventType, in window: NSWindow) -> NSEvent {
+    NSEvent.mouseEvent(
+        with: type,
         location: .zero,
-        modifierFlags: modifiers,
+        modifierFlags: [],
         timestamp: 0,
-        windowNumber: 0,
+        windowNumber: window.windowNumber,
         context: nil,
-        characters: characters,
-        charactersIgnoringModifiers: characters,
-        isARepeat: false,
-        keyCode: 13
+        eventNumber: 0,
+        clickCount: 1,
+        pressure: 1
     )!
 }
