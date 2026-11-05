@@ -109,6 +109,7 @@ spacing:
   preferences-width: 560
   preferences-height: 800
   about-width: 440
+  paywall-width: 400
   editor-width: 450
   editor-height: 640
   menu-bar-icon: 18
@@ -255,8 +256,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   padding, 5 pt vertical, at least 38 pt tall.
 - **Generator**: a 412 × 300 pt child window; the password well is 28 pt tall, radius 5, and fills the row beside the button.
 - **Detached windows**: Preferences is 560 × 800 pt (minimum height 480), About 440 pt wide,
-  Editor 450 × 640 pt. The warm surface runs under a transparent title bar. Preferences and
-  About use radius 12 cards.
+  Editor 450 × 640 pt, the Premium window 400 pt wide. The warm surface runs under a transparent title
+  bar. Preferences, About and the Premium window use radius 12 cards.
 - **Large Type**: a borderless window at screen-saver level, sized to the password. Its largest
   size is the visible frame minus 48 pt in width and height.
 - **Spacing rhythm**: 4 · 5 · 8 · 10 · 12 · 14 · 20 · 24. **Menu bar mark**: 18 × 18 pt.
@@ -318,6 +319,19 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
 - **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
   in the last 5 s.
+- **Locked one-time code** — App Store channel, no Premium. A 11 pt `lock.fill` in `text-secondary` and "Included with
+  Premium" in `body` `text-secondary`, with a compact primary split action button, Upgrade, always visible at the right.
+  Return on the row runs Upgrade. The item's code is never computed.
+- **Premium window** — App Store channel only. 40 pt pie, `title`, one line of `body` `text-secondary`, the plan cards,
+  then Restore Purchases and Manage Subscription, the renewal terms in `caption` `text-secondary` and two `accent-text` links. Closes by itself when
+  Premium arrives.
+- **Plan card** — radius 12 on `field-surface` with an ink 7 % hairline: the plan name from Apple in `body` medium, one
+  `caption` line, and a regular split action button at the right: primary for the one-time plan, quiet for the subscription,
+  so the surface keeps one main action. The button shows the price from Apple, and no price is ever written in the code. While
+  buying it says "Waiting…"; an owned plan shows "Owned" in `text-secondary`.
+- **Premium section** — App Store channel, first in Preferences. Status in `body` medium with its detail in `caption`, the
+  plans divided by hairlines, then the same actions and terms. Errors use `error`; waiting, cancelled and restored use
+  `text-secondary`. Orange is never a status.
 - **Strength meter** — 5 pt capsule on a 12 % track, at least 6 pt wide: `strength-weak` below 0.4,
   `strength-medium` below 0.7, otherwise `strength-strong`.
 - **Password Generator** — password well (`code-md`), a regular primary split action button (Copy, with Save as

@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var aboutWindow: NSWindow?
+    #if !PP_DIRECT
+    private var paywallWindow: NSWindow?
+    #endif
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
     private var reporter: StatusReporter?
@@ -73,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session.onActivity = { [weak self] in self?.autoLock.registerActivity() }
         session.onAutoLockChange = { [weak self] settings in self?.autoLock.update(settings) }
         buildMainMenu()
+        wirePremium()
         panelController = PanelController(session: session)
         session.hidePanel = { [weak self] in self?.panelController.hide() }
         buildStatusItem()
@@ -319,6 +323,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         preferencesWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// Starts asking the store who has Premium. On the App Store channel, a locked code opens the plans, and Premium
+    /// arriving closes them. The direct channel has no paywall to wire.
+    private func wirePremium() {
+        #if !PP_DIRECT
+        let premium = session.premium
+        premium.presentPaywall = { [weak self] in self?.showPaywall() }
+        premium.$status
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard premium.hasPremium else { return }
+                self?.paywallWindow?.close()
+            }
+            .store(in: &cancellables)
+        #endif
+        session.premium.start()
+    }
+
+    #if !PP_DIRECT
+    func showPaywall() {
+        if paywallWindow == nil {
+            let host = NSHostingController(rootView: PaywallView(store: session.premium))
+            host.sizingOptions = [.preferredContentSize]
+            let window = NSWindow(contentViewController: host)
+            window.styleMask = [.titled, .closable]
+            window.title = "PasswordPie Premium"
+            window.applyWarmTitlebar()
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.center()
+            paywallWindow = window
+        }
+        panelController.hide(refocusPrevious: false)
+        NSApp.activate(ignoringOtherApps: true)
+        paywallWindow?.makeKeyAndOrderFront(nil)
+    }
+    #endif
+
     func showAbout() {
         if aboutWindow == nil {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -344,6 +385,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        #if !PP_DIRECT
+        if window === paywallWindow { paywallWindow = nil }
+        #endif
         if window === editorWindow {
             editorWindow = nil
             if session.editing != nil { session.cancelEditing() }
@@ -457,6 +501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static func suppressesPreviewHotkey(_ environment: [String: String]) -> Bool {
         environment["PASSWORDPIE_PREFERENCES"] != nil
             || environment["PASSWORDPIE_ABOUT"] != nil
+            || environment["PASSWORDPIE_PAYWALL"] != nil
             || environment["PASSWORDPIE_DISABLE_HOTKEY"] != nil
     }
     #endif
@@ -532,11 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             _ = panelController.headerShortcut(shortcut)
             return
         }
-        guard let id = pinnedOrder.last,
-              let entry = session.entry(id),
-              let target = quickAccessCopyTarget(shortcut, of: entry),
-              !session.value(of: target, in: entry).isEmpty else { return }
-        session.copy(target, of: id)
+        guard let id = pinnedOrder.last else { return }
+        session.runCopyShortcut(shortcut, of: id)
     }
 
     // MARK: Debug hooks
@@ -553,6 +595,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showAbout()
             return
         }
+        #if !PP_DIRECT
+        if env["PASSWORDPIE_PAYWALL"] != nil {
+            showPaywall()
+            return
+        }
+        #endif
         if env["PASSWORDPIE_PREFERENCES"] != nil {
             showPreferences()
             if let rawHeight = env["PASSWORDPIE_PREFERENCES_HEIGHT"], let height = Double(rawHeight), height.isFinite {
@@ -585,6 +633,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self?.panelController.menu.debugHover(title)
                 }
             }
+        }
+        if let title = env["PASSWORDPIE_PIN"], let id = session.allEntries.first(where: { $0.title == title })?.id {
+            session.pinEntry(id)
         }
         if let path = env["PASSWORDPIE_OPEN"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in

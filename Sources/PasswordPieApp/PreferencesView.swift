@@ -13,6 +13,9 @@ struct PreferencesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                #if !PP_DIRECT
+                section("Premium") { PremiumPreferencesSection(store: session.premium) }
+                #endif
                 section("Quick access") { shortcut }
                 section("Security") { security }
                 section("Everyday") { everyday }
