@@ -18,7 +18,7 @@ struct SplitActionButton: View {
         var height: CGFloat { self == .compact ? 20 : 28 }
         var fontSize: CGFloat { self == .compact ? 11 : 12 }
         var labelPadding: CGFloat { self == .compact ? 7 : 10 }
-        var arrowWidth: CGFloat { self == .compact ? 16 : 20 }
+        var arrowWidth: CGFloat { self == .compact ? 20 : 24 }
         var arrowSize: CGFloat { self == .compact ? 8 : 9 }
     }
 
@@ -46,8 +46,8 @@ struct SplitActionButton: View {
                     label: ink,
                     arrow: Palette.secondaryText(dark: dark),
                     line: ink.opacity(0.25),
-                    hover: ink.opacity(0.06),
-                    pressed: ink.opacity(0.14)
+                    hover: ink.opacity(0.1),
+                    pressed: ink.opacity(0.18)
                 )
             case .primary:
                 let ink = Palette.onAccent
@@ -56,8 +56,8 @@ struct SplitActionButton: View {
                     label: ink,
                     arrow: ink,
                     line: ink.opacity(0.28),
-                    hover: ink.opacity(0.06),
-                    pressed: ink.opacity(0.14)
+                    hover: ink.opacity(0.1),
+                    pressed: ink.opacity(0.18)
                 )
             }
         }

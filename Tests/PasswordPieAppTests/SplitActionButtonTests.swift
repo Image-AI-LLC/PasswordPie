@@ -15,7 +15,6 @@ final class SplitActionButtonTests: XCTestCase {
         return bitmap
     }
 
-    /// Counts pixels near an sRGB hue family: strongly red-over-blue, or strongly blue-over-red.
     private func pixelCount(_ bitmap: NSBitmapImageRep, where matches: (CGFloat, CGFloat, CGFloat) -> Bool) -> Int {
         var count = 0
         for x in 0..<bitmap.pixelsWide {
@@ -32,6 +31,10 @@ final class SplitActionButtonTests: XCTestCase {
     func testRegularSizeMatchesThePasswordWellAndCompactFitsADetailRow() {
         XCTAssertEqual(SplitActionButton.Size.regular.height, 28)
         XCTAssertLessThanOrEqual(SplitActionButton.Size.compact.height, 21)
+    }
+
+    func testArrowIsAtLeastAsWideAsItIsTallInDetails() {
+        XCTAssertGreaterThanOrEqual(SplitActionButton.Size.compact.arrowWidth, SplitActionButton.Size.compact.height)
     }
 
     /// A borderless Menu's arrow takes the control tint and ignores its label's colour, which is how orange or a blue system accent got in.

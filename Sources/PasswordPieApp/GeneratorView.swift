@@ -53,7 +53,7 @@ struct GeneratorView: View {
                     .padding(.horizontal, 8)
                     .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 5).fill(Palette.card(dark: colorScheme == .dark)))
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5))
                 SplitActionButton(
                     title: "Copy",
                     size: .regular,

@@ -302,8 +302,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Split action button** — `SplitActionButton`, the one control for an action with an optional menu. The
   word runs the action; the arrow, present only when there is more, opens a menu that never repeats the word.
   Radius 5. Quiet: `field-surface`, `text` label, `text-secondary` arrow, ink 25 % hairline and divider. Primary:
-  `brand-accent`, `on-accent` label and arrow, `on-accent` 28 % divider, no outline. Hover adds ink 6 %, pressed
-  ink 14 %. Compact is 20 pt tall in `caption`; regular is 28 pt in `control`.
+  `brand-accent`, `on-accent` label and arrow, `on-accent` 28 % divider, no outline. Hover adds ink 10 %, pressed
+  ink 18 %. Compact is 20 pt tall in `caption` with a 20 pt arrow; regular is 28 pt in `control` with a 24 pt arrow.
 - **Detail field** — `label` over the value, with a hairline on top. States: normal; focused (keyboard,
   `brand-accent` 20 % fill); hover (a compact quiet split action button at the right: "Copy" for most fields,
   "Open" for a website; a password's arrow adds Reveal / Conceal and Large Type, a website's adds Copy and
