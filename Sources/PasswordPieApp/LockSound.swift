@@ -1,7 +1,7 @@
 import AppKit
 
 /// The two padlock clicks. See `docs/UX.md`, "Lock".
-enum LockSound: CaseIterable {
+enum LockSound {
     case lock
     case unlock
 

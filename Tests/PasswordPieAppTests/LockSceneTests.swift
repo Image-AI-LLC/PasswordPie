@@ -111,6 +111,26 @@ final class LockSceneTests: XCTestCase {
         XCTAssertTrue(panel.isVisible, "the old scene does not hide the new showing")
     }
 
+    func testUnlockingDuringTheSceneEndsItAndShowsTheMenu() async throws {
+        try XCTSkipIf(NSScreen.screens.isEmpty, "the panel needs a screen to become visible")
+        let (session, panel) = openPanel(scene: LockScene(settle: 0.02, fadeStart: 0.1, fadeDuration: 0.3))
+        defer { panel.hide() }
+        session.lock()
+        XCTAssertTrue(panel.lockingOut)
+        // Open Database… locks, then a quick Touch ID unlock can land while the panel is still fading.
+        try await Task.sleep(nanoseconds: 150_000_000)
+        session.passwordDraft = "pw"
+        session.unlock()
+        await waitUntil { !session.locked }
+
+        XCTAssertFalse(panel.lockingOut)
+        XCTAssertFalse(panel.lockModel.locking)
+        XCTAssertTrue(panel.isVisible)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertTrue(panel.isVisible, "the old fade does not hide the unlocked menu")
+        XCTAssertEqual(panel.panel.alphaValue, 1, "never an invisible panel over an open vault")
+    }
+
     func testLockingWithTheMenuClosedIsSilent() async throws {
         let (session, panel) = openPanel(show: false)
         session.lock()

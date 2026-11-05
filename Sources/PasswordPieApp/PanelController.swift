@@ -326,6 +326,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     /// The search field when unlocked, the master-password field when locked.
     func focusInitialField() {
+        // The lock scene shows no form; nothing may take the keys until it ends.
+        guard !lockingOut else { return }
         if session.locked {
             // While the database decrypts the form is hidden; the end of unlocking focuses it again on failure.
             guard !session.unlocking else {
@@ -570,6 +572,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             recall.forget()
             lockAnimation()
         } else {
+            // An unlock can land while the lock scene still plays (Open Database… then a quick Touch ID).
+            // End the scene first, so the panel is opaque again and its fade cannot hide the open menu.
+            endLockScene()
             unlockAnimation()
         }
     }
@@ -577,12 +582,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// The lock screen fades in over the menu with "Locked" in place of the form, the logo settles as the padlock
     /// clicks, and the panel fades out. A lock with the panel closed is silent.
     private func lockAnimation() {
+        sceneGeneration &+= 1
         guard panel.isVisible else {
             applyLayout(locked: true)
             return
         }
         menu.closeAll()
-        sceneGeneration &+= 1
         animatingLock = true
         lockingOut = true
         lockModel.locking = true
@@ -646,6 +651,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             applyLayout(locked: false)
             return
         }
+        sceneGeneration &+= 1
+        let generation = sceneGeneration
         // Unlocking in the open panel is the moment Chrome may ask. The menu stays up while the read runs.
         session.noteChromePanelShown()
         animatingLock = true
@@ -657,9 +664,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         lockModel.turned = true
         playSound(.unlock)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.lockModel.open = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guard let self else { return }
+            guard let self, self.sceneGeneration == generation else { return }
+            self.lockModel.open = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.sceneGeneration == generation else { return }
                 self.animatingLock = false
                 self.applyLayout(locked: false)
                 if let screen = self.currentScreen { self.setFrame(animated: true, screen: screen) }
