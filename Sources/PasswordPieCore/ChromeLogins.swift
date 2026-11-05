@@ -167,6 +167,8 @@ public struct ChromeStoreSignature: Equatable, Sendable {
 
 public enum ChromeLogins {
     public static let groupName = "Chrome (live)"
+    public static let usernameFieldName = "Chrome username"
+    public static let passwordFieldName = "Chrome password"
     static let storeNames = ["Login Data", "Login Data For Account"]
 
     public static var defaultRoot: URL {
@@ -306,17 +308,95 @@ public enum ChromeLogins {
         return result
     }
 
-    /// Chrome logins to show beside the database's own entries: one that the database already holds
-    /// (same site, same account, same password) is hidden. A different password stays visible so the difference is not lost.
-    public static func visible(_ live: [VaultEntry], against saved: [VaultEntry]) -> [VaultEntry] {
-        var held = Set<String>()
-        for entry in saved where !entry.trashed {
-            held.insert(BrowserImport.matchKey(entry) + "\u{2}" + entry.password)
+    /// The list to show: one entry per account. Chrome is only read, so its values are display fields and must not be written back.
+    /// A login joins a saved entry with its own id, then one with the same site and username,
+    /// then a copy saved from Chrome with the same site and password, which is a username renamed in Chrome.
+    /// A value that differs from the saved entry appears as a field. A login that joins nothing is listed as it is.
+    public static func combined(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
+        guard !live.isEmpty else { return saved }
+        var byID: [UUID: Int] = [:]
+        var byAccount: [String: [Int]] = [:]
+        for (index, entry) in saved.enumerated() where !entry.trashed {
+            if byID[entry.id] == nil { byID[entry.id] = index }
+            byAccount[BrowserImport.matchKey(entry), default: []].append(index)
         }
-        return live.filter { !held.contains(BrowserImport.matchKey($0) + "\u{2}" + $0.password) }
+        var joined: [Int: [VaultEntry]] = [:]
+        var waiting: [VaultEntry] = []
+        for login in live {
+            if let index = byID[login.id] {
+                joined[index, default: []].append(login)
+            } else {
+                waiting.append(login)
+            }
+        }
+        var unmatched: [VaultEntry] = []
+        for login in waiting {
+            let candidates = byAccount[BrowserImport.matchKey(login)] ?? []
+            let samePassword = candidates.first { saved[$0].password == login.password }
+            // Without a username the site alone does not say it is the same account.
+            if let index = samePassword ?? (login.username.isEmpty ? nil : candidates.first) {
+                joined[index, default: []].append(login)
+            } else {
+                unmatched.append(login)
+            }
+        }
+        var lone: [VaultEntry] = []
+        if !unmatched.isEmpty {
+            var renameCandidates: [String: [Int]] = [:]
+            for (index, entry) in saved.enumerated() where !entry.trashed && joined[index] == nil && isChromeCopy(entry) {
+                renameCandidates[renameKey(entry), default: []].append(index)
+            }
+            for login in unmatched {
+                let key = renameKey(login)
+                if let index = renameCandidates[key]?.first {
+                    renameCandidates[key]?.removeFirst()
+                    joined[index] = [login]
+                } else {
+                    lone.append(login)
+                }
+            }
+        }
+        var shown = saved
+        for (index, logins) in joined {
+            addChromeFields(logins, to: &shown[index])
+        }
+        return shown + lone
     }
 
     // MARK: Private
+
+    private static func isChromeCopy(_ entry: VaultEntry) -> Bool {
+        entry.tagList.contains { $0.caseInsensitiveCompare(BrowserImportSource.chrome.label) == .orderedSame }
+    }
+
+    private static func renameKey(_ entry: VaultEntry) -> String {
+        BrowserImport.host(of: entry.url) + "\u{1}" + entry.password
+    }
+
+    private static func addChromeFields(_ logins: [VaultEntry], to entry: inout VaultEntry) {
+        var taken = Set(entry.fields.map(\.key))
+        var usernames = [entry.username]
+        var passwords = [entry.password]
+        func add(_ value: String, named base: String, protected: Bool, to entry: inout VaultEntry) {
+            var key = base
+            var number = 2
+            while !taken.insert(key).inserted {
+                key = "\(base) (\(number))"
+                number += 1
+            }
+            entry.fields.append(VaultField(key: key, value: value, protected: protected))
+        }
+        for login in logins {
+            if !login.username.isEmpty, !usernames.contains(where: { $0.caseInsensitiveCompare(login.username) == .orderedSame }) {
+                usernames.append(login.username)
+                add(login.username, named: usernameFieldName, protected: false, to: &entry)
+            }
+            if !login.password.isEmpty, !passwords.contains(login.password) {
+                passwords.append(login.password)
+                add(login.password, named: passwordFieldName, protected: true, to: &entry)
+            }
+        }
+    }
 
     private struct Row {
         var origin: String

@@ -226,22 +226,91 @@ final class ChromeLoginsTests: XCTestCase {
 
     // MARK: Showing live entries next to the database
 
-    func testAChromeLoginAlreadyInTheDatabaseIsHidden() {
-        var saved = VaultEntry(); saved.title = "GitHub"; saved.url = "https://github.com"; saved.username = "ann"; saved.password = "pw"
-        var live = VaultEntry(); live.title = "github.com"; live.url = "https://github.com/login"; live.username = "ANN"; live.password = "pw"
-        XCTAssertTrue(ChromeLogins.visible([live], against: [saved]).isEmpty)
+    private func login(_ url: String, _ user: String, _ password: String, id: UUID = UUID(), tags: String = "", trashed: Bool = false) -> VaultEntry {
+        var entry = VaultEntry(id: id, trashed: trashed, tags: tags)
+        entry.url = url
+        entry.username = user
+        entry.password = password
+        return entry
     }
 
-    func testAChromeLoginWithADifferentPasswordStaysVisible() {
-        var saved = VaultEntry(); saved.url = "https://github.com"; saved.username = "ann"; saved.password = "old"
-        var live = VaultEntry(); live.url = "https://github.com"; live.username = "ann"; live.password = "new"
-        XCTAssertEqual(ChromeLogins.visible([live], against: [saved]).count, 1)
+    func testAChromeLoginNobodySavedIsShownAsIs() {
+        let live = login("https://github.com", "ann", "pw")
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [live]), [live])
     }
 
-    func testTrashedDatabaseEntriesDoNotHideChromeLogins() {
-        var saved = VaultEntry(); saved.url = "https://github.com"; saved.username = "ann"; saved.password = "pw"; saved.trashed = true
-        var live = VaultEntry(); live.url = "https://github.com"; live.username = "ann"; live.password = "pw"
-        XCTAssertEqual(ChromeLogins.visible([live], against: [saved]).count, 1)
+    func testTheSameSiteAndAccountWithTheSamePasswordShowOneEntryAndNoExtraField() {
+        let saved = login("https://github.com", "ann", "pw")
+        let live = login("https://github.com/login", "ANN", "pw")
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [live]), [saved])
+    }
+
+    func testADifferentChromePasswordBecomesAProtectedFieldOnTheOneEntry() {
+        let saved = login("https://github.com", "ann", "mine")
+        let live = login("https://github.com", "ann", "chrome")
+        let shown = ChromeLogins.combined(saved: [saved], live: [live])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown[0].id, saved.id)
+        XCTAssertEqual(shown[0].password, "mine")
+        XCTAssertEqual(shown[0].fields.first { $0.key == ChromeLogins.passwordFieldName }?.value, "chrome")
+        XCTAssertEqual(shown[0].fields.first { $0.key == ChromeLogins.passwordFieldName }?.protected, true)
+    }
+
+    func testAnEntrySavedFromChromeStaysOneAfterItsUsernameAndPasswordChange() {
+        let id = UUID()
+        let saved = login("https://github.com", "renamed", "mine", id: id)
+        let live = login("https://github.com", "ann", "chrome", id: id)
+        let shown = ChromeLogins.combined(saved: [saved], live: [live])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown[0].username, "renamed")
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.usernameFieldName), "ann")
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "chrome")
+    }
+
+    func testAUsernameRenamedInChromeStaysOnTheCopySavedFromChrome() {
+        let saved = login("https://github.com", "ann", "pw", tags: "Chrome")
+        let renamed = login("https://github.com", "ann2", "pw")
+        let shown = ChromeLogins.combined(saved: [saved], live: [renamed])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.usernameFieldName), "ann2")
+    }
+
+    func testAnotherAccountWithTheSamePasswordStaysSeparateFromTheUsersOwnEntry() {
+        let saved = login("https://github.com", "ann", "pw")
+        let other = login("https://github.com", "bob", "pw")
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [other]).count, 2)
+    }
+
+    func testALoginWithNoUsernameNeedsTheSamePasswordToJoinAnEntry() {
+        let saved = login("https://github.com", "", "mine")
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [login("https://github.com", "", "chrome")]).count, 2)
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [login("https://github.com", "", "mine")]).count, 1)
+    }
+
+    func testTwoChromeProfilesWithDifferentPasswordsAreBothKeptOnTheEntry() {
+        let saved = login("https://github.com", "ann", "mine")
+        let work = login("https://github.com", "ann", "work")
+        let home = login("https://github.com", "ann", "home")
+        let shown = ChromeLogins.combined(saved: [saved], live: [work, home])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "work")
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName + " (2)"), "home")
+    }
+
+    func testAFieldTheUserNamedTheSameIsNotOverwritten() {
+        var saved = login("https://github.com", "ann", "mine")
+        saved.setValue("user value", for: ChromeLogins.passwordFieldName)
+        let shown = ChromeLogins.combined(saved: [saved], live: [login("https://github.com", "ann", "chrome")])[0]
+        XCTAssertEqual(shown.value(for: ChromeLogins.passwordFieldName), "user value")
+        XCTAssertEqual(shown.value(for: ChromeLogins.passwordFieldName + " (2)"), "chrome")
+    }
+
+    func testATrashedEntryDoesNotAbsorbTheChromeLogin() {
+        let id = UUID()
+        let saved = login("https://github.com", "ann", "pw", id: id, trashed: true)
+        let live = login("https://github.com", "ann", "pw", id: id)
+        let shown = ChromeLogins.combined(saved: [saved], live: [live])
+        XCTAssertEqual(shown.filter { !$0.trashed }, [live])
     }
 
     // MARK: Store signature

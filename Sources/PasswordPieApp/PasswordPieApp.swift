@@ -271,7 +271,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.center()
             editorWindow = window
         }
-        editorWindow?.title = session.editingIsNew ? "New Item" : "Edit \(entry.title)"
+        // A Chrome login being saved is new to the database but already has a name.
+        editorWindow?.title = session.editingIsNew && entry.title.isEmpty ? "New Item" : "Edit \(entry.title)"
         panelController.hide(refocusPrevious: false)
         NSApp.activate(ignoringOtherApps: true)
         editorWindow?.makeKeyAndOrderFront(nil)

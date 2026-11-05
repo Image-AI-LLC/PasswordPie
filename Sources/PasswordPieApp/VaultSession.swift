@@ -72,11 +72,12 @@ final class VaultSession: ObservableObject {
     @Published var message = ""
     @Published var importStatus = ""
     @Published var importStatusIsError = false
-    /// Chrome logins read live. Never part of `entries`, so no save can copy them into the database.
+    /// Chrome logins read live. A save writes `entries`, so a login reaches the database only when the user edits or favorites it.
     @Published var liveEntries: [VaultEntry] = [] {
         didSet { catalogChanged() }
     }
-    /// The database's entries plus live Chrome logins that the database does not already hold. Search and menus read this.
+    /// One row per account: the database's entries, showing what Chrome holds when it differs, plus Chrome logins with no entry yet.
+    /// Search and menus read this. Saving must not: use `storedEntry`, because Chrome's values here are for display.
     /// Kept up to date when either list changes, so lookups do not merge the lists again.
     @Published private(set) var allEntries: [VaultEntry] = []
     /// The menu shown with an empty search, built off the main thread. Nil until the first build for this catalog finishes.
@@ -841,18 +842,38 @@ final class VaultSession: ObservableObject {
     /// Shared by `allEntries` and the pinned windows, which build it from the values a publisher just emitted.
     static func visibleEntries(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
         #if PP_DIRECT
-        return saved + ChromeLogins.visible(live, against: saved)
+        return ChromeLogins.combined(saved: saved, live: live)
         #else
         return saved
         #endif
     }
 
+    /// A Chrome login with no database entry yet.
     func isLive(_ id: UUID) -> Bool {
-        liveEntries.contains { $0.id == id }
+        liveEntries.contains { $0.id == id } && storedEntry(id) == nil
     }
 
+    /// The entry as shown, with Chrome's differing values as fields. Change and save `storedEntry` instead.
     func entry(_ id: UUID) -> VaultEntry? {
         allEntries.first { $0.id == id && !$0.trashed }
+    }
+
+    private func storedEntry(_ id: UUID) -> VaultEntry? {
+        entries.first { $0.id == id && !$0.trashed }
+    }
+
+    /// A Chrome login as a database entry, in the group and with the tag a CSV import uses.
+    /// It keeps the login's id, so it stays the same account for an open details view, a pinned window and ranking.
+    private func chromeDraft(_ id: UUID) -> VaultEntry? {
+        guard isLive(id), var draft = entry(id) else { return nil }
+        draft.groupPath = [BrowserImportSource.chrome.label]
+        draft.tags = BrowserImportSource.chrome.label
+        return draft
+    }
+
+    /// Chrome's own last-used time still ranks the entry after Chrome sync is turned off.
+    private func keepChromeLastUsed(_ id: UUID) {
+        if let used = chromeLastUsed[id] { try? usage.record(id, at: used) }
     }
 
     func newEntry() {
@@ -861,12 +882,15 @@ final class VaultSession: ObservableObject {
         editingIsNew = true
     }
 
+    /// Editing a Chrome login opens a draft. Save puts it in the database and Chrome is left as it is.
     func edit(_ id: UUID) {
-        if isLive(id) {
-            editInChrome()
+        if let draft = chromeDraft(id) {
+            onActivity?()
+            editing = draft
+            editingIsNew = true
             return
         }
-        guard let entry = entry(id) else { return }
+        guard let entry = storedEntry(id) else { return }
         onActivity?()
         editing = entry
         editingIsNew = false
@@ -876,13 +900,26 @@ final class VaultSession: ObservableObject {
         var entry = entry
         if entry.title.isEmpty { entry.title = "Untitled" }
         let path = listPaths[entry.id] ?? databaseURL.path
+        // A new item, or a Chrome draft that may reuse the row of its trashed copy. A failed write has nothing else holding it,
+        // so it comes back out of the database and the editor stays open with what the user typed.
+        let isDraft = storedEntry(entry.id) == nil
+        let before = openedFiles.first { $0.url.path == path }?.vault.entries ?? []
         if listPaths[entry.id] != nil {
             replaceStored(entry)
         } else {
             appendStored(entry, to: path)
         }
-        editing = nil
-        persist(path: path)
+        if persist(path: path) {
+            editing = nil
+            keepChromeLastUsed(entry.id)
+        } else if isDraft {
+            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
+                openedFiles[index].vault.entries = before
+            }
+            publishCatalog()
+        } else {
+            editing = nil
+        }
     }
 
     func cancelEditing() {
@@ -936,7 +973,7 @@ final class VaultSession: ObservableObject {
     }
 
     func deleteEditing() {
-        guard let id = editing?.id, var entry = entry(id) else { return }
+        guard let id = editing?.id, var entry = storedEntry(id) else { return }
         entry.trashed = true
         replaceStored(entry)
         editing = nil
@@ -944,30 +981,31 @@ final class VaultSession: ObservableObject {
     }
 
     func toggleFavorite(_ id: UUID) {
-        guard !isLive(id), var entry = entry(id) else { return }
+        guard var entry = storedEntry(id) else {
+            favoriteChromeLogin(id)
+            return
+        }
         entry.favorite.toggle()
         replaceStored(entry)
         persist(path: listPaths[id] ?? databaseURL.path)
     }
 
-    /// Copies a live Chrome login into the database, in the same group and with the same tag a CSV import uses.
-    /// The copy is a normal entry from then on, and the live one is hidden because the database now holds it.
-    func saveToDatabase(_ id: UUID) {
-        guard let live = liveEntries.first(where: { $0.id == id }) else { return }
-        #if PP_DIRECT
-        guard !ChromeLogins.visible([live], against: entries).isEmpty else { return }
-        #endif
-        var copy = live
-        copy.id = UUID()
-        copy.groupPath = [BrowserImportSource.chrome.label]
-        copy.tags = BrowserImportSource.chrome.label
-        let path = databaseURL.path
-        appendStored(copy, to: path)
+    /// A favorite lives in the database, so starring a Chrome login saves it. A failed write leaves it as a Chrome login.
+    private func favoriteChromeLogin(_ id: UUID) {
+        guard var draft = chromeDraft(id) else { return }
+        draft.favorite = true
+        let path = listPaths[id] ?? databaseURL.path
+        let before = openedFiles.first { $0.url.path == path }?.vault.entries ?? []
+        if listPaths[id] != nil {
+            replaceStored(draft)
+        } else {
+            appendStored(draft, to: path)
+        }
         if persist(path: path) {
-            if let used = lastUsedMap[live.id] { try? usage.record(copy.id, at: used) }
+            keepChromeLastUsed(id)
         } else {
             if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
-                openedFiles[index].vault.entries.removeAll { $0.id == copy.id }
+                openedFiles[index].vault.entries = before
             }
             publishCatalog()
         }
@@ -1108,7 +1146,7 @@ final class VaultSession: ObservableObject {
         recordUse(id)
     }
 
-    /// When each account was last used, for search ranking: this app's own record, or Chrome's for a live login, whichever is later.
+    /// When each account was last used, for search ranking: this app's own record, or Chrome's for a login with that id, whichever is later.
     var lastUsedMap: [UUID: Date] {
         usage.lastUsed.merging(chromeLastUsed) { max($0, $1) }
     }
