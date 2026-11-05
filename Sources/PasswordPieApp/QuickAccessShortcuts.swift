@@ -2,7 +2,7 @@ import PasswordPieCore
 
 /// A Quick Access shortcut from 1Password's Quick Access list. The main app's shortcuts are not included.
 enum QuickAccessShortcut: Equatable {
-    /// ⌘C. Username, or the first other field when the item has no username.
+    /// ⌃⌘C. Username, or the first other field when the item has no username.
     case copyPrimary
     /// ⇧⌘C.
     case copyPassword
@@ -22,8 +22,6 @@ struct QuickAccessKeyPress: Equatable {
     var shift = false
     var option = false
     var control = false
-    /// A selection in the search field keeps plain ⌘C as a text copy.
-    var searchTextIsSelected = false
 }
 
 /// Escape clears a query. A second press, or Escape in an empty field, closes Quick Access.
@@ -33,8 +31,10 @@ enum QuickAccessEscape: Equatable {
 }
 
 func quickAccessShortcut(_ press: QuickAccessKeyPress) -> QuickAccessShortcut? {
-    if press.control { return nil }
     let key = press.key.lowercased()
+    if press.control {
+        return key == "c" && press.command && !press.shift && !press.option ? .copyPrimary : nil
+    }
     if key == "\r" || key == "\n" {
         if press.command { return nil }
         if press.option && !press.shift { return .openAndFill }
@@ -47,8 +47,6 @@ func quickAccessShortcut(_ press: QuickAccessKeyPress) -> QuickAccessShortcut? {
         return .copyOneTimePassword
     case "c" where press.shift && !press.option:
         return .copyPassword
-    case "c" where !press.shift && !press.option && !press.searchTextIsSelected:
-        return .copyPrimary
     case "o" where !press.shift && !press.option:
         return .pinItem
     default:
@@ -56,11 +54,27 @@ func quickAccessShortcut(_ press: QuickAccessKeyPress) -> QuickAccessShortcut? {
     }
 }
 
+/// The keys go straight to the text view with no menu validation, and with nothing selected Copy and Cut
+/// overwrite the clipboard with an empty string.
+func editCommandWouldEmptyClipboard(key: String, selectionLength: Int?) -> Bool {
+    (key == "c" || key == "x") && selectionLength == 0
+}
+
 func quickAccessEscape(searchIsEmpty: Bool) -> QuickAccessEscape {
     searchIsEmpty ? .close : .clearSearch
 }
 
-/// ⌘C copies the username. An item without one copies the first field the details view would show, except the one-time password.
+/// The field a copy shortcut puts on the clipboard. The other shortcuts copy nothing.
+func quickAccessCopyTarget(_ shortcut: QuickAccessShortcut, of entry: VaultEntry) -> CopyTarget? {
+    switch shortcut {
+    case .copyPrimary: quickAccessPrimaryCopy(entry)
+    case .copyPassword: .password
+    case .copyOneTimePassword: .oneTimePassword
+    case .pinItem, .openAndFill, .fillFocusedApp: nil
+    }
+}
+
+/// ⌃⌘C copies the username. An item without one copies the first field the details view would show, except the one-time password.
 func quickAccessPrimaryCopy(_ entry: VaultEntry) -> CopyTarget? {
     if !entry.username.isEmpty { return .username }
     if !entry.password.isEmpty { return .password }

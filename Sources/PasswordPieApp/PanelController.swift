@@ -391,6 +391,17 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         focusInitialField()
     }
 
+    /// A pinned window never takes key, so a click on it does not reach `panelResignedKey`.
+    func pinnedWindowClicked() {
+        guard PanelPresence.hidesOnFocusLoss(
+            keepOpenDepth: keepOpenDepth,
+            touchIDBusy: touchIDPromptOpen,
+            recordingHotKey: session.recordingHotKey,
+            autoHideEnabled: autoHideEnabled
+        ) else { return }
+        hide()
+    }
+
     @objc private func panelResignedKey() {
         guard PanelPresence.hidesOnFocusLoss(
             keepOpenDepth: keepOpenDepth,
@@ -715,15 +726,16 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
                command: true,
                shift: shift,
                option: option,
-               control: control,
-               searchTextIsSelected: searchFieldHasSelection()
+               control: control
            )) {
             runQuickAccess(shortcut)
             return true
         }
         // No main menu is relied on: the standard edit commands go straight down the responder chain.
-        // Item shortcuts above already consumed ⌘C and ⌥⌘C.
+        // Item shortcuts above already consumed ⌥⌘C. Plain ⌘C copies the search text.
         if !shift, let action = Self.editActions[key] {
+            let selection = (panel.firstResponder as? NSTextView)?.selectedRange().length
+            if editCommandWouldEmptyClipboard(key: key, selectionLength: selection) { return true }
             return NSApp.sendAction(action, to: nil, from: nil)
         }
         if key == "z", shift { return NSApp.sendAction(Selector(("redo:")), to: nil, from: nil) }
@@ -743,22 +755,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         return true
     }
 
-    private func searchFieldHasSelection() -> Bool {
-        guard let editor = header.searchField.currentEditor() else { return false }
-        return editor.selectedRange.length > 0
-    }
-
     /// Copies dismiss Quick Access only when there is something to put on the clipboard.
     private func runQuickAccess(_ shortcut: QuickAccessShortcut) {
         guard let id = menu.currentEntryID else { return }
         switch shortcut {
-        case .copyPrimary:
-            guard let entry = session.entry(id), let target = quickAccessPrimaryCopy(entry) else { return }
+        case .copyPrimary, .copyPassword, .copyOneTimePassword:
+            guard let entry = session.entry(id), let target = quickAccessCopyTarget(shortcut, of: entry) else { return }
             copyAndHide(target, of: id)
-        case .copyPassword:
-            copyAndHide(.password, of: id)
-        case .copyOneTimePassword:
-            copyAndHide(.oneTimePassword, of: id)
         case .pinItem:
             session.pinEntry(id)
         case .openAndFill:

@@ -2,22 +2,6 @@ import AppKit
 import PasswordPieCore
 import SwiftUI
 
-enum PinnedWindowCloseReason: Equatable {
-    case closeButton, resignKey, escape, commandW
-}
-
-/// A pinned account stays up while its fields are copied into another app.
-/// Losing focus, pressing Escape, or Command-W must not dismiss it. Only the close button does.
-func pinnedWindowShouldClose(_ reason: PinnedWindowCloseReason) -> Bool {
-    reason == .closeButton
-}
-
-/// Command-W reaches `performClose` as a key-down. The close button is a mouse event, so it still closes.
-func pinnedEventIsCommandW(_ event: NSEvent) -> Bool {
-    guard event.type == .keyDown, event.modifierFlags.contains(.command) else { return false }
-    return event.charactersIgnoringModifiers?.lowercased() == "w"
-}
-
 enum PinnedWindowPlacement: Equatable {
     case orderFront
     case openNew(index: Int)
@@ -26,6 +10,11 @@ enum PinnedWindowPlacement: Equatable {
 /// One window per account. Pinning an account that is already open brings that window forward.
 func pinnedWindowPlacement(openIDs: [UUID], id: UUID) -> PinnedWindowPlacement {
     openIDs.contains(id) ? .orderFront : .openNew(index: openIDs.count)
+}
+
+/// The order of open windows, back to front, after `id` comes to the top.
+func pinnedOrderRaising(_ id: UUID, in order: [UUID]) -> [UUID] {
+    order.filter { $0 != id } + [id]
 }
 
 /// New windows start at the top-right and step down-left so they do not stack on the same origin.
@@ -45,13 +34,15 @@ func activePinnedEntry(_ entries: [VaultEntry], id: UUID) -> VaultEntry? {
     entries.first { $0.id == id && !$0.trashed }
 }
 
-/// Always-on-top panel for one opened account. Clicking it can focus PasswordPie, so the field
-/// menu can open. It stays visible after PasswordPie deactivates, so the user can paste into the form underneath.
+/// Always-on-top panel for one opened account. It never takes focus, so the form underneath keeps the
+/// caret while a field is clicked here or copied with a global shortcut. Only its close button dismisses it.
 final class PinnedEntryPanel: NSPanel {
+    var onMouseDown: (() -> Void)?
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
-            styleMask: [.titled, .closable, .utilityWindow],
+            styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -59,31 +50,20 @@ final class PinnedEntryPanel: NSPanel {
         // isFloatingPanel turns hidesOnDeactivate back on and resets the level. Set both after.
         level = pinnedWindowLevel()
         hidesOnDeactivate = false
-        becomesKeyOnlyIfNeeded = false
         isReleasedWhenClosed = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    override func performClose(_ sender: Any?) {
-        let commandW = NSApp.currentEvent.map(pinnedEventIsCommandW) ?? false
-        guard pinnedWindowShouldClose(commandW ? .commandW : .closeButton) else { return }
-        super.performClose(sender)
-    }
-
-    override func resignKey() {
-        super.resignKey()
-        if pinnedWindowShouldClose(.resignKey) { close() }
-    }
-
-    override func cancelOperation(_ sender: Any?) {
-        if pinnedWindowShouldClose(.escape) { close() }
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown { onMouseDown?() }
+        super.sendEvent(event)
     }
 }
 
-/// The first click both focuses the panel and hits the field, so copy does not take a second click.
+/// The panel is never key, so every click has to count as a first click.
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

@@ -76,3 +76,34 @@ struct HotKeyConfig: Equatable {
         return names[Int(code)] ?? "Key \(code)"
     }
 }
+
+/// The Carbon hot key ID of the shortcut that opens the menu.
+let menuHotKeyID: UInt32 = 1
+
+/// A copy shortcut that reaches a pinned window from any app.
+struct PinnedCopyHotKey: Equatable {
+    var id: UInt32
+    var config: HotKeyConfig
+    var shortcut: QuickAccessShortcut
+}
+
+private let allPinnedCopyHotKeys: [PinnedCopyHotKey] = [
+    (UInt32(2), controlKey, QuickAccessShortcut.copyPrimary),
+    (UInt32(3), shiftKey, QuickAccessShortcut.copyPassword),
+    (UInt32(4), optionKey, QuickAccessShortcut.copyOneTimePassword),
+].map { id, modifier, shortcut in
+    PinnedCopyHotKey(
+        id: id,
+        config: HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey) | UInt32(modifier)),
+        shortcut: shortcut
+    )
+}
+
+/// The same keys as Quick Access. The shortcut the user chose for the menu keeps working if it is one of them.
+func pinnedCopyHotKeys(excluding menuShortcut: HotKeyConfig) -> [PinnedCopyHotKey] {
+    allPinnedCopyHotKeys.filter { $0.config != menuShortcut }
+}
+
+func pinnedCopyShortcut(id: UInt32) -> QuickAccessShortcut? {
+    allPinnedCopyHotKeys.first { $0.id == id }?.shortcut
+}

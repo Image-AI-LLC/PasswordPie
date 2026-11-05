@@ -297,8 +297,11 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Pinned window** — one window per account; pinning again brings it forward and leaves it in place. A
   new window starts at the top-right of the screen; each further one steps 28 pt down and left. Its level
   is the main-menu level minus 2, so it stays above normal windows and under PasswordPie's menu, also after
-  PasswordPie deactivates. Only its close button dismisses it; Command-W, Escape, clicking elsewhere and
-  copying or opening a field do not. Locking the vault or trashing the account does.
+  PasswordPie deactivates. It never takes focus, so the app underneath keeps the caret while a field is
+  clicked. While one is open, Control-Command-C (username), Shift-Command-C (password) and Option-Command-C
+  (one-time password) work in every app and copy from the top window; clicking a window brings it to the top.
+  Only its close button dismisses it; clicking elsewhere and copying or opening a field do not. Locking the
+  vault or trashing the account does.
 - **Split action button** — `SplitActionButton`, the one control for an action with an optional menu. The
   word runs the action; the arrow, present only when there is more, opens a menu that never repeats the word.
   Radius 5. Quiet: `field-surface`, `text` label, `text-secondary` arrow, ink 25 % hairline and divider. Primary:

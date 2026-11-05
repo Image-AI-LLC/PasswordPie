@@ -3,15 +3,27 @@ import XCTest
 @testable import PasswordPie
 
 final class QuickAccessShortcutTests: XCTestCase {
-    func testCommandCCopiesThePrimaryFieldUnlessSearchTextIsSelected() {
-        XCTAssertEqual(quickAccessShortcut(press("c", command: true)), .copyPrimary)
-        XCTAssertNil(quickAccessShortcut(press("c", command: true, searchTextIsSelected: true)))
+    func testControlCommandCCopiesThePrimaryField() {
+        XCTAssertEqual(quickAccessShortcut(press("c", command: true, control: true)), .copyPrimary)
+        XCTAssertEqual(quickAccessShortcut(press("C", command: true, control: true)), .copyPrimary)
+        XCTAssertNil(quickAccessShortcut(press("c", control: true)))
+        XCTAssertNil(quickAccessShortcut(press("c", command: true, shift: true, control: true)))
+    }
+
+    func testPlainCommandCStaysATextCopy() {
+        XCTAssertNil(quickAccessShortcut(press("c", command: true)))
         XCTAssertNil(quickAccessShortcut(press("c")))
     }
 
-    func testShiftCommandCCopiesThePasswordEvenWhenSearchTextIsSelected() {
-        let selected = press("c", command: true, shift: true, searchTextIsSelected: true)
-        XCTAssertEqual(quickAccessShortcut(selected), .copyPassword)
+    func testCopyAndCutWithNothingSelectedLeaveTheClipboardAlone() {
+        XCTAssertTrue(editCommandWouldEmptyClipboard(key: "c", selectionLength: 0))
+        XCTAssertTrue(editCommandWouldEmptyClipboard(key: "x", selectionLength: 0))
+        XCTAssertFalse(editCommandWouldEmptyClipboard(key: "c", selectionLength: 3))
+        XCTAssertFalse(editCommandWouldEmptyClipboard(key: "v", selectionLength: 0))
+        XCTAssertFalse(editCommandWouldEmptyClipboard(key: "c", selectionLength: nil))
+    }
+
+    func testShiftCommandCCopiesThePassword() {
         XCTAssertEqual(quickAccessShortcut(press("c", command: true, shift: true)), .copyPassword)
     }
 
@@ -42,6 +54,17 @@ final class QuickAccessShortcutTests: XCTestCase {
             XCTAssertNil(quickAccessShortcut(press(key, command: true)), key)
         }
         XCTAssertNil(quickAccessShortcut(press("o", command: true, shift: true)))
+    }
+
+    func testEachCopyShortcutPicksItsField() {
+        var login = VaultEntry()
+        login.username = "ada"
+        XCTAssertEqual(quickAccessCopyTarget(.copyPrimary, of: login), .username)
+        XCTAssertEqual(quickAccessCopyTarget(.copyPassword, of: login), .password)
+        XCTAssertEqual(quickAccessCopyTarget(.copyOneTimePassword, of: login), .oneTimePassword)
+        XCTAssertNil(quickAccessCopyTarget(.pinItem, of: login))
+        XCTAssertNil(quickAccessCopyTarget(.openAndFill, of: login))
+        XCTAssertNil(quickAccessCopyTarget(.fillFocusedApp, of: login))
     }
 
     func testEscapeClearsAQueryAndClosesWhenTheFieldIsEmpty() {
@@ -91,15 +114,13 @@ private func press(
     command: Bool = false,
     shift: Bool = false,
     option: Bool = false,
-    control: Bool = false,
-    searchTextIsSelected: Bool = false
+    control: Bool = false
 ) -> QuickAccessKeyPress {
     QuickAccessKeyPress(
         key: key,
         command: command,
         shift: shift,
         option: option,
-        control: control,
-        searchTextIsSelected: searchTextIsSelected
+        control: control
     )
 }
