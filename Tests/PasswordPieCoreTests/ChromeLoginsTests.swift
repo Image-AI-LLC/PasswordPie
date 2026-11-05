@@ -313,6 +313,194 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertEqual(shown.filter { !$0.trashed }, [live])
     }
 
+    // MARK: One account across several sites
+
+    func testOneLoginUsedOnSeveralSitesOfADomainIsOneEntryListingEverySite() throws {
+        let shown = ChromeLogins.combined(saved: [], live: [
+            login("https://stash.hc.int/login", "albert", "pw"),
+            login("https://gitlab.hc.int/users/sign_in", "albert", "pw"),
+            login("https://path-alm.hc.int/login.action", "ALBERT", "pw")
+        ])
+        XCTAssertEqual(shown.count, 1)
+        let account = try XCTUnwrap(shown.first)
+        XCTAssertEqual(account.title, "hc.int")
+        XCTAssertEqual(account.url, "https://gitlab.hc.int/users/sign_in", "the first site in name order, as Chrome lists them")
+        XCTAssertEqual(EntryMerge.otherWebsites(account).map(\.value), ["https://path-alm.hc.int/login.action", "https://stash.hc.int/login"])
+    }
+
+    func testTheAccountKeepsItsIDWhateverOrderChromeReturnsTheLogins() {
+        let logins = [login("https://stash.hc.int/", "a", "pw"), login("https://gitlab.hc.int/", "a", "pw")]
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: logins).first?.id, logins[1].id)
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: logins.reversed()).first?.id, logins[1].id)
+    }
+
+    func testTwoPagesOfOneSiteAreOneEntryWithOneWebsite() throws {
+        var first = login("https://a.example/login", "u", "pw")
+        first.title = "a.example"
+        let shown = ChromeLogins.combined(saved: [], live: [first, login("https://a.example/signin", "u", "pw")])
+        XCTAssertEqual(shown, [first])
+    }
+
+    func testAnotherPasswordOrUsernameOrDomainIsAnotherAccount() {
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://a.hc.int/", "u", "one"), login("https://b.hc.int/", "u", "two")]).count, 2)
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://a.hc.int/", "u", "pw"), login("https://b.hc.int/", "v", "pw")]).count, 2)
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://github.com/", "u", "pw"), login("https://gitlab.com/", "u", "pw")]).count, 2)
+    }
+
+    func testWithoutAUsernameOnlyTheSameSiteIsTheSameAccount() {
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://a.hc.int/", "", "pw"), login("https://b.hc.int/", "", "pw")]).count, 2)
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://a.hc.int/x", "", "pw"), login("https://a.hc.int/y", "", "pw")]).count, 1)
+    }
+
+    func testRegistrableDomains() {
+        let expected = [
+            "gitlab.hc.int": "hc.int",
+            "nightly.pwl.hc.int": "hc.int",
+            "hc.int": "hc.int",
+            "shop.bbc.co.uk": "bbc.co.uk",
+            "idp.uow.edu.au": "uow.edu.au",
+            "hk2.link.ac.cn": "link.ac.cn",
+            "signin.aws.amazon.com": "amazon.com",
+            "ann.github.io": "ann.github.io",
+            "docs.ann.github.io": "ann.github.io",
+            "localhost": "localhost",
+            "10.0.0.7": "10.0.0.7"
+        ]
+        for (host, domain) in expected {
+            XCTAssertEqual(ChromeLogins.registrableDomain(of: host), domain, host)
+        }
+    }
+
+    func testSitesThatOnlyShareAPublicSuffixOrNetworkAreSeparate() {
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://one.co.uk/", "u", "pw"), login("https://two.co.uk/", "u", "pw")]).count, 2)
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("http://10.0.0.1/", "u", "pw"), login("http://10.0.0.2/", "u", "pw")]).count, 2)
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: [login("https://ann.github.io/", "u", "pw"), login("https://bob.github.io/", "u", "pw")]).count, 2)
+    }
+
+    func testAppLoginsAreNeverFoldedIntoASiteOrAnotherApp() {
+        let shown = ChromeLogins.combined(saved: [], live: [
+            login("android://hash@com.vendor.one/", "u", "pw"),
+            login("android://hash@com.vendor.two/", "u", "pw")
+        ])
+        XCTAssertEqual(shown.count, 2)
+    }
+
+    func testAnEntrySavedForOneSiteTakesTheWholeAccount() throws {
+        var saved = login("https://path-jira.hc.int", "albert", "pw")
+        saved.title = "path-jira.hc.int (albert)"
+        let shown = ChromeLogins.combined(saved: [saved], live: [
+            login("https://gitlab.hc.int/", "albert", "pw"),
+            login("https://path-jira.hc.int/login.jsp", "albert", "pw"),
+            login("https://stash.hc.int/", "albert", "pw")
+        ])
+        XCTAssertEqual(shown.count, 1)
+        let account = try XCTUnwrap(shown.first)
+        XCTAssertEqual(account.id, saved.id)
+        XCTAssertEqual(account.title, saved.title, "the user's own title stays")
+        XCTAssertEqual(account.url, saved.url)
+        XCTAssertEqual(EntryMerge.otherWebsites(account).map(\.value), ["https://gitlab.hc.int/", "https://stash.hc.int/"])
+    }
+
+    func testACopySavedUnderAnotherSitesIDStillTakesTheWholeAccount() {
+        let gitlab = login("https://gitlab.hc.int/", "albert", "pw")
+        let stash = login("https://stash.hc.int/", "albert", "pw")
+        let saved = login("https://intranet.example/", "renamed", "changed", id: stash.id)
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [gitlab, stash]).count, 1)
+    }
+
+    func testASavedAccountDoesNotRepeatTheSitesItAlreadyHolds() throws {
+        let logins = [login("https://gitlab.hc.int/", "albert", "pw"), login("https://stash.hc.int/", "albert", "pw")]
+        let draft = try XCTUnwrap(ChromeLogins.combined(saved: [], live: logins).first)
+        let shown = ChromeLogins.combined(saved: [draft], live: logins)
+        XCTAssertEqual(shown, [draft])
+    }
+
+    func testASiteAddedToASavedAccountLaterJoinsIt() throws {
+        let logins = [login("https://gitlab.hc.int/", "albert", "pw"), login("https://stash.hc.int/", "albert", "pw")]
+        let draft = try XCTUnwrap(ChromeLogins.combined(saved: [], live: logins).first)
+        let shown = ChromeLogins.combined(saved: [draft], live: logins + [login("https://zulip.hc.int/", "albert", "pw")])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(EntryMerge.otherWebsites(shown[0]).map(\.value), ["https://stash.hc.int/", "https://zulip.hc.int/"])
+    }
+
+    func testAnotherSavedEntryForASiteKeepsItsOwnLogin() {
+        let gitlab = login("https://gitlab.hc.int/", "albert", "old")
+        let stash = login("https://stash.hc.int/", "albert", "old2")
+        let shown = ChromeLogins.combined(saved: [gitlab, stash], live: [
+            login("https://gitlab.hc.int/", "albert", "pw"),
+            login("https://stash.hc.int/", "albert", "pw")
+        ])
+        XCTAssertEqual(shown.count, 2)
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "pw")
+        XCTAssertEqual(shown[1].value(for: ChromeLogins.passwordFieldName), "pw")
+    }
+
+    func testARenameInChromeRejoinsTheSavedAccountThroughAnySite() throws {
+        let logins = [login("https://gitlab.hc.int/", "albert", "pw"), login("https://stash.hc.int/", "albert", "pw")]
+        var saved = try XCTUnwrap(ChromeLogins.combined(saved: [], live: logins).first)
+        saved.id = UUID()
+        saved.tags = "Chrome"
+        let renamed = login("https://stash.hc.int/", "acai", "pw")
+        let shown = ChromeLogins.combined(saved: [saved], live: [renamed])
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertEqual(shown[0].value(for: ChromeLogins.usernameFieldName), "acai")
+    }
+
+    func testCombiningThousandsOfLoginsStaysQuick() {
+        let logins = (0..<5000).map { login("https://site\($0).host\($0 % 400).example/login", "user\($0 % 50)", "pw\($0 % 50)") }
+        let start = Date()
+        _ = ChromeLogins.combined(saved: Array(logins.prefix(1000)), live: logins)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+    }
+
+    func testEverySiteOfAnAccountRanksByTheLatestUse() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let dir = root.appendingPathComponent("Profile 5", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let early: Int64 = 13_300_000_000_000_000
+        let late: Int64 = 13_400_000_000_000_000
+        try writeWithLastUsed([("https://gitlab.hc.int/", "u", "p", early), ("https://stash.hc.int/", "u", "p", late), ("https://other.hc.int/", "u", "other", early)], to: dir.appendingPathComponent("Login Data"), key: key)
+        let result = try ChromeLogins.load(root: root, key: key)
+        let gitlab = try XCTUnwrap(result.entries.first { $0.url == "https://gitlab.hc.int/" })
+        let stash = try XCTUnwrap(result.entries.first { $0.url == "https://stash.hc.int/" })
+        let other = try XCTUnwrap(result.entries.first { $0.url == "https://other.hc.int/" })
+        XCTAssertEqual(result.lastUsed[gitlab.id], result.lastUsed[stash.id])
+        XCTAssertLessThan(try XCTUnwrap(result.lastUsed[other.id]), try XCTUnwrap(result.lastUsed[gitlab.id]))
+    }
+
+    // MARK: Linked profile folders
+
+    /// Seen on a real Mac: `Default` was a link to `Profile 1`, so every password showed twice.
+    func testAFolderLinkedToAnotherProfileIsReadOnce() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        _ = try makeProfile("Profile 1", name: "Person 2", rows: [Row(origin: "https://a.example/", realm: "r", user: "u", password: "p", key: key)])
+        try FileManager.default.createSymbolicLink(atPath: root.appendingPathComponent("Default").path, withDestinationPath: "Profile 1")
+
+        XCTAssertEqual(ChromeLogins.profiles(root: root).map(\.directoryName), ["Profile 1"])
+        let result = try ChromeLogins.load(root: root, key: key)
+        XCTAssertEqual(result.entries.map(\.groupPath), [[ChromeLogins.groupName, "Person 2"]])
+        XCTAssertEqual(result.profileCount, 1)
+        XCTAssertEqual(ChromeLogins.storeSignature(root: root).files.map(\.relativePath), ["Profile 1/Login Data"])
+    }
+
+    func testALinkToAFolderOutsideChromeIsStillAProfile() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let elsewhere = root.appendingPathComponent("moved", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try write([Row(origin: "https://a.example/", realm: "r", user: "u", password: "p", key: key)], to: elsewhere.appendingPathComponent("Login Data"))
+        try FileManager.default.createSymbolicLink(atPath: root.appendingPathComponent("Profile 3").path, withDestinationPath: elsewhere.path)
+        XCTAssertEqual(ChromeLogins.profiles(root: root).map(\.directoryName), ["Profile 3"])
+    }
+
+    func testTheSameLoginInTwoRealProfilesIsOneEntry() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        _ = try makeProfile("Profile 1", name: "Work", rows: [Row(origin: "https://a.example/", realm: "r", user: "u", password: "p", key: key)])
+        _ = try makeProfile("Profile 2", name: "Home", rows: [Row(origin: "https://a.example/", realm: "r", user: "u", password: "p", key: key)])
+        let result = try ChromeLogins.load(root: root, key: key)
+        XCTAssertEqual(result.entries.count, 2, "the reader reports what each profile holds")
+        XCTAssertEqual(ChromeLogins.combined(saved: [], live: result.entries).count, 1)
+    }
+
     // MARK: Store signature
 
     func testStoreSignatureTracksLoginFilesOnly() throws {

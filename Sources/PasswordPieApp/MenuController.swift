@@ -271,7 +271,7 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     private func performAction(for id: UUID) {
         guard let entry = session.entry(id) else { return }
         switch entry.category {
-        case .login: session.fill(id, .openAndFill)
+        case .login: session.fill(id, .openAndFill, website: otherWebsite(of: entry, matching: query))
         case .password: session.fill(id, .fill)
         default: break
         }

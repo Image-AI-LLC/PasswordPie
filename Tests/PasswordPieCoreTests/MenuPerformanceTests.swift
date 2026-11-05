@@ -33,6 +33,32 @@ final class MenuPerformanceTests: XCTestCase {
         XCTAssertLessThan(elapsed, 3, "menu and search for 3,000 entries took \(elapsed) s")
     }
 
+    func testASearchFindsAnAccountByAnyOfItsWebsites() {
+        var account = VaultEntry()
+        account.title = "hc.int"
+        account.url = "https://gitlab.hc.int/users/sign_in"
+        account.setValue("https://path-alm.hc.int/login.action", for: "URL (2)")
+        account.setValue("https://path-jira.hc.int/login.jsp", for: "URL (3)")
+        for query in ["path", "path-jira", "jira", "gitlab"] {
+            XCTAssertEqual(searchEntries([account], query: query, scope: .major).map(\.id), [account.id], query)
+        }
+        XCTAssertEqual(searchEntries([account], query: "login", scope: .major), [], "only the host of a website is searched")
+    }
+
+    func testOpeningFromASearchPicksTheWebsiteItNamed() {
+        var account = VaultEntry()
+        account.url = "https://gitlab.hc.int/users/sign_in"
+        account.setValue("https://path-alm.hc.int/login.action", for: "URL (2)")
+        account.setValue("https://path-jira.hc.int/login.jsp", for: "URL (3)")
+        XCTAssertEqual(otherWebsite(of: account, matching: "jira"), "https://path-jira.hc.int/login.jsp")
+        XCTAssertEqual(otherWebsite(of: account, matching: "PATH jira"), "https://path-jira.hc.int/login.jsp")
+        XCTAssertEqual(otherWebsite(of: account, matching: "path"), "https://path-alm.hc.int/login.action", "the first site that matches")
+        XCTAssertNil(otherWebsite(of: account, matching: "gitlab"), "the main website")
+        XCTAssertNil(otherWebsite(of: account, matching: "hc.int"), "every site matches, so the main one wins")
+        XCTAssertNil(otherWebsite(of: account, matching: "albert"), "not about a website")
+        XCTAssertNil(otherWebsite(of: account, matching: ""))
+    }
+
     func testAsciiTitleKeyMatchesTransform() {
         for title in ["GitHub", "mail.Example.COM", "Bank of X - Savings", ""] {
             let transformed = title.applyingTransform(StringTransform("Any-Latin; Latin-ASCII; Any-Lower"), reverse: false) ?? title.lowercased()

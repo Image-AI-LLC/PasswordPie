@@ -4,7 +4,8 @@ import SwiftUI
 
 struct DetailField: Identifiable, Equatable {
     enum Kind: Equatable {
-        case username, password, url, oneTimePassword, notes, custom(String)
+        /// `otherWebsite` is one more site of the account, stored under a numbered name such as `URL (2)`.
+        case username, password, url, otherWebsite(String), oneTimePassword, notes, custom(String)
     }
 
     let id: String
@@ -12,6 +13,14 @@ struct DetailField: Identifiable, Equatable {
     var label: String
     var value: String
     var secret: Bool
+
+    /// The address this field opens. Nil when it is not a website.
+    var website: String? {
+        switch kind {
+        case .url, .otherWebsite: value
+        default: nil
+        }
+    }
 }
 
 /// One thing a details field can do. The button shows `primary`; the arrow lists `menu`.
@@ -37,7 +46,7 @@ struct FieldControl: Equatable {
 
 /// A website opens. Copy is in the arrow, with open-and-fill. Every other field copies, and only a secret has a menu.
 func fieldControl(_ field: DetailField, revealed: Bool) -> FieldControl {
-    if field.kind == .url {
+    if field.website != nil {
         return FieldControl(primary: .open, menu: [.copy, .openAndFill])
     }
     return FieldControl(primary: .copy, menu: field.secret ? [revealed ? .conceal : .reveal, .largeType] : [])
@@ -126,9 +135,13 @@ final class DetailsModel: ObservableObject {
         if !entry.username.isEmpty { fields.append(DetailField(id: "username", kind: .username, label: "username", value: entry.username, secret: false)) }
         if !entry.password.isEmpty { fields.append(DetailField(id: "password", kind: .password, label: "password", value: entry.password, secret: true)) }
         if !entry.url.isEmpty { fields.append(DetailField(id: "url", kind: .url, label: "website", value: entry.url, secret: false)) }
+        let otherWebsites = EntryMerge.otherWebsites(entry)
+        for website in otherWebsites {
+            fields.append(DetailField(id: "custom:" + website.key, kind: .otherWebsite(website.key), label: "website", value: website.value, secret: false))
+        }
         if TOTP.parse(entry: entry) != nil { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
         let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
-        for field in entry.fields where !handled.contains(field.key.lowercased()) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
+        for field in entry.fields where !handled.contains(field.key.lowercased()) && !otherWebsites.contains(field) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
             fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))
         }
         if !entry.notes.isEmpty { fields.append(DetailField(id: "notes", kind: .notes, label: "notes", value: entry.notes, secret: false)) }
@@ -195,9 +208,9 @@ final class DetailsModel: ObservableObject {
         case .largeType:
             session.showLargeType(field.value)
         case .openAndFill:
-            session.fill(entryID, .openAndFill)
+            session.fill(entryID, .openAndFill, website: field.website)
         case .open:
-            session.openURL(of: entryID)
+            session.openURL(of: entryID, website: field.website)
         }
         if fieldActionClosesDetails(action, presentation: presentation) {
             done()
@@ -235,6 +248,7 @@ final class DetailsModel: ObservableObject {
         case .username: session.copy(.username, of: entryID)
         case .password: session.copy(.password, of: entryID)
         case .url: session.copy(.url, of: entryID)
+        case .otherWebsite(let key): session.copy(.custom(key), of: entryID)
         case .notes: session.copy(.notes, of: entryID)
         case .oneTimePassword: session.copy(.oneTimePassword, of: entryID)
         case .custom(let key): session.copy(.custom(key), of: entryID)
@@ -377,7 +391,7 @@ private struct DetailRow: View {
         switch field.kind {
         case .oneTimePassword:
             OneTimePasswordValue(entryID: model.entryID, session: model.session)
-        case .url:
+        case .url, .otherWebsite:
             Text(field.value).font(.system(size: 13)).foregroundStyle(Palette.accentText(dark: colorScheme == .dark)).lineLimit(1).truncationMode(.middle)
         case .notes:
             Text(field.value).font(.system(size: 13)).lineLimit(8)

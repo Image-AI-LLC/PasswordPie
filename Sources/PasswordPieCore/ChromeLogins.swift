@@ -213,9 +213,19 @@ public enum ChromeLogins {
         return ChromeStoreSignature(files: files, profileNames: names)
     }
 
+    /// Each folder once. `Default` can be a link to `Profile 1`, and reading both would show every password twice.
+    /// A real folder keeps its name over a link to it, so ids follow the folder Chrome actually uses.
     private static func profileFolders(root: URL) -> [String] {
         let children = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-        return children.filter { $0 == "Default" || $0.hasPrefix("Profile ") }.sorted { lhs, rhs in
+        let folders = children.filter { $0 == "Default" || $0.hasPrefix("Profile ") }
+        func isLink(_ name: String) -> Bool {
+            (try? root.appendingPathComponent(name).resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+        }
+        var seen = Set<String>()
+        let unique = (folders.filter { !isLink($0) } + folders.filter(isLink)).filter {
+            seen.insert(root.appendingPathComponent($0).resolvingSymlinksInPath().path).inserted
+        }
+        return unique.sorted { lhs, rhs in
             if lhs == "Default" { return true }
             if rhs == "Default" { return false }
             return lhs.compare(rhs, options: .numeric) == .orderedAscending
@@ -262,6 +272,11 @@ public enum ChromeLogins {
         }
         if combined.profileCount == 0, sawAccessDenied { throw ChromeLoginsError.accessDenied }
         if combined.profileCount == 0, let firstError { throw firstError }
+        // Search reads the time under whichever site the account's row carries, so every site holds the latest use.
+        for account in accounts(in: combined.entries) where account.count > 1 {
+            guard let latest = account.compactMap({ combined.lastUsed[$0.id] }).max() else { continue }
+            for login in account { combined.lastUsed[login.id] = latest }
+        }
         return combined
     }
 
@@ -309,50 +324,61 @@ public enum ChromeLogins {
     }
 
     /// The list to show: one entry per account. Chrome is only read, so its values are display fields and must not be written back.
+    /// Logins with the same username and password on one domain are one account, as Chrome's own password list has it.
     /// A login joins a saved entry with its own id, then one with the same site and username,
-    /// then a copy saved from Chrome with the same site and password, which is a username renamed in Chrome.
-    /// A value that differs from the saved entry appears as a field. A login that joins nothing is listed as it is.
+    /// and the rest of its account comes along. An account with no such entry joins a copy saved from Chrome
+    /// with the same site and password, which is a username renamed in Chrome.
+    /// A value that differs from the saved entry appears as a field. An account that joins nothing is listed as it is.
     public static func combined(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
         guard !live.isEmpty else { return saved }
         var byID: [UUID: Int] = [:]
         var byAccount: [String: [Int]] = [:]
         for (index, entry) in saved.enumerated() where !entry.trashed {
             if byID[entry.id] == nil { byID[entry.id] = index }
-            byAccount[BrowserImport.matchKey(entry), default: []].append(index)
+            for key in accountKeys(entry) { byAccount[key, default: []].append(index) }
         }
-        var joined: [Int: [VaultEntry]] = [:]
-        var waiting: [VaultEntry] = []
-        for login in live {
-            if let index = byID[login.id] {
-                joined[index, default: []].append(login)
-            } else {
-                waiting.append(login)
-            }
-        }
-        var unmatched: [VaultEntry] = []
-        for login in waiting {
+        func savedAccount(for login: VaultEntry) -> Int? {
             let candidates = byAccount[BrowserImport.matchKey(login)] ?? []
             let samePassword = candidates.first { saved[$0].password == login.password }
             // Without a username the site alone does not say it is the same account.
-            if let index = samePassword ?? (login.username.isEmpty ? nil : candidates.first) {
-                joined[index, default: []].append(login)
+            return samePassword ?? (login.username.isEmpty ? nil : candidates.first)
+        }
+        var joined: [Int: [VaultEntry]] = [:]
+        var unmatched: [[VaultEntry]] = []
+        for account in accounts(in: live) {
+            var home = account.lazy.compactMap { byID[$0.id] }.first
+            var rest: [VaultEntry] = []
+            for login in account {
+                if let index = byID[login.id] ?? savedAccount(for: login) {
+                    joined[index, default: []].append(login)
+                    home = home ?? index
+                } else {
+                    rest.append(login)
+                }
+            }
+            if let home {
+                joined[home, default: []] += rest
             } else {
-                unmatched.append(login)
+                unmatched.append(account)
             }
         }
         var lone: [VaultEntry] = []
         if !unmatched.isEmpty {
             var renameCandidates: [String: [Int]] = [:]
             for (index, entry) in saved.enumerated() where !entry.trashed && joined[index] == nil && isChromeCopy(entry) {
-                renameCandidates[renameKey(entry), default: []].append(index)
+                let websites = [entry.url] + EntryMerge.otherWebsites(entry).map(\.value)
+                for website in websites {
+                    renameCandidates[renameKey(website: website, password: entry.password), default: []].append(index)
+                }
             }
-            for login in unmatched {
-                let key = renameKey(login)
-                if let index = renameCandidates[key]?.first {
-                    renameCandidates[key]?.removeFirst()
-                    joined[index] = [login]
+            for account in unmatched {
+                let renamed = account.lazy.compactMap { login in
+                    renameCandidates[renameKey(website: login.url, password: login.password)]?.first { joined[$0] == nil }
+                }.first
+                if let renamed {
+                    joined[renamed] = account
                 } else {
-                    lone.append(login)
+                    lone.append(entry(forAccount: account))
                 }
             }
         }
@@ -363,20 +389,103 @@ public enum ChromeLogins {
         return shown + lone
     }
 
+    /// The part of a host someone registers: `hc.int` for `gitlab.hc.int`, `bbc.co.uk` for `shop.bbc.co.uk`.
+    /// This is an approximation of the public suffix list. A miss shows two rows or one row listing both sites, and never changes a password.
+    static func registrableDomain(of host: String) -> String {
+        let labels = host.split(separator: ".", omittingEmptySubsequences: true).map(String.init)
+        guard labels.count > 2, !labels.allSatisfy({ $0.allSatisfy(\.isNumber) }), !host.contains(":") else { return host }
+        let lastTwo = labels.suffix(2).joined(separator: ".")
+        let tld = labels[labels.count - 1]
+        let keepsThree = sharedHostingDomains.contains(lastTwo)
+            || (tld.count == 2 && countrySecondLevels.contains(labels[labels.count - 2]))
+        return keepsThree ? labels.suffix(3).joined(separator: ".") : lastTwo
+    }
+
     // MARK: Private
+
+    private static let countrySecondLevels: Set<String> = ["ac", "co", "com", "edu", "go", "gob", "gov", "gouv", "mil", "ne", "net", "or", "org"]
+
+    /// Every customer of these has a site of their own under the same two labels.
+    private static let sharedHostingDomains: Set<String> = [
+        "amazonaws.com", "azurewebsites.net", "blogspot.com", "cloudfront.net", "firebaseapp.com", "github.io", "gitlab.io", "herokuapp.com",
+        "myshopify.com", "netlify.app", "ngrok-free.app", "ngrok.io", "notion.site", "pages.dev", "vercel.app", "web.app", "workers.dev"
+    ]
+
+    private struct AccountKey: Hashable {
+        var place: String
+        var username: String
+        var password: String
+    }
+
+    /// A shared login needs a username and a password to say it is one account across sites. Otherwise only the same site is.
+    /// `websiteHost` is nil for anything but http and https, so an app login stays with its own origin.
+    private static func accountKey(_ login: VaultEntry) -> AccountKey {
+        let username = login.username.lowercased()
+        guard let host = websiteHost(forWebsite: login.url) else {
+            return AccountKey(place: login.url.lowercased(), username: username, password: login.password)
+        }
+        let isShared = !username.isEmpty && !login.password.isEmpty
+        return AccountKey(place: isShared ? registrableDomain(of: host) : host, username: username, password: login.password)
+    }
+
+    /// Chrome's logins by account, in the order each account first appears. Each one starts with its first site by name,
+    /// so an account's row keeps its id however Chrome orders its rows.
+    private static func accounts(in live: [VaultEntry]) -> [[VaultEntry]] {
+        var positions: [AccountKey: Int] = [:]
+        var accounts: [[VaultEntry]] = []
+        for login in live {
+            let key = accountKey(login)
+            if let position = positions[key] {
+                accounts[position].append(login)
+            } else {
+                positions[key] = accounts.count
+                accounts.append([login])
+            }
+        }
+        return accounts.map { account in
+            guard account.count > 1 else { return account }
+            return account.map { (login: $0, host: BrowserImport.host(of: $0.url)) }.sorted { lhs, rhs in
+                if lhs.host != rhs.host { return lhs.host < rhs.host }
+                if lhs.login.url != rhs.login.url { return lhs.login.url < rhs.login.url }
+                return lhs.login.id.uuidString < rhs.login.id.uuidString
+            }.map(\.login)
+        }
+    }
+
+    /// The row for an account no saved entry holds. Several sites are named for their domain.
+    private static func entry(forAccount account: [VaultEntry]) -> VaultEntry {
+        var entry = account[0]
+        addChromeFields(Array(account.dropFirst()), to: &entry)
+        if !EntryMerge.otherWebsites(entry).isEmpty, let host = websiteHost(forWebsite: entry.url) {
+            entry.title = registrableDomain(of: host)
+        }
+        return entry
+    }
 
     private static func isChromeCopy(_ entry: VaultEntry) -> Bool {
         entry.tagList.contains { $0.caseInsensitiveCompare(BrowserImportSource.chrome.label) == .orderedSame }
     }
 
-    private static func renameKey(_ entry: VaultEntry) -> String {
-        BrowserImport.host(of: entry.url) + "\u{1}" + entry.password
+    private static func renameKey(website: String, password: String) -> String {
+        BrowserImport.host(of: website) + "\u{1}" + password
+    }
+
+    /// Where a saved entry can match a login: its main place, and each of its other websites.
+    private static func accountKeys(_ entry: VaultEntry) -> [String] {
+        var keys = [BrowserImport.matchKey(entry)]
+        let username = entry.username.lowercased()
+        for website in EntryMerge.otherWebsites(entry) {
+            let key = BrowserImport.host(of: website.value) + "\u{1}" + username
+            if !keys.contains(key) { keys.append(key) }
+        }
+        return keys
     }
 
     private static func addChromeFields(_ logins: [VaultEntry], to entry: inout VaultEntry) {
         var taken = Set(entry.fields.map(\.key))
         var usernames = [entry.username]
         var passwords = [entry.password]
+        var hosts = Set(([entry.url] + EntryMerge.otherWebsites(entry).map(\.value)).map(BrowserImport.host(of:)))
         func add(_ value: String, named base: String, protected: Bool, to entry: inout VaultEntry) {
             var key = base
             var number = 2
@@ -387,6 +496,9 @@ public enum ChromeLogins {
             entry.fields.append(VaultField(key: key, value: value, protected: protected))
         }
         for login in logins {
+            if !login.url.isEmpty, hosts.insert(BrowserImport.host(of: login.url)).inserted {
+                add(login.url, named: "URL", protected: false, to: &entry)
+            }
             if !login.username.isEmpty, !usernames.contains(where: { $0.caseInsensitiveCompare(login.username) == .orderedSame }) {
                 usernames.append(login.username)
                 add(login.username, named: usernameFieldName, protected: false, to: &entry)
