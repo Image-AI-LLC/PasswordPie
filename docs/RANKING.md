@@ -48,6 +48,7 @@ KeePass has no usable value (`LastAccessTime` equals the creation time), so Pass
   Stored in `usage.json` in the app's Application Support folder (mode 0600), as entry ID and time only. It is not inside the KeePass file.
 - **Live Chrome logins (direct channel):** Chrome's own `date_last_used`. If both exist, the later one is used.
 - Saving a live Chrome login to KeePass keeps its last-used time.
+- One account on several sites is one row, and it ranks by the latest use of any of its sites.
 
 ## Data source and tuning
 

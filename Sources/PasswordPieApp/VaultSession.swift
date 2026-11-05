@@ -1139,8 +1139,9 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    func openURL(of id: UUID) {
-        guard let raw = entry(id)?.url, let url = webURL(raw) else { return }
+    /// `website` is one of the account's sites. Nil opens its main one.
+    func openURL(of id: UUID, website: String? = nil) {
+        guard let raw = website ?? entry(id)?.url, let url = webURL(raw) else { return }
         onActivity?()
         NSWorkspace.shared.open(url)
         recordUse(id)
@@ -1158,7 +1159,7 @@ final class VaultSession: ObservableObject {
     }
 
     /// Fills the previous app. The panel hides first so keystrokes reach the app that was frontmost.
-    func fill(_ id: UUID, _ mode: FillMode) {
+    func fill(_ id: UUID, _ mode: FillMode, website: String? = nil) {
         guard let entry = entry(id) else { return }
         guard AXIsProcessTrusted() else {
             let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
@@ -1173,7 +1174,7 @@ final class VaultSession: ObservableObject {
         let hasUsernameField = entry.category != .password
         let code = TOTP.parse(entry: entry).map { TOTP.code(settings: $0) } ?? ""
         let delay: Double
-        if mode == .openAndFill || mode == .open, let url = webURL(entry.url) {
+        if mode == .openAndFill || mode == .open, let url = webURL(website ?? entry.url) {
             NSWorkspace.shared.open(url)
             delay = 2.5
         } else {

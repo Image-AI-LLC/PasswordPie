@@ -30,6 +30,11 @@ public enum EntryMerge {
         return manifest.parts.count
     }
 
+    /// Websites beyond the main one, kept under numbered names such as `URL (2)`.
+    public static func otherWebsites(_ entry: VaultEntry) -> [VaultField] {
+        entry.fields.filter { !$0.value.isEmpty && isNumberedSuffix($0.key, base: "URL") }
+    }
+
     /// Fields a merge added beside the main title, username, password, website, notes, and one-time password.
     public static func extraFields(_ entry: VaultEntry) -> [VaultField] {
         entry.fields.filter { field in

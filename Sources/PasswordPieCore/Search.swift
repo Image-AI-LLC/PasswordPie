@@ -1,7 +1,7 @@
 import Foundation
 
 public enum SearchScope: String, Sendable, Equatable {
-    /// Title and URL host words.
+    /// Title and website host words.
     case major
     /// Major fields plus username, notes, tags and custom fields.
     case allFields
@@ -109,6 +109,26 @@ public func searchEntries(
     return []
 }
 
+/// The website a search was looking for, when it is not the entry's main one.
+/// An account can have several sites, so `jira` should open the Jira site. Nil means the main website applies, which also wins a tie.
+public func otherWebsite(of entry: VaultEntry, matching query: String) -> String? {
+    let tokens = searchTokens(query)
+    func matched(_ website: String) -> Int {
+        let host = urlSearchString(website)
+        return tokens.filter { host.contains($0) }.count
+    }
+    var best: String?
+    var bestCount = matched(entry.url)
+    for website in EntryMerge.otherWebsites(entry) {
+        let count = matched(website.value)
+        if count > bestCount {
+            best = website.value
+            bestCount = count
+        }
+    }
+    return best
+}
+
 /// Folded search text for each entry, prepared once instead of on every keystroke.
 /// It can be built a piece at a time: `adding` folds more entries, and `reusing` keeps the work done for entries that did not change.
 public struct SearchIndex: Sendable {
@@ -158,6 +178,8 @@ fileprivate struct SearchIndexEntry: Sendable {
     let displayTitle: String
     let title: String
     let host: String
+    /// Hosts of the entry's other websites, which count as much as its main one.
+    let otherHosts: [String]
     let words: [String]
     let extra: [String]
 
@@ -166,9 +188,11 @@ fileprivate struct SearchIndexEntry: Sendable {
         displayTitle = entry.title
         title = foldForSearch(displayTitle)
         host = urlSearchString(entry.url)
-        words = wordList(title) + wordList(host)
+        let otherWebsites = EntryMerge.otherWebsites(entry)
+        otherHosts = otherWebsites.map { urlSearchString($0.value) }
+        words = wordList(title) + wordList(host) + otherHosts.flatMap(wordList)
         var extra = [foldForSearch(entry.username), foldForSearch(entry.notes), foldForSearch(entry.tags)]
-        for field in entry.fields where !standardKeys.contains(field.key.lowercased()) && !EntryMerge.isReservedKey(field.key) {
+        for field in entry.fields where !standardKeys.contains(field.key.lowercased()) && !EntryMerge.isReservedKey(field.key) && !otherWebsites.contains(field) {
             extra.append(foldForSearch(field.key))
             extra.append(foldForSearch(field.value))
         }
@@ -201,7 +225,7 @@ fileprivate struct SearchIndexEntry: Sendable {
         var best: Double?
         func offer(_ value: Double) { best = max(best ?? 0, value) }
         if hasPunctuation(token) {
-            if title.contains(token) || host.contains(token) { offer(0.8) }
+            if title.contains(token) || host.contains(token) || otherHosts.contains(where: { $0.contains(token) }) { offer(0.8) }
         } else {
             for (index, word) in words.enumerated() {
                 if word == token {

@@ -762,7 +762,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         case .pinItem:
             session.pinEntry(id)
         case .openAndFill:
-            session.fill(id, .openAndFill)
+            let website = session.entry(id).flatMap { otherWebsite(of: $0, matching: menu.query) }
+            session.fill(id, .openAndFill, website: website)
         case .fillFocusedApp:
             session.fill(id, .fill)
         }
