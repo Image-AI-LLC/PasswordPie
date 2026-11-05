@@ -43,6 +43,7 @@ final class MenuPerformanceTests: XCTestCase {
             XCTAssertEqual(searchEntries([account], query: query, scope: .major).map(\.id), [account.id], query)
         }
         XCTAssertEqual(searchEntries([account], query: "login", scope: .major), [], "only the host of a website is searched")
+        XCTAssertEqual(searchEntries([account], query: "login", scope: .allFields), [])
     }
 
     func testOpeningFromASearchPicksTheWebsiteItNamed() {

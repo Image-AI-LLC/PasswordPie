@@ -446,6 +446,9 @@ public enum ChromeLogins {
             guard account.count > 1 else { return account }
             return account.map { (login: $0, host: BrowserImport.host(of: $0.url)) }.sorted { lhs, rhs in
                 if lhs.host != rhs.host { return lhs.host < rhs.host }
+                let lhsSecure = lhs.login.url.lowercased().hasPrefix("https://")
+                let rhsSecure = rhs.login.url.lowercased().hasPrefix("https://")
+                if lhsSecure != rhsSecure { return lhsSecure }
                 if lhs.login.url != rhs.login.url { return lhs.login.url < rhs.login.url }
                 return lhs.login.id.uuidString < rhs.login.id.uuidString
             }.map(\.login)

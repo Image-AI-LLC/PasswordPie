@@ -188,10 +188,11 @@ fileprivate struct SearchIndexEntry: Sendable {
         displayTitle = entry.title
         title = foldForSearch(displayTitle)
         host = urlSearchString(entry.url)
-        otherHosts = EntryMerge.otherWebsites(entry).map { urlSearchString($0.value) }
+        let otherWebsites = EntryMerge.otherWebsites(entry)
+        otherHosts = otherWebsites.map { urlSearchString($0.value) }
         words = wordList(title) + wordList(host) + otherHosts.flatMap(wordList)
         var extra = [foldForSearch(entry.username), foldForSearch(entry.notes), foldForSearch(entry.tags)]
-        for field in entry.fields where !standardKeys.contains(field.key.lowercased()) && !EntryMerge.isReservedKey(field.key) {
+        for field in entry.fields where !standardKeys.contains(field.key.lowercased()) && !EntryMerge.isReservedKey(field.key) && !otherWebsites.contains(field) {
             extra.append(foldForSearch(field.key))
             extra.append(foldForSearch(field.value))
         }

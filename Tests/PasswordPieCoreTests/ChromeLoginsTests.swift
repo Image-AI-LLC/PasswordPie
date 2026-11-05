@@ -334,6 +334,18 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertEqual(ChromeLogins.combined(saved: [], live: logins.reversed()).first?.id, logins[1].id)
     }
 
+    func testTheHTTPSOriginIsTheRowWhenAnAccountAlsoHasTheHTTPOne() {
+        let http = login("http://a.example/", "u", "pw")
+        let https = login("https://a.example/", "u", "pw")
+        for logins in [[http, https], [https, http]] {
+            let shown = ChromeLogins.combined(saved: [], live: logins)
+            XCTAssertEqual(shown.count, 1)
+            XCTAssertEqual(shown.first?.url, https.url)
+            XCTAssertEqual(shown.first?.id, https.id)
+            XCTAssertEqual(shown.first.map(EntryMerge.otherWebsites), [])
+        }
+    }
+
     func testTwoPagesOfOneSiteAreOneEntryWithOneWebsite() throws {
         var first = login("https://a.example/login", "u", "pw")
         first.title = "a.example"
