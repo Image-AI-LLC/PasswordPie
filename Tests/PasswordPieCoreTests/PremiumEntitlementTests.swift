@@ -122,6 +122,7 @@ final class PremiumEntitlementTests: XCTestCase {
         XCTAssertTrue(text.lowercased().contains("renews automatically"), "auto-renewal")
         XCTAssertTrue(text.contains("24 hours"), "how to avoid the next charge")
         XCTAssertTrue(text.contains("Apple Account"), "who charges")
+        XCTAssertTrue(text.contains("each renewal is charged"), "when the next charge comes")
         XCTAssertEqual(PremiumLinks.termsOfService.absoluteString, "https://passwordpie.com/terms-of-service")
         XCTAssertEqual(PremiumLinks.privacyPolicy.absoluteString, "https://passwordpie.com/privacy-policy")
     }
@@ -147,6 +148,11 @@ final class PremiumEntitlementTests: XCTestCase {
         entry.title = "Bank"
         entry.otp = "otpauth://totp/Bank?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
         return entry
+    }
+
+    func testWhetherAnItemHasACodeDoesNotDependOnPremium() {
+        XCTAssertTrue(OneTimeCodes.hasCode(entryWithCode()))
+        XCTAssertFalse(OneTimeCodes.hasCode(VaultEntry()))
     }
 
     func testAFreeUserGetsNoCodeAndNoSettings() {

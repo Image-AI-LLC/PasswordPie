@@ -156,7 +156,7 @@ public struct PremiumProduct: Equatable, Sendable, Identifiable {
         guard let period else { return nil }
         return "\(displayName) is a \(period.text) subscription at \(displayPrice). It renews automatically at that price unless you "
             + "cancel at least 24 hours before the end of the period. Payment is charged to your Apple Account when you confirm, and "
-            + "each renewal within the last 24 hours of the period. Cancel any time under Manage Subscription."
+            + "each renewal is charged in the last 24 hours of the period. Cancel any time under Manage Subscription."
     }
 }
 
@@ -179,6 +179,11 @@ public enum OneTimeCodeAccess: Equatable, Sendable {
 
 /// The one gate in front of two-step codes. The app target calls `TOTP.code` nowhere else: `PremiumGateTests` checks.
 public enum OneTimeCodes {
+    /// Whether the item stores a two-step secret at all. Free users still see that it does.
+    public static func hasCode(_ entry: VaultEntry) -> Bool {
+        TOTP.parse(entry: entry) != nil
+    }
+
     public static func access(for entry: VaultEntry, hasPremium: Bool) -> OneTimeCodeAccess {
         guard let settings = TOTP.parse(entry: entry) else { return .noCode }
         return hasPremium ? .available(settings) : .locked

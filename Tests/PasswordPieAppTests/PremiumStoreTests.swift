@@ -84,6 +84,17 @@ final class PremiumStoreTests: XCTestCase {
         realStore.stop()
     }
 
+    /// The store is asked on every menu open. An answer that changes nothing must not redraw anything.
+    func testAnUnchangedAnswerPublishesNothing() async {
+        await store.refresh()
+        var changes = 0
+        let watcher = store.objectWillChange.sink { changes += 1 }
+        await store.refresh()
+        await store.refresh()
+        XCTAssertEqual(changes, 0)
+        watcher.cancel()
+    }
+
     func testAnOlderAnswerCannotOverwriteANewerOne() async {
         backend.holdsAnswers = true
         let slow = Task { await store.refresh() }

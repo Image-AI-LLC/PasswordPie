@@ -144,7 +144,7 @@ final class DetailsModel: ObservableObject {
         for website in otherWebsites {
             fields.append(DetailField(id: "custom:" + website.key, kind: .otherWebsite(website.key), label: "website", value: website.value, secret: false))
         }
-        if OneTimeCodes.access(for: entry, hasPremium: false) != .noCode { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
+        if OneTimeCodes.hasCode(entry) { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
         let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
         for field in entry.fields where !handled.contains(field.key.lowercased()) && !otherWebsites.contains(field) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
             fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))

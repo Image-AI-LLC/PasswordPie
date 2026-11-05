@@ -217,7 +217,7 @@ final class PremiumStore: ObservableObject {
     }
 
     private func apply(_ newStatus: PremiumStatus) {
-        status = newStatus
+        if status != newStatus { status = newStatus }
         switch activity {
         case .pending(let plan), .awaitingDelivery(let plan):
             if ownedPlans.contains(plan) { activity = .idle }
