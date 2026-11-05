@@ -154,6 +154,7 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         for ref in path {
             let parent = deepest
             guard let index = parent.list.selectedIndex, parent.rows[index].kind == .submenu else { break }
+            parent.list.scrollToVisible(row: index)
             openChild(of: parent, at: index, rows: parent.rows[index].children, content: .rows, selectFirst: false)
             guard let found = reveal(ref, in: deepest) else {
                 selectFirst(in: deepest)
