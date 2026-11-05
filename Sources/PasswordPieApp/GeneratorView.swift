@@ -51,18 +51,16 @@ struct GeneratorView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .padding(.horizontal, 8)
-                    .frame(width: 310, height: 28, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 5).fill(Palette.card(dark: colorScheme == .dark)))
-                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
-                HStack(spacing: 0) {
-                    Button("Copy") { model.copyAndHide() }
-                    Menu {
-                        Button("Copy") { model.copyAndHide() }
-                        Divider()
-                        Button("Save as Password Item") { model.saveAsPasswordItem() }
-                    } label: { EmptyView() }
-                        .menuStyle(.borderlessButton)
-                        .frame(width: 18)
+                    .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5))
+                SplitActionButton(
+                    title: "Copy",
+                    size: .regular,
+                    prominence: .primary,
+                    items: [.init(title: "Save as Password Item") { model.saveAsPasswordItem() }]
+                ) {
+                    model.copyAndHide()
                 }
             }
             Picker("", selection: $model.mode) {

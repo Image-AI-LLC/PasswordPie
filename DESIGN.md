@@ -157,7 +157,7 @@ All values are sRGB.
 Lines and fills use `ink` (`MenuPalette.ink`): `#302A24` on light, `#FFF6E7` on dark,
 at 3 % (group header fill), 20 % (group header lines) and 25 % (separators). The
 details views use `Color.primary` at 10 % (dividers), 12 % (strength track) and
-25–28 % (well and button strokes).
+25 % (well stroke).
 
 Rules:
 
@@ -253,7 +253,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   500 pt tall (it scrolls). The warm surface fills the popover frame, arrow included. Header:
   32 pt tile, title, edit, pin and star, 14 pt side padding, 10 pt vertical. Fields: 14 pt side
   padding, 5 pt vertical, at least 38 pt tall.
-- **Generator**: a 412 × 300 pt child window; the password well is 310 × 28 pt, radius 5.
+- **Generator**: a 412 × 300 pt child window; the password well is 28 pt tall, radius 5, and fills the row beside the button.
 - **Detached windows**: Preferences is 560 × 800 pt (minimum height 480), About 440 pt wide,
   Editor 450 × 640 pt. The warm surface runs under a transparent title bar. Preferences and
   About use radius 12 cards.
@@ -299,20 +299,26 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   is the main-menu level minus 2, so it stays above normal windows and under PasswordPie's menu, also after
   PasswordPie deactivates. Only its close button dismisses it; Command-W, Escape, clicking elsewhere and
   copying or opening a field do not. Locking the vault or trashing the account does.
+- **Split action button** — `SplitActionButton`, the one control for an action with an optional menu. The
+  word runs the action; the arrow, present only when there is more, opens a menu that never repeats the word.
+  Radius 5. Quiet: `field-surface`, `text` label, `text-secondary` arrow, ink 25 % hairline and divider. Primary:
+  `brand-accent`, `on-accent` label and arrow, `on-accent` 28 % divider, no outline. Hover adds ink 10 %, pressed
+  ink 18 %. Compact is 20 pt tall in `caption` with a 20 pt arrow; regular is 28 pt in `control` with a 24 pt arrow.
 - **Detail field** — `label` over the value, with a hairline on top. States: normal; focused (keyboard,
-  `brand-accent` 20 % fill); hover (a small button at the right whose word runs the primary action:
-  "copy" for most fields, "open" for a website; a password's arrow adds reveal / conceal and large type, a
-  website's adds copy, open and fill); flashing (Return shows the button at 40 % for 0.3 s, then runs the
+  `brand-accent` 20 % fill); hover (a compact quiet split action button at the right: "Copy" for most fields,
+  "Open" for a website; a password's arrow adds Reveal / Conceal and Large Type, a website's adds Copy and
+  Open and Fill); flashing (Return shows the button at 40 % for 0.3 s, then runs the
   primary action). In the popover, copy and open hide the panel. Masked secrets show 8 to 16 bullets; holding
-  Option or "reveal" shows them in `body-code`. The pinned window does not inherit a held Option, and that
+  Option or Reveal shows them in `body-code`. The pinned window does not inherit a held Option, and that
   reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
 - **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
   in the last 5 s.
 - **Strength meter** — 5 pt capsule on a 12 % track, at least 6 pt wide: `strength-weak` below 0.4,
   `strength-medium` below 0.7, otherwise `strength-strong`.
-- **Password Generator** — password well (`code-md`), Copy with a menu (Copy, Save as Password Item),
-  Characters / Words segmented control, slider rows (70 pt label, 24 pt value), "Avoid ambiguous characters"
-  or a separator picker, Regenerate Password and a system progress bar for strength. All system controls.
+- **Password Generator** — password well (`code-md`), a regular primary split action button (Copy, with Save as
+  Password Item in its arrow), Characters / Words segmented control, slider rows (70 pt label, 24 pt value), "Avoid
+  ambiguous characters" or a separator picker, Regenerate Password and a system progress bar for strength. The
+  split button is ours; the rest are system controls.
 - **Large Type** — `display-code`, radius 14, 24 pt padding. Characters stay in groups of 4 on alternating
   stripes, with nothing inserted between groups. The window wraps whole groups. It closes on any key, when it
   loses focus, and when the vault locks.

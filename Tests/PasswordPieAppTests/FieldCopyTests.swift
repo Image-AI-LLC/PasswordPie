@@ -24,10 +24,10 @@ final class FieldCopyTests: XCTestCase {
         let field = DetailField(id: "url", kind: .url, label: "website", value: "https://example.com", secret: false)
         let control = fieldControl(field, revealed: false)
         XCTAssertEqual(control.primary, .open)
-        XCTAssertEqual(control.primary.title, "open")
+        XCTAssertEqual(control.primary.title, "Open")
         XCTAssertEqual(control.menu, [.copy, .openAndFill])
         XCTAssertFalse(control.menu.contains(.open))
-        XCTAssertEqual(FieldAction.copy.title, "copy")
+        XCTAssertEqual(FieldAction.copy.title, "Copy")
         XCTAssertEqual(fieldControl(field, revealed: true), control)
     }
 
