@@ -389,7 +389,7 @@ public enum ChromeLogins {
         return shown + lone
     }
 
-    /// The part of a host someone registers: `hc.int` for `gitlab.hc.int`, `bbc.co.uk` for `shop.bbc.co.uk`.
+    /// The part of a host someone registers: `corp.example` for `gitlab.corp.example`, `bbc.co.uk` for `shop.bbc.co.uk`.
     /// This is an approximation of the public suffix list. A miss shows two rows or one row listing both sites, and never changes a password.
     static func registrableDomain(of host: String) -> String {
         let labels = host.split(separator: ".", omittingEmptySubsequences: true).map(String.init)

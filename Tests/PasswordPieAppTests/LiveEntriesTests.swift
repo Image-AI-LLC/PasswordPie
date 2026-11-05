@@ -96,11 +96,11 @@ final class LiveEntriesTests: XCTestCase {
     }
 
     private func accountLogins() -> [VaultEntry] {
-        ["https://stash.hc.int/login", "https://gitlab.hc.int/users/sign_in"].map { url in
+        ["https://stash.corp.example/login", "https://gitlab.corp.example/users/sign_in"].map { url in
             var live = VaultEntry()
             live.title = websiteHost(forWebsite: url) ?? url
             live.url = url
-            live.username = "albert"
+            live.username = "ann"
             live.password = "chrome-secret"
             live.groupPath = ["Chrome (live)", "Work"]
             return live
@@ -123,8 +123,8 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertEqual(session.allEntries.first?.id, id)
         let saved = try savedEntries()
         XCTAssertEqual(saved.count, 1)
-        XCTAssertEqual(saved[0].title, "hc.int")
-        XCTAssertEqual(EntryMerge.otherWebsites(saved[0]).map(\.value), ["https://stash.hc.int/login"])
+        XCTAssertEqual(saved[0].title, "corp.example")
+        XCTAssertEqual(EntryMerge.otherWebsites(saved[0]).map(\.value), ["https://stash.corp.example/login"])
     }
 
     func testEverySiteOfAnAccountCanBeOpenedAndCopiedFromItsDetails() throws {
@@ -133,7 +133,7 @@ final class LiveEntriesTests: XCTestCase {
         let entry = try XCTUnwrap(session.allEntries.first)
         let model = DetailsModel(entry: entry, session: session) {}
         let sites = model.fields.filter { $0.kind == .url || $0.kind == .otherWebsite("URL (2)") }
-        XCTAssertEqual(sites.map(\.value), ["https://gitlab.hc.int/users/sign_in", "https://stash.hc.int/login"])
+        XCTAssertEqual(sites.map(\.value), ["https://gitlab.corp.example/users/sign_in", "https://stash.corp.example/login"])
         XCTAssertEqual(sites.map(\.label), ["website", "website"])
         XCTAssertEqual(fieldControl(sites[1], revealed: false), fieldControl(sites[0], revealed: false))
         XCTAssertFalse(model.fields.contains { $0.kind == .custom("URL (2)") }, "listed once, as a website")

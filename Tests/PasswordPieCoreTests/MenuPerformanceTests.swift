@@ -35,10 +35,10 @@ final class MenuPerformanceTests: XCTestCase {
 
     func testASearchFindsAnAccountByAnyOfItsWebsites() {
         var account = VaultEntry()
-        account.title = "hc.int"
-        account.url = "https://gitlab.hc.int/users/sign_in"
-        account.setValue("https://path-alm.hc.int/login.action", for: "URL (2)")
-        account.setValue("https://path-jira.hc.int/login.jsp", for: "URL (3)")
+        account.title = "corp.example"
+        account.url = "https://gitlab.corp.example/users/sign_in"
+        account.setValue("https://path-alm.corp.example/login.action", for: "URL (2)")
+        account.setValue("https://path-jira.corp.example/login.jsp", for: "URL (3)")
         for query in ["path", "path-jira", "jira", "gitlab"] {
             XCTAssertEqual(searchEntries([account], query: query, scope: .major).map(\.id), [account.id], query)
         }
@@ -48,15 +48,15 @@ final class MenuPerformanceTests: XCTestCase {
 
     func testOpeningFromASearchPicksTheWebsiteItNamed() {
         var account = VaultEntry()
-        account.url = "https://gitlab.hc.int/users/sign_in"
-        account.setValue("https://path-alm.hc.int/login.action", for: "URL (2)")
-        account.setValue("https://path-jira.hc.int/login.jsp", for: "URL (3)")
-        XCTAssertEqual(otherWebsite(of: account, matching: "jira"), "https://path-jira.hc.int/login.jsp")
-        XCTAssertEqual(otherWebsite(of: account, matching: "PATH jira"), "https://path-jira.hc.int/login.jsp")
-        XCTAssertEqual(otherWebsite(of: account, matching: "path"), "https://path-alm.hc.int/login.action", "the first site that matches")
+        account.url = "https://gitlab.corp.example/users/sign_in"
+        account.setValue("https://path-alm.corp.example/login.action", for: "URL (2)")
+        account.setValue("https://path-jira.corp.example/login.jsp", for: "URL (3)")
+        XCTAssertEqual(otherWebsite(of: account, matching: "jira"), "https://path-jira.corp.example/login.jsp")
+        XCTAssertEqual(otherWebsite(of: account, matching: "PATH jira"), "https://path-jira.corp.example/login.jsp")
+        XCTAssertEqual(otherWebsite(of: account, matching: "path"), "https://path-alm.corp.example/login.action", "the first site that matches")
         XCTAssertNil(otherWebsite(of: account, matching: "gitlab"), "the main website")
-        XCTAssertNil(otherWebsite(of: account, matching: "hc.int"), "every site matches, so the main one wins")
-        XCTAssertNil(otherWebsite(of: account, matching: "albert"), "not about a website")
+        XCTAssertNil(otherWebsite(of: account, matching: "corp.example"), "every site matches, so the main one wins")
+        XCTAssertNil(otherWebsite(of: account, matching: "ann"), "not about a website")
         XCTAssertNil(otherWebsite(of: account, matching: ""))
     }
 
