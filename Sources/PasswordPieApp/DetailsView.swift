@@ -25,7 +25,7 @@ struct DetailField: Identifiable, Equatable {
 
 /// One thing a details field can do. The button shows `primary`; the arrow lists `menu`.
 enum FieldAction: Equatable, Hashable {
-    case copy, reveal, conceal, largeType, openAndFill, open
+    case copy, reveal, conceal, largeType, openAndFill, open, upgrade
 
     var title: String {
         switch self {
@@ -35,6 +35,7 @@ enum FieldAction: Equatable, Hashable {
         case .largeType: "Large Type"
         case .openAndFill: "Open and Fill"
         case .open: "Open"
+        case .upgrade: "Upgrade"
         }
     }
 }
@@ -45,7 +46,11 @@ struct FieldControl: Equatable {
 }
 
 /// A website opens. Copy is in the arrow, with open-and-fill. Every other field copies, and only a secret has a menu.
-func fieldControl(_ field: DetailField, revealed: Bool) -> FieldControl {
+/// A one-time code the user does not have Premium for offers Upgrade instead.
+func fieldControl(_ field: DetailField, revealed: Bool, codeLocked: Bool = false) -> FieldControl {
+    if field.kind == .oneTimePassword, codeLocked {
+        return FieldControl(primary: .upgrade, menu: [])
+    }
     if field.website != nil {
         return FieldControl(primary: .open, menu: [.copy, .openAndFill])
     }
@@ -63,7 +68,7 @@ enum DetailsPresentation: Equatable {
 func fieldActionClosesDetails(_ action: FieldAction, presentation: DetailsPresentation) -> Bool {
     guard presentation == .popover else { return false }
     switch action {
-    case .copy, .open, .openAndFill: return true
+    case .copy, .open, .openAndFill, .upgrade: return true
     case .reveal, .conceal, .largeType: return false
     }
 }
@@ -139,7 +144,7 @@ final class DetailsModel: ObservableObject {
         for website in otherWebsites {
             fields.append(DetailField(id: "custom:" + website.key, kind: .otherWebsite(website.key), label: "website", value: website.value, secret: false))
         }
-        if TOTP.parse(entry: entry) != nil { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
+        if OneTimeCodes.access(for: entry, hasPremium: false) != .noCode { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
         let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
         for field in entry.fields where !handled.contains(field.key.lowercased()) && !otherWebsites.contains(field) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
             fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))
@@ -185,6 +190,9 @@ final class DetailsModel: ObservableObject {
         focused = min(max(focused + delta, 0), fields.count - 1)
     }
 
+    /// True while a one-time code here needs Premium. Read fresh, so an open row unlocks the moment Premium arrives.
+    var codeIsLocked: Bool { !session.premium.hasPremium }
+
     func isShown(_ field: DetailField) -> Bool {
         !field.secret || revealed.contains(field.id) || optionHeld
     }
@@ -211,6 +219,8 @@ final class DetailsModel: ObservableObject {
             session.fill(entryID, .openAndFill, website: field.website)
         case .open:
             session.openURL(of: entryID, website: field.website)
+        case .upgrade:
+            session.requestPremium()
         }
         if fieldActionClosesDetails(action, presentation: presentation) {
             done()
@@ -232,7 +242,7 @@ final class DetailsModel: ObservableObject {
     func activateFocused() {
         guard fields.indices.contains(focused), !flashing else { return }
         let field = fields[focused]
-        let action = fieldControl(field, revealed: revealed.contains(field.id)).primary
+        let action = fieldControl(field, revealed: revealed.contains(field.id), codeLocked: codeIsLocked).primary
         flashing = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
@@ -292,7 +302,7 @@ struct DetailsView: View {
             VStack(spacing: 0) {
                 header
                 ForEach(Array(model.fields.enumerated()), id: \.element.id) { index, field in
-                    DetailRow(model: model, field: field, focused: index == model.focused)
+                    DetailRow(model: model, premium: model.session.premium, field: field, focused: index == model.focused)
                     if field.kind == .password {
                         StrengthRow(password: field.value)
                     }
@@ -366,18 +376,22 @@ private struct DetailChrome<Content: View>: View {
 private struct DetailRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: DetailsModel
+    /// Observed so that an open row changes the moment Premium arrives or ends.
+    @ObservedObject var premium: PremiumStore
     var field: DetailField
     var focused: Bool
     @State private var hovering = false
 
     var body: some View {
-        let control = fieldControl(field, revealed: model.revealed.contains(field.id))
+        let control = fieldControl(field, revealed: model.revealed.contains(field.id), codeLocked: !premium.hasPremium)
+        // Upgrade is how a locked row says what to do, so it does not wait for a hover.
+        let actionAlwaysShown = fieldActionsStayVisible(model.presentation) || control.primary == .upgrade
         DetailChrome(label: field.label, highlighted: focused) { value }
             .contentShape(Rectangle())
             .onTapGesture { model.perform(control.primary, on: field) }
-            .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
+            .padding(.trailing, actionAlwaysShown ? (control.menu.isEmpty ? 60 : 92) : 0)
             .overlay(alignment: .trailing) {
-                if fieldActionsStayVisible(model.presentation) || hovering || (focused && model.flashing) {
+                if actionAlwaysShown || hovering || (focused && model.flashing) {
                     actions(control)
                         .padding(.trailing, 10)
                         .opacity(focused && model.flashing ? 0.4 : 1)
@@ -390,7 +404,7 @@ private struct DetailRow: View {
     private var value: some View {
         switch field.kind {
         case .oneTimePassword:
-            OneTimePasswordValue(entryID: model.entryID, session: model.session)
+            OneTimePasswordValue(entryID: model.entryID, session: model.session, premium: premium)
         case .url, .otherWebsite:
             Text(field.value).font(.system(size: 13)).foregroundStyle(Palette.accentText(dark: colorScheme == .dark)).lineLimit(1).truncationMode(.middle)
         case .notes:
@@ -407,6 +421,7 @@ private struct DetailRow: View {
     private func actions(_ control: FieldControl) -> some View {
         SplitActionButton(
             title: control.primary.title,
+            prominence: control.primary == .upgrade ? .primary : .quiet,
             items: control.menu.map { item in
                 SplitActionButton.Item(title: item.title) { model.perform(item, on: field) }
             }
@@ -443,19 +458,31 @@ private struct OneTimePasswordValue: View {
     @Environment(\.colorScheme) private var colorScheme
     var entryID: UUID
     @ObservedObject var session: VaultSession
+    @ObservedObject var premium: PremiumStore
 
     var body: some View {
-        if let entry = session.entry(entryID), let settings = TOTP.parse(entry: entry) {
-            TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                let period = Double(settings.period)
-                let remaining = period - context.date.timeIntervalSince1970.truncatingRemainder(dividingBy: period)
-                let urgent = remaining <= 5
-                HStack(spacing: 8) {
-                    Text(groupedCode(TOTP.code(settings: settings, at: context.date)))
-                        .font(.system(size: 17, weight: .medium, design: .monospaced))
-                        .foregroundStyle(urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark))
-                    CountdownPie(fraction: remaining / period, color: urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark)).frame(width: 14, height: 14)
+        if let entry = session.entry(entryID) {
+            switch session.oneTimeCodeAccess(for: entry) {
+            case .available(let settings):
+                TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                    let period = Double(settings.period)
+                    let remaining = period - context.date.timeIntervalSince1970.truncatingRemainder(dividingBy: period)
+                    let urgent = remaining <= 5
+                    HStack(spacing: 8) {
+                        Text(groupedCode(OneTimeCodes.code(settings: settings, at: context.date)))
+                            .font(.system(size: 17, weight: .medium, design: .monospaced))
+                            .foregroundStyle(urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark))
+                        CountdownPie(fraction: remaining / period, color: urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark)).frame(width: 14, height: 14)
+                    }
                 }
+            case .locked:
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill").font(.system(size: 11)).accessibilityHidden(true)
+                    Text("Included with Premium").font(.system(size: 13))
+                }
+                .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
+            case .noCode:
+                EmptyView()
             }
         }
     }

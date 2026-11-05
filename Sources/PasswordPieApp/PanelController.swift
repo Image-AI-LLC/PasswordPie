@@ -785,8 +785,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         guard let id = menu.currentEntryID else { return }
         switch shortcut {
         case .copyPrimary, .copyPassword, .copyOneTimePassword:
-            guard let entry = session.entry(id), let target = quickAccessCopyTarget(shortcut, of: entry) else { return }
-            copyAndHide(target, of: id)
+            switch session.runCopyShortcut(shortcut, of: id) {
+            case .copied: hide()
+            // The plans take the keyboard, so focus does not go back to the app underneath.
+            case .premiumRequired: hide(refocusPrevious: false)
+            case .nothingToCopy: break
+            }
         case .pinItem:
             session.pinEntry(id)
         case .openAndFill:
@@ -795,12 +799,6 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         case .fillFocusedApp:
             session.fill(id, .fill)
         }
-    }
-
-    private func copyAndHide(_ target: CopyTarget, of id: UUID) {
-        guard let entry = session.entry(id), !session.value(of: target, in: entry).isEmpty else { return }
-        session.copy(target, of: id)
-        hide()
     }
 
     private static let editActions: [String: Selector] = [

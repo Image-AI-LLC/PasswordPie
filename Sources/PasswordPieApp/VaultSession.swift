@@ -10,7 +10,27 @@ enum FillMode {
     case fill
     case openAndFill
     case open
-    case oneTimePassword
+}
+
+/// One step of typing an account into another app.
+enum FillKeystroke: Equatable {
+    case text(String)
+    case tab
+}
+
+/// What Fill and Open and Fill type: the username and the password, on every channel, and never a one-time code.
+func fillKeystrokes(for entry: VaultEntry) -> [FillKeystroke] {
+    // Password items have no username field to leave; Logins keep the Tab even without a saved username.
+    let username: [FillKeystroke] = entry.category == .password ? [] : [.text(entry.username), .tab]
+    return username + [.text(entry.password)]
+}
+
+/// How a copy shortcut ended, so its caller knows whether to close the menu.
+enum CopyOutcome: Equatable {
+    case copied
+    case nothingToCopy
+    /// The item has a one-time code and this user does not have Premium. The plans are opening; the clipboard was not touched.
+    case premiumRequired
 }
 
 /// What a details field or shortcut copies.
@@ -177,6 +197,8 @@ final class VaultSession: ObservableObject {
     private var roster = DatabaseRoster(current: "")
     private var applyingRoster = false
     private let clipboard: ClipboardGuard
+    /// Who has Premium. Changes without a relaunch, and it is never written to the database or to disk.
+    let premium: PremiumStore
     private let secretStore = TouchIDSecretStore()
 
     var databaseMenuTitles: [String] { DatabaseRoster.menuTitles(for: databasePaths) }
@@ -194,7 +216,9 @@ final class VaultSession: ObservableObject {
     var hasMasterPassword: Bool { !masterPassword.isEmpty }
     var showsKeyFile: Bool { !creating && databaseURL.pathExtension.lowercased() == "kdb" }
 
-    init() {
+    /// Both come from the channel unless a test passes its own.
+    init(premium: PremiumStore? = nil, pasteboard: PasteboardLike? = nil) {
+        self.premium = premium ?? PremiumChannel.makeStore()
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PasswordPie", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
@@ -213,7 +237,7 @@ final class VaultSession: ObservableObject {
         autoLock = AutoLockSettings.load()
         let timeout = UserDefaults.standard.object(forKey: "clipboardTimeout") as? Int ?? Int(ClipboardGuard.defaultTimeout)
         clipboardTimeout = timeout
-        clipboard = ClipboardGuard(pasteboard: SystemPasteboard(), timeout: TimeInterval(timeout)) { delay, action in
+        clipboard = ClipboardGuard(pasteboard: pasteboard ?? SystemPasteboard(), timeout: TimeInterval(timeout)) { delay, action in
             TimerCancellable(delay: delay, action: action)
         }
         hotKey = HotKeyConfig.load()
@@ -1119,7 +1143,9 @@ final class VaultSession: ObservableObject {
         case .password: return entry.password
         case .url: return entry.url
         case .notes: return entry.notes
-        case .oneTimePassword: return TOTP.parse(entry: entry).map { TOTP.code(settings: $0) } ?? ""
+        case .oneTimePassword:
+            guard case .available(let settings) = oneTimeCodeAccess(for: entry) else { return "" }
+            return OneTimeCodes.code(settings: settings)
         case .custom(let key): return entry.value(for: key)
         }
     }
@@ -1130,13 +1156,41 @@ final class VaultSession: ObservableObject {
         clipboard.copy(text)
     }
 
+    /// Whether this user can get `entry`'s one-time code. The only way to the code settings in the app.
+    func oneTimeCodeAccess(for entry: VaultEntry) -> OneTimeCodeAccess {
+        OneTimeCodes.access(for: entry, hasPremium: premium.hasPremium)
+    }
+
+    /// Opens the plans, or if the store has not answered yet, waits for it and then runs `action` for someone who has Premium.
+    func requestPremium(then action: @escaping () -> Void = {}) {
+        premium.requestUnlock(then: action)
+    }
+
     func copy(_ target: CopyTarget, of id: UUID) {
         guard let entry = entry(id) else { return }
+        // A locked code is an empty string, and it must not count as using the account.
+        if target == .oneTimePassword, oneTimeCodeAccess(for: entry) == .locked {
+            requestPremium { [weak self] in self?.copy(target, of: id) }
+            return
+        }
         copy(value(of: target, in: entry))
         switch target {
         case .username, .password, .oneTimePassword: recordUse(id)
         case .url, .notes, .custom: break
         }
+    }
+
+    /// What ⌃⌘C, ⇧⌘C and ⌥⌘C do, in the menu and with a pinned window.
+    @discardableResult
+    func runCopyShortcut(_ shortcut: QuickAccessShortcut, of id: UUID) -> CopyOutcome {
+        guard let entry = entry(id), let target = quickAccessCopyTarget(shortcut, of: entry) else { return .nothingToCopy }
+        if target == .oneTimePassword, oneTimeCodeAccess(for: entry) == .locked {
+            copy(target, of: id)
+            return .premiumRequired
+        }
+        guard !value(of: target, in: entry).isEmpty else { return .nothingToCopy }
+        copy(target, of: id)
+        return .copied
     }
 
     /// `website` is one of the account's sites. Nil opens its main one.
@@ -1168,11 +1222,7 @@ final class VaultSession: ObservableObject {
         }
         onActivity?()
         recordUse(id)
-        let username = entry.username
-        let password = entry.password
-        // Password items have no username field to leave; Logins keep the Tab even without a saved username.
-        let hasUsernameField = entry.category != .password
-        let code = TOTP.parse(entry: entry).map { TOTP.code(settings: $0) } ?? ""
+        let keystrokes = fillKeystrokes(for: entry)
         let delay: Double
         if mode == .openAndFill || mode == .open, let url = webURL(website ?? entry.url) {
             NSWorkspace.shared.open(url)
@@ -1183,15 +1233,11 @@ final class VaultSession: ObservableObject {
         hidePanel?()
         guard mode != .open else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            switch mode {
-            case .oneTimePassword:
-                typeText(code)
-            default:
-                if hasUsernameField {
-                    typeText(username)
-                    typeTab()
+            for keystroke in keystrokes {
+                switch keystroke {
+                case .text(let text): typeText(text)
+                case .tab: typeTab()
                 }
-                typeText(password)
             }
         }
     }
