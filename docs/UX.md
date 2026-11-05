@@ -146,3 +146,56 @@ Use a sandbox Apple Account and a database with one login that has a two-step co
 3. Pin the login with ⌘O and close the plans. Press ⌥⌘C from another app. The plans open again.
 4. Buy Lifetime. The plans close, and the pinned window now shows a live code with its countdown.
 5. Press ⌥⌘C and paste the code.
+
+## Lock
+
+**In one line:** press ⌘L and the vault locks with a click you can hear. The menu shows that it locked, then gets
+out of your way.
+
+### The problem
+
+Locking used to be two clicks deep, in the gear menu. When it happened, the menu just vanished, so you could not tell
+whether the vault locked or the menu only closed. And locking the Mac with the power button left the vault open: the
+next person to press the shortcut saw every account.
+
+### What happens now
+
+| What you do | What happens |
+|---|---|
+| Press ⌘L with the menu open | The vault locks. |
+| Choose Lock in the gear menu | The same. ⌘L is shown next to it. |
+| Lock the Mac: the power button, ⌃⌘Q, or the Lock Screen menu item | The vault locks, even if the screen never goes dark. |
+
+Locking with the menu open plays a short scene, about 1.5 seconds in all:
+
+1. The lock screen fades in over the menu, with "Locked" under the logo. There is no password field yet, so nothing
+   you type goes anywhere.
+2. The logo settles and you hear the macOS padlock click, the same sound as the padlock in System Settings.
+3. The panel fades out. Your screen is clear again.
+
+Press the menu shortcut while it fades, and the lock screen stays, ready for your password.
+
+Unlocking plays the padlock's opening click as the menu comes back.
+
+Locking while the menu is closed (idle, sleep, screen lock) is silent. Nobody wants a click from a Mac that is going to
+sleep.
+
+The sounds follow the system setting "Play user interface sound effects" in Sound settings. Turn that off and
+PasswordPie is quiet too.
+
+### Why ⌘L
+
+⌘L is Lock in KeePassXC, Bitwarden and Strongbox, so it is the key people already try. It works only while the
+PasswordPie menu is open, so it never takes ⌘L from another app, such as the address bar in a browser. The system's
+own Lock Screen is ⌃⌘Q, which locks the Mac and, now, the vault with it.
+
+### Settings
+
+"When the screen locks or the screen saver starts" in Preferences covers the screen lock. It is on by default.
+
+### Demo script
+
+1. Press the menu shortcut and search for an account.
+2. Press ⌘L. The lock screen fades in, the padlock clicks, and the panel fades away.
+3. Press the menu shortcut. The lock screen is there, with an empty search behind it. Unlock: the padlock opens.
+4. Press the power button once to lock the Mac. Log back in and press the menu shortcut: the vault is locked.

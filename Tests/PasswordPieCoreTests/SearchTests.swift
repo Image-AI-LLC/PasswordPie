@@ -275,12 +275,14 @@ final class AutoLockTests: XCTestCase {
         var settings = AutoLockSettings()
         let on = policy(clock, idle: { 0 }, settings: settings)
         XCTAssertTrue(on.screenSaverDidStart())
+        XCTAssertTrue(on.screenDidLock())
         XCTAssertTrue(on.sessionDidResignActive())
         XCTAssertTrue(on.willPowerOff())
         settings.lockOnScreenSaver = false
         settings.lockOnUserSwitch = false
         let off = policy(clock, idle: { 0 }, settings: settings)
         XCTAssertFalse(off.screenSaverDidStart())
+        XCTAssertFalse(off.screenDidLock(), "one switch covers the screen saver and the screen lock")
         XCTAssertFalse(off.sessionDidResignActive())
         XCTAssertTrue(off.willPowerOff())
     }

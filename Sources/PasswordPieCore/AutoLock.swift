@@ -1,6 +1,6 @@
 import Foundation
 
-/// Auto-lock settings. Defaults: 5 minutes, and lock on idle, sleep, screen saver, and user switch.
+/// Auto-lock settings. Defaults: 5 minutes, and lock on idle, sleep, screen lock or screen saver, and user switch.
 public struct AutoLockSettings: Equatable, Sendable {
     public var timeoutMinutes: Int
     public var lockOnIdle: Bool
@@ -75,6 +75,8 @@ public struct AutoLockPolicy {
     }
 
     public func screenSaverDidStart() -> Bool { settings.lockOnScreenSaver }
+    /// The power button, ⌃⌘Q or Lock Screen. The screen may stay lit, so no sleep notice comes; the screen saver switch covers it.
+    public func screenDidLock() -> Bool { settings.lockOnScreenSaver }
     public func sessionDidResignActive() -> Bool { settings.lockOnUserSwitch }
     public func willPowerOff() -> Bool { true }
 }

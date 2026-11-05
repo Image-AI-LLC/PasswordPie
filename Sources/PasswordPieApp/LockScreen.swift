@@ -6,6 +6,8 @@ import SwiftUI
 final class LockModel: ObservableObject {
     @Published var turned = false
     @Published var open = false
+    /// The lock scene plays: "Locked" shows where the form will be.
+    @Published var locking = false
     let fields = LockFields()
 }
 
@@ -37,6 +39,10 @@ struct LockScreenPresentation {
     var unlocking = false
     /// Decrypting or just opened: the form stays hidden so it never looks like it is still waiting for input.
     var hidesForm = false
+    /// Just locked: "Locked" replaces the form until the panel fades out.
+    var locking = false
+
+    var formHidden: Bool { hidesForm || locking }
 }
 
 struct LockScreenActions {
@@ -71,7 +77,8 @@ struct DoorsView: View {
                 creating: session.creating, message: session.message,
                 showsKeyFile: session.showsKeyFile, keyFileName: session.keyFileName,
                 touchIDAvailable: session.touchIDAvailable,
-                unlocking: session.unlocking, hidesForm: session.unlocking || !session.locked),
+                unlocking: session.unlocking, hidesForm: session.unlocking || !session.locked,
+                locking: lock.locking),
             password: $session.passwordDraft, confirmation: $session.confirmDraft,
             fields: lock.fields, turned: lock.turned,
             actions: LockScreenActions(
@@ -129,11 +136,17 @@ struct LockScreenContent: View {
                 .padding(.top, 3)
 
             controls
-                .opacity(presentation.hidesForm ? 0 : 1)
-                .allowsHitTesting(!presentation.hidesForm)
-                .accessibilityHidden(presentation.hidesForm)
+                .opacity(presentation.formHidden ? 0 : 1)
+                .allowsHitTesting(!presentation.formHidden)
+                .accessibilityHidden(presentation.formHidden)
                 .overlay(alignment: .top) {
-                    if presentation.hidesForm {
+                    if presentation.locking {
+                        Label("Locked", systemImage: "lock.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(secondary)
+                            .padding(.top, 24)
+                            .accessibilityIdentifier("lock.locked")
+                    } else if presentation.hidesForm {
                         Text("Unlocking…")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(secondary)
@@ -141,7 +154,7 @@ struct LockScreenContent: View {
                             .accessibilityIdentifier("lock.unlocking")
                     }
                 }
-                .animation(.easeInOut(duration: 0.2), value: presentation.hidesForm)
+                .animation(.easeInOut(duration: 0.2), value: presentation.formHidden)
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)

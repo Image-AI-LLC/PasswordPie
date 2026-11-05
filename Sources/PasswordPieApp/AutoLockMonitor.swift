@@ -24,16 +24,25 @@ enum SystemIdle {
 }
 
 /// Feeds system events to the pure `AutoLockPolicy` and locks when it says so.
-/// Hiding the panel or losing focus never locks; only idleness, sleep, the screen saver, a user switch or power off do.
+/// Hiding the panel or losing focus never locks; only idleness, sleep, a screen lock, the screen saver, a user switch
+/// or power off do.
 @MainActor
 final class AutoLockMonitor {
+    /// Posted when the Mac's screen locks: the power button, ⌃⌘Q, Lock Screen. With display sleep held off nothing else is posted.
+    static let screenLocked = Notification.Name("com.apple.screenIsLocked")
+    static let screenSaverStarted = Notification.Name("com.apple.screensaver.didstart")
+
     private var policy: AutoLockPolicy
     private var timer: Timer?
     private let lock: () -> Void
+    private let distributed: NotificationCenter
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
 
-    init(settings: AutoLockSettings, lock: @escaping () -> Void) {
+    /// `distributed` is replaced in tests: posting a real screen-lock notice would lock every app on the Mac.
+    init(settings: AutoLockSettings, distributed: NotificationCenter = DistributedNotificationCenter.default(),
+         lock: @escaping () -> Void) {
         policy = AutoLockPolicy(settings: settings, systemIdle: { SystemIdle.seconds() })
+        self.distributed = distributed
         self.lock = lock
     }
 
@@ -53,8 +62,8 @@ final class AutoLockMonitor {
         observe(workspace, NSWorkspace.willPowerOffNotification) { if $0.policy.willPowerOff() { $0.lock() } }
         observe(workspace, NSWorkspace.didActivateApplicationNotification) { $0.policy.registerActivity() }
         observe(workspace, NSWorkspace.didDeactivateApplicationNotification) { $0.policy.registerActivity() }
-        let distributed = DistributedNotificationCenter.default()
-        observe(distributed, Notification.Name("com.apple.screensaver.didstart")) { if $0.policy.screenSaverDidStart() { $0.lock() } }
+        observe(distributed, Self.screenSaverStarted) { if $0.policy.screenSaverDidStart() { $0.lock() } }
+        observe(distributed, Self.screenLocked) { if $0.policy.screenDidLock() { $0.lock() } }
     }
 
     func registerActivity() { policy.registerActivity() }
