@@ -620,6 +620,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "passwordLength": passwordLength,
             "menuDepth": menu.levels.count,
             "selectedRow": menu.selectedTitle ?? NSNull(),
+            "selectedEntry": menu.currentEntryID?.uuidString ?? NSNull(),
             "popoverOpen": menu.popoverIsOpen,
             "detailsFocus": menu.focusedFieldLabel ?? NSNull(),
             "rootRows": menu.root.rows.map(\.title),
