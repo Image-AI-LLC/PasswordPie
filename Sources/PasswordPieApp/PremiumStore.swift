@@ -40,7 +40,10 @@ enum PremiumActivity: Equatable {
     case idle
     case purchasing(PremiumPlan)
     case restoring
-    case pending
+    /// Waiting for someone to approve this plan.
+    case pending(PremiumPlan)
+    /// The store finished the purchase, and the entitlement has not shown up yet. Only the entitlement grants Premium.
+    case awaitingDelivery(PremiumPlan)
     case cancelled
     case failed(String)
     case alreadyOwned(PremiumPlan)
@@ -63,6 +66,7 @@ enum PremiumActivity: Equatable {
         switch self {
         case .idle, .purchasing, .restoring: return nil
         case .pending: return "Waiting for approval. Premium unlocks by itself when it is approved."
+        case .awaitingDelivery: return "The App Store finished the purchase. Premium unlocks as soon as it arrives. If it does not, press Restore Purchases."
         case .cancelled: return "Purchase cancelled."
         case .failed(let reason): return reason
         case .alreadyOwned: return "You already own this plan."
@@ -118,6 +122,8 @@ final class PremiumStore: ObservableObject {
     private let backend: PremiumBackend?
     private let now: () -> Date
     private let firstCheckTimeout: TimeInterval
+    /// How long to keep asking after a purchase or restore. The store can report success a moment before the entitlement appears.
+    private let deliveryRetryDelays: [TimeInterval]
     private var refreshGeneration = 0
     private var updatesTask: Task<Void, Never>?
     private var firstCheckTask: Task<Void, Never>?
@@ -127,10 +133,16 @@ final class PremiumStore: ObservableObject {
     /// Asked for a code while the store had not answered yet.
     private var waiting: [() -> Void] = []
 
-    init(backend: PremiumBackend, now: @escaping () -> Date = Date.init, firstCheckTimeout: TimeInterval = 3) {
+    init(
+        backend: PremiumBackend,
+        now: @escaping () -> Date = Date.init,
+        firstCheckTimeout: TimeInterval = 3,
+        deliveryRetryDelays: [TimeInterval] = [0.2, 0.5, 1, 2]
+    ) {
         self.backend = backend
         self.now = now
         self.firstCheckTimeout = firstCheckTimeout
+        self.deliveryRetryDelays = deliveryRetryDelays
         status = .checking
     }
 
@@ -140,6 +152,7 @@ final class PremiumStore: ObservableObject {
         backend = nil
         now = Date.init
         firstCheckTimeout = 0
+        deliveryRetryDelays = []
         status = fixedStatus
     }
     #endif
@@ -205,7 +218,12 @@ final class PremiumStore: ObservableObject {
 
     private func apply(_ newStatus: PremiumStatus) {
         status = newStatus
-        if hasPremium, activity == .pending { activity = .idle }
+        switch activity {
+        case .pending(let plan), .awaitingDelivery(let plan):
+            if ownedPlans.contains(plan) { activity = .idle }
+        default:
+            break
+        }
         scheduleExpiryCheck()
         let requests = waiting
         waiting = []
@@ -241,6 +259,15 @@ final class PremiumStore: ObservableObject {
         }
     }
 
+    /// Asks the store again until `arrived`, or until the retries run out.
+    private func refreshUntil(_ arrived: () -> Bool) async {
+        await refresh()
+        for delay in deliveryRetryDelays where !arrived() {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            await refresh()
+        }
+    }
+
     func loadProducts() async {
         guard let backend else { return }
         products = .loading
@@ -270,12 +297,10 @@ final class PremiumStore: ObservableObject {
         do {
             switch try await backend.purchase(plan) {
             case .success:
-                await refresh()
-                activity = ownedPlans.contains(plan)
-                    ? .idle
-                    : .failed("The App Store finished the purchase, but it has not arrived yet. Try Restore Purchases.")
+                await refreshUntil { ownedPlans.contains(plan) }
+                activity = ownedPlans.contains(plan) ? .idle : .awaitingDelivery(plan)
             case .pending:
-                activity = .pending
+                activity = .pending(plan)
             case .cancelled:
                 activity = .cancelled
             case .unverified:
@@ -292,7 +317,7 @@ final class PremiumStore: ObservableObject {
         do {
             switch try await backend.restore() {
             case .finished:
-                await refresh()
+                await refreshUntil { hasPremium }
                 activity = hasPremium ? .restored : .nothingToRestore
             case .cancelled:
                 activity = .idle
@@ -302,9 +327,11 @@ final class PremiumStore: ObservableObject {
         }
     }
 
-    /// When the plans open again, the last outcome is old news. An approval still being waited for is not.
+    /// When the plans open again, the last outcome is old news. Something still being waited for is not.
     func clearMessage() {
-        guard !activity.isBusy, activity != .pending else { return }
-        activity = .idle
+        switch activity {
+        case .purchasing, .restoring, .pending, .awaitingDelivery: return
+        default: activity = .idle
+        }
     }
 }

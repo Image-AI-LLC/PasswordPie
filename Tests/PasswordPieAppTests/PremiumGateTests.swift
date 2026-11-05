@@ -134,6 +134,18 @@ final class PremiumGateTests: XCTestCase {
         panel.hide()
     }
 
+    /// The updates stream does not always fire for a refund, and a menu-bar app rarely comes forward.
+    func testOpeningTheMenuAsksTheStoreAgain() async throws {
+        let session = await session(premium: true)
+        XCTAssertTrue(session.premium.hasPremium)
+        backend.transactions = []
+        let panel = PanelController(session: session)
+        panel.show(.hotkey)
+        let locked = await waitUntil { !session.premium.hasPremium }
+        XCTAssertTrue(locked)
+        panel.hide()
+    }
+
     func testAShortcutDuringTheFirstCheckCopiesOnceAPremiumAnswerArrives() async throws {
         let session = await session(premium: false)
         let id = try onlyID(session)

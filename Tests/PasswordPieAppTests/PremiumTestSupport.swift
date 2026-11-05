@@ -10,6 +10,8 @@ final class FakePremiumBackend: PremiumBackend {
     }
 
     var transactions: [PremiumTransaction] = []
+    /// After this many more answers, `currentTransactions` starts returning these. A store that lags behind a purchase.
+    var transactionsAfterRefreshes: (count: Int, transactions: [PremiumTransaction])?
     var products: Result<[PremiumProduct], Failure> = .success([FakePremiumBackend.lifetime, FakePremiumBackend.yearly])
     var purchaseOutcome: Result<PremiumPurchaseOutcome, Failure> = .success(.success)
     var restoreOutcome: Result<PremiumRestoreOutcome, Failure> = .success(.finished)
@@ -33,6 +35,14 @@ final class FakePremiumBackend: PremiumBackend {
     func currentTransactions() async -> [PremiumTransaction] {
         if holdsAnswers {
             await withCheckedContinuation { answerGate = $0 }
+        }
+        if let lag = transactionsAfterRefreshes {
+            if lag.count <= 0 {
+                transactions = lag.transactions
+                transactionsAfterRefreshes = nil
+            } else {
+                transactionsAfterRefreshes = (lag.count - 1, lag.transactions)
+            }
         }
         return transactions
     }

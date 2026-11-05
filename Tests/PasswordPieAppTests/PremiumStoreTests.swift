@@ -203,13 +203,73 @@ final class PremiumStoreTests: XCTestCase {
         XCTAssertEqual(store.activity, .idle)
     }
 
+    /// Seen with the real store: `purchase` returns success a moment before the entitlement shows up.
+    func testAnEntitlementThatLagsBehindThePurchaseStillUnlocksWithoutAnError() async {
+        let lagging = PremiumStore(backend: backend, deliveryRetryDelays: [0.001, 0.001, 0.001])
+        await lagging.refresh()
+        backend.onPurchase = { [unowned backend] _ in
+            backend!.transactionsAfterRefreshes = (2, [PremiumFixtures.lifetime])
+        }
+        await lagging.purchase(.lifetime)
+        XCTAssertTrue(lagging.hasPremium)
+        XCTAssertEqual(lagging.activity, .idle)
+    }
+
+    func testAPurchaseThatHasNotArrivedIsNotAFailureAndClearsWhenItDoes() async {
+        let lagging = PremiumStore(backend: backend, deliveryRetryDelays: [0.001])
+        lagging.start()
+        let checked = await waitUntil { lagging.status == .free }
+        XCTAssertTrue(checked)
+        await lagging.purchase(.lifetime)
+        XCTAssertEqual(lagging.activity, .awaitingDelivery(.lifetime))
+        XCTAssertFalse(lagging.activity.isError)
+        XCTAssertFalse(lagging.hasPremium, "only an entitlement from the store grants Premium, not the purchase result")
+        lagging.clearMessage()
+        XCTAssertEqual(lagging.activity, .awaitingDelivery(.lifetime))
+        backend.transactions = [PremiumFixtures.lifetime]
+        backend.emitUpdate()
+        let unlocked = await waitUntil { lagging.activity == .idle }
+        XCTAssertTrue(unlocked)
+        XCTAssertTrue(lagging.hasPremium)
+        lagging.stop()
+    }
+
+    func testRestoreWaitsForALaggingEntitlementToo() async {
+        let lagging = PremiumStore(backend: backend, deliveryRetryDelays: [0.001, 0.001])
+        await lagging.refresh()
+        backend.onRestore = { [unowned backend] in
+            backend!.transactionsAfterRefreshes = (1, [PremiumFixtures.lifetime])
+        }
+        await lagging.restore()
+        XCTAssertEqual(lagging.activity, .restored)
+    }
+
+    /// A subscriber waiting on approval for Lifetime already has Premium, and is still waiting.
+    func testApprovalStillPendingForASubscriberStaysOnScreenUntilThatPlanArrives() async {
+        backend.transactions = [PremiumFixtures.yearly(expires: later(3600))]
+        store.start()
+        let checked = await waitUntil { self.store.hasPremium }
+        XCTAssertTrue(checked)
+        backend.purchaseOutcome = .success(.pending)
+        await store.purchase(.lifetime)
+        XCTAssertEqual(store.activity, .pending(.lifetime))
+        backend.emitUpdate()
+        await store.refresh()
+        XCTAssertEqual(store.activity, .pending(.lifetime))
+        backend.transactions.append(PremiumFixtures.lifetime)
+        backend.emitUpdate()
+        let arrived = await waitUntil { self.store.activity == .idle }
+        XCTAssertTrue(arrived)
+        store.stop()
+    }
+
     func testAPendingPurchaseWaitsThenUnlocksByItself() async {
         store.start()
         let checked = await waitUntil { self.store.status == .free }
         XCTAssertTrue(checked)
         backend.purchaseOutcome = .success(.pending)
         await store.purchase(.yearly)
-        XCTAssertEqual(store.activity, .pending)
+        XCTAssertEqual(store.activity, .pending(.yearly))
         XCTAssertFalse(store.hasPremium)
         XCTAssertEqual(store.activity.isError, false)
         backend.transactions = [PremiumFixtures.yearly(expires: later(3600))]
@@ -294,6 +354,7 @@ final class PremiumStoreTests: XCTestCase {
     }
 
     func testRestoreWithNothingToRestoreSaysSo() async {
+        let store = PremiumStore(backend: backend, deliveryRetryDelays: [])
         await store.refresh()
         await store.restore()
         XCTAssertEqual(store.activity, .nothingToRestore)
@@ -323,18 +384,18 @@ final class PremiumStoreTests: XCTestCase {
         backend.purchaseOutcome = .success(.pending)
         await store.purchase(.lifetime)
         store.clearMessage()
-        XCTAssertEqual(store.activity, .pending, "still waiting for approval")
+        XCTAssertEqual(store.activity, .pending(.lifetime), "still waiting for approval")
     }
 
     func testEveryStateThatNeedsWordsHasThem() {
-        let states: [PremiumActivity] = [.pending, .cancelled, .failed("x"), .alreadyOwned(.lifetime), .nothingToRestore, .restored]
+        let states: [PremiumActivity] = [.pending(.lifetime), .awaitingDelivery(.lifetime), .cancelled, .failed("x"), .alreadyOwned(.lifetime), .nothingToRestore, .restored]
         for state in states {
             XCTAssertNotNil(state.message, "\(state)")
         }
         XCTAssertNil(PremiumActivity.idle.message)
         XCTAssertTrue(PremiumActivity.purchasing(.lifetime).isBusy)
         XCTAssertTrue(PremiumActivity.restoring.isBusy)
-        XCTAssertFalse(PremiumActivity.pending.isBusy, "another plan can be tried while one waits for approval")
+        XCTAssertFalse(PremiumActivity.pending(.lifetime).isBusy, "another plan can be tried while one waits for approval")
     }
 
     // MARK: Status words

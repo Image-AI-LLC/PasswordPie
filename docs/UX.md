@@ -114,7 +114,8 @@ and other KeePass apps can still read it. Subscribe again and the codes come bac
 ### When Premium ends
 
 - **Yearly runs out or is cancelled.** Codes lock when the paid year ends.
-- **Apple refunds a purchase.** Codes lock as soon as the App Store tells the app.
+- **Apple refunds a purchase.** Codes lock as soon as the App Store tells the app, or at the latest the next time you
+  open the menu.
 - **Another Mac.** Premium follows your Apple Account. Press Restore Purchases if it has not arrived.
 
 Apple is the only source of who has Premium. The App Store version keeps no flag of its own, so nothing on disk can

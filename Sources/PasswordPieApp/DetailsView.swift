@@ -385,13 +385,13 @@ private struct DetailRow: View {
     var body: some View {
         let control = fieldControl(field, revealed: model.revealed.contains(field.id), codeLocked: !premium.hasPremium)
         // Upgrade is how a locked row says what to do, so it does not wait for a hover.
-        let actionAlwaysShown = fieldActionsStayVisible(model.presentation) || control.primary == .upgrade
+        let actionShown = fieldActionsStayVisible(model.presentation) || control.primary == .upgrade || hovering || (focused && model.flashing)
         DetailChrome(label: field.label, highlighted: focused) { value }
             .contentShape(Rectangle())
             .onTapGesture { model.perform(control.primary, on: field) }
-            .padding(.trailing, actionAlwaysShown ? (control.menu.isEmpty ? 60 : 92) : 0)
+            .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
             .overlay(alignment: .trailing) {
-                if actionAlwaysShown || hovering || (focused && model.flashing) {
+                if actionShown {
                     actions(control)
                         .padding(.trailing, 10)
                         .opacity(focused && model.flashing ? 0.4 : 1)

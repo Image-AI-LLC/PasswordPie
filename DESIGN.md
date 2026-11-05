@@ -323,13 +323,15 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   Premium" in `body` `text-secondary`, with a compact primary split action button, Upgrade, always visible at the right.
   Return on the row runs Upgrade. The item's code is never computed.
 - **Premium window** — App Store channel only. 40 pt pie, `title`, one line of `body` `text-secondary`, the plan cards,
-  then Restore Purchases, the renewal terms in `caption` `text-secondary` and two `accent-text` links. Closes by itself when
+  then Restore Purchases and Manage Subscription, the renewal terms in `caption` `text-secondary` and two `accent-text` links. Closes by itself when
   Premium arrives.
 - **Plan card** — radius 12 on `field-surface` with an ink 7 % hairline: the plan name from Apple in `body` medium, one
-  `caption` line, and a regular primary split action button at the right. The button shows the price from Apple, and
-  no price is ever written in the code. While buying it says "Waiting…"; an owned plan shows "Owned" in `text-secondary`.
-- **Premium status line** — App Store channel, Preferences. `body` medium, with its detail in `caption`. Errors use `error`;
-  waiting, cancelled and restored use `text-secondary`. Orange is never a status.
+  `caption` line, and a regular split action button at the right: primary for the one-time plan, quiet for the subscription,
+  so the surface keeps one main action. The button shows the price from Apple, and no price is ever written in the code. While
+  buying it says "Waiting…"; an owned plan shows "Owned" in `text-secondary`.
+- **Premium section** — App Store channel, first in Preferences. Status in `body` medium with its detail in `caption`, the
+  plans divided by hairlines, then the same actions and terms. Errors use `error`; waiting, cancelled and restored use
+  `text-secondary`. Orange is never a status.
 - **Strength meter** — 5 pt capsule on a 12 % track, at least 6 pt wide: `strength-weak` below 0.4,
   `strength-medium` below 0.7, otherwise `strength-strong`.
 - **Password Generator** — password well (`code-md`), a regular primary split action button (Copy, with Save as

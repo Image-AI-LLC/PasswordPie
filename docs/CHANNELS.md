@@ -62,7 +62,10 @@ Two-step codes need Premium on the App Store channel. Everything else is free on
 
 **App Store channel.** `StoreKitPremiumBackend` is the only code that imports StoreKit, and the whole file is outside
 `PP_DIRECT`. Premium comes only from `.verified` transactions in `Transaction.currentEntitlements`, kept current by
-`Transaction.updates`, honoring `revocationDate` and `expirationDate`. Nothing is cached, so no flag on disk can grant it.
+`Transaction.updates`, honoring `revocationDate` and `expirationDate`. It also asks again when the menu opens and when the
+app comes forward, because the stream does not always fire for a refund. Nothing is cached, so no flag on disk can grant it.
+A purchase result never grants Premium by itself: the entitlement can lag it by a moment, so the store keeps asking for a
+few seconds, then says it is on its way and unlocks when it arrives.
 The prices shown are `Product.displayPrice`. The UI links only to the terms, the privacy policy and Apple's own
 subscription page, and says nothing about buying elsewhere. `AppStore.showManageSubscriptions` does not exist on macOS,
 so Manage Subscription opens `https://apps.apple.com/account/subscriptions`.
