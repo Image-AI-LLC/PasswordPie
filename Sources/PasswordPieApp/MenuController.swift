@@ -73,6 +73,8 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     private var pendingSelect: DispatchWorkItem?
     private var widest: CGFloat = MenuGeometry.rootWidth
     private var lastPointerScreen: NSPoint?
+    /// Below the root: the rows `reopenSubmenus()` still has to walk to.
+    private var submenusToReopen: [MenuRowRef] = []
 
     var root: MenuLevel { levels[0] }
     var deepest: MenuLevel { levels[levels.count - 1] }
@@ -88,11 +90,12 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
 
     // MARK: Building
 
-    /// Every showing starts from the initial menu with the first row selected.
+    /// A showing with nothing to recall starts from the initial menu with the first row selected.
     func reset() {
         closeAll()
         query = ""
         widest = MenuGeometry.rootWidth
+        submenusToReopen = []
         rebuildRoot(selectFirst: true)
     }
 
@@ -104,18 +107,73 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         rebuildRoot(selectFirst: true)
     }
 
-    /// Entries changed (favorite toggled, item saved): rebuild without losing the query.
+    /// Entries changed (favorite toggled, item saved): rebuild without losing the query or the selected row.
     /// While the popover is open (its star toggles a favorite) the rebuild waits for the next showing instead of closing it.
     func refresh() {
         guard !popoverIsOpen else { return }
-        let selectedTitle = root.selectedRow?.title
-        closeAll()
-        rebuildRoot(selectFirst: false)
-        if let selectedTitle, let index = root.rows.firstIndex(where: { $0.title == selectedTitle && $0.isSelectable }) {
-            root.list.selectedIndex = index
-        } else {
-            selectFirst(in: root)
+        rebuild(at: place)
+        // A hidden panel has no parent to hang a child window from.
+        if host?.rootWindow.isVisible == true { reopenSubmenus() }
+    }
+
+    /// Where the keyboard is now. Stops at the first level with no selected row.
+    var place: MenuPlace {
+        var path: [MenuRowRef] = []
+        for level in levels {
+            guard let row = level.selectedRow else { break }
+            path.append(MenuRowRef(row))
         }
+        return MenuPlace(query: query, path: path)
+    }
+
+    /// Brings back `place` in the root list. Child windows are placed against the panel's final frame, so call
+    /// `reopenSubmenus()` once the panel is on screen.
+    func restore(_ place: MenuPlace) {
+        widest = MenuGeometry.rootWidth
+        rebuild(at: place)
+    }
+
+    private func rebuild(at place: MenuPlace) {
+        closeAll()
+        query = place.query
+        rebuildRoot(selectFirst: false)
+        submenusToReopen = Array(place.path.dropFirst())
+        guard let first = place.path.first, let index = reveal(first, in: root) else {
+            selectFirst(in: root)
+            submenusToReopen = []
+            return
+        }
+        root.list.selectedIndex = index
+    }
+
+    /// Opens the submenus `restore` could not, each with its row selected, and scrolls the selection into view.
+    /// A row that is gone ends the walk at its parent, with the first row of that list selected.
+    func reopenSubmenus() {
+        let path = submenusToReopen
+        submenusToReopen = []
+        for ref in path {
+            let parent = deepest
+            guard let index = parent.list.selectedIndex, parent.rows[index].kind == .submenu else { break }
+            openChild(of: parent, at: index, rows: parent.rows[index].children, content: .rows, selectFirst: false)
+            guard let found = reveal(ref, in: deepest) else {
+                selectFirst(in: deepest)
+                break
+            }
+            deepest.list.selectedIndex = found
+        }
+        for level in levels {
+            if let index = level.list.selectedIndex { level.list.scrollToVisible(row: index) }
+        }
+    }
+
+    /// The row's index in `level`, expanding the "Show N more" row that hides it if there is one.
+    private func reveal(_ ref: MenuRowRef, in level: MenuLevel) -> Int? {
+        if let index = level.rows.firstIndex(where: ref.matches) { return index }
+        guard let more = level.rows.firstIndex(where: { row in
+            row.kind == .showMore && row.children.contains(where: ref.matches)
+        }) else { return nil }
+        expand(level, at: more)
+        return level.rows.firstIndex(where: ref.matches)
     }
 
     private func rebuildRoot(selectFirst first: Bool) {

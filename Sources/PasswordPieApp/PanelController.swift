@@ -98,6 +98,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// True while the system Touch ID sheet is up. That sheet is another process and must not close this panel.
     private var touchIDPromptOpen = false
     private let positionKey = "panelTopLeft"
+    private var recall = QuickAccessRecall()
+    /// Replaced by tests, so the 10 seconds of `recall` need no real wait.
+    var now: () -> Date = Date.init
     /// Debug builds can keep the panel open when focus moves elsewhere, so screenshots are stable.
     private var autoHideEnabled: Bool {
         #if DEBUG
@@ -141,7 +144,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.hasShadow = true
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .none
-        panel.onEscape = { [weak self] in self?.hide() }
+        panel.onEscape = { [weak self] in self?.closeAsDone() }
         panel.onKeyEquivalent = { [weak self] event in self?.handleKeyEquivalent(event) ?? false }
         panel.onDragEnded = { [weak self] in self?.dragEnded() }
         NotificationCenter.default.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
@@ -247,14 +250,18 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             previousApp = front
         }
-        // No state survives between showings: empty search, initial menu, first row selected.
-        header.searchField.stringValue = ""
+        // Within 10 seconds of closing, the search and the selected account come back. Otherwise: empty search,
+        // initial menu, first row selected. Locking forgets it, so a locked panel never has one.
+        let recalled = session.locked ? nil : recall.take(at: now())
+        header.searchField.stringValue = recalled?.searchText ?? ""
         header.showsSeparator = true
         touchIDOffered = false
         animatingLock = false
         lockModel.turned = false
         lockModel.open = false
-        if !session.locked { menu.reset() }
+        if !session.locked {
+            if let recalled { menu.restore(recalled.place) } else { menu.reset() }
+        }
         applyLayout(locked: session.locked)
 
         // A test process can have no screens. Still compare Chrome; there is nowhere to place the panel.
@@ -283,6 +290,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
+        if recalled != nil {
+            effect.layoutSubtreeIfNeeded()
+            menu.reopenSubmenus()
+            // Selected, so the first typed letter starts a new search.
+            header.searchField.currentEditor()?.selectAll(nil)
+        }
         panel.invalidateShadow()
         // Compare Chrome after the menu is up. A locked panel returns immediately, so the keychain prompt waits for unlock.
         session.noteChromePanelShown()
@@ -317,6 +330,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     func hide(refocusPrevious: Bool = true) {
         guard panel.isVisible else { return }
+        // Before anything closes: the open levels and the field editor are what gets remembered.
+        if !session.locked, !animatingLock {
+            recall.remember(QuickAccessSnapshot(searchText: searchText, place: menu.place), at: now())
+        }
         menu.closeAll()
         panel.orderOut(nil)
         header.searchField.stringValue = ""
@@ -329,6 +346,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             previous.activate()
         }
         onPanelHidden?()
+    }
+
+    /// Escape closes for good: the next showing starts empty, however soon it comes.
+    private func closeAsDone() {
+        hide()
+        recall.forget()
     }
 
     /// Runs `body` (a modal file chooser, a menu) without the panel hiding when it loses key status.
@@ -522,6 +545,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     private func lockedChanged(to locked: Bool) {
         if locked {
+            recall.forget()
             lockAnimation()
         } else {
             unlockAnimation()
@@ -639,7 +663,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             header.searchField.currentEditor()?.string = ""
             headerSearchChanged("")
         case .close:
-            hide()
+            closeAsDone()
         }
     }
 
