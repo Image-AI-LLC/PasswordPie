@@ -164,6 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             defer: false
         )
         window.level = .screenSaver
+        // NSPanel hides while the app is inactive by default, and a pinned window can open this with another app in front.
+        window.hidesOnDeactivate = false
         window.isOpaque = false
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
