@@ -175,7 +175,7 @@ struct PreferencesView: View {
             }
             Divider()
             settingToggle("When the Mac sleeps", value: $session.autoLock.lockOnSleep)
-            settingToggle("When screen saver starts", value: $session.autoLock.lockOnScreenSaver)
+            settingToggle("When the screen locks or the screen saver starts", value: $session.autoLock.lockOnScreenSaver)
             settingToggle("When switching users", value: $session.autoLock.lockOnUserSwitch)
             Text("“Never” only turns off idle locking. The switches above still apply.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)

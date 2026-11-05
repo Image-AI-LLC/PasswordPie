@@ -55,6 +55,15 @@ final class PanelContentView: NSVisualEffectView {
     }
 }
 
+/// When each step of the lock scene starts, in seconds after the vault locks. See `docs/UX.md`, "Lock".
+struct LockScene: Equatable {
+    /// The lock screen has faded in; the logo settles and the padlock clicks.
+    var settle: TimeInterval = 0.3
+    /// The panel starts to fade out.
+    var fadeStart: TimeInterval = 1.15
+    var fadeDuration: TimeInterval = 0.35
+}
+
 /// Where the panel opens from.
 enum PanelAnchor {
     /// Hangs from the left edge of the status item, flush under the menu bar.
@@ -90,6 +99,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// A second click before the deferred panel appears must not open another one.
     private var filePanelQueued = false
     private var animatingLock = false
+    /// True while the lock scene plays, from the lock until the panel has faded out.
+    private(set) var lockingOut = false
+    /// Bumped when a lock scene ends early, so its remaining steps do nothing.
+    private var sceneGeneration = 0
+    /// Replaced by tests, so the scene takes milliseconds and plays no sound.
+    var lockScene = LockScene()
+    var playSound: (LockSound) -> Void = { LockSoundPlayer.shared.play($0) }
     private var previousApp: NSRunningApplication?
     private var topLeft = NSPoint.zero
     private var contentWidth = MenuGeometry.rootWidth
@@ -242,8 +258,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     // MARK: Showing and hiding
 
+    /// The shortcut during the lock scene keeps the lock screen up, ready for the password.
     func toggle(_ anchor: PanelAnchor) {
-        if panel.isVisible { hide() } else { show(anchor) }
+        if panel.isVisible, !lockingOut { hide() } else { show(anchor) }
     }
 
     func show(_ anchor: PanelAnchor) {
@@ -258,6 +275,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         header.searchField.stringValue = recalled?.searchText ?? ""
         header.showsSeparator = true
         touchIDOffered = false
+        endLockScene()
         animatingLock = false
         lockModel.turned = false
         lockModel.open = false
@@ -308,6 +326,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     /// The search field when unlocked, the master-password field when locked.
     func focusInitialField() {
+        // The lock scene shows no form; nothing may take the keys until it ends.
+        guard !lockingOut else { return }
         if session.locked {
             // While the database decrypts the form is hidden; the end of unlocking focuses it again on failure.
             guard !session.unlocking else {
@@ -337,6 +357,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         menu.closeAll()
         panel.orderOut(nil)
+        endLockScene()
         header.searchField.stringValue = ""
         // A half-typed master password must not wait in the field for whoever opens the panel next.
         if session.locked {
@@ -551,33 +572,75 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             recall.forget()
             lockAnimation()
         } else {
+            // An unlock can land while the lock scene still plays (Open Database… then a quick Touch ID).
+            // End the scene first, so the panel is opaque again and its fade cannot hide the open menu.
+            endLockScene()
             unlockAnimation()
         }
     }
 
-    /// The lock form fades in and its mark settles, then the panel hides.
+    /// The lock screen fades in over the menu with "Locked" in place of the form, the logo settles as the padlock
+    /// clicks, and the panel fades out. A lock with the panel closed is silent.
     private func lockAnimation() {
+        sceneGeneration &+= 1
         guard panel.isVisible else {
             applyLayout(locked: true)
             return
         }
         menu.closeAll()
         animatingLock = true
+        lockingOut = true
+        lockModel.locking = true
         lockModel.open = true
         lockModel.turned = true
+        // The form is hidden; no keystroke should land in it.
+        panel.makeFirstResponder(nil)
         applyLayout(locked: true)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.lockModel.open = false
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                self.lockModel.turned = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self.animatingLock = false
-                    self.applyLayout(locked: true)
-                    self.hide()
-                }
-            }
+        let scene = lockScene
+        sceneStep(after: 0) { $0.lockModel.open = false }
+        sceneStep(after: scene.settle) {
+            $0.lockModel.turned = false
+            $0.playSound(.lock)
         }
+        sceneStep(after: scene.fadeStart) { controller in
+            let generation = controller.sceneGeneration
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = scene.fadeDuration
+                controller.panel.animator().alphaValue = 0
+            }, completionHandler: { [weak controller] in
+                MainActor.assumeIsolated {
+                    guard let controller, controller.sceneGeneration == generation else { return }
+                    controller.hide()
+                }
+            })
+        }
+    }
+
+    /// Runs one step of the current lock scene, unless the scene has ended since.
+    private func sceneStep(after delay: TimeInterval, _ body: @escaping (PanelController) -> Void) {
+        let generation = sceneGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.lockingOut, self.sceneGeneration == generation else { return }
+            body(self)
+        }
+    }
+
+    /// Stops the lock scene where it is: the panel is opaque again and the form comes back.
+    private func endLockScene() {
+        guard lockingOut else { return }
+        sceneGeneration &+= 1
+        lockingOut = false
+        lockModel.locking = false
+        animatingLock = false
+        lockModel.open = false
+        lockModel.turned = false
+        // A zero-length animation replaces a fade still in flight, which would otherwise finish at 0.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            panel.animator().alphaValue = 1
+        }
+        panel.alphaValue = 1
+        applyLayout(locked: session.locked)
     }
 
     /// The mark pulses, then the form fades for 0.3 s before the menu takes over.
@@ -588,6 +651,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             applyLayout(locked: false)
             return
         }
+        sceneGeneration &+= 1
+        let generation = sceneGeneration
         // Unlocking in the open panel is the moment Chrome may ask. The menu stays up while the read runs.
         session.noteChromePanelShown()
         animatingLock = true
@@ -597,10 +662,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         lockHost.isHidden = false
         panel.makeFirstResponder(nil)
         lockModel.turned = true
+        playSound(.unlock)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.lockModel.open = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                guard let self else { return }
+            guard let self, self.sceneGeneration == generation else { return }
+            self.lockModel.open = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, self.sceneGeneration == generation else { return }
                 self.animatingLock = false
                 self.applyLayout(locked: false)
                 if let screen = self.currentScreen { self.setFrame(animated: true, screen: screen) }
@@ -713,7 +780,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         all.state = session.searchAll ? .on : .off
         gear.addItem(.separator())
         add(to: gear, "New Item…", #selector(newItem), key: "n")
-        add(to: gear, "Lock", #selector(lockNow))
+        add(to: gear, "Lock", #selector(lockNow), key: "l")
         gear.addItem(.separator())
         add(to: gear, "Preferences…", #selector(openPreferences), key: ",")
         add(to: gear, "Open Database…", #selector(openDatabase))
@@ -772,6 +839,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             showGearMenu()
         case ("n", false):
             newItem()
+        case ("l", false):
+            lockNow()
         case ("e", _):
             guard let id = menu.currentEntryID else { return true }
             hide(refocusPrevious: false)
