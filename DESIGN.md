@@ -281,6 +281,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   swings, 0.5 s), then shows the error and selects the password.
 - **Header** — pie (opens Open / New Database), search field without chrome, gear (search scope, New
   Item, Lock, Preferences, databases, Quit). The separator shows only while the field is empty.
+- **Reopening** — within 10 seconds of closing, the menu comes back with its search (selected, so typing
+  replaces it) and selected account. See "Pick up where you left off" in [docs/UX.md](docs/UX.md).
 - **Menu row** — icon, `menu-item` title (middle-truncated), optional " — username" for duplicate
   titles, optional arrow. Selected is a flat `selection` fill. Activating an item flashes the selection
   off for 50 ms, back on, and acts 150 ms later.
