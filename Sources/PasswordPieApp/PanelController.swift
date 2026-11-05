@@ -291,7 +291,6 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
         if recalled != nil {
-            effect.layoutSubtreeIfNeeded()
             menu.reopenSubmenus()
             // Selected, so the first typed letter starts a new search.
             header.searchField.currentEditor()?.selectAll(nil)
@@ -507,6 +506,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         effect.needsLayout = true
         menu.root.list.setFrameSize(NSSize(width: frame.width, height: menu.root.list.contentHeight))
+        // An animated frame settles later and lays out as it goes. Otherwise the list is final as of now, for whatever is placed against it next.
+        if !animated { effect.layoutSubtreeIfNeeded() }
         panel.invalidateShadow()
     }
 
@@ -515,7 +516,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         self.contentHeight = contentHeight
         header.showsSeparator = menu.query.isEmpty
         guard !session.locked, !animatingLock, let screen = currentScreen else { return }
-        setFrame(animated: panel.isVisible, screen: screen)
+        setFrame(animated: panel.isVisible && !menu.isReopeningSubmenus, screen: screen)
     }
 
     // MARK: Dragging

@@ -116,6 +116,9 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         if host?.rootWindow.isVisible == true { reopenSubmenus() }
     }
 
+    /// Child windows do not follow the panel, so while submenus wait to reopen the panel must take its final size at once.
+    var isReopeningSubmenus: Bool { !submenusToReopen.isEmpty }
+
     /// Where the keyboard is now. Stops at the first level with no selected row.
     var place: MenuPlace {
         var path: [MenuRowRef] = []
@@ -136,8 +139,9 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     private func rebuild(at place: MenuPlace) {
         closeAll()
         query = place.query
-        rebuildRoot(selectFirst: false)
+        // Set before the rebuild lays out the panel: see `isReopeningSubmenus`.
         submenusToReopen = Array(place.path.dropFirst())
+        rebuildRoot(selectFirst: false)
         guard let first = place.path.first, let index = reveal(first, in: root) else {
             selectFirst(in: root)
             submenusToReopen = []

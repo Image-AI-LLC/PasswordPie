@@ -266,7 +266,63 @@ final class QuickAccessRecallTests: XCTestCase {
         XCTAssertEqual(panel.menu.currentEntryID, favorite.id)
     }
 
+    /// The root grows by a row while a submenu is open. The panel takes its new size at once, so the child is placed against the final list.
+    func testARefreshThatGrowsTheRootKeepsTheSubmenuOnItsRow() async throws {
+        let (session, panel) = openPanel(entries: [login("GitHub", "first")])
+        defer { panel.hide() }
+        panel.menu.debugOpen(path: ["Logins"])
+        panel.menu.deepest.list.selectedIndex = 0
+        XCTAssertFalse(panel.menu.root.rows.contains { $0.title == "Favorites" })
+
+        session.entries[0].favorite = true
+        await waitUntil { panel.menu.root.rows.contains { $0.title == "Favorites" } }
+        // Longer than any frame animation, so a list that settled late would have moved its row by now.
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(panel.menu.levels.count, 2)
+        let offset = try submenuOffset(from: panel.menu.root, to: panel.menu.deepest)
+        XCTAssertEqual(offset, MenuGeometry.submenuInset, accuracy: 1, "the first child row lines up with its parent")
+    }
+
+    /// The selected folder is far below the fold when the panel comes back. Its row scrolls into view before its submenu is placed.
+    func testASubmenuReopenedFarDownTheListStaysBesideItsRow() throws {
+        let entries = (0..<200).map { index -> VaultEntry in
+            var entry = login("Site \(index)", "user\(index)")
+            entry.groupPath = [String(format: "Folder %03d", index)]
+            return entry
+        }
+        let (_, panel) = openPanel(entries: entries)
+        defer { panel.hide() }
+        panel.menu.debugOpen(path: ["Folders", "Folder 199"])
+        panel.menu.deepest.list.selectedIndex = 0
+        let chosen = try XCTUnwrap(panel.menu.currentEntryID)
+
+        panel.hide()
+        panel.show(.hotkey)
+
+        XCTAssertEqual(panel.menu.currentEntryID, chosen)
+        XCTAssertEqual(panel.menu.levels.count, 3)
+        let folders = panel.menu.levels[1]
+        let row = try rowOnScreen(in: folders)
+        let window = try XCTUnwrap(folders.window)
+        XCTAssertTrue(window.frame.insetBy(dx: 0, dy: -1).contains(row), "the selected folder is scrolled into view")
+        let child = try XCTUnwrap(panel.menu.deepest.window)
+        XCTAssertTrue(child.frame.minY < row.maxY && child.frame.maxY > row.minY, "the child window sits beside its row, not off in the list")
+    }
+
     // MARK: Helpers
+
+    private func rowOnScreen(in level: MenuLevel) throws -> NSRect {
+        let index = try XCTUnwrap(level.list.selectedIndex)
+        let window = try XCTUnwrap(level.list.window)
+        return window.convertToScreen(level.list.convert(level.list.rect(of: index), to: nil))
+    }
+
+    /// How far the child window's top sits above its parent row's top.
+    private func submenuOffset(from parent: MenuLevel, to child: MenuLevel) throws -> CGFloat {
+        let window = try XCTUnwrap(child.window)
+        return window.frame.maxY - (try rowOnScreen(in: parent)).maxY
+    }
 
     private func openPanel(entries: [VaultEntry]) -> (VaultSession, PanelController) {
         let session = VaultSession()
