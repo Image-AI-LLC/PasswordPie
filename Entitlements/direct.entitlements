@@ -4,5 +4,10 @@
 <dict>
   <key>com.apple.developer.authentication-services.autofill-credential-provider</key>
   <true/>
+  <!-- The bridge socket to the browser extensions lives in the shared group container. -->
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>2S468LUF8V.com.oldcai.passwordpie</string>
+  </array>
 </dict>
 </plist>

@@ -13,7 +13,9 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "PasswordPie", targets: ["PasswordPie"]),
-        .executable(name: "PasswordPieAutoFill", targets: ["PasswordPieAutoFill"])
+        .executable(name: "PasswordPieAutoFill", targets: ["PasswordPieAutoFill"]),
+        .executable(name: "PasswordPieSafari", targets: ["PasswordPieSafari"]),
+        .executable(name: "PasswordPieBrowserHost", targets: ["PasswordPieBrowserHost"])
     ],
     targets: [
         .target(
@@ -39,9 +41,15 @@ let package = Package(
                 .linkedFramework("LocalAuthentication")
             ]
         ),
+        // The socket, framing and peer check shared by the app, the Safari extension and the Chrome host. Foundation only.
+        .target(
+            name: "PasswordPieBridge",
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("Security")]
+        ),
         .executableTarget(
             name: "PasswordPie",
-            dependencies: ["PasswordPieCore"],
+            dependencies: ["PasswordPieCore", "PasswordPieBridge"],
             path: "Sources/PasswordPieApp",
             exclude: ["Info.plist"],
             swiftSettings: [.swiftLanguageMode(.v5)] + channelSettings,
@@ -49,6 +57,7 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("LocalAuthentication"),
+                .linkedFramework("SafariServices"),
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",
                     "-Xlinker", "__TEXT",
@@ -74,6 +83,38 @@ let package = Package(
                     "-Xlinker", "Sources/PasswordPieAutoFill/Info.plist"
                 ])
             ]
+        ),
+        // Safari Web Extension app extension (PlugIns/PasswordPieSafari.appex). Relays the extension's native messages to
+        // the app over the bridge socket. The extension's own files go in its Contents/Resources (see the Makefile).
+        .executableTarget(
+            name: "PasswordPieSafari",
+            dependencies: ["PasswordPieBridge"],
+            path: "Sources/PasswordPieSafari",
+            exclude: ["Info.plist"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [
+                .linkedFramework("SafariServices"),
+                .unsafeFlags([
+                    "-Xlinker", "-e", "-Xlinker", "_NSExtensionMain",
+                    "-Xlinker", "-sectcreate",
+                    "-Xlinker", "__TEXT",
+                    "-Xlinker", "__info_plist",
+                    "-Xlinker", "Sources/PasswordPieSafari/Info.plist"
+                ])
+            ]
+        ),
+        // Chrome native messaging host (Contents/MacOS/PasswordPieBrowserHost). Direct channel only: `make mas-dev` does
+        // not put it in the bundle.
+        .executableTarget(
+            name: "PasswordPieBrowserHost",
+            dependencies: ["PasswordPieBridge"],
+            path: "Sources/PasswordPieBrowserHost",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "PasswordPieBridgeTests",
+            dependencies: ["PasswordPieBridge"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "PasswordPieCoreTests",
