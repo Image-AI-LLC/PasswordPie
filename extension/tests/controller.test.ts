@@ -116,7 +116,7 @@ describe('FillController fills', () => {
     controller.report('poke');
     await settle();
     expect(tabs.fills.map((f) => f.frameId)).toEqual([0, 5]);
-    expect(tabs.fills[0]).toEqual({ tabId: 1, frameId: 0, msg: { type: 'fill', ...FILL } });
+    expect(tabs.fills[0]).toEqual({ tabId: 1, frameId: 0, msg: { type: 'fill', ...FILL, waitMs: 30_000 } });
   });
 
   it('drops the entry once a frame filled the password', async () => {

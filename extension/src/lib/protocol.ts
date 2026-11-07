@@ -18,6 +18,8 @@ export interface Credentials {
 /** background → content script */
 export interface FillMessage extends Credentials {
   type: 'fill';
+  /** How long the frame may wait for fields to appear: what is left of the fill's lifetime. */
+  waitMs?: number;
 }
 
 /** content script → background, the answer to a FillMessage */
@@ -61,9 +63,11 @@ export function fillOfTabAnswer(value: unknown): TabFill | undefined {
 
 export function parseFillMessage(value: unknown): FillMessage | undefined {
   if (!isRecord(value) || value.type !== 'fill') return undefined;
-  const { origin, username, password } = value;
+  const { origin, username, password, waitMs } = value;
   if (typeof origin !== 'string' || typeof username !== 'string' || typeof password !== 'string') return undefined;
-  return { type: 'fill', origin, username, password };
+  const msg: FillMessage = { type: 'fill', origin, username, password };
+  if (typeof waitMs === 'number' && Number.isFinite(waitMs) && waitMs >= 0) msg.waitMs = waitMs;
+  return msg;
 }
 
 export function parseFillResult(value: unknown): FillResult | undefined {

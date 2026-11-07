@@ -180,7 +180,13 @@ export class FillController {
       return;
     }
     if (this.liveEntry(tabId) !== entry) return; // closed, filled or expired meanwhile
-    const msg: FillMessage = { type: 'fill', origin: entry.origin, username: entry.username, password: entry.password };
+    const msg: FillMessage = {
+      type: 'fill',
+      origin: entry.origin,
+      username: entry.username,
+      password: entry.password,
+      waitMs: Math.max(0, entry.expiresAt - this.timers.now()),
+    };
     const targets = frames.filter(
       (frame) => originOf(frame.url) === entry.origin && (onlyFrameId === undefined || frame.frameId === onlyFrameId),
     );

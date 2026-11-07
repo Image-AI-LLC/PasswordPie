@@ -40,7 +40,7 @@ class Session {
     private readonly msg: FillMessage,
     private readonly now: () => number,
   ) {
-    this.deadline = now() + WAIT_FOR_FIELDS_MS;
+    this.deadline = now() + Math.min(msg.waitMs ?? WAIT_FOR_FIELDS_MS, WAIT_FOR_FIELDS_MS);
   }
 
   /** Fills what is there now; keeps watching for the rest. */

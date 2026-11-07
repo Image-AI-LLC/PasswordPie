@@ -148,6 +148,15 @@ describe('PageFiller', () => {
     expect(notified).toBe(0);
   });
 
+  it('stops waiting when the time the background says is left runs out', async () => {
+    loadFixture('email-step.html');
+    makeFiller().handle({ ...fill, waitMs: 4_000 });
+    await vi.advanceTimersByTimeAsync(4_001);
+    document.getElementById('step')?.insertAdjacentHTML('beforeend', '<input id="pw" type="password">');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(input('pw').value).toBe('');
+  });
+
   it('refuses a fill for another origin', () => {
     loadFixture('autocomplete.html');
     expect(makeFiller().handle({ ...fill, origin: 'https://evil.example' })).toEqual({ username: false, password: false });
