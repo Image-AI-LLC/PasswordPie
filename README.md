@@ -2,6 +2,8 @@
 
 A keyboard-first KeePass password manager for Mac that lives in the menu bar.
 
+> **TL;DR:** The app is free for anyone to use, including at work. The source code is for personal and other noncommercial use only; using it commercially needs a license from us.
+
 **Website: [passwordpie.com](https://passwordpie.com/)**
 
 ![PasswordPie open from the menu bar](art/readme-hero.png)
@@ -29,3 +31,19 @@ More on [passwordpie.com](https://passwordpie.com/). Support: [support@passwordp
     Scripts/release-direct.sh   # signed, notarized DMG (see docs/CHANNELS.md)
 
 Needs Xcode and Homebrew's `argon2`. Channel differences are in [docs/CHANNELS.md](docs/CHANNELS.md).
+
+## License
+
+The source code is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): you may use, change and share it for personal and other noncommercial purposes, but not commercially. For a commercial license, write to [support@passwordpie.com](mailto:support@passwordpie.com).
+
+That license covers this source code. The PasswordPie app you download from [passwordpie.com](https://passwordpie.com/) or the Mac App Store is free for anyone to install and use, including at work, under the [Terms of Service](https://passwordpie.com/terms-of-service). Two-step codes in the App Store version need PasswordPie Premium.
+
+Copyright (c) 2026 Image AI, LLC.
+
+## Contributing
+
+We are not accepting outside pull requests for now. Bug reports and ideas are welcome as issues or at [support@passwordpie.com](mailto:support@passwordpie.com).
+
+## Credits
+
+Site popularity in search comes from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Argon2 is used under CC0 1.0 / Apache 2.0.
