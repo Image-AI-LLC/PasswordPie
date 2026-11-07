@@ -199,3 +199,76 @@ own Lock Screen is ⌃⌘Q, which locks the Mac and, now, the vault with it.
 2. Press ⌘L. The lock screen fades in, the padlock clicks, and the panel fades away.
 3. Press the menu shortcut. The lock screen is there, with an empty search behind it. Unlock: the padlock opens.
 4. Press the power button once to lock the Mac. Log back in and press the menu shortcut: the vault is locked.
+
+## Fill in the browser
+
+**In one line:** in Chrome or Safari, press `⌘\` and the accounts for the site you are on are already at the top.
+Press Return and PasswordPie fills the sign-in form. It never presses Sign In for you.
+
+### The problem
+
+Fill used to type: it pressed keys into whatever had focus. If the caret was in the wrong field, or the page was still
+loading, the password went somewhere else. And to fill the site you were looking at, you first had to search for it,
+although the browser already knew where you were.
+
+### What happens now
+
+With the PasswordPie extension in Chrome or Safari:
+
+1. Press `⌘\` on a sign-in page. Above the usual menu, a group named after the site (`GITHUB.COM`) lists the accounts for
+   that site, the first one selected. Accounts count as the same site when their website shares the domain you would
+   register: `github.com`, `www.github.com` and `gist.github.com` are one site; `alice.github.io` and `bob.github.io` are two.
+2. Press Return. The panel closes and the username and password appear in the form. The page does not submit.
+
+Typing in the search box works as always: the first letter replaces the site group with search results.
+
+| What you press on an account | The site in the browser is the account's site | It is another site |
+|---|---|---|
+| Return | Fills this page | Opens the account's website in a new tab of the same browser, and fills it when it loads |
+| ⇧Return (Fill) | Fills this page | The same as Return: a new tab, then fill |
+| ⌥Return (Open and Fill) | Opens the website in a new tab and fills it | The same |
+
+A sign-in that asks for the username first and the password on the next step gets both: the username now, and the password
+when its field appears, within 30 seconds.
+
+Without the extension, or in any other app, Fill types the username and password as before.
+
+### Getting the extension
+
+When Chrome is in front and its extension is not connected, the panel's first line, above the search box, is
+**Add Chrome Extension…** with Chrome's icon. Click it to open the install page in Chrome. Once the extension is installed
+and talking to PasswordPie, the line goes away.
+
+Safari has the same line, **Enable Safari Extension…**. It opens Safari's Extensions settings with PasswordPie selected,
+where you turn it on.
+
+Chrome is in the version downloaded from passwordpie.com. The App Store version has Safari only, for now.
+
+### What it will not do
+
+- Fill a page from another site than the account's. A look-alike domain gets nothing, because the domain is checked by
+  PasswordPie, not by what the page says.
+- Fill a frame from another site inside the page, such as an ad or an embedded widget.
+- Fill a plain `http://` page with an account saved for `https://`.
+- Fill anything while PasswordPie is locked.
+- Hold on to a request: if no matching page shows up within 30 seconds, it is dropped. Each Return fills once.
+
+### Privacy
+
+- The address of the tab you are on goes from the extension to PasswordPie on your Mac, to find the accounts for it. It is
+  kept in memory only, never written to disk or to a log, and never sent anywhere else.
+- The username and password go only to the page you asked to fill, and only while PasswordPie is unlocked.
+- The extension and PasswordPie check each other: Chrome lets only PasswordPie's extension start PasswordPie's helper, and
+  PasswordPie answers only programs signed by Image AI, LLC.
+
+### Demo script
+
+Use a database with a GitHub login, and the PasswordPie extension installed in Chrome.
+
+1. Open Chrome without the extension. Press `⌘\`: the first line is "Add Chrome Extension…". Install it; press `⌘\` again:
+   the line is gone.
+2. Go to github.com/login. Press `⌘\`. The top group is GITHUB.COM, with the login selected. Press Return: both fields fill,
+   and the page stays on the sign-in form.
+3. Go to example.com. Press `⌘\`, type `github`, press Return. A new tab opens github.com/login and fills it.
+4. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
+5. Repeat 2 and 3 in Safari after "Enable Safari Extension…".
