@@ -1,3 +1,4 @@
+import PasswordPieBridge
 import PasswordPieCore
 import XCTest
 @testable import PasswordPie
@@ -116,12 +117,17 @@ final class ExtensionBannerTests: XCTestCase {
 #if PP_DIRECT
 final class ChromeHostManifestTests: XCTestCase {
     func testManifestNamesTheHostAndOnlyOurExtension() throws {
-        let data = ChromeHostManifest.manifest(hostPath: "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost")
+        let data = ChromeHostManifest.manifest(hostPath: "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost", extensionIDs: ["pbbiimlkojflhpopeplkbfeecanbbdoj"])
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["name"] as? String, "com.oldcai.passwordpie")
         XCTAssertEqual(object["type"] as? String, "stdio")
         XCTAssertEqual(object["path"] as? String, "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost")
         XCTAssertEqual(object["allowed_origins"] as? [String], ["chrome-extension://pbbiimlkojflhpopeplkbfeecanbbdoj/"])
+    }
+
+    func testThePublicKeyIDIsTrustedOnlyInDevelopmentBuilds() {
+        // `swift test` builds without -DPP_DEV_EXTENSION, like a distributed build.
+        XCTAssertFalse(BridgeConstants.chromeExtensionIDs.contains(BridgeConstants.developmentExtensionID))
     }
 
     func testABareBinaryWritesNothing() throws {

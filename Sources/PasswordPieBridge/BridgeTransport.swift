@@ -15,9 +15,20 @@ public enum BridgeConstants {
     public static let safariExtensionIdentifier = "com.oldcai.passwordpie.safari"
     /// The native messaging host name the extension connects to.
     public static let nativeHostName = "com.oldcai.passwordpie"
-    /// The extension IDs Chrome may start the host for: the unpacked build (its ID is pinned by the public key in
-    /// extension/wxt.config.ts). The Chrome Web Store ID is added when the listing exists.
-    public static let chromeExtensionIDs = ["pbbiimlkojflhpopeplkbfeecanbbdoj"]
+    /// The unpacked build's ID, pinned by the public key in extension/wxt.config.ts. That key is public, so anyone can
+    /// load an extension with this ID: only builds made with `make install` (`-DPP_DEV_EXTENSION`) trust it.
+    public static let developmentExtensionID = "pbbiimlkojflhpopeplkbfeecanbbdoj"
+    /// Chrome Web Store IDs. Empty until the listing exists; see docs/BROWSER_EXTENSION.md.
+    public static let storeExtensionIDs: [String] = []
+    /// The extension IDs Chrome may start the host for.
+    #if PP_DEV_EXTENSION
+    public static let chromeExtensionIDs = storeExtensionIDs + [developmentExtensionID]
+    #else
+    public static let chromeExtensionIDs = storeExtensionIDs
+    #endif
+    /// Google Chrome's signing team and identifiers. The host only serves a parent process signed with them.
+    public static let chromeTeamID = "EQHXZ8M8AV"
+    public static let chromeIdentifiers: Set<String> = ["com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary"]
 }
 
 public enum BridgeError: Error, Equatable {
@@ -123,9 +134,12 @@ public enum BridgeSocket {
         unlink(path)
         var address = try address(path)
         let fd = try makeSocket()
+        // Created owner-only, so it is never reachable by others, not even between bind and chmod.
+        let previousMask = umask(0o077)
         let bound = withUnsafePointer(to: &address) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
         }
+        umask(previousMask)
         guard bound == 0, chmod(path, 0o600) == 0, Darwin.listen(fd, 8) == 0 else {
             let code = errno
             close(fd)
@@ -174,21 +188,28 @@ public enum BridgeSocket {
     }
 }
 
-/// Who is on the other end of a connected Unix socket, from the kernel's audit token and the code signature it points at.
+/// Who is on the other end of a connected Unix socket, or who a process is, from its code signature.
 public enum PeerIdentity {
     /// The peer's signing identifier when it is validly signed by an Apple-issued certificate of `teamID` and the
-    /// identifier is one of `allowed`; otherwise nil.
+    /// identifier is one of `allowed`; otherwise nil. The kernel's audit token names the exact process.
     public static func verifiedIdentifier(ofPeer fd: Int32, allowed: Set<String>, teamID: String = BridgeConstants.teamID) -> String? {
         var token = audit_token_t()
         var length = socklen_t(MemoryLayout<audit_token_t>.size)
         guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &length) == 0 else { return nil }
         let tokenData = Data(bytes: &token, count: Int(length))
+        return verifiedIdentifier(guest: [kSecGuestAttributeAudit: tokenData], allowed: allowed, teamID: teamID)
+    }
+
+    /// The same check for a process by pid. Only for a pid that cannot be reused meanwhile, such as this process's parent.
+    public static func verifiedIdentifier(ofProcess pid: pid_t, allowed: Set<String>, teamID: String) -> String? {
+        verifiedIdentifier(guest: [kSecGuestAttributePid: NSNumber(value: pid)], allowed: allowed, teamID: teamID)
+    }
+
+    /// Team and identifier are read from the signature on disk, and then bound to the running code: the validity check
+    /// requires the code directory hash read with them, so a binary swapped on disk in between fails.
+    private static func verifiedIdentifier(guest: [CFString: Any], allowed: Set<String>, teamID: String) -> String? {
         var code: SecCode?
-        let attributes = [kSecGuestAttributeAudit: tokenData] as CFDictionary
-        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code else { return nil }
-        var requirement: SecRequirement?
-        guard SecRequirementCreateWithString("anchor apple generic" as CFString, [], &requirement) == errSecSuccess,
-              SecCodeCheckValidity(code, [], requirement) == errSecSuccess else { return nil }
+        guard SecCodeCopyGuestWithAttributes(nil, guest as CFDictionary, [], &code) == errSecSuccess, let code else { return nil }
         var staticCode: SecStaticCode?
         guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
         var info: CFDictionary?
@@ -196,7 +217,12 @@ public enum PeerIdentity {
               let details = info as? [String: Any],
               details[kSecCodeInfoTeamIdentifier as String] as? String == teamID,
               let identifier = details[kSecCodeInfoIdentifier as String] as? String,
-              allowed.contains(identifier) else { return nil }
+              allowed.contains(identifier),
+              let cdhash = details[kSecCodeInfoUnique as String] as? Data, !cdhash.isEmpty else { return nil }
+        let hex = cdhash.map { String(format: "%02x", $0) }.joined()
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString("anchor apple generic and cdhash H\"\(hex)\"" as CFString, [], &requirement) == errSecSuccess,
+              SecCodeCheckValidity(code, [], requirement) == errSecSuccess else { return nil }
         return identifier
     }
 }

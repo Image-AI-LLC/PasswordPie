@@ -8,10 +8,13 @@ import PasswordPieBridge
 
 signal(SIGPIPE, SIG_IGN)
 
-// Chrome passes the calling extension's origin first. The manifest's allowed_origins is the real gate; this is a second one.
+// Chrome starts the host as its own child and passes the calling extension's origin first. The origin can be faked by
+// whoever starts the host, so the host also requires its parent to be Google Chrome, checked by code signature. Together
+// with the manifest's allowed_origins, only the PasswordPie extension inside Chrome gets through.
 let caller = CommandLine.arguments.dropFirst().first ?? ""
-guard BridgeConstants.chromeExtensionIDs.contains(where: { caller == "chrome-extension://\($0)/" }) else {
-    FileHandle.standardError.write(Data("PasswordPie: refused an unknown caller\n".utf8))
+guard BridgeConstants.chromeExtensionIDs.contains(where: { caller == "chrome-extension://\($0)/" }),
+      PeerIdentity.verifiedIdentifier(ofProcess: getppid(), allowed: BridgeConstants.chromeIdentifiers, teamID: BridgeConstants.chromeTeamID) != nil else {
+    FileHandle.standardError.write(Data("PasswordPie: refused a caller that is not the PasswordPie extension in Google Chrome\n".utf8))
     exit(1)
 }
 
@@ -27,15 +30,25 @@ final class Relay: @unchecked Sendable {
         try? BridgeSocket.writeAll(STDOUT_FILENO, BridgeFrame.encode(payload))
     }
 
-    private var connected: Int32 {
-        lock.lock()
-        defer { lock.unlock() }
-        return socket
-    }
-
     private func setSocket(_ fd: Int32) {
         lock.lock()
         socket = fd
+        lock.unlock()
+    }
+
+    /// Writes one frame to the app. The lock covers the write, so the descriptor cannot be closed and reused under it.
+    private func sendToApp(_ payload: Data) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard socket >= 0 else { return false }
+        return (try? BridgeSocket.writeAll(socket, BridgeFrame.encode(payload))) != nil
+    }
+
+    /// Forgets the connection and closes it, under the same lock as `sendToApp`.
+    private func closeSocket(_ fd: Int32) {
+        lock.lock()
+        if socket == fd { socket = -1 }
+        close(fd)
         lock.unlock()
     }
 
@@ -52,8 +65,7 @@ final class Relay: @unchecked Sendable {
             while let frame = try? BridgeSocket.readFrame(fd, reader: &reader, pending: &pending) {
                 sendToChrome(frame)
             }
-            setSocket(-1)
-            close(fd)
+            closeSocket(fd)
             sleep(1)
         }
     }
@@ -69,8 +81,7 @@ final class Relay: @unchecked Sendable {
             } catch {
                 exit(0)
             }
-            let fd = connected
-            if fd >= 0, (try? BridgeSocket.writeAll(fd, BridgeFrame.encode(frame))) != nil { continue }
+            if sendToApp(frame) { continue }
             sendToChrome(Self.unavailable(answering: frame))
         }
     }

@@ -52,19 +52,17 @@ define assemble_app
 	$(if $(3),cp "$(1)/$(HOST)" "$(2)/Contents/MacOS/$(HOST)")
 endef
 
-# sign_app_sh: the same commands joined with &&, for use inside one shell line.
+# sign_app_sh <app> <codesign flags> <app entitlements> [with-chrome-host]: nested code first, the app last, joined
+# with && so it also works inside one shell line.
 sign_app_sh = $(if $(4),codesign --force $(2) --identifier $(HOST_ID) --entitlements Entitlements/browser-host.entitlements "$(1)/Contents/MacOS/$(HOST)" && )codesign --force $(2) --entitlements Entitlements/safari-extension.entitlements "$(1)/Contents/PlugIns/$(SAFARI_APPEX)" && codesign --force $(2) --entitlements $(call ents,Entitlements/autofill-extension.entitlements) "$(1)/Contents/PlugIns/$(APPEX)" && codesign --force $(2) --entitlements $(3) "$(1)"
 
-# sign_app <app> <codesign flags> <app entitlements> [with-chrome-host]: nested code first, the app last.
-define sign_app
-	$(if $(4),codesign --force $(2) --identifier $(HOST_ID) --entitlements Entitlements/browser-host.entitlements "$(1)/Contents/MacOS/$(HOST)")
-	codesign --force $(2) --entitlements Entitlements/safari-extension.entitlements "$(1)/Contents/PlugIns/$(SAFARI_APPEX)"
-	codesign --force $(2) --entitlements $(call ents,Entitlements/autofill-extension.entitlements) "$(1)/Contents/PlugIns/$(APPEX)"
-	codesign --force $(2) --entitlements $(3) "$(1)"
-endef
+# sign_app: the same, as one recipe line.
+sign_app = $(call sign_app_sh,$(1),$(2),$(3),$(4))
 
-install: build extension $(call ents,Entitlements/direct.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
-	$(call assemble_app,$$(swift build -c release --show-bin-path),$(APP),host)
+# Your own install also trusts the unpacked Chrome extension. Its ID comes from a public key, so distributed builds do not.
+install: extension $(call ents,Entitlements/direct.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
+	swift build -c release -Xswiftc -DPP_DEV_EXTENSION
+	$(call assemble_app,$$(swift build -c release -Xswiftc -DPP_DEV_EXTENSION --show-bin-path),$(APP),host)
 	@if security find-identity -v -p codesigning | grep -F -q "$(SIGN_ID)"; then \
 		$(call sign_app_sh,$(APP),--sign "$(SIGN_ID)",$(call ents,Entitlements/direct.entitlements),host); \
 	else \

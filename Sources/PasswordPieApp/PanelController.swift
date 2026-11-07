@@ -562,10 +562,14 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     func menuRootNeedsLayout(contentWidth: CGFloat, contentHeight: CGFloat) {
         self.contentWidth = contentWidth
         self.contentHeight = contentHeight
-        // A group header draws its own line on top; two lines would sit 5 pt apart.
-        header.showsSeparator = menu.query.isEmpty && menu.root.rows.first?.kind != .header
+        header.showsSeparator = headerSeparatorVisible
         guard !session.locked, !animatingLock, let screen = currentScreen else { return }
         setFrame(animated: panel.isVisible && !menu.isReopeningSubmenus, screen: screen)
+    }
+
+    /// The line under the search field, while it is empty. A group header right below draws its own line, and two would sit 5 pt apart.
+    private var headerSeparatorVisible: Bool {
+        menu.query.isEmpty && menu.root.rows.first?.kind != .header
     }
 
     // MARK: Browser extension
@@ -779,7 +783,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     func headerSearchChanged(_ text: String) {
         menu.setQuery(text)
-        header.showsSeparator = menu.query.isEmpty && menu.root.rows.first?.kind != .header
+        header.showsSeparator = headerSeparatorVisible
     }
 
     func headerKey(_ key: MenuKey) -> Bool {

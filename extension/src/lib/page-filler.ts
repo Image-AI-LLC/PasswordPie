@@ -86,19 +86,20 @@ class Session {
         this.env.notifyPasswordFilled();
       }
     };
-    // One scan per burst of mutations, not one per mutation record batch.
+    // At most one scan per 100 ms however busy the page is. Only added and removed nodes wake it; a field shown by a
+    // class or style change is found by the poll below, so animations and style churn cost nothing.
     const queue = (): void => {
       if (this.queued !== undefined) return;
       this.queued = setTimeout(() => {
         this.queued = undefined;
         check();
-      }, 0);
+      }, 100);
     };
     if (view) {
       this.observer = new view.MutationObserver(queue);
-      this.observer.observe(this.env.document, { childList: true, subtree: true, attributes: true });
+      this.observer.observe(this.env.document, { childList: true, subtree: true });
     }
-    // Shadow roots do not report to the document's observer.
+    // Shadow roots do not report to the document's observer, and attribute changes are not observed.
     this.poll = setInterval(check, POLL_MS);
   }
 }

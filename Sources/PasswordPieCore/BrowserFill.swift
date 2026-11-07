@@ -12,7 +12,10 @@ public enum BridgeBrowser: String, Sendable, CaseIterable {
 /// A web address reduced to what fill decisions need: its scheme, its origin and its site.
 public struct BrowserSite: Equatable, Sendable {
     public let scheme: String
+    /// Lowercased, without a trailing dot.
     public let host: String
+    /// The host as the page's `location.origin` shows it, trailing dot included.
+    private let originHost: String
     /// Nil for the scheme's default port.
     public let port: Int?
     /// The registrable domain (eTLD+1), or the exact `host:port` for a host without one, such as `localhost:8000`.
@@ -24,25 +27,29 @@ public struct BrowserSite: Equatable, Sendable {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let candidate: String
-        if trimmed.contains("://") {
+        if trimmed.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) != nil {
             candidate = trimmed
         } else {
-            // `about:blank` and `javascript:…` are schemes; `localhost:8000` is a host and a port.
-            if let colon = trimmed.firstIndex(of: ":") {
-                let after = trimmed[trimmed.index(after: colon)...].prefix { $0 != "/" }
-                guard !after.isEmpty, after.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            // `about:blank` and `javascript:…` are schemes; `localhost:8000` is a host and a port. Only the part before the
+            // path counts, so `example.com/a:b` is a host.
+            let authority = trimmed.prefix { $0 != "/" && $0 != "?" && $0 != "#" }
+            if let colon = authority.firstIndex(of: ":") {
+                let port = authority[authority.index(after: colon)...]
+                guard !port.isEmpty, port.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
             }
             candidate = "https://" + trimmed
         }
         guard let url = URL(string: candidate),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              var host = url.host?.lowercased() else { return nil }
+              let rawHost = url.host?.lowercased() else { return nil }
+        var host = rawHost
         while host.hasSuffix(".") { host.removeLast() }
         guard !host.isEmpty else { return nil }
         let defaultPort = scheme == "https" ? 443 : 80
         let port = url.port.flatMap { $0 == defaultPort ? nil : $0 }
         self.scheme = scheme
         self.host = host
+        originHost = rawHost
         self.port = port
         if let domain = PublicSuffix.registrableDomain(ofHost: host) {
             key = domain
@@ -53,7 +60,7 @@ public struct BrowserSite: Equatable, Sendable {
 
     /// `scheme://host[:port]`, as `location.origin` gives it in the page.
     public var origin: String {
-        let shownHost = host.contains(":") ? "[\(host)]" : host
+        let shownHost = originHost.contains(":") ? "[\(originHost)]" : originHost
         return "\(scheme)://\(shownHost)" + (port.map { ":\($0)" } ?? "")
     }
 
@@ -253,7 +260,8 @@ public enum SiteSuggestions {
             guard !entry.trashed else { return false }
             return entryWebsites(entry).contains { website in
                 // A cheap substring test first: thousands of entries, one parse each only when it could match.
-                guard !website.allSatisfy(\.isASCII) || website.lowercased().contains(needle) else { return false }
+                // An IPv6 key (`::1:3000`) never appears in the text as written (`[::1]:3000`), so those skip the shortcut.
+                guard !website.allSatisfy(\.isASCII) || page.host.contains(":") || website.lowercased().contains(needle) else { return false }
                 return BrowserSite(url: website)?.allowsFill(on: page) == true
             }
         }

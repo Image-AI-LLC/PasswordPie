@@ -79,7 +79,8 @@ final class BrowserBridge: ObservableObject {
     static let chromeInstallURL = URL(string: "https://passwordpie.com/chrome-extension")!
 
     #if PP_DIRECT
-    nonisolated static let chromeSupported = true
+    /// Needs an extension ID Chrome may start the host for: the store listing's, or the unpacked build's in `make install` builds.
+    nonisolated static let chromeSupported = !BridgeConstants.chromeExtensionIDs.isEmpty
     #else
     /// The App Store version has no Chrome host in v1.
     nonisolated static let chromeSupported = false
@@ -176,7 +177,9 @@ final class BrowserBridge: ObservableObject {
 
     func refreshSafariState() {
         SFSafariExtensionManager.getStateOfSafariExtension(withIdentifier: BridgeConstants.safariExtensionIdentifier) { [weak self] state, _ in
-            let enabled = state?.isEnabled ?? false
+            // An error says nothing about the extension; keep what was known rather than forget a working one.
+            guard let state else { return }
+            let enabled = state.isEnabled
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.safariEnabled != enabled else { return }
@@ -224,7 +227,11 @@ final class BrowserBridge: ObservableObject {
         readGeneration &+= 1
         refreshSafariState()
         guard let app, let browser = Self.browser(forBundleID: app.bundleIdentifier) else { return }
-        if canFill(in: browser) { poke(browser) }
+        // Poke whenever the extension could answer, not only when it reported lately: a tab left open for hours sends nothing.
+        switch browser {
+        case .chrome: if chromeConnected { poke(.chrome) }
+        case .safari: if safariEnabled { poke(.safari) }
+        }
         // Also read the window: it shows the list without the extension, and catches a report that went stale.
         let generation = readGeneration
         let pid = app.processIdentifier
@@ -303,20 +310,20 @@ final class BrowserBridge: ObservableObject {
 enum ChromeHostManifest {
     static let fileName = BridgeConstants.nativeHostName + ".json"
 
-    static func manifest(hostPath: String) -> Data {
+    static func manifest(hostPath: String, extensionIDs: [String] = BridgeConstants.chromeExtensionIDs) -> Data {
         let object: [String: Any] = [
             "name": BridgeConstants.nativeHostName,
             "description": "PasswordPie",
             "path": hostPath,
             "type": "stdio",
-            "allowed_origins": BridgeConstants.chromeExtensionIDs.map { "chrome-extension://\($0)/" }
+            "allowed_origins": extensionIDs.map { "chrome-extension://\($0)/" }
         ]
         return (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
     }
 
     /// Writes the manifest when Chrome is installed for this user and the app runs from its bundle (not a bare debug binary).
     static func install(bundle: Bundle = .main, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        guard bundle.bundleURL.pathExtension == "app",
+        guard !BridgeConstants.chromeExtensionIDs.isEmpty, bundle.bundleURL.pathExtension == "app",
               let host = bundle.url(forAuxiliaryExecutable: "PasswordPieBrowserHost") else { return }
         let chrome = home.appendingPathComponent("Library/Application Support/Google/Chrome")
         guard FileManager.default.fileExists(atPath: chrome.path) else { return }

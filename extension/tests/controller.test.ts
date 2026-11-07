@@ -33,7 +33,7 @@ describe('FillController reports', () => {
     controller.start();
     await settle();
     expect(channel.sent[0]).toEqual({ type: 'hello', version: 1, extension: '0.1.0' });
-    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/login', reason: 'startup' }]);
+    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'startup' }]);
   });
 
   it('reports non-http(s) URLs as ""', async () => {
@@ -48,13 +48,20 @@ describe('FillController reports', () => {
     expect(channel.tabReports().map((r) => r.url)).toEqual(['', '', '', '', '', '']);
   });
 
+  it('reports only the origin: no path, query or fragment leaves the browser', async () => {
+    tabs.active = { id: 1, url: 'https://example.com:8443/reset?token=s3cret#frag', active: true };
+    controller.report('activated');
+    await settle();
+    expect(channel.tabReports().map((r) => r.url)).toEqual(['https://example.com:8443/']);
+  });
+
   it('reports the tab on a poke', async () => {
     controller.start();
     await settle();
     channel.sent = [];
     channel.events?.onPoke();
     await settle();
-    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/login', reason: 'poke' }]);
+    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'poke' }]);
   });
 
   it('debounces bursts of events into one report', async () => {

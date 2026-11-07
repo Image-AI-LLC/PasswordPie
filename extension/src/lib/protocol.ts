@@ -83,12 +83,15 @@ export function parseContentMessage(value: unknown): ContentMessage | undefined 
   return undefined;
 }
 
-/** The URL sent in a `tab` report: http(s) only, anything else is "". */
+/**
+ * The URL sent in a `tab` report: the origin of an http(s) page, as `https://example.com/`, and "" for anything else.
+ * Matching needs only scheme, host and port, so a path, query or fragment (reset links, OAuth codes) never leaves the browser.
+ */
 export function reportableUrl(url: string | undefined): string {
   if (!url) return '';
   try {
-    const { protocol } = new URL(url);
-    return protocol === 'http:' || protocol === 'https:' ? url : '';
+    const { protocol, origin } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? `${origin}/` : '';
   } catch {
     return '';
   }

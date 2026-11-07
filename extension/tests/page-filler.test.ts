@@ -109,7 +109,7 @@ describe('PageFiller', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     const form = document.getElementById('step');
     form?.insertAdjacentHTML('beforeend', '<input id="pw" type="password">');
-    await vi.advanceTimersByTimeAsync(0); // MutationObserver
+    await vi.advanceTimersByTimeAsync(100); // MutationObserver, batched
     expect(input('pw').value).toBe('s3cret');
     expect(notified).toBe(1);
   });
@@ -128,11 +128,20 @@ describe('PageFiller', () => {
     expect(notified).toBe(1);
   });
 
+  it('two-step: a password field shown by a style change is found by the poll', async () => {
+    loadFixture('email-step.html');
+    document.getElementById('step')?.insertAdjacentHTML('beforeend', '<input id="pw" type="password" style="display:none">');
+    expect(makeFiller().handle(fill)).toEqual({ username: true, password: false });
+    input('pw').style.display = 'block'; // an attribute change: the observer does not watch these
+    await vi.advanceTimersByTimeAsync(250);
+    expect(input('pw').value).toBe('s3cret');
+  });
+
   it('waits for an SPA that has not rendered its form yet', async () => {
     expect(makeFiller().handle(fill)).toEqual({ username: false, password: false });
     await vi.advanceTimersByTimeAsync(1_000);
     loadFixture('autocomplete.html');
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(100);
     expect(input('user').value).toBe('octocat');
     expect(input('pass').value).toBe('s3cret');
     expect(notified).toBe(1);

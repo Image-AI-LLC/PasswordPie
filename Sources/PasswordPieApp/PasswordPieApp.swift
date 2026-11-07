@@ -696,6 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "hotkey": hotKeyStatus,
             "chromeConnected": bridge?.chromeConnected ?? false,
             "safariEnabled": bridge?.safariEnabled ?? false,
+            "canFill": BridgeBrowser.allCases.filter { bridge?.canFill(in: $0) == true }.map(\.rawValue),
             "extensionBanner": panelController.shownBanner?.title ?? NSNull()
         ]
     }

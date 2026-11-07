@@ -31,14 +31,16 @@ channels (sandboxed processes may use Unix sockets inside their group container)
 other one is:
 
 - `getsockopt(SOL_LOCAL, LOCAL_PEERTOKEN)` gives the peer's audit token.
-- `SecCodeCopyGuestWithAttributes(kSecGuestAttributeAudit)` + `SecCodeCheckValidity` checks it against a code requirement:
-  `anchor apple generic and certificate leaf[subject.OU] = "2S468LUF8V"` and the expected signing identifier.
+- `SecCodeCopyGuestWithAttributes(kSecGuestAttributeAudit)` finds that exact process. Its signature's team
+  (`kSecCodeInfoTeamIdentifier`, which also holds for builds the App Store re-signs) and identifier must be the expected
+  ones. Then `SecCodeCheckValidity` requires `anchor apple generic and cdhash H"<the code directory hash read with them>"`
+  of the running code, so a binary swapped on disk between the two reads fails.
 
 | Side | Accepts only |
 |---|---|
 | App (server) | `com.oldcai.passwordpie.safari` (Safari appex) or `com.oldcai.passwordpie.browser-host` (Chrome host). The identifier, not anything in a message, says which browser is talking. |
 | Chrome host (client) | `com.oldcai.passwordpie` (the app) |
-| Safari appex (client) | not checked: inside Safari's sandbox, securityd cannot read the app's bundle and the check fails with `EPERM`. It relies on the app checking it, and on the socket being in the team's group container (mode 0600), which another sandboxed app cannot reach. A non-sandboxed process of the same user could listen there instead, but it could read Safari's history and the vault file anyway; the most it gets is the tab URLs. |
+| Safari appex (client) | not checked: inside Safari's sandbox, securityd cannot read the app's bundle and the check fails with `EPERM`. It relies on the app checking it, and on the socket being in the team's group container (owner-only), which another sandboxed app cannot reach. **Known gap:** a non-sandboxed process of the same user can take the socket over. It then learns the origin (scheme, host, port) of each tab the Safari extension reports, which is never a path or query, and it can answer with a fill of its own choosing. It never gets a credential from PasswordPie. Closing this needs a server proof the sandbox can check, such as a shared keychain item, which needs provisioning profiles (post-merge list). |
 
 An ad-hoc signed build fails the check, so it never fills: test with `make install`, which signs with the development
 certificate. The team is read from the signing information (`kSecCodeInfoTeamIdentifier`), which also holds for builds the
@@ -55,7 +57,8 @@ A Safari Web Extension can only message the native side when the extension asks;
 So credentials only ever travel as the answer to a request the extension made:
 
 1. The user picks an account and presses Return. The app records one **pending fill**: entry id, target browser, target
-   site (eTLD+1 of the entry website that matched), kind (this tab, or a new tab), created at. It expires after 30 s.
+   site (eTLD+1 of the entry website that matched), created at. It expires after 30 s. Whether the app opened a new
+   tab makes no difference: any tab of that browser on that site may take it.
 2. The app hides the panel (focus goes back to the browser) or opens the login URL in that browser
    (`NSWorkspace.open(_:withApplicationAt:)`, a new tab).
 3. The app sends a **poke** (no data) so the extension asks now: over the host's open port for Chrome,
@@ -81,12 +84,14 @@ Sent when the extension starts and when its port (re)connects. It makes the brow
 
 ### `tab`
 
-    → {"type":"tab","id":2,"url":"https://github.com/login","reason":"activated"}
+    → {"type":"tab","id":2,"url":"https://github.com/","reason":"activated"}
     ← {"type":"tab","id":2}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28}}
 
 `reason` is one of `activated`, `updated`, `focus`, `poke`, `startup` (diagnostic only; it changes nothing). `url` is the
-top frame URL of the active tab in the focused window. An empty or non-http(s) `url` clears the cached URL and never fills.
+origin of the active tab's top frame in the focused window, written as `scheme://host[:port]/`: matching needs nothing
+else, so a path, query or fragment (reset links, OAuth codes) never leaves the browser. An empty or non-http(s) `url`
+clears the cached URL and never fills.
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 
 ### `poke` (app → extension)
@@ -139,9 +144,14 @@ script checks `location.origin` again and that it is the top frame or same-origi
 
 ## Chrome
 
-- The host manifest's `allowed_origins` lists only the PasswordPie extension IDs: the unpacked development build, whose ID
-  is pinned by the public `key` in `extension/wxt.config.ts` (`pbbiimlkojflhpopeplkbfeecanbbdoj`), and the Chrome Web Store
-  ID once there is one. The host also checks Chrome's `chrome-extension://<id>/` argument against the same list.
+- The host manifest's `allowed_origins` lists only the PasswordPie extension IDs (`BridgeConstants.chromeExtensionIDs`):
+  the Chrome Web Store ID once there is one, and in builds made with `make install` (`-DPP_DEV_EXTENSION`) also the
+  unpacked build, whose ID is pinned by the public `key` in `extension/wxt.config.ts` (`pbbiimlkojflhpopeplkbfeecanbbdoj`).
+  That key is public, so anyone could load an extension with that ID: distributed builds (`make dist-direct`) never trust
+  it. With no ID to trust, they have no Chrome support and no "Add Chrome Extension…" row until the store ID is added.
+- The host starts only for Chrome. Chrome passes the caller's origin as the first argument, but whoever starts the host
+  can fake that, so the host also requires its parent process to be Google Chrome, checked by code signature (team
+  `EQHXZ8M8AV`, `com.google.Chrome` and its beta, dev and canary builds).
 - The extension keeps one `chrome.runtime.connectNative` port open. That keeps its service worker alive and the host
   running, and it is how pokes arrive. "Connected" means the app has an authenticated host connection right now.
 - The app writes the host manifest at launch (direct channel only), pointing at the host inside the running app bundle.

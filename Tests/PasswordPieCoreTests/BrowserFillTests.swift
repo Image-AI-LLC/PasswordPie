@@ -69,6 +69,18 @@ final class BrowserSiteTests: XCTestCase {
         }
     }
 
+    func testBareHostsWithSchemesOrColonsLaterInTheText() {
+        XCTAssertEqual(BrowserSite(url: "github.com/login?return=https://example.com")?.key, "github.com")
+        XCTAssertEqual(BrowserSite(url: "example.com/a:b")?.key, "example.com")
+        XCTAssertNil(BrowserSite(url: "mailto:someone@example.com"))
+    }
+
+    func testOriginKeepsATrailingDotAsThePageDoes() {
+        let site = BrowserSite(url: "https://example.com./login")
+        XCTAssertEqual(site?.origin, "https://example.com.")
+        XCTAssertEqual(site?.key, "example.com")
+    }
+
     func testOrigin() {
         XCTAssertEqual(BrowserSite(url: "https://github.com/login?x=1")?.origin, "https://github.com")
         XCTAssertEqual(BrowserSite(url: "http://localhost:8000/a")?.origin, "http://localhost:8000")
@@ -300,6 +312,11 @@ final class SiteSuggestionTests: XCTestCase {
         XCTAssertEqual(found.map(\.id), [jira.id])
         XCTAssertEqual(SiteSuggestions.matchingWebsite(of: jira, pageURL: "https://acme.atlassian.net/login"), "https://acme.atlassian.net")
         XCTAssertNil(SiteSuggestions.matchingWebsite(of: jira, pageURL: "https://example.com"))
+    }
+
+    func testIPv6WithAPort() {
+        let local = entry("Dev server", "http://[::1]:3000")
+        XCTAssertEqual(SiteSuggestions.entries([local], pageURL: "http://[::1]:3000/login").map(\.id), [local.id])
     }
 
     func testNoSuggestionsForNonWebPages() {

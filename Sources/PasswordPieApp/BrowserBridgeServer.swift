@@ -21,18 +21,29 @@ final class BrowserBridgeServer: @unchecked Sendable {
         let fd: Int32
         let browser: BridgeBrowser
         private let writeLock = NSLock()
+        private var closed = false
 
         init(fd: Int32, browser: BridgeBrowser) {
             self.fd = fd
             self.browser = browser
         }
 
+        /// A push can still be queued when the connection ends; once closed, the descriptor may belong to someone else.
         func send(_ payload: Data) {
             writeLock.lock()
             defer { writeLock.unlock() }
+            guard !closed else { return }
             if (try? BridgeSocket.writeAll(fd, BridgeFrame.encode(payload))) == nil {
                 shutdown(fd, SHUT_RDWR)
             }
+        }
+
+        func close() {
+            writeLock.lock()
+            defer { writeLock.unlock() }
+            guard !closed else { return }
+            closed = true
+            Darwin.close(fd)
         }
     }
 
@@ -69,8 +80,15 @@ final class BrowserBridgeServer: @unchecked Sendable {
         while true {
             let client = accept(fd, nil, nil)
             if client < 0 {
-                if errno == EINTR || errno == ECONNABORTED { continue }
-                return
+                switch errno {
+                case EINTR, ECONNABORTED: continue
+                // The listener itself is gone.
+                case EBADF, EINVAL, ENOTSOCK: return
+                // Out of descriptors or memory for a moment: keep serving rather than stop for good.
+                default:
+                    usleep(100_000)
+                    continue
+                }
             }
             Thread.detachNewThread { [self] in serve(client) }
         }
@@ -97,7 +115,7 @@ final class BrowserBridgeServer: @unchecked Sendable {
             if let answer { connection.send(answer) }
         }
         unregister(connection)
-        close(fd)
+        connection.close()
     }
 
     private func register(_ connection: Connection) {
