@@ -62,7 +62,7 @@ mas-dev: $(call ents,Entitlements/mas.entitlements) $(call ents,Entitlements/aut
 	@codesign -d --entitlements :- "$(MAS_DIR)/$(APP)" 2>/dev/null | grep -q "app-sandbox" && echo "Built sandboxed $(MAS_DIR)/$(APP)"
 
 # Direct channel for download: Developer ID, hardened runtime, zipped for notarization.
-# Notarize afterwards (needs a stored notarytool profile):
+# For a release, use Scripts/release-direct.sh (notarizes, staples and builds the DMG). By hand:
 #   xcrun notarytool submit build/direct/PasswordPie.zip --keychain-profile <profile> --wait
 #   xcrun stapler staple build/direct/PasswordPie.app
 dist-direct: build $(call ents,Entitlements/direct.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)

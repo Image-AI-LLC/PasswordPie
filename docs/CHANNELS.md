@@ -21,6 +21,21 @@ Check no debug preview can grant Premium in a release store build, and that the 
     strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c PASSWORDPIE_PREMIUM_PREVIEW   # expect 0
     otool -L "$(swift build -c release --show-bin-path)/PasswordPie" | grep -c StoreKit                     # expect 0
 
+## Releasing the direct download
+
+    NOTARY_ENV=<file with APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID> Scripts/release-direct.sh
+
+It runs `make dist-direct`, notarizes and staples the app, then wraps it in `build/direct/PasswordPie-<version>.dmg`
+(with an Applications shortcut), signs, notarizes and staples the DMG, and checks both with `spctl`. Attach the DMG and
+its `.sha256` to a GitHub release tagged `v<version>`; passwordpie.com links to
+`releases/latest/download/PasswordPie.dmg`, so upload a copy under that name too.
+
+The build is Apple Silicon only: `libargon2.a` comes from Homebrew, which ships it for one architecture. An Intel or
+universal build needs an x86_64 argon2 first.
+
+The AutoFill extension's restricted entitlement is stripped unless `APP_PROFILE` and `APPEX_PROFILE` are passed, as with
+every other target here.
+
 ## Direct-only code
 
 Everything is behind `#if PP_DIRECT`: `ChromeLogins.swift`, `VaultSession+Chrome.swift` (store build has no-op stubs),
