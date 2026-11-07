@@ -25,11 +25,16 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
               let payload = try? JSONSerialization.data(withJSONObject: message) else {
             return error("bad-request", id: id)
         }
-        guard let data = try? BridgeClient.request(payload),
-              let answer = try? JSONSerialization.jsonObject(with: data) else {
-            return error("app-unavailable", id: id)
+        do {
+            // The sandbox cannot read the app's bundle, so the app's signature cannot be checked from here (securityd
+            // answers EPERM). The app checks this extension's signature; the socket is in the team's group container.
+            let data = try BridgeClient.request(payload, verifyServer: false)
+            return try JSONSerialization.jsonObject(with: data)
+        } catch {
+            // The error only: never the message, which can carry a URL.
+            NSLog("PasswordPie Safari extension: no answer from the app (%@)", String(describing: error))
+            return Self.error("app-unavailable", id: id)
         }
-        return answer
     }
 
     private static func error(_ code: String, id: Int?) -> [String: Any] {

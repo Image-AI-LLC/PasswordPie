@@ -562,7 +562,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     func menuRootNeedsLayout(contentWidth: CGFloat, contentHeight: CGFloat) {
         self.contentWidth = contentWidth
         self.contentHeight = contentHeight
-        header.showsSeparator = menu.query.isEmpty
+        // A group header draws its own line on top; two lines would sit 5 pt apart.
+        header.showsSeparator = menu.query.isEmpty && menu.root.rows.first?.kind != .header
         guard !session.locked, !animatingLock, let screen = currentScreen else { return }
         setFrame(animated: panel.isVisible && !menu.isReopeningSubmenus, screen: screen)
     }
@@ -778,7 +779,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     func headerSearchChanged(_ text: String) {
         menu.setQuery(text)
-        header.showsSeparator = menu.query.isEmpty
+        header.showsSeparator = menu.query.isEmpty && menu.root.rows.first?.kind != .header
     }
 
     func headerKey(_ key: MenuKey) -> Bool {

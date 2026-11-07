@@ -32,6 +32,14 @@ func browserFillPlan(entry: VaultEntry, mode: FillMode, preferredWebsite: String
     return .newTab(website: website, url: url)
 }
 
+/// The page the browser is on. The extension's report is current while it can see the tab, but a tab it has no access to
+/// (Safari asks per site) sends nothing, and its last report goes stale. The address read from the window then wins.
+func resolvedPageURL(extensionURL: String?, windowURL: String?) -> String? {
+    guard let extensionURL else { return windowURL }
+    guard let windowURL, let reported = BrowserSite(url: extensionURL), let shown = BrowserSite(url: windowURL) else { return extensionURL }
+    return reported.key == shown.key ? extensionURL : windowURL
+}
+
 /// The line above the search field when the front browser's extension is missing.
 enum ExtensionBanner: Equatable {
     case addChrome
@@ -139,10 +147,10 @@ final class BrowserBridge: ObservableObject {
         }
     }
 
-    /// The page `browser` is on: what its extension reported, or what Accessibility read when the panel opened.
+    /// The page `browser` is on: what its extension reported, checked against what Accessibility read when the panel opened.
     func pageURL(for browser: BridgeBrowser) -> String? {
-        if canFill(in: browser), let url = state.currentURL(for: browser, now: now()) { return url }
-        return readURLs[browser]
+        let reported = canFill(in: browser) ? state.currentURL(for: browser, now: now()) : nil
+        return resolvedPageURL(extensionURL: reported, windowURL: readURLs[browser])
     }
 
     func banner(for app: NSRunningApplication?) -> ExtensionBanner? {
@@ -216,10 +224,8 @@ final class BrowserBridge: ObservableObject {
         readGeneration &+= 1
         refreshSafariState()
         guard let app, let browser = Self.browser(forBundleID: app.bundleIdentifier) else { return }
-        if canFill(in: browser) {
-            poke(browser)
-            return
-        }
+        if canFill(in: browser) { poke(browser) }
+        // Also read the window: it shows the list without the extension, and catches a report that went stale.
         let generation = readGeneration
         let pid = app.processIdentifier
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -269,7 +275,7 @@ final class BrowserBridge: ObservableObject {
             browserApp = app
         }
         guard let browser, let browserApp, canFill(in: browser) else { return false }
-        let page = front?.bundleURL == browserApp ? state.currentURL(for: browser, now: now()) : nil
+        let page = front?.bundleURL == browserApp ? pageURL(for: browser) : nil
         switch browserFillPlan(entry: entry, mode: mode, preferredWebsite: website, pageURL: page) {
         case .keystrokes:
             return false

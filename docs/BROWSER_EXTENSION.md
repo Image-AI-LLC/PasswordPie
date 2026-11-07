@@ -37,7 +37,8 @@ other one is:
 | Side | Accepts only |
 |---|---|
 | App (server) | `com.oldcai.passwordpie.safari` (Safari appex) or `com.oldcai.passwordpie.browser-host` (Chrome host). The identifier, not anything in a message, says which browser is talking. |
-| Host, appex (clients) | `com.oldcai.passwordpie` (the app) |
+| Chrome host (client) | `com.oldcai.passwordpie` (the app) |
+| Safari appex (client) | not checked: inside Safari's sandbox, securityd cannot read the app's bundle and the check fails with `EPERM`. It relies on the app checking it, and on the socket being in the team's group container (mode 0600), which another sandboxed app cannot reach. A non-sandboxed process of the same user could listen there instead, but it could read Safari's history and the vault file anyway; the most it gets is the tab URLs. |
 
 An ad-hoc signed build fails the check, so it never fills: test with `make install`, which signs with the development
 certificate. The team is read from the signing information (`kSecCodeInfoTeamIdentifier`), which also holds for builds the
@@ -161,13 +162,17 @@ script checks `location.origin` again and that it is the top frame or same-origi
   cover it.
 - Works in both channels. The store build needs provisioning profiles for the appex and the App Group (post-merge list).
 
-## Current URL without the extension
+## Current URL from the window
 
-When the front browser's extension is not connected, the panel reads the URL from the browser's window with the
-Accessibility API (already granted for Fill): the `AXURL` of the focused window's `AXWebArea`, or for Chrome the value of
-the toolbar's address field. The walk is bounded (0.25 s messaging timeout, 300 nodes, 0.3 s deadline) and runs off the
-main thread. It is used for the "this site" list only; without the extension, Fill keeps typing keystrokes as before. It
+Each time the panel opens over Chrome or Safari, it also reads the URL from the browser's window with the Accessibility API
+(already granted for Fill): the `AXURL` of the focused window's `AXWebArea`, or for Chrome the value of the toolbar's
+address field. The walk is bounded (0.25 s messaging timeout, 300 nodes, 0.3 s deadline) and runs off the main thread. It
 needs Accessibility to be granted already and never asks for it.
+
+- Without a connected extension it is the only source, for the "this site" list. Fill then types keystrokes as before.
+- With the extension, it checks the extension's last report. Safari asks for access per site, and a tab the extension may
+  not see sends no report, so the last one goes stale. When the window shows another site than the report, the window wins
+  (`resolvedPageURL`), so Return opens a new tab instead of waiting on a tab that will never answer.
 
 ## Channel differences
 

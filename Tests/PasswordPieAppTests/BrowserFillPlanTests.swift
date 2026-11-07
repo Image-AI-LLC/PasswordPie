@@ -69,6 +69,23 @@ final class BrowserFillPlanTests: XCTestCase {
     }
 }
 
+final class ResolvedPageURLTests: XCTestCase {
+    func testTheExtensionReportWinsWhenItAgreesWithTheWindow() {
+        XCTAssertEqual(resolvedPageURL(extensionURL: "https://github.com/login", windowURL: "https://github.com/"), "https://github.com/login")
+    }
+
+    func testAStaleReportLosesToTheWindow() {
+        XCTAssertEqual(resolvedPageURL(extensionURL: "http://localhost:8765/login.html", windowURL: "http://127.0.0.1:8765/two-step.html"),
+                       "http://127.0.0.1:8765/two-step.html")
+    }
+
+    func testEitherAlone() {
+        XCTAssertEqual(resolvedPageURL(extensionURL: "https://github.com/", windowURL: nil), "https://github.com/")
+        XCTAssertEqual(resolvedPageURL(extensionURL: nil, windowURL: "https://github.com/"), "https://github.com/")
+        XCTAssertNil(resolvedPageURL(extensionURL: nil, windowURL: nil))
+    }
+}
+
 final class ExtensionBannerTests: XCTestCase {
     func testChromeWithoutItsExtension() {
         XCTAssertEqual(extensionBanner(frontBundleID: "com.google.Chrome", chromeConnected: false, safariEnabled: true, chromeSupported: true), .addChrome)

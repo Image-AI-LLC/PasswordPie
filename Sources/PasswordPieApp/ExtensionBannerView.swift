@@ -15,6 +15,8 @@ final class ExtensionBannerView: NSView {
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { false }
+    /// The panel moves by its background; without this a press here starts a drag and the click never arrives.
+    override var mouseDownCanMoveWindow: Bool { false }
 
     func show(_ banner: ExtensionBanner) {
         guard banner != self.banner else { return }
@@ -41,9 +43,18 @@ final class ExtensionBannerView: NSView {
     override func mouseEntered(with event: NSEvent) { hovering = true }
     override func mouseExited(with event: NSEvent) { hovering = false }
 
-    override func mouseUp(with event: NSEvent) {
-        guard bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-        onClick?()
+    /// Tracks the press itself: the panel moves by its background, and its drag handling would otherwise take the mouse-up.
+    /// Like a menu item, it runs when released over the row.
+    override func mouseDown(with event: NSEvent) {
+        hovering = true
+        while let next = window?.nextEvent(matching: [.leftMouseUp, .leftMouseDragged]) {
+            let inside = bounds.contains(convert(next.locationInWindow, from: nil))
+            hovering = inside
+            if next.type == .leftMouseUp {
+                if inside { onClick?() }
+                return
+            }
+        }
     }
 
     override func accessibilityPerformPress() -> Bool {
