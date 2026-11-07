@@ -63,6 +63,8 @@ final class MenuLevel {
 final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     unowned let session: VaultSession
     weak var host: MenuHost?
+    /// Rows for the top of the initial menu: the site the browser is on and its accounts. Empty when there are none.
+    var siteSection: (() -> [MenuRow])?
     private(set) var levels: [MenuLevel] = []
     private(set) var query = ""
     private var popover: NSPopover?
@@ -190,8 +192,21 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     }
 
     /// Built in the background by the session. Until the first build for this unlock is done, one placeholder row shows.
+    /// Above it, the accounts for the site the browser is on, when there are any.
     private func topLevelRows() -> [MenuRow] {
-        session.topLevelRows ?? [MenuRow(kind: .disabled, title: "Loading…")]
+        (siteSection?() ?? []) + (session.topLevelRows ?? [MenuRow(kind: .disabled, title: "Loading…")])
+    }
+
+    /// The tab the browser is on changed while the panel is open. The site group appears, changes or goes; the first
+    /// row is selected again only if the keyboard has not moved yet.
+    func siteSectionChanged() {
+        guard query.isEmpty, !popoverIsOpen else { return }
+        let untouched = levels.count == 1 && (root.list.selectedIndex == nil || root.list.selectedIndex == root.firstSelectable)
+        if untouched {
+            rebuildRoot(selectFirst: true)
+        } else {
+            refresh()
+        }
     }
 
     /// Searches what the session has indexed so far. More results appear as indexing goes on.
@@ -330,11 +345,11 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         }
     }
 
-    /// Login: open the site and fill. Password: fill the previous app. Everything else has no default action.
+    /// Login: fill the browser tab on its site, or open the site and fill. Password: fill the previous app. Everything else has no default action.
     private func performAction(for id: UUID) {
         guard let entry = session.entry(id) else { return }
         switch entry.category {
-        case .login: session.fill(id, .openAndFill, website: otherWebsite(of: entry, matching: query))
+        case .login: session.fill(id, .fillOrOpen, website: otherWebsite(of: entry, matching: query))
         case .password: session.fill(id, .fill)
         default: break
         }

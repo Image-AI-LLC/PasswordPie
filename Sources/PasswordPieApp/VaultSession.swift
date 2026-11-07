@@ -7,8 +7,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum FillMode {
+    /// ⇧Return: fill the app that was in front.
     case fill
+    /// ⌥Return: open the website, then fill it.
     case openAndFill
+    /// Return on a login: fill the browser tab when it is already on the account's site, otherwise open the website and fill.
+    /// Without the browser extension it is Open and Fill.
+    case fillOrOpen
     case open
 }
 
@@ -173,6 +178,8 @@ final class VaultSession: ObservableObject {
 
     // Wired by the app delegate.
     var hidePanel: (() -> Void)?
+    /// Fills through the browser extension when the target browser has one; false means type the keystrokes.
+    var browserFill: ((VaultEntry, FillMode, String?) -> Bool)?
     var onWrongPassword: (() -> Void)?
     var onAutoLockChange: ((AutoLockSettings) -> Void)?
     /// Called for every vault action and unlock, so the idle timer restarts.
@@ -1215,6 +1222,13 @@ final class VaultSession: ObservableObject {
     /// Fills the previous app. The panel hides first so keystrokes reach the app that was frontmost.
     func fill(_ id: UUID, _ mode: FillMode, website: String? = nil) {
         guard let entry = entry(id) else { return }
+        // The browser extension fills the page itself, without keystrokes or Accessibility.
+        if mode != .open, browserFill?(entry, mode, website) == true {
+            onActivity?()
+            recordUse(id)
+            return
+        }
+        let mode: FillMode = mode == .fillOrOpen ? .openAndFill : mode
         guard AXIsProcessTrusted() else {
             let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
             AXIsProcessTrustedWithOptions([key: true] as CFDictionary)

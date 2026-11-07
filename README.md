@@ -28,7 +28,7 @@ More on [passwordpie.com](https://passwordpie.com/). Support: [support@passwordp
     make mas-dev          # App Store channel, sandboxed, for local testing
     Scripts/release-direct.sh   # signed, notarized DMG (see docs/CHANNELS.md)
 
-Needs Xcode and Homebrew's `argon2`. Channel differences are in [docs/CHANNELS.md](docs/CHANNELS.md).
+Needs Xcode, Homebrew's `argon2`, and Node with `pnpm` for the browser extension (`extension/`, see [its README](extension/README.md)). Channel differences are in [docs/CHANNELS.md](docs/CHANNELS.md).
 
 ## License
 

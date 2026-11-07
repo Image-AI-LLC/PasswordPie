@@ -11,6 +11,7 @@ App Store builds do not contain direct-only code.
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
 | Two-step codes (Premium) | always on, no paywall (`directChannelPremiumStatus()`) | needs Premium: StoreKit 2 only, Apple is the source of truth |
+| Browser extension | Safari and Chrome (Chrome needs a trusted extension ID: the store ID, or the unpacked one in `make install` builds) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
 
