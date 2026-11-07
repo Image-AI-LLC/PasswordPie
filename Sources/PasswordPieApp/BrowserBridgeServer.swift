@@ -121,17 +121,17 @@ final class BrowserBridgeServer: @unchecked Sendable {
     private func register(_ connection: Connection) {
         lock.lock()
         connections[ObjectIdentifier(connection)] = connection
-        let counts = countsLocked()
+        // Queued under the lock, so the main queue sees the counts in the order they were true.
+        report(countsLocked())
         lock.unlock()
-        report(counts)
     }
 
     private func unregister(_ connection: Connection) {
         lock.lock()
         connections[ObjectIdentifier(connection)] = nil
-        let counts = countsLocked()
+        // Queued under the lock, so the main queue sees the counts in the order they were true.
+        report(countsLocked())
         lock.unlock()
-        report(counts)
     }
 
     private func countsLocked() -> [BridgeBrowser: Int] {

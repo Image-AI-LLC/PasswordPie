@@ -103,7 +103,8 @@ final class ExtensionBannerTests: XCTestCase {
     }
 
     func testOtherAppsNever() {
-        for id in ["com.apple.TextEdit", "org.mozilla.firefox", nil] {
+        // Chrome Beta, Dev and Canary have no host in v1, so they keep typed keystrokes and get no banner.
+        for id in ["com.apple.TextEdit", "org.mozilla.firefox", "com.google.Chrome.beta", "com.google.Chrome.canary", nil] {
             XCTAssertNil(extensionBanner(frontBundleID: id, chromeConnected: false, safariEnabled: false, chromeSupported: true))
         }
     }

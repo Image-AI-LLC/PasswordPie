@@ -151,7 +151,8 @@ script checks `location.origin` again and that it is the top frame or same-origi
   it. With no ID to trust, they have no Chrome support and no "Add Chrome Extension…" row until the store ID is added.
 - The host starts only for Chrome. Chrome passes the caller's origin as the first argument, but whoever starts the host
   can fake that, so the host also requires its parent process to be Google Chrome, checked by code signature (team
-  `EQHXZ8M8AV`, `com.google.Chrome` and its beta, dev and canary builds).
+  `EQHXZ8M8AV`, `com.google.Chrome`). Chrome Beta, Dev and Canary, like other Chromium browsers, are not in v1: they keep
+  typed keystrokes.
 - The extension keeps one `chrome.runtime.connectNative` port open. That keeps its service worker alive and the host
   running, and it is how pokes arrive. "Connected" means the app has an authenticated host connection right now.
 - The app writes the host manifest at launch (direct channel only), pointing at the host inside the running app bundle.

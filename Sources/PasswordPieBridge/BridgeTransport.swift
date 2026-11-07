@@ -26,9 +26,11 @@ public enum BridgeConstants {
     #else
     public static let chromeExtensionIDs = storeExtensionIDs
     #endif
-    /// Google Chrome's signing team and identifiers. The host only serves a parent process signed with them.
+    /// Google Chrome's signing team and identifier. The host only serves a parent process signed with them. Only stable
+    /// Chrome: the host manifest is written to its profile folder alone, and the app tells browsers apart by bundle ID,
+    /// so Beta, Dev and Canary keep typed keystrokes in v1.
     public static let chromeTeamID = "EQHXZ8M8AV"
-    public static let chromeIdentifiers: Set<String> = ["com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev", "com.google.Chrome.canary"]
+    public static let chromeIdentifiers: Set<String> = ["com.google.Chrome"]
 }
 
 public enum BridgeError: Error, Equatable {
