@@ -141,6 +141,8 @@ public struct BridgeFill: Codable, Equatable, Sendable {
     public var origin: String
     public var username: String
     public var password: String
+    /// Whole seconds left of the pending fill's 30, so the extension drops its copy when the app would have.
+    public var expiresIn: Int
 }
 
 /// A message to the extension. Fields that are nil are left out.
@@ -179,8 +181,15 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
 public struct BridgeState: Sendable {
     public var pending = PendingFillStore()
     private var currentURLs: [BridgeBrowser: (url: String, at: Date)] = [:]
+    private var lastReports: [BridgeBrowser: Date] = [:]
 
     public init() {}
+
+    /// True when `browser` sent a tab report, of any page, in the last `within` seconds: its extension works.
+    public func heardFrom(_ browser: BridgeBrowser, now: Date, within: TimeInterval = 3600) -> Bool {
+        guard let last = lastReports[browser] else { return false }
+        return now.timeIntervalSince(last) <= within
+    }
 
     /// The last web page `browser` reported as its active tab, if it is less than `maxAge` old.
     public func currentURL(for browser: BridgeBrowser, now: Date, maxAge: TimeInterval = 3600) -> String? {
@@ -188,8 +197,10 @@ public struct BridgeState: Sendable {
         return current.url
     }
 
-    public mutating func forgetURL(for browser: BridgeBrowser) {
+    /// The browser's extension went away: forget what it said.
+    public mutating func forget(_ browser: BridgeBrowser) {
         currentURLs[browser] = nil
+        lastReports[browser] = nil
     }
 
     /// Answers one request. `entry` looks up an account by id in the unlocked vault.
@@ -205,6 +216,7 @@ public struct BridgeState: Sendable {
         case "hello":
             return BridgeResponse(type: "hello", id: request.id, version: BridgeResponse.protocolVersion, locked: locked)
         case "tab":
+            lastReports[browser] = now
             let url = request.url ?? ""
             guard let page = BrowserSite(url: url) else {
                 currentURLs[browser] = nil
@@ -217,7 +229,13 @@ public struct BridgeState: Sendable {
                   entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) else {
                 return BridgeResponse(type: "tab", id: request.id)
             }
-            let credentials = BridgeFill(origin: page.origin, username: account.username, password: account.password)
+            let left = PendingFillStore.lifetime - now.timeIntervalSince(fill.created)
+            let credentials = BridgeFill(
+                origin: page.origin,
+                username: account.username,
+                password: account.password,
+                expiresIn: max(1, Int(left.rounded(.up)))
+            )
             return BridgeResponse(type: "tab", id: request.id, fill: credentials)
         default:
             return .error("bad-request", id: request.id)

@@ -39,8 +39,9 @@ other one is:
 | App (server) | `com.oldcai.passwordpie.safari` (Safari appex) or `com.oldcai.passwordpie.browser-host` (Chrome host). The identifier, not anything in a message, says which browser is talking. |
 | Host, appex (clients) | `com.oldcai.passwordpie` (the app) |
 
-An ad-hoc signed build fails the check, so it never fills. Debug builds can relax the anchor with
-`PASSWORDPIE_BRIDGE_ANY_SIGNER=1` (compiled out of release builds).
+An ad-hoc signed build fails the check, so it never fills: test with `make install`, which signs with the development
+certificate. The team is read from the signing information (`kSecCodeInfoTeamIdentifier`), which also holds for builds the
+App Store re-signs.
 
 Framing is the same as Chrome native messaging: a 32-bit little-endian length, then that many bytes of UTF-8 JSON. Frames
 over 1 MiB close the connection. The Chrome host is a relay: it copies frames from stdin to the socket and from the socket
@@ -81,10 +82,11 @@ Sent when the extension starts and when its port (re)connects. It makes the brow
 
     → {"type":"tab","id":2,"url":"https://github.com/login","reason":"activated"}
     ← {"type":"tab","id":2}
-    ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…"}}
+    ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28}}
 
 `reason` is one of `activated`, `updated`, `focus`, `poke`, `startup` (diagnostic only; it changes nothing). `url` is the
 top frame URL of the active tab in the focused window. An empty or non-http(s) `url` clears the cached URL and never fills.
+`expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 
 ### `poke` (app → extension)
 
@@ -113,9 +115,18 @@ All in `PasswordPieCore`, with tests:
 - **Only the matching frame.** The answer names the exact `origin` of the URL that matched. The extension fills only frames
   whose origin equals it: the top frame and same-origin iframes. Cross-origin iframes get nothing (the background finds
   frames with `webNavigation.getAllFrames` and sends the fill to each matching `frameId`).
-- **Two-step sign-in.** The background keeps the answer in memory, for that tab and origin only, until 30 s after the pick.
+- **Two-step sign-in.** The background keeps the answer in memory, for that tab and origin only, until 30 s after the pick
+  (`expiresIn`).
   A username-only page gets the username; when a password field appears (same page) or the next page of the same origin
   loads, it gets the password. Nothing is kept in extension storage.
+
+### Inside the extension
+
+Content script → background, never leaving the browser: `{"type":"ready"}` when a content script starts (a frame that
+loads after the answer still gets the fill, if its origin matches), `{"type":"focus"}` from a top frame that regains focus
+(report now), and `{"type":"filled","password":true}` when a password filled late (drop the copy). Background → content
+script: `{"type":"fill","origin","username","password"}`, sent only to frames whose origin equals `origin`; the content
+script checks `location.origin` again and that it is the top frame or same-origin with it.
 
 ## Secrets
 

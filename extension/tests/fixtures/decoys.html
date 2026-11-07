@@ -1,0 +1,15 @@
+<style>.offstage { display: none; } .ghost { visibility: hidden; }</style>
+<form role="search"><input id="site-search" type="text" name="query" placeholder="Search docs"></form>
+<input id="q" name="q" type="text">
+<form>
+  <input id="hidden-type" type="hidden" name="username">
+  <div class="offstage"><input id="in-hidden-parent" type="text" name="username"><input id="pw-in-hidden-parent" type="password"></div>
+  <input id="hidden-attr" type="text" name="username" hidden>
+  <input id="ghost" class="ghost" type="text" name="username">
+  <input id="inline-none" type="password" style="display:none">
+  <input id="disabled" type="text" name="username" disabled>
+  <input id="readonly-pw" type="password" readonly>
+  <input id="user" type="text" name="username">
+  <input id="decoy-after" type="text" name="nickname" style="display:none">
+  <input id="pass" type="password">
+</form>

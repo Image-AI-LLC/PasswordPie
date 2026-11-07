@@ -185,10 +185,11 @@ final class BridgeHandlerTests: XCTestCase {
         let tab = request(#"{"type":"tab","id":7,"url":"https://github.com/login","reason":"poke"}"#)
         let first = object(state.handle(tab, from: .chrome, locked: false, now: start + 1) { $0 == entry.id ? entry : nil })
         XCTAssertEqual(first["id"] as? Int, 7)
-        let fill = first["fill"] as? [String: String]
-        XCTAssertEqual(fill?["origin"], "https://github.com")
-        XCTAssertEqual(fill?["username"], "octocat")
-        XCTAssertEqual(fill?["password"], "hunter2")
+        let fill = first["fill"] as? [String: Any]
+        XCTAssertEqual(fill?["origin"] as? String, "https://github.com")
+        XCTAssertEqual(fill?["username"] as? String, "octocat")
+        XCTAssertEqual(fill?["password"] as? String, "hunter2")
+        XCTAssertEqual(fill?["expiresIn"] as? Int, 29, "what is left of the 30 seconds since the pick")
         let second = object(state.handle(tab, from: .chrome, locked: false, now: start + 2) { _ in entry })
         XCTAssertNil(second["fill"])
     }
@@ -200,6 +201,17 @@ final class BridgeHandlerTests: XCTestCase {
         XCTAssertNil(state.currentURL(for: .chrome, now: start + 5))
         _ = state.handle(request(#"{"type":"tab","id":2,"url":"chrome://newtab/","reason":"activated"}"#), from: .safari, locked: false, now: start) { _ in nil }
         XCTAssertNil(state.currentURL(for: .safari, now: start + 5), "a non-web page clears it")
+    }
+
+    func testAnyTabReportShowsTheExtensionWorks() {
+        var state = BridgeState()
+        XCTAssertFalse(state.heardFrom(.chrome, now: start))
+        _ = state.handle(request(#"{"type":"tab","id":1,"url":""}"#), from: .chrome, locked: false, now: start) { _ in nil }
+        XCTAssertTrue(state.heardFrom(.chrome, now: start + 10))
+        XCTAssertFalse(state.heardFrom(.safari, now: start + 10))
+        XCTAssertFalse(state.heardFrom(.chrome, now: start + 3601))
+        state.forget(.chrome)
+        XCTAssertFalse(state.heardFrom(.chrome, now: start + 10))
     }
 
     func testLockedVaultNeverAnswersWithCredentials() {
@@ -227,7 +239,7 @@ final class BridgeHandlerTests: XCTestCase {
         entry.setValue("https://github.enterprise.example", for: "URL (2)")
         state.pending.set(PendingFill(entryID: entry.id, browser: .chrome, website: "https://github.enterprise.example", created: start)!)
         let answer = object(state.handle(request(#"{"type":"tab","id":3,"url":"https://github.enterprise.example/login"}"#), from: .chrome, locked: false, now: start + 1) { _ in entry })
-        XCTAssertEqual((answer["fill"] as? [String: String])?["origin"], "https://github.enterprise.example")
+        XCTAssertEqual((answer["fill"] as? [String: Any])?["origin"] as? String, "https://github.enterprise.example")
     }
 
     func testUnknownTypeIsABadRequest() {

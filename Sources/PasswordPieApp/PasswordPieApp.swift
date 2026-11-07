@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private var session: VaultSession!
     private(set) var panelController: PanelController!
+    private(set) var bridge: BrowserBridge!
     private var autoLock: AutoLockMonitor!
     private var hotKey: EventHotKeyRef?
     private var pinnedHotKeys: [EventHotKeyRef] = []
@@ -64,6 +65,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotKeyStatus = ""
     #endif
 
+    /// The browser extensions fill through the bridge; Fill falls back to keystrokes when it cannot.
+    private func startBrowserBridge() {
+        bridge = BrowserBridge(session: session)
+        bridge.targetApp = { [weak self] in self?.panelController.targetApp }
+        bridge.hidePanel = { [weak self] refocus in self?.panelController.hide(refocusPrevious: refocus) }
+        session.browserFill = { [weak self] entry, mode, website in
+            self?.bridge.fill(entry, mode, website: website) ?? false
+        }
+        panelController.bridge = bridge
+        bridge.start()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         session = VaultSession()
@@ -79,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         wirePremium()
         panelController = PanelController(session: session)
         session.hidePanel = { [weak self] in self?.panelController.hide() }
+        startBrowserBridge()
         buildStatusItem()
         registerHotkey()
         session.$editing
@@ -679,7 +693,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "frontmostApp": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? NSNull(),
             "panelFrame": NSStringFromRect(panel.frame),
             "systemIdleSeconds": SystemIdle.seconds(),
-            "hotkey": hotKeyStatus
+            "hotkey": hotKeyStatus,
+            "chromeConnected": bridge?.chromeConnected ?? false,
+            "safariEnabled": bridge?.safariEnabled ?? false,
+            "extensionBanner": panelController.shownBanner?.title ?? NSNull()
         ]
     }
     #endif

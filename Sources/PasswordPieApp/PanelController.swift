@@ -47,11 +47,19 @@ final class KeyPanel: NSPanel {
 final class PanelContentView: NSVisualEffectView {
     weak var header: NSView?
     weak var list: NSView?
+    /// "Add Chrome Extension…", above the header. Zero height when hidden.
+    weak var banner: NSView?
+    var bannerHeight: CGFloat = 0 {
+        didSet { if oldValue != bannerHeight { needsLayout = true } }
+    }
 
     override func layout() {
         super.layout()
-        header?.frame = NSRect(x: 0, y: bounds.height - HeaderView.height, width: bounds.width, height: HeaderView.height)
-        list?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(bounds.height - HeaderView.height, 0))
+        banner?.frame = NSRect(x: 0, y: bounds.height - bannerHeight, width: bounds.width, height: bannerHeight)
+        banner?.isHidden = bannerHeight == 0
+        let top = bounds.height - bannerHeight
+        header?.frame = NSRect(x: 0, y: top - HeaderView.height, width: bounds.width, height: HeaderView.height)
+        list?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(top - HeaderView.height, 0))
     }
 }
 
@@ -79,6 +87,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     let menu: MenuController
     let header = HeaderView(frame: NSRect(x: 0, y: 0, width: 300, height: HeaderView.height))
     let lockModel = LockModel()
+    let banner = ExtensionBannerView(frame: NSRect(x: 0, y: 0, width: 300, height: ExtensionBannerView.height))
+    /// What the panel shows in the banner: an extension the front browser is missing. Nil hides it.
+    private(set) var shownBanner: ExtensionBanner?
+    /// The browser extensions. Set once by the app delegate.
+    var bridge: BrowserBridge? {
+        didSet { bindBridge() }
+    }
     private let container = NSView()
     private let effect: PanelContentView = {
         let view = PanelContentView()
@@ -127,6 +142,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     }
 
     var rootWindow: NSWindow { panel }
+    /// The app that was in front when the panel opened: where Fill goes.
+    var targetApp: NSRunningApplication? { previousApp }
     var isVisible: Bool { panel.isVisible }
 
     var onPanelHidden: (() -> Void)?
@@ -179,8 +196,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         header.autoresizingMask = []
         effect.addSubview(scroll)
         effect.addSubview(header)
+        effect.addSubview(banner)
         effect.header = header
         effect.list = scroll
+        effect.banner = banner
+        banner.onClick = { [weak self] in self?.installBannerExtension() }
+        menu.siteSection = { [weak self] in self?.siteSectionRows() ?? [] }
 
         lockHost.frame = container.bounds
         lockHost.autoresizingMask = [.width, .height]
@@ -269,6 +290,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             previousApp = front
         }
+        // Before the menu is built: the site group at its top comes from what the bridge knows about the front tab.
+        bridge?.panelWillShow(over: previousApp)
+        updateBanner()
         // Within 10 seconds of closing, the search and the selected account come back. Otherwise: empty search,
         // initial menu, first row selected. Locking forgets it, so a locked panel never has one.
         let recalled = session.locked ? nil : recall.take(at: now())
@@ -512,7 +536,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         let visible = currentScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let area = MenuGeometry.confinement(visibleFrame: visible)
-        let height = HeaderView.height + min(max(contentHeight, MenuMetrics.minimumListHeight), max(area.height - HeaderView.height, 0))
+        let top = HeaderView.height + effect.bannerHeight
+        let height = top + min(max(contentHeight, MenuMetrics.minimumListHeight), max(area.height - top, 0))
         return NSSize(width: max(contentWidth, MenuGeometry.rootWidth), height: height)
     }
 
@@ -542,6 +567,46 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         setFrame(animated: panel.isVisible && !menu.isReopeningSubmenus, screen: screen)
     }
 
+    // MARK: Browser extension
+
+    private func bindBridge() {
+        guard let bridge else { return }
+        bridge.objectWillChange
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.bridgeStateChanged() } }
+            .store(in: &cancellables)
+        bridge.onPageChanged = { [weak self] in
+            guard let self, self.panel.isVisible, !self.session.locked else { return }
+            self.menu.siteSectionChanged()
+        }
+    }
+
+    /// The banner follows the front browser's extension state while the panel is open, so it goes once the extension connects.
+    private func bridgeStateChanged() {
+        guard panel.isVisible else { return }
+        updateBanner()
+        if !session.locked, !animatingLock, let screen = currentScreen { setFrame(animated: true, screen: screen) }
+    }
+
+    private func updateBanner() {
+        shownBanner = session.locked ? nil : bridge?.banner(for: previousApp)
+        if let shownBanner { banner.show(shownBanner) }
+        effect.bannerHeight = shownBanner == nil ? 0 : ExtensionBannerView.height
+    }
+
+    private func installBannerExtension() {
+        guard let shownBanner, let bridge else { return }
+        hide(refocusPrevious: false)
+        bridge.install(shownBanner)
+    }
+
+    /// The front browser's site and its accounts, for the top of the initial menu.
+    private func siteSectionRows() -> [MenuRow] {
+        guard let bridge, let browser = BrowserBridge.browser(forBundleID: previousApp?.bundleIdentifier),
+              let page = bridge.pageURL(for: browser), let site = BrowserSite(url: page) else { return [] }
+        let entries = SiteSuggestions.entries(session.allEntries, pageURL: page, lastUsed: session.lastUsedMap)
+        return MenuBuilder.siteRows(site: site.key, entries: entries, sources: session.entrySources)
+    }
+
     // MARK: Dragging
 
     private func savedTopLeft() -> NSPoint? {
@@ -568,6 +633,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     // MARK: Lock and unlock
 
     private func lockedChanged(to locked: Bool) {
+        updateBanner()
         if locked {
             recall.forget()
             lockAnimation()
