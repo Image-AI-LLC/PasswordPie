@@ -2,8 +2,6 @@
 
 A keyboard-first KeePass password manager for Mac that lives in the menu bar.
 
-> **TL;DR:** The app is free for anyone to use, including at work. The source code is for personal and other noncommercial use only; using it commercially needs a license from us.
-
 **Website: [passwordpie.com](https://passwordpie.com/)**
 
 ![PasswordPie open from the menu bar](art/readme-hero.png)
