@@ -11,6 +11,8 @@ App Store builds do not contain direct-only code.
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
 | Two-step codes (Premium) | need a PasswordPie account with Premium (Get Premium and keys on passwordpie.com) | need a PasswordPie account with Premium; sold here with StoreKit 2 and put onto the account |
+| Two-step codes in the browser (Premium) | the app's own account has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the same |
+| Extension popup | account, Upgrade (pricing page) and "Have a key?" | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): account only, no Upgrade, no key field |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
@@ -158,6 +160,10 @@ subscription page, and the App Store build says nothing about buying elsewhere (
 
 **Direct channel.** No StoreKit. The Premium window offers Get Premium (passwordpie.com/pricing), Redeem a Key
 (passwordpie.com/redeem) and Check Again.
+
+**Codes in the browser.** `browserCodeAllowed` in `PremiumChannel.swift` decides, the same in both channels: the account
+signed in inside the app has Premium (`appAccountHasPremium()`), or the `code` request carries a good passwordpie.com
+token from the extension ([ACCOUNTS.md](ACCOUNTS.md)). `directChannelCodesAreFree` does not count there.
 
 **The gate.** `OneTimeCodes.access(for:hasPremium:)` is the only code in the app target that may call `TOTP.code`.
 `PremiumGateTests` fails if a call appears anywhere else. `Search.swift` and the menu never read a code. The gate changes

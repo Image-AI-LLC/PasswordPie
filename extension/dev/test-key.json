@@ -1,5 +1,5 @@
 {
-  "//": "TEST ONLY. This private key is public on purpose: it signs tokens for the mock site (mock-site.mjs) and tests. Only debug and make install builds trust it (EntitlementKeys.test). Never use it on passwordpie.com.",
+  "//": "TEST ONLY. This private key is public on purpose: it signs tokens for the mock site (mock-site.mjs) and tests. Only debug and make install builds of the app trust it (EntitlementToken.testPublicKey). Never use it on passwordpie.com.",
   "kid": "pp-test",
   "x": "0HFLn6glzMnKkdA6-y2G5E_51nQEfbrAa4Mc-fK-5Ro",
   "d": "BbO5I-z2KMm2RDbIxi-l0MPLsB53pygHdTCazxbPTbk",

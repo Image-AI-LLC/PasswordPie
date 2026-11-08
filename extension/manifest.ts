@@ -12,17 +12,39 @@ export const CHROME_KEY =
  */
 export const STORE_PACKAGE_ENV = 'PP_STORE_PACKAGE';
 
-export function extensionManifest({ browser, storePackage }: { browser: ConfigEnv['browser']; storePackage: boolean }): UserManifest {
+/** The panel shortcut (`commands`). Chrome may not grant it (a key already taken), so the popup reads the real one. */
+export const OPEN_PANEL_COMMAND = 'open-panel';
+
+export function extensionManifest({
+  browser,
+  storePackage,
+  googleClientId = process.env.WXT_GOOGLE_CLIENT_ID ?? '',
+}: {
+  browser: ConfigEnv['browser'];
+  storePackage: boolean;
+  /** Google sign-in (mkext's identity.getAuthToken flow): Chromium only, and only when the build has a client ID. */
+  googleClientId?: string;
+}): UserManifest {
+  const google = browser === 'chrome' && googleClientId !== '';
   return {
     name: 'PasswordPie',
     description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
     version: '0.1.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
-    permissions: browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms'],
+    // `storage` keeps the passwordpie.com sign-in and entitlement token (docs/ACCOUNTS.md).
+    permissions: [
+      ...(browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms']),
+      'storage',
+      ...(google ? ['identity'] : []),
+    ],
     host_permissions: ['<all_urls>'],
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
     action: { default_title: 'PasswordPie', default_icon: { 16: 'icon/16.png', 32: 'icon/32.png' } },
+    commands: {
+      [OPEN_PANEL_COMMAND]: { suggested_key: { default: 'Alt+Shift+P' }, description: 'Open the PasswordPie panel' },
+    },
+    ...(google ? { oauth2: { client_id: googleClientId, scopes: ['openid', 'email', 'profile'] } } : {}),
     ...(browser === 'chrome' && !storePackage ? { key: CHROME_KEY } : {}),
   };
 }

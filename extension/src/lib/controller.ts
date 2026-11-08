@@ -4,6 +4,8 @@ import {
   PROTOCOL_VERSION,
   WEBSITE_URL,
   APP_NOT_RESPONDING,
+  CODE_LIFETIME_MS,
+  codeOfAnswer,
   fillOfTabAnswer,
   originOf,
   parseContentMessage,
@@ -11,6 +13,8 @@ import {
   reportableUrl,
   type Credentials,
   type FillMessage,
+  type FrameMessage,
+  type PopupStatus,
   type TabFill,
   type TabReason,
 } from './protocol';
@@ -18,6 +22,8 @@ import { systemTimers, type TimerHandle, type Timers } from './timers';
 import { wantsIcon } from './site-icon';
 
 export const REPORT_DEBOUNCE_MS = 100;
+/** How long the popup mentions a code that was not filled for lack of Premium. */
+export const CODE_SKIPPED_MS = 10 * 60_000;
 const WINDOW_ID_NONE = -1;
 
 export interface TabInfo {
@@ -36,6 +42,8 @@ export interface FrameInfo {
 export interface MessageSender {
   tab?: TabInfo;
   frameId?: number;
+  /** The URL of the frame that sent the message. */
+  url?: string;
 }
 
 /** The browser APIs the controller uses, injectable for tests. */
@@ -45,10 +53,25 @@ export interface TabsAdapter {
   frames(tabId: number): Promise<FrameInfo[]>;
   /** Resolves with the frame's answer; rejects or resolves undefined when no content script answered. */
   sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown>;
+  /** The two-step code messages; resolves with the frame's answer. */
+  sendToFrame(tabId: number, frameId: number, msg: FrameMessage): Promise<unknown>;
   /** Opens `url` in a new tab of the current window. */
   openTab(url: string): Promise<unknown>;
   /** The tab's icon as base64 PNG (at most 128 × 128 and 64 KB), if the tab is still on `origin`. */
   tabIcon?(tabId: number, favIconUrl: string | undefined, origin: string): Promise<string | undefined>;
+}
+
+/** Where the extension keeps the passwordpie.com account: only the entitlement token is needed here. */
+export interface AccountSource {
+  entitlementToken(): Promise<string | undefined>;
+}
+
+/** A two-step code field to wait for, after a fill of an account that has one. Holds no secret. */
+interface CodeWait {
+  origin: string;
+  expiresAt: number;
+  expiry: TimerHandle;
+  asking: boolean;
 }
 
 interface Entry extends Credentials {
@@ -67,13 +90,26 @@ export class FillController {
   private readonly tabs: TabsAdapter;
   private readonly timers: Timers;
   private readonly entries = new Map<number, Entry>();
+  private readonly codeWaits = new Map<number, CodeWait>();
+  private readonly account: AccountSource | undefined;
+  private readonly upgradeUrl: string | undefined;
+  private codeSkipped: { site: string; at: number } | undefined;
   private reportTimer: TimerHandle | undefined;
   private pendingReason: TabReason = 'startup';
 
-  constructor(deps: { channel: NativeChannel; tabs: TabsAdapter; timers?: Timers }) {
+  constructor(deps: { channel: NativeChannel; tabs: TabsAdapter; timers?: Timers; account?: AccountSource; upgradeUrl?: string }) {
     this.channel = deps.channel;
     this.tabs = deps.tabs;
     this.timers = deps.timers ?? systemTimers;
+    this.account = deps.account;
+    this.upgradeUrl = deps.upgradeUrl;
+  }
+
+  /** What the popup shows besides the account. */
+  popupStatus(): PopupStatus {
+    const skipped = this.codeSkipped;
+    if (!skipped || this.timers.now() - skipped.at > CODE_SKIPPED_MS) return {};
+    return { codeSkippedOn: skipped.site };
   }
 
   start(): void {
@@ -115,7 +151,10 @@ export class FillController {
   }
 
   tabUpdated(tabId: number, change: { status?: string; url?: string }, tab: TabInfo): void {
-    if (change.status === 'complete') void this.refill(tabId, tab.url);
+    if (change.status === 'complete') {
+      void this.refill(tabId, tab.url);
+      if (tab.url !== undefined && originOf(tab.url) === this.liveCodeWait(tabId)?.origin) void this.watchCode(tabId);
+    }
     if (tab.active && (change.status === 'complete' || change.url !== undefined)) this.report('updated');
   }
 
@@ -125,6 +164,7 @@ export class FillController {
 
   tabRemoved(tabId: number): void {
     this.drop(tabId);
+    this.dropCodeWait(tabId);
   }
 
   runtimeMessage(value: unknown, sender: MessageSender): void {
@@ -135,7 +175,12 @@ export class FillController {
       if (sender.frameId === 0 && sender.tab?.active) this.report('focus');
     } else if (msg.type === 'ready') {
       // A content script started after the answer arrived (document_idle can come after "complete").
-      if (sender.frameId !== undefined) void this.fillTab(tabId, sender.frameId);
+      if (sender.frameId !== undefined) {
+        void this.fillTab(tabId, sender.frameId);
+        void this.watchCode(tabId, sender.frameId);
+      }
+    } else if (msg.type === 'code-field') {
+      if (sender.frameId !== undefined && sender.url !== undefined) void this.requestCode(tabId, sender.frameId, sender.url);
     } else {
       this.drop(tabId);
     }
@@ -160,7 +205,73 @@ export class FillController {
     // The fill is for the tab this report named, and only for the origin of the URL reported.
     if (!fill || tabId === undefined || url === '' || fill.origin !== originOf(url)) return;
     this.keep(tabId, fill);
+    if (fill.otp) this.expectCode(tabId, fill.origin);
+    else this.dropCodeWait(tabId);
     await this.fillTab(tabId);
+    await this.watchCode(tabId);
+  }
+
+  private expectCode(tabId: number, origin: string): void {
+    this.dropCodeWait(tabId);
+    const expiry = this.timers.setTimeout(() => this.dropCodeWait(tabId), CODE_LIFETIME_MS);
+    this.codeWaits.set(tabId, { origin, expiresAt: this.timers.now() + CODE_LIFETIME_MS, expiry, asking: false });
+  }
+
+  private dropCodeWait(tabId: number): void {
+    const wait = this.codeWaits.get(tabId);
+    if (!wait) return;
+    this.timers.clearTimeout(wait.expiry);
+    this.codeWaits.delete(tabId);
+  }
+
+  private liveCodeWait(tabId: number): CodeWait | undefined {
+    const wait = this.codeWaits.get(tabId);
+    if (wait && this.timers.now() >= wait.expiresAt) {
+      this.dropCodeWait(tabId);
+      return undefined;
+    }
+    return wait;
+  }
+
+  /** Asks the tab's frames of the wait's origin (or just `onlyFrameId`) to look for a code field. */
+  private async watchCode(tabId: number, onlyFrameId?: number): Promise<void> {
+    const wait = this.liveCodeWait(tabId);
+    if (!wait) return;
+    let frames: FrameInfo[];
+    try {
+      frames = await this.tabs.frames(tabId);
+    } catch {
+      return;
+    }
+    const msg: FrameMessage = { type: 'watch-code', origin: wait.origin, waitMs: Math.max(0, wait.expiresAt - this.timers.now()) };
+    const targets = frames.filter(
+      (frame) => originOf(frame.url) === wait.origin && (onlyFrameId === undefined || frame.frameId === onlyFrameId),
+    );
+    await Promise.all(targets.map((frame) => this.tabs.sendToFrame(tabId, frame.frameId, msg).catch(() => undefined)));
+  }
+
+  /** A frame found an empty code field: ask the app, once per fill, and fill or hint in that frame. */
+  private async requestCode(tabId: number, frameId: number, frameUrl: string): Promise<void> {
+    const wait = this.liveCodeWait(tabId);
+    if (!wait || wait.asking || originOf(frameUrl) !== wait.origin) return;
+    wait.asking = true;
+    let entitlement: string | undefined;
+    try {
+      entitlement = await this.account?.entitlementToken();
+    } catch {
+      entitlement = undefined;
+    }
+    const answer = codeOfAnswer(
+      await this.channel.request({ type: 'code', url: `${wait.origin}/`, ...(entitlement ? { entitlement } : {}) }),
+    );
+    if (this.codeWaits.get(tabId) === wait) this.dropCodeWait(tabId);
+    if (answer.kind === 'code' && answer.origin === wait.origin) {
+      await this.tabs.sendToFrame(tabId, frameId, { type: 'code', origin: wait.origin, code: answer.code }).catch(() => undefined);
+    } else if (answer.kind === 'no-premium') {
+      this.codeSkipped = { site: new URL(wait.origin).host, at: this.timers.now() };
+      const hint: FrameMessage = { type: 'code-hint', origin: wait.origin, ...(this.upgradeUrl ? { upgradeUrl: this.upgradeUrl } : {}) };
+      await this.tabs.sendToFrame(tabId, frameId, hint).catch(() => undefined);
+    }
   }
 
   /** The app has an account on this site but no icon for it: send the one the browser shows for the tab. */

@@ -205,8 +205,15 @@ final class BrowserBridge: ObservableObject {
         if let request = try? JSONDecoder().decode(BridgeRequest.self, from: frame) {
             if request.type == "icon" { return try? JSONEncoder().encode(answerIcon(frame, from: browser)) }
             let before = state.currentURL(for: browser, now: now())
-            response = state.handle(request, from: browser, locked: session.locked, now: now()) { [session] id in session.entry(id) }
-            if state.currentURL(for: browser, now: now()) != before { onPageChanged?() }
+            let now = now()
+            response = state.handle(
+                request,
+                from: browser,
+                locked: session.locked,
+                now: now,
+                codeAllowed: { token in browserCodeAllowed(entitlement: token, now: now) }
+            ) { [session] id in session.entry(id) }
+            if state.currentURL(for: browser, now: now) != before { onPageChanged?() }
             if response.type == "tab", wantsIcon(request, from: browser) { response.wantIcon = true }
             if response.type == "show" {
                 // After the answer is on its way: the server is waiting on this call to reply.

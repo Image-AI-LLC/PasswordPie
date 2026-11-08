@@ -1,7 +1,8 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
+import { CodeFiller } from '@/lib/code-filler';
 import { PageFiller, sameOriginWithTop } from '@/lib/page-filler';
-import { parseFillMessage, type ContentMessage } from '@/lib/protocol';
+import { parseFillMessage, parseFrameMessage, type ContentMessage } from '@/lib/protocol';
 import { pageIconLinks, parseIconLinksMessage } from '@/lib/site-icon';
 
 function send(msg: ContentMessage): void {
@@ -21,6 +22,13 @@ export default defineContentScript({
       notifyPasswordFilled: () => send({ type: 'filled', password: true }),
     });
 
+    const codes = new CodeFiller({
+      document,
+      origin: location.origin,
+      frameAllowed: () => sameOriginWithTop(window),
+      notifyCodeField: () => send({ type: 'code-field' }),
+    });
+
     browser.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse: (answer: unknown) => void) => {
       const iconAsk = parseIconLinksMessage(raw);
       if (iconAsk) {
@@ -28,9 +36,13 @@ export default defineContentScript({
         sendResponse(window.top === window && location.origin === iconAsk.origin ? pageIconLinks(document) : []);
         return false;
       }
-      const msg = parseFillMessage(raw);
-      if (!msg) return false;
-      sendResponse(filler.handle(msg));
+      const fill = parseFillMessage(raw);
+      if (fill) {
+        sendResponse(filler.handle(fill));
+        return false;
+      }
+      const msg = parseFrameMessage(raw);
+      if (msg) sendResponse(codes.handle(msg));
       return false;
     });
 

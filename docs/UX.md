@@ -326,10 +326,12 @@ With the PasswordPie extension in Chrome or Safari:
 
 Typing in the search box works as always: the first letter replaces the site group with search results.
 
-Clicking the PasswordPie button in the browser's toolbar does the same as `⌘\`: the panel opens over the browser, with
-the site's accounts at the top. A second click while it is open brings it forward. If PasswordPie is installed but not
-running, the click starts it and then opens the panel. If it is not installed, the click opens passwordpie.com in a new
-tab, to download it.
+Clicking the PasswordPie button in the browser's toolbar opens a small popup. Its first line is a large
+**Open PasswordPie** button, there whether or not you are signed in: it does the same as `⌘\`, the panel opens over the
+browser with the site's accounts at the top, and the popup closes. ⌥⇧P in the browser does the same without the popup
+(Chrome lets you change it under `chrome://extensions/shortcuts`). If PasswordPie is installed but not running, the button
+starts it and then opens the panel. If it is not installed, it opens passwordpie.com in a new tab, to download it. Below
+it is your PasswordPie account: see "Premium in the browser".
 
 | What you press on an account | The site in the browser is the account's site | It is another site |
 |---|---|---|
@@ -432,3 +434,72 @@ extension in Chrome. Turn off Wi-Fi.
 1. Press `⌘\`. GitHub shows its logo; the smaller site shows its letter tile.
 2. Turn Wi-Fi back on and open the smaller site in Chrome. Press `⌘\`: its row now shows the site's logo.
 3. Quit PasswordPie and open it again: the logo is still there.
+
+## Premium in the browser
+
+**In one line:** with Premium, the two-step code fills itself on the page after the password, so a sign-in with a code
+is one Return.
+
+### The problem
+
+Filling the username and password got you to the "Enter the 6-digit code" page, and there you had to open PasswordPie
+again, find the item and copy its code.
+
+### What happens now
+
+1. Press `⌘\` on a sign-in page and Return on an account that has a two-step code. The username and password fill, as
+   before.
+2. Press Sign In. When the page asks for the code, within 30 seconds, PasswordPie fills it: into one field, or one digit
+   per box when the page splits it. It does not press Verify for you.
+
+The code also fills when it is on the same page as the password. It fills once per Return; if the site rejects it, copy
+a fresh one from the panel.
+
+Premium belongs to your PasswordPie account, wherever you got it: on passwordpie.com (once or yearly), with a key, or in
+the App Store version of the app. The extension needs you signed in to that account; the App Store version, once you sign
+in there, also lets the extension fill codes without signing in again.
+
+### The popup
+
+| You are | The popup shows |
+|---|---|
+| Signed out | **Open PasswordPie**, then Sign In with email and password (and Continue with Google in Chrome), Create an account, Forgot password? |
+| Signed in, free | Your email and Sign Out; "Free · Two-step codes in the browser need Premium." with **Upgrade** (opens the pricing page) and a "Have a key?" field |
+| Signed in, Premium | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." |
+
+The popup asks passwordpie.com for your Premium every time it opens, and the extension asks once a day. Offline, it keeps
+what it knew; a session that ended signs you out.
+
+A key looks like `PPIE-XXXX-XXXX-XXXX`. Lowercase and missing dashes are fine. A wrong key says it is not valid, a used
+one that it was already used, an old one that it has expired, and too many tries ask you to wait a minute.
+
+### Without Premium
+
+The username and password still fill. On the code page, a small note appears in the corner for 8 seconds:
+"PasswordPie Premium fills two-step codes for you. Upgrade". It takes no focus and fills nothing. The popup, for the next
+ten minutes, says "The two-step code on github.com was not filled: it needs Premium."
+
+In the Safari extension of the App Store version there is no Upgrade link and no key field, and the note has no link.
+
+### Privacy
+
+- The code is made on your Mac when the page asks for it, goes only to that page, and is never saved or logged.
+- Your Premium proof is a signed token from passwordpie.com. PasswordPie checks the signature itself, so a changed or
+  expired token gets no code.
+- The extension stores your sign-in and that token in the browser's extension storage. Sign Out removes both.
+
+### Demo script
+
+Use the mock site (`node extension/dev/mock-site.mjs`, then `WXT_PP_SITE_URL=http://localhost:8787 pnpm build:chrome`)
+and a database item "Demo" with website `http://localhost:8787`, username `ada`, any password, and two-step code
+`otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`. Build with `make install` (or a debug build in a bundle signed
+the same way: the bridge checks signatures); only those trust the test key.
+
+1. Click the toolbar button: the popup shows Open PasswordPie and Sign In. Sign in as `ada@example.com` / `password`:
+   "Free".
+2. Open `http://localhost:8787/demo/login`, press `⌘\`, Return on Demo, then Sign In. The code page shows six empty
+   boxes and the note in the corner. The popup says the code on localhost:8787 was not filled.
+3. In the popup, redeem `PPIE-TEST-TEST-TEST`: "Premium · Key".
+4. Repeat 2: the six boxes fill. Press Verify: "Signed in".
+5. Redeem `PPIE-USED-USED-USED`: "That key was already used."
+6. Sign Out, repeat 2: no code, and the note again.

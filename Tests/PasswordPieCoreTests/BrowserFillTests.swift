@@ -287,6 +287,188 @@ final class BridgeHandlerTests: XCTestCase {
     }
 }
 
+/// Two-step codes over the bridge: docs/BROWSER_EXTENSION.md, "`code`", and docs/ACCOUNTS.md.
+final class BridgeCodeTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 2_000_010)
+    /// RFC 6238's SHA-1 secret, "12345678901234567890".
+    private let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+    private func login(code: Bool = true) -> VaultEntry {
+        var entry = VaultEntry()
+        entry.title = "GitHub"
+        entry.url = "https://github.com"
+        entry.username = "octocat"
+        entry.password = "hunter2"
+        if code { entry.otp = "otpauth://totp/GitHub:octocat?secret=\(secret)&issuer=GitHub" }
+        return entry
+    }
+
+    private func request(_ json: String) -> BridgeRequest {
+        try! JSONDecoder().decode(BridgeRequest.self, from: Data(json.utf8))
+    }
+
+    private func object(_ response: BridgeResponse) -> [String: Any] {
+        let data = try! JSONEncoder().encode(response)
+        return try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+    }
+
+    private let tab = #"{"type":"tab","id":1,"url":"https://github.com/","reason":"poke"}"#
+    private let code = #"{"type":"code","id":2,"url":"https://github.com/","entitlement":"token-1"}"#
+
+    /// Picks `entry`, lets the tab take the fill, and returns that answer.
+    private func filled(_ state: inout BridgeState, _ entry: VaultEntry, browser: BridgeBrowser = .chrome) -> [String: Any] {
+        state.pending.set(PendingFill(entryID: entry.id, browser: browser, website: entry.url, created: start)!)
+        return object(state.handle(request(tab), from: browser, locked: false, now: start + 1) { $0 == entry.id ? entry : nil })
+    }
+
+    private func ask(
+        _ state: inout BridgeState,
+        _ entry: VaultEntry,
+        json: String? = nil,
+        browser: BridgeBrowser = .chrome,
+        locked: Bool = false,
+        at: TimeInterval = 5,
+        premium: @escaping (String?) -> Bool = { $0 == "token-1" }
+    ) -> [String: Any] {
+        object(state.handle(request(json ?? code), from: browser, locked: locked, now: start + at, codeAllowed: premium) { $0 == entry.id ? entry : nil })
+    }
+
+    func testAFillOfAnAccountWithACodeSaysSo() {
+        var state = BridgeState()
+        let fill = filled(&state, login())["fill"] as? [String: Any]
+        XCTAssertEqual(fill?["otp"] as? Bool, true)
+        XCTAssertNil(fill?["code"], "the code is not computed until a code field asks for it")
+        var plain = BridgeState()
+        XCTAssertNil((filled(&plain, login(code: false))["fill"] as? [String: Any])?["otp"])
+    }
+
+    func testPremiumGetsTheCurrentCodeOnce() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        var asked: [String?] = []
+        let answer = ask(&state, entry) { asked.append($0); return true }
+        XCTAssertEqual(asked, ["token-1"], "the token goes to the premium check as sent")
+        XCTAssertEqual(answer["type"] as? String, "code")
+        XCTAssertEqual(answer["id"] as? Int, 2)
+        let otp = answer["otp"] as? [String: Any]
+        XCTAssertEqual(otp?["origin"] as? String, "https://github.com")
+        let expected = TOTP.code(settings: TOTP.parse(entry: entry)!, at: start + 5)
+        XCTAssertEqual(otp?["code"] as? String, expected)
+        // 2_000_015 is 5 seconds into its 30-second step.
+        XCTAssertEqual(otp?["expiresIn"] as? Int, 25)
+        XCTAssertNil(ask(&state, entry, at: 6)["otp"], "one code per pick")
+    }
+
+    func testWithoutPremiumNoCodeIsComputed() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        let answer = ask(&state, entry) { _ in false }
+        XCTAssertEqual(answer["premium"] as? Bool, false)
+        XCTAssertNil(answer["otp"])
+        XCTAssertEqual(Set(answer.keys), ["type", "id", "premium"])
+    }
+
+    func testTheDefaultIsNoPremium() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        let answer = object(state.handle(request(code), from: .chrome, locked: false, now: start + 5) { _ in entry })
+        XCTAssertEqual(answer["premium"] as? Bool, false)
+    }
+
+    func testNoPickNoCode() {
+        var state = BridgeState()
+        let entry = login()
+        var asked = false
+        let answer = ask(&state, entry) { _ in asked = true; return true }
+        XCTAssertEqual(Set(answer.keys), ["type", "id"])
+        XCTAssertFalse(asked, "nothing to ask for, so Premium is not even checked")
+    }
+
+    func testAnAccountWithoutACodeGetsNone() {
+        var state = BridgeState()
+        let entry = login(code: false)
+        _ = filled(&state, entry)
+        XCTAssertEqual(Set(ask(&state, entry).keys), ["type", "id"])
+    }
+
+    func testAnotherSiteGetsNothing() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        let elsewhere = #"{"type":"code","id":2,"url":"https://github.com.evil.example/","entitlement":"token-1"}"#
+        XCTAssertNil(ask(&state, entry, json: elsewhere)["otp"])
+        let plainHTTP = #"{"type":"code","id":2,"url":"http://github.com/","entitlement":"token-1"}"#
+        XCTAssertNil(ask(&state, entry, json: plainHTTP)["otp"])
+        XCTAssertNotNil(ask(&state, entry)["otp"], "a wrong site does not use the pick up")
+    }
+
+    func testTheSameSiteOnAnotherSubdomainCounts() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        let sub = #"{"type":"code","id":2,"url":"https://auth.github.com/","entitlement":"token-1"}"#
+        XCTAssertEqual((ask(&state, entry, json: sub)["otp"] as? [String: Any])?["origin"] as? String, "https://auth.github.com")
+    }
+
+    func testAnotherBrowserGetsNothing() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        XCTAssertNil(ask(&state, entry, browser: .safari)["otp"])
+    }
+
+    func testThePickLastsThirtySecondsFromTheFill() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        XCTAssertNil(ask(&state, entry, at: 1 + 31)["otp"])
+        var fresh = BridgeState()
+        _ = filled(&fresh, entry)
+        XCTAssertNotNil(ask(&fresh, entry, at: 1 + 30)["otp"])
+    }
+
+    func testLockingDropsIt() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        XCTAssertNil(ask(&state, entry, locked: true)["otp"])
+        XCTAssertNil(ask(&state, entry)["otp"], "still gone after unlocking")
+    }
+
+    func testANewPickDropsTheOldCode() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        state.pending.set(PendingFill(entryID: UUID(), browser: .chrome, website: "https://example.com", created: start + 2)!)
+        XCTAssertNil(ask(&state, entry)["otp"])
+    }
+
+    func testAFillWithoutACodeDropsAnOlderCode() {
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        let plain = login(code: false)
+        _ = filled(&state, plain)
+        XCTAssertNil(ask(&state, entry)["otp"])
+    }
+
+    func testTheEntryMovingAwayGetsNothing() {
+        var state = BridgeState()
+        var entry = login()
+        _ = filled(&state, entry)
+        entry.url = "https://gitlab.com"
+        XCTAssertNil(ask(&state, entry)["otp"])
+    }
+
+    func testTheRequestDecodesItsToken() {
+        XCTAssertEqual(request(code).entitlement, "token-1")
+        XCTAssertNil(request(#"{"type":"code","id":2,"url":"https://github.com/"}"#).entitlement)
+    }
+}
+
 final class SiteSuggestionTests: XCTestCase {
     private func entry(_ title: String, _ url: String, favorite: Bool = false, trashed: Bool = false) -> VaultEntry {
         var entry = VaultEntry(trashed: trashed)

@@ -36,3 +36,11 @@ enum PremiumChannel {
 func appAccountHasPremium() -> Bool {
     PremiumChannel.live?.accountHasPremium ?? false
 }
+
+/// Whether a two-step code may go to the browser for a `code` request carrying `entitlement` (docs/ACCOUNTS.md,
+/// "Who decides"): the app's own account has Premium, or the extension's token from passwordpie.com is good. Premium is
+/// the account's in both channels; `directChannelCodesAreFree` does not count here. The token is never logged or kept.
+@MainActor
+func browserCodeAllowed(entitlement: String?, now: Date, appAccount: @MainActor () -> Bool = appAccountHasPremium) -> Bool {
+    appAccount() || EntitlementToken.verifyTrusted(entitlement, now: now) != nil
+}

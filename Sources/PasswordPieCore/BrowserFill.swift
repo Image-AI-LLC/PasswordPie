@@ -105,20 +105,55 @@ public struct PendingFill: Equatable, Sendable {
     }
 }
 
+/// The two-step code of an account that just filled, waiting for the page to show its code field. Holds no code: it is
+/// computed only when the extension asks, and only for Premium.
+public struct PendingCode: Equatable, Sendable {
+    public let entryID: UUID
+    public let browser: BridgeBrowser
+    /// The page that took the fill. A code goes only to a page of the same site.
+    public let site: BrowserSite
+    /// When the fill was taken.
+    public let created: Date
+}
+
 /// At most one pending fill. It is used once, by the first matching tab report, and dropped after 30 seconds.
+/// After it fills an account with a two-step code, at most one pending code, used once and dropped after 30 seconds.
 public struct PendingFillStore: Sendable {
     public static let lifetime: TimeInterval = 30
+    /// From the moment the fill was taken: enough to press Sign In and reach the code page.
+    public static let codeLifetime: TimeInterval = 30
     public private(set) var pending: PendingFill?
+    public private(set) var code: PendingCode?
 
     public init() {}
 
-    /// A new pick replaces the old one.
+    /// A new pick replaces the old one, and the code of the one before.
     public mutating func set(_ fill: PendingFill) {
         pending = fill
+        code = nil
     }
 
     public mutating func clear() {
         pending = nil
+        code = nil
+    }
+
+    /// The pick filled; `code` is its account's code to wait for, or nil when it has none.
+    mutating func expectCode(_ code: PendingCode?) {
+        self.code = code
+    }
+
+    /// The pending code, if `browser` asks from a page of its site. Taking it deletes it. An expired one is deleted unused.
+    mutating func takeCode(browser: BridgeBrowser, pageURL: String, now: Date) -> PendingCode? {
+        guard let code else { return nil }
+        let age = now.timeIntervalSince(code.created)
+        guard age <= Self.codeLifetime, age >= -1 else {
+            self.code = nil
+            return nil
+        }
+        guard code.browser == browser, let page = BrowserSite(url: pageURL), code.site.allowsFill(on: page) else { return nil }
+        self.code = nil
+        return code
     }
 
     /// The pending fill, if `browser` reports a page it may fill. Taking it deletes it. An expired one is deleted unused.
@@ -142,6 +177,8 @@ public struct BridgeRequest: Decodable, Sendable {
     public var url: String?
     public var reason: String?
     public var version: Int?
+    /// `code` only: the entitlement token from passwordpie.com, checked by the direct app. Never logged or stored.
+    public var entitlement: String?
 }
 
 public struct BridgeFill: Codable, Equatable, Sendable {
@@ -149,6 +186,16 @@ public struct BridgeFill: Codable, Equatable, Sendable {
     public var username: String
     public var password: String
     /// Whole seconds left of the pending fill's 30, so the extension drops its copy when the app would have.
+    public var expiresIn: Int
+    /// True when the account has a two-step code: the extension watches for a code field and asks with `code`.
+    public var otp: Bool?
+}
+
+/// The answer to `code`: the current two-step code for the page.
+public struct BridgeCode: Codable, Equatable, Sendable {
+    public var origin: String
+    public var code: String
+    /// Whole seconds left in the code's time step.
     public var expiresIn: Int
 }
 
@@ -161,6 +208,11 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     public var version: Int?
     public var locked: Bool?
     public var fill: BridgeFill?
+    /// `code` answers: the two-step code.
+    public var otp: BridgeCode?
+    /// `code` answers: false when this user does not have Premium for codes in the browser.
+    public var premium: Bool?
+    /// The error code of an `error`.
     public var code: String?
     /// `tab` answers: send this tab's icon with an `icon` request (docs/BROWSER_EXTENSION.md, "icon").
     public var wantIcon: Bool?
@@ -172,7 +224,7 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, id, version, locked, fill, code, wantIcon
+        case type, id, version, locked, fill, otp, premium, code, wantIcon
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -182,6 +234,8 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
         try container.encodeIfPresent(version, forKey: .version)
         try container.encodeIfPresent(locked, forKey: .locked)
         try container.encodeIfPresent(fill, forKey: .fill)
+        try container.encodeIfPresent(otp, forKey: .otp)
+        try container.encodeIfPresent(premium, forKey: .premium)
         try container.encodeIfPresent(code, forKey: .code)
         try container.encodeIfPresent(wantIcon, forKey: .wantIcon)
     }
@@ -213,12 +267,14 @@ public struct BridgeState: Sendable {
         lastReports[browser] = nil
     }
 
-    /// Answers one request. `entry` looks up an account by id in the unlocked vault.
+    /// Answers one request. `entry` looks up an account by id in the unlocked vault. `codeAllowed` is the Premium check
+    /// for a two-step code, given the `code` request's entitlement token (docs/ACCOUNTS.md, "Who decides").
     public mutating func handle(
         _ request: BridgeRequest,
         from browser: BridgeBrowser,
         locked: Bool,
         now: Date,
+        codeAllowed: (String?) -> Bool = { _ in false },
         entry: (UUID) -> VaultEntry?
     ) -> BridgeResponse {
         if locked { pending.clear() }
@@ -240,13 +296,33 @@ public struct BridgeState: Sendable {
                 return BridgeResponse(type: "tab", id: request.id)
             }
             let left = PendingFillStore.lifetime - now.timeIntervalSince(fill.created)
+            let hasCode = OneTimeCodes.hasCode(account)
+            pending.expectCode(hasCode ? PendingCode(entryID: account.id, browser: browser, site: page, created: now) : nil)
             let credentials = BridgeFill(
                 origin: page.origin,
                 username: account.username,
                 password: account.password,
-                expiresIn: max(1, Int(left.rounded(.up)))
+                expiresIn: max(1, Int(left.rounded(.up))),
+                otp: hasCode ? true : nil
             )
             return BridgeResponse(type: "tab", id: request.id, fill: credentials)
+        case "code":
+            let url = request.url ?? ""
+            guard !locked, let page = BrowserSite(url: url),
+                  let wanted = pending.takeCode(browser: browser, pageURL: url, now: now),
+                  let account = entry(wanted.entryID),
+                  entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
+                  OneTimeCodes.hasCode(account) else {
+                return BridgeResponse(type: "code", id: request.id)
+            }
+            guard codeAllowed(request.entitlement),
+                  case .available(let settings) = OneTimeCodes.access(for: account, hasPremium: true) else {
+                return BridgeResponse(type: "code", id: request.id, premium: false)
+            }
+            let period = max(settings.period, 1)
+            let elapsed = Int(now.timeIntervalSince1970.rounded(.down)) % period
+            let code = BridgeCode(origin: page.origin, code: OneTimeCodes.code(settings: settings, at: now), expiresIn: period - elapsed)
+            return BridgeResponse(type: "code", id: request.id, otp: code)
         case "show":
             // The toolbar button. The app opens its panel; the answer only acknowledges it.
             return BridgeResponse(type: "show", id: request.id)
