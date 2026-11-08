@@ -6,7 +6,7 @@ import { livePopupAccount, noPopupAccount } from '@/lib/popup-account';
 import type { PopupStatus } from '@/lib/protocol';
 import './style.css';
 
-// Spelled out so Vite folds it and the App Store build carries no account code and no address on the site.
+// Spelled out so Vite folds it: the App Store build has no code that signs in or asks the site anything.
 const account = import.meta.env.WXT_PP_STORE === 'mas' ? noPopupAccount : livePopupAccount();
 
 const api: PopupApi = {

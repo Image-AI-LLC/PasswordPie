@@ -5,8 +5,8 @@ import Foundation
 import PasswordPieCore
 
 // The direct channel's PasswordPie account, as `AccountPremiumStore` reaches it. Not in the App Store binary, which has no
-// account and no network code. As `AccountPremiumStore` reaches it: the site, the keychain, and the sign-in sheet. Each is a
-// protocol so tests can script it. What the replies mean is decided in PasswordPieCore (`Account.swift`).
+// account and no network code. It holds the site, the keychain and the sign-in sheet. Each is a protocol so tests can
+// script it. What the replies mean is decided in PasswordPieCore (`Account.swift`).
 
 /// passwordpie.com's account and Premium endpoints. Every call that takes `session` sends it as a bearer token.
 @MainActor

@@ -3,7 +3,7 @@ import Foundation
 
 // The Premium entitlement token that passwordpie.com issues to a signed-in account. The app checks it before a two-step
 // code goes to the browser. The rules are in docs/ACCOUNTS.md, "The entitlement token".
-// A token is never logged and never written to disk.
+// A token is never logged. The app keeps its own pass or activation in the keychain and nowhere else.
 
 /// What a good token says.
 public struct Entitlement: Equatable, Sendable {
