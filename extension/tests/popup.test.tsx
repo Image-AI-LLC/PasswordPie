@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Entitlement } from '../src/lib/account';
 import type { AccountUser } from '../src/lib/auth';
 import { Popup, planLine, type PopupApi } from '../src/components/popup';
@@ -23,6 +23,7 @@ let entitlement: Entitlement;
 function api(overrides: Partial<PopupApi> = {}): PopupApi {
   return {
     sellsPremium: true,
+    accountEnabled: true,
     googleAvailable: false,
     upgradeUrl: 'https://passwordpie.com/pricing',
     signUpUrl: 'https://passwordpie.com/sign-up',
@@ -188,6 +189,17 @@ describe('Popup', () => {
     expect(hasButton('Upgrade')).toBe(false);
     expect(hasButton('Redeem')).toBe(false);
     expect(container.textContent).not.toMatch(/pricing|\$/);
+  });
+
+  it('the App Store build has no account and asks passwordpie.com nothing', async () => {
+    const userCalls = vi.fn(async () => null);
+    const refresh = vi.fn();
+    await render(api({ accountEnabled: false, sellsPremium: false, upgradeUrl: undefined, user: userCalls, refreshEntitlement: refresh }));
+    expect(container.querySelector('[aria-label="Account"]')).toBeNull();
+    expect(container.textContent).not.toMatch(/Sign In|Create an account|passwordpie\.com/);
+    expect(hasButton('Open PasswordPie')).toBe(true);
+    expect(userCalls).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('mentions a code that was not filled', async () => {

@@ -7,8 +7,6 @@
 //   PASSWORDPIE_SITE_URL=http://localhost:8788 .build/debug/PasswordPie
 //
 // Accounts are made on first sign-in. The key PPIE-TEST-TEST-TEST gives a year of Premium once.
-// POST /mock/bind {"originalTransactionId","email"} puts a purchase on another account, to try moving it.
-// POST /mock/moved {"originalTransactionId"} marks it as moved today, to try the once-a-year limit.
 import { createPrivateKey, randomBytes, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -20,16 +18,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const testKey = JSON.parse(readFileSync(join(here, "../extension/dev/test-key.json"), "utf8"));
 const privateKey = createPrivateKey({ key: { kty: "OKP", crv: "Ed25519", x: testKey.x, d: testKey.d }, format: "jwk" });
 
-const users = new Map(); // email -> { id, premium: { plan, expiresAt } | null, apple: Set<originalTransactionId> }
+const users = new Map(); // email -> { id, premium: { plan, expiresAt } | null }
 const sessions = new Map(); // token -> email
 const codes = new Map(); // one-time code -> token
-const purchases = new Map(); // originalTransactionId -> { email, plan, movedAt }
 const usedKeys = new Set();
 
 const b64url = (data) => Buffer.from(data).toString("base64url");
 const token = () => randomBytes(24).toString("base64url");
 const esc = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const mask = (email) => `${email[0]}•••@${email.split("@")[1]}`;
 
 function user(email) {
   if (!users.has(email)) users.set(email, { id: `user-${users.size + 1}`, premium: null });
@@ -37,9 +33,6 @@ function user(email) {
 }
 
 function premiumOf(email) {
-  const owned = [...purchases.values()].filter((p) => p.email === email).map((p) => p.plan);
-  if (owned.includes("lifetime")) return { plan: "lifetime", expiresAt: null };
-  if (owned.includes("yearly")) return { plan: "yearly", expiresAt: new Date(Date.now() + 300 * 86400e3).toISOString() };
   const own = user(email).premium;
   if (own && (!own.expiresAt || new Date(own.expiresAt) > new Date())) return own;
   return null;
@@ -91,18 +84,6 @@ function signInPage(params) {
   ${provider === "apple" ? apple : apple + "<hr>" + others}`;
 }
 
-/** The payload of a StoreKit 2 JWS, unchecked. The real site checks Apple's x5c chain. */
-function transactionOf(jws) {
-  try {
-    const payload = JSON.parse(Buffer.from(jws.split(".")[1], "base64url").toString("utf8"));
-    const plan = { "com.oldcai.passwordpie.premium.lifetime": "lifetime", "com.oldcai.passwordpie.premium.yearly": "yearly" }[payload.productId];
-    const id = String(payload.originalTransactionId ?? "");
-    return plan && id ? { id, plan } : null;
-  } catch {
-    return null;
-  }
-}
-
 function completeSignIn(res, body) {
   const session = token();
   sessions.set(session, body.email);
@@ -136,19 +117,7 @@ createServer(async (req, res) => {
     codes.delete(code);
     return session ? send(res, 200, { token: session }) : send(res, 400, { error: "invalid-code" });
   }
-  if (url.pathname === "/mock/bind") {
-    const body = await readBody(req);
-    user(body.email);
-    purchases.set(String(body.originalTransactionId), { email: body.email, plan: body.plan ?? "lifetime", movedAt: null });
-    return send(res, 200, { ok: true });
-  }
-  if (url.pathname === "/mock/moved") {
-    const body = await readBody(req);
-    const purchase = purchases.get(String(body.originalTransactionId));
-    if (purchase) purchase.movedAt = new Date();
-    return send(res, purchase ? 200 : 404, { ok: !!purchase });
-  }
-  if (url.pathname === "/mock/state") return send(res, 200, { users: [...users], purchases: [...purchases] });
+  if (url.pathname === "/mock/state") return send(res, 200, { users: [...users] });
 
   if (url.pathname.startsWith("/api/")) {
     if (url.pathname === "/api/auth/get-session") return send(res, 200, email ? { session: { id: "s" }, user: { id: user(email).id, email } } : null);
@@ -166,23 +135,6 @@ createServer(async (req, res) => {
       usedKeys.add(normalized);
       user(email).premium = { plan: "key", expiresAt: new Date(Date.now() + 365 * 86400e3).toISOString() };
       return send(res, 200, entitlement(email));
-    }
-    if (url.pathname === "/api/premium/apple/bind") {
-      const { signedTransaction, restore } = await readBody(req);
-      const transaction = transactionOf(signedTransaction ?? "");
-      if (!transaction) return send(res, 400, { error: "invalid-transaction" });
-      const existing = purchases.get(transaction.id);
-      if (existing && existing.email !== email) {
-        if (!restore) return send(res, 409, { error: "bound-elsewhere", previousAccountEmailMasked: mask(existing.email) });
-        if (existing.movedAt && Date.now() - existing.movedAt.getTime() < 365 * 86400e3) {
-          return send(res, 409, { error: "rebind-limited", nextAllowedAt: new Date(existing.movedAt.getTime() + 365 * 86400e3).toISOString() });
-        }
-        const previous = existing.email;
-        purchases.set(transaction.id, { email, plan: transaction.plan, movedAt: new Date() });
-        return send(res, 200, { ...entitlement(email), rebound: true, previousAccountEmailMasked: mask(previous) });
-      }
-      purchases.set(transaction.id, { email, plan: transaction.plan, movedAt: existing?.movedAt ?? null });
-      return send(res, 200, { ...entitlement(email), rebound: false, previousAccountEmailMasked: null });
     }
   }
   if (url.pathname === "/pricing" || url.pathname === "/redeem") {

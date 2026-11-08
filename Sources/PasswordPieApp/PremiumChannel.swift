@@ -8,39 +8,64 @@ import PasswordPieCore
 let directChannelCodesAreFree = false
 #endif
 
+#if PP_DIRECT
+typealias PremiumStore = AccountPremiumStore
+#else
+typealias PremiumStore = AppStorePremiumStore
+#endif
+
 /// Which `PremiumStore` this build's channel uses. Chosen at compile time, like everything else in docs/CHANNELS.md.
 enum PremiumChannel {
     /// The store the app runs on, for `appAccountHasPremium()`.
     @MainActor private(set) static weak var live: PremiumStore?
 
+    #if PP_DIRECT
     @MainActor
     static func makeStore(services: AccountServices? = nil) -> PremiumStore {
-        let services = services ?? .live()
-        #if PP_DIRECT
-        let store = PremiumStore(backend: nil, services: services, freeCodes: directChannelCodesAreFree)
-        #else
-        var backend: PremiumBackend = StoreKitPremiumBackend()
-        #if DEBUG
-        if let preview = PremiumPreviewBackend.fromEnvironment() { backend = preview }
-        #endif
-        let store = PremiumStore(backend: backend, services: services)
-        #endif
+        let store = PremiumStore(services: services ?? .live(), freeCodes: directChannelCodesAreFree)
         if live == nil { live = store }
         return store
     }
+    #else
+    @MainActor
+    static func makeStore(secrets: AccountSecretStore? = nil) -> PremiumStore {
+        var backend: PremiumBackend = StoreKitPremiumBackend()
+        var service = "com.oldcai.passwordpie.account"
+        #if DEBUG
+        if let preview = PremiumPreviewBackend.fromEnvironment() { backend = preview }
+        service += ".dev"
+        #endif
+        let store = PremiumStore(
+            backend: backend,
+            secrets: secrets ?? KeychainAccountSecrets(service: service),
+            verify: { EntitlementToken.verifyActivation($0, now: $1) }
+        )
+        if live == nil { live = store }
+        return store
+    }
+    #endif
 }
 
-/// **The seam for the app's own account** (shared with the browser bridge, worktree `extension-premium`): true when
-/// the PasswordPie account signed in inside the app has Premium now. The direct channel's free-codes switch does not count.
+/// **The seam the browser bridge asks:** true when this app has Premium for the browser. App Store channel: the app has
+/// Premium. Direct channel: the PasswordPie account signed in inside the app has it; the free-codes switch does not count.
 @MainActor
 func appAccountHasPremium() -> Bool {
+    #if PP_DIRECT
     PremiumChannel.live?.accountHasPremium ?? false
+    #else
+    PremiumChannel.live?.hasPremium ?? false
+    #endif
 }
 
 /// Whether a two-step code may go to the browser for a `code` request carrying `entitlement` (docs/ACCOUNTS.md,
-/// "Who decides"): the app's own account has Premium, or the extension's token from passwordpie.com is good. Premium is
-/// the account's in both channels; `directChannelCodesAreFree` does not count here. The token is never logged or kept.
+/// "Who decides"). Direct channel: the app's own account has Premium, or the extension's token from passwordpie.com is
+/// good; `directChannelCodesAreFree` does not count. App Store channel: the app has Premium, and the Safari extension has no
+/// token to carry. The token is never logged or kept.
 @MainActor
 func browserCodeAllowed(entitlement: String?, now: Date, appAccount: @MainActor () -> Bool = appAccountHasPremium) -> Bool {
+    #if PP_DIRECT
     appAccount() || EntitlementToken.verifyTrusted(entitlement, now: now) != nil
+    #else
+    appAccount()
+    #endif
 }

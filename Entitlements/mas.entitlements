@@ -4,9 +4,7 @@
 <dict>
   <key>com.apple.security.app-sandbox</key>
   <true/>
-  <!-- The PasswordPie account sign-in and Premium. Site icons never use the network: they are bundled or come from the browser extension. -->
-  <key>com.apple.security.network.client</key>
-  <true/>
+  <!-- No com.apple.security.network.client: this build has no account and opens no connection. See docs/CHANNELS.md. -->
   <!-- Open/New database, pick an import CSV, delete that CSV after import. -->
   <key>com.apple.security.files.user-selected.read-write</key>
   <true/>

@@ -232,4 +232,24 @@ private extension Data {
         base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
+
+    // MARK: Activation links
+
+    private func link(_ text: String) -> URL { URL(string: text)! }
+
+    func testAnActivationLinkCarriesItsToken() {
+        XCTAssertTrue(ActivationLink.matches(link("passwordpie://activate?token=abc")))
+        XCTAssertEqual(ActivationLink.token(in: link("passwordpie://activate?token=abc")), "abc")
+    }
+
+    func testOtherURLsAreNotActivationLinks() {
+        XCTAssertFalse(ActivationLink.matches(link("passwordpie://auth?code=abc")))
+        XCTAssertFalse(ActivationLink.matches(link("https://activate?token=abc")))
+        XCTAssertNil(ActivationLink.token(in: link("passwordpie://auth?token=abc")))
+    }
+
+    func testALinkWithoutATokenStillMatchesButHasNone() {
+        XCTAssertTrue(ActivationLink.matches(link("passwordpie://activate")))
+        XCTAssertNil(ActivationLink.token(in: link("passwordpie://activate?token=")))
+    }
 }

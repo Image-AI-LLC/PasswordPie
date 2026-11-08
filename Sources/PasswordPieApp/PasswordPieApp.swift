@@ -36,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static var shared: AppDelegate?
     private var statusItem: NSStatusItem!
     private var session: VaultSession!
+    #if !PP_DIRECT
+    private var pendingOpenURLs: [URL] = []
+    #endif
     private(set) var panelController: PanelController!
     private(set) var bridge: BrowserBridge!
     private var autoLock: AutoLockMonitor!
@@ -346,11 +349,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         preferencesWindow?.makeKeyAndOrderFront(nil)
     }
 
-    /// Starts asking the account who has Premium. A locked code opens the Premium window, and Premium arriving closes it.
+    /// Starts finding out who has Premium. A locked code opens the Premium window, and Premium arriving closes it.
     private func wirePremium() {
         let premium = session.premium
         premium.presentPaywall = { [weak self] in self?.showPaywall() }
-        premium.$account
+        premium.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 // After the published value lands: `hasPremium` reads the store, not the sink's argument.
@@ -361,7 +364,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             .store(in: &cancellables)
         session.premium.start()
+        #if !PP_DIRECT
+        let waiting = pendingOpenURLs
+        pendingOpenURLs = []
+        openActivationLinks(waiting)
+        #endif
     }
+
+    #if !PP_DIRECT
+    /// passwordpie.com opening `passwordpie://activate?…`. Can arrive before launch has finished and `session` exists.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard session != nil else {
+            pendingOpenURLs += urls
+            return
+        }
+        openActivationLinks(urls)
+    }
+
+    private func openActivationLinks(_ urls: [URL]) {
+        var handled = false
+        for url in urls where session.premium.activate(url) { handled = true }
+        guard handled else { return }
+        // On the next turn of the run loop, so a link that launched the app finds launch finished.
+        DispatchQueue.main.async { [weak self] in self?.showPaywall() }
+    }
+    #endif
 
     func showPaywall() {
         if paywallWindow == nil {
@@ -633,8 +660,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     #if DEBUG
-    /// Screenshot hook: steps such as `sign-in-apple,buy-lifetime,restore,confirm-move,sign-out,refresh`, 2.5 s apart, so
-    /// the account flows can be recorded without synthetic clicks.
+    /// Screenshot hook: steps such as `buy-lifetime,restore,refresh` (App Store) or `sign-in-apple,sign-out,refresh`
+    /// (direct), 2.5 s apart, so the Premium flows can be recorded without synthetic clicks.
     private func runPremiumScript(_ script: String?) {
         guard let script else { return }
         let premium = session.premium
@@ -642,12 +669,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             for step in script.split(separator: ",").map(String.init) {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 switch step {
+                #if PP_DIRECT
                 case "sign-in-apple": await premium.signIn(with: .apple)
+                case "sign-out": await premium.signOut()
+                #else
                 case "buy-lifetime": await premium.purchase(.lifetime)
                 case "buy-yearly": await premium.purchase(.yearly)
                 case "restore": await premium.restore()
-                case "confirm-move": await premium.confirmMove()
-                case "sign-out": await premium.signOut()
+                #endif
                 case "refresh": await premium.refresh(force: true)
                 default: break
                 }

@@ -1,32 +1,18 @@
 import { createRoot } from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { Popup, type PopupApi } from '@/components/popup';
-import { AccountStore, redeemKey, refreshEntitlement } from '@/lib/account';
-import {
-  currentUser,
-  googleAvailable,
-  makeAuthClient,
-  signInWithEmail,
-  signInWithGoogle,
-  signOut,
-  signUpWithEmail,
-  type IdentityLike,
-} from '@/lib/auth';
-import { storageKV } from '@/lib/browser-kv';
-import { GOOGLE_CLIENT_ID, SITE_URL, SiteRoutes, STORE_BUILD, UPGRADE_URL } from '@/lib/config';
+import { STORE_BUILD, UPGRADE_URL } from '@/lib/config';
+import { livePopupAccount, noPopupAccount } from '@/lib/popup-account';
 import type { PopupStatus } from '@/lib/protocol';
 import './style.css';
 
-const store = new AccountStore(storageKV(browser.storage.local));
-const client = makeAuthClient(store, SITE_URL);
-const identity = (browser as unknown as { identity?: IdentityLike }).identity;
+// Spelled out so Vite folds it and the App Store build carries no account code and no address on the site.
+const account = import.meta.env.WXT_PP_STORE === 'mas' ? noPopupAccount : livePopupAccount();
 
 const api: PopupApi = {
+  ...account,
   sellsPremium: !STORE_BUILD,
-  googleAvailable: googleAvailable(identity, GOOGLE_CLIENT_ID),
   ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}),
-  signUpUrl: SiteRoutes.signUp,
-  forgotPasswordUrl: SiteRoutes.forgotPassword,
   async openPanel() {
     await browser.runtime.sendMessage({ type: 'open-panel' }).catch(() => undefined);
     window.close();
@@ -39,14 +25,6 @@ const api: PopupApi = {
     const answer: unknown = await browser.runtime.sendMessage({ type: 'popup-status' }).catch(() => undefined);
     return (answer ?? {}) as PopupStatus;
   },
-  user: () => currentUser(client, store),
-  cachedEntitlement: async () => (await store.entitlement()) ?? null,
-  refreshEntitlement: () => refreshEntitlement(store, fetch, SITE_URL),
-  signIn: (email, password) => signInWithEmail(client, email, password),
-  signUp: (name, email, password) => signUpWithEmail(client, name, email, password),
-  signInWithGoogle: () => signInWithGoogle(identity, store, fetch, SITE_URL),
-  signOut: () => signOut(client, store),
-  redeem: (code) => redeemKey(store, fetch, SITE_URL, code),
   openUrl(url) {
     void browser.tabs.create({ url });
     window.close();

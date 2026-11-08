@@ -1,66 +1,12 @@
+#if PP_DIRECT
 import AppKit
 import AuthenticationServices
 import Foundation
 import PasswordPieCore
-import Security
 
-// The app's PasswordPie account, as `PremiumStore` reaches it: the site, the keychain, and the sign-in sheet. Each is a
+// The direct channel's PasswordPie account, as `AccountPremiumStore` reaches it. Not in the App Store binary, which has no
+// account and no network code. As `AccountPremiumStore` reaches it: the site, the keychain, and the sign-in sheet. Each is a
 // protocol so tests can script it. What the replies mean is decided in PasswordPieCore (`Account.swift`).
-
-/// What is kept for the account, all in the keychain. None of it is ever logged.
-enum AccountSecret: String, CaseIterable {
-    /// The Better Auth session token (`Authorization: Bearer`).
-    case session
-    /// The last signed pass from passwordpie.com. It turns Premium on only while its signature checks and it has not run out.
-    case pass
-    /// The account's email, to show who is signed in.
-    case email
-}
-
-@MainActor
-protocol AccountSecretStore: AnyObject {
-    func read(_ secret: AccountSecret) -> String?
-    func write(_ value: String, for secret: AccountSecret)
-    func delete(_ secret: AccountSecret)
-}
-
-/// The legacy login keychain: it works inside the App Store sandbox without a provisioning profile (docs/CHANNELS.md).
-@MainActor
-final class KeychainAccountSecrets: AccountSecretStore {
-    private let service: String
-
-    init(service: String) {
-        self.service = service
-    }
-
-    private func query(_ secret: AccountSecret) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: secret.rawValue]
-    }
-
-    func read(_ secret: AccountSecret) -> String? {
-        var query = query(secret)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    func write(_ value: String, for secret: AccountSecret) {
-        let data = Data(value.utf8)
-        let status = SecItemUpdate(query(secret) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        guard status == errSecItemNotFound else { return }
-        var add = query(secret)
-        add[kSecAttrLabel as String] = "PasswordPie account"
-        add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(add as CFDictionary, nil)
-    }
-
-    func delete(_ secret: AccountSecret) {
-        SecItemDelete(query(secret) as CFDictionary)
-    }
-}
 
 /// passwordpie.com's account and Premium endpoints. Every call that takes `session` sends it as a bearer token.
 @MainActor
@@ -69,7 +15,6 @@ protocol AccountClient: AnyObject {
     func exchange(code: String) async -> String?
     func email(session: String) async -> String?
     func entitlement(session: String) async -> AccountReply
-    func bindApple(session: String, signedTransaction: String, restore: Bool) async -> AccountReply
     func signOut(session: String) async
 }
 
@@ -112,13 +57,6 @@ final class URLSessionAccountClient: AccountClient {
 
     func entitlement(session: String) async -> AccountReply {
         guard let (status, data) = await send(site.entitlementURL, session: session) else { return .unreachable }
-        return AccountReply.parse(status: status, body: data)
-    }
-
-    func bindApple(session: String, signedTransaction: String, restore: Bool) async -> AccountReply {
-        guard let (status, data) = await send(
-            site.appleBindURL, method: "POST", session: session, body: ["signedTransaction": signedTransaction, "restore": restore]
-        ) else { return .unreachable }
         return AccountReply.parse(status: status, body: data)
     }
 
@@ -175,7 +113,7 @@ final class WebAuthenticationSignIn: NSObject, AccountSignInDriver, ASWebAuthent
     }
 }
 
-/// Everything `PremiumStore` needs for the account.
+/// Everything `AccountPremiumStore` needs for the account.
 @MainActor
 struct AccountServices {
     var site: AccountSite
@@ -205,3 +143,4 @@ struct AccountServices {
         )
     }
 }
+#endif

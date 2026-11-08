@@ -14,7 +14,7 @@ final class FakePremiumBackend: PremiumBackend {
     /// After this many more answers, `currentTransactions` starts returning these. A store that lags behind a purchase.
     var transactionsAfterRefreshes: (count: Int, transactions: [PremiumTransaction])?
     var products: Result<[PremiumProduct], Failure> = .success([FakePremiumBackend.lifetime, FakePremiumBackend.yearly])
-    /// Nil: a success carrying the JWS of the transaction `onPurchase` (or the default) adds.
+    /// Nil: a success, with the transaction `onPurchase` (or the default) adds.
     var purchaseOutcome: Result<PremiumPurchaseOutcome, Failure>?
     var restoreOutcome: Result<PremiumRestoreOutcome, Failure> = .success(.finished)
     /// Runs inside `purchase`, as the store records the transaction before it returns.
@@ -69,7 +69,7 @@ final class FakePremiumBackend: PremiumBackend {
             transactions.append(PremiumFixtures.transaction(plan))
         }
         if let purchaseOutcome { return try purchaseOutcome.get() }
-        return .success(signedTransaction: PremiumFixtures.jws(plan))
+        return .success
     }
 
     func restore() async throws -> PremiumRestoreOutcome {
@@ -109,13 +109,10 @@ enum PremiumFixtures {
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
     static let lifetime = transaction(.lifetime)
 
-    static func jws(_ plan: PremiumPlan) -> String { "apple-jws-\(plan.rawValue)" }
-
     static func transaction(_ plan: PremiumPlan, expires: Date? = nil) -> PremiumTransaction {
         PremiumTransaction(
             productID: plan.productID, verified: true, revocationDate: nil,
-            expirationDate: plan == .yearly ? (expires ?? now.addingTimeInterval(365 * 86400)) : expires,
-            signedTransaction: jws(plan)
+            expirationDate: plan == .yearly ? (expires ?? now.addingTimeInterval(365 * 86400)) : expires
         )
     }
 
@@ -155,24 +152,26 @@ enum PassKey {
         EntitlementToken.verify(jwt, now: now, publicKey: key.publicKey.rawRepresentation)
     }
 
-    static func pass(plan: String = "lifetime", expires: Date, signer: Curve25519.Signing.PrivateKey = key) -> String {
+    static func verifyActivation(_ jwt: String, _ now: Date) -> Entitlement? {
+        EntitlementToken.verify(jwt, now: now, publicKey: key.publicKey.rawRepresentation, audience: EntitlementToken.activationAudience)
+    }
+
+    static func activationLink(plan: String = "lifetime", expires: Date, signer: Curve25519.Signing.PrivateKey = key) -> URL {
+        URL(string: "passwordpie://activate?token=\(pass(plan: plan, expires: expires, signer: signer, audience: EntitlementToken.activationAudience))")!
+    }
+
+    static func pass(plan: String = "lifetime", expires: Date, signer: Curve25519.Signing.PrivateKey = key, audience: String = EntitlementToken.audience) -> String {
         func b64(_ data: Data) -> String {
             data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         }
         let header = try! JSONSerialization.data(withJSONObject: ["alg": "EdDSA", "typ": "JWT", "kid": "pp-1"], options: .sortedKeys)
         let claims = try! JSONSerialization.data(withJSONObject: [
-            "iss": "https://passwordpie.com", "aud": "passwordpie-app", "sub": "user-1", "premium": true, "plan": plan,
+            "iss": "https://passwordpie.com", "aud": audience, "sub": "user-1", "premium": true, "plan": plan,
             "iat": 1_700_000_000, "exp": Int(expires.timeIntervalSince1970),
         ] as [String: Any], options: .sortedKeys)
         let signing = "\(b64(header)).\(b64(claims))"
         return "\(signing).\(b64(try! signer.signature(for: Data(signing.utf8))))"
     }
-
-    static func premium(plan: String = "lifetime", passExpires: Date = PremiumFixtures.now.addingTimeInterval(7 * 86400), until: Date? = nil) -> AccountReply {
-        .ok(AccountEntitlementResponse(premium: true, plan: plan, expiresAt: until, token: pass(plan: plan, expires: passExpires)))
-    }
-
-    static let free = AccountReply.ok(AccountEntitlementResponse(premium: false, plan: nil, expiresAt: nil, token: nil))
 }
 
 @MainActor
@@ -189,21 +188,25 @@ final class FakeAccountSecrets: AccountSecretStore {
     func delete(_ secret: AccountSecret) { values[secret] = nil }
 }
 
+#if PP_DIRECT
+extension PassKey {
+    static func premium(plan: String = "lifetime", passExpires: Date = PremiumFixtures.now.addingTimeInterval(7 * 86400), until: Date? = nil) -> AccountReply {
+        .ok(AccountEntitlementResponse(premium: true, plan: plan, expiresAt: until, token: pass(plan: plan, expires: passExpires)))
+    }
+
+    static let free = AccountReply.ok(AccountEntitlementResponse(premium: false, plan: nil, expiresAt: nil, token: nil))
+}
+
 /// passwordpie.com, scripted.
 @MainActor
 final class FakeAccountClient: AccountClient {
     var entitlementReply: AccountReply = PassKey.free
-    /// Bind answers in order; when empty, `bindDefault`.
-    var bindReplies: [AccountReply] = []
-    /// Nil: the bound account gets `PassKey.premium()`.
-    var bindDefault: AccountReply?
     var exchangeToken: String? = "session-from-code"
     var emailReply: String? = "ada@example.com"
     /// Holds `entitlement` open, as a site that has not answered yet.
     var holdsAnswers = false
     var answerGate: CheckedContinuation<Void, Never>?
     private(set) var entitlementCalls: [String] = []
-    private(set) var binds: [(session: String, signed: String, restore: Bool)] = []
     private(set) var exchanged: [String] = []
     private(set) var signedOut: [String] = []
 
@@ -218,18 +221,6 @@ final class FakeAccountClient: AccountClient {
         entitlementCalls.append(session)
         if holdsAnswers { await withCheckedContinuation { answerGate = $0 } }
         return entitlementReply
-    }
-
-    func bindApple(session: String, signedTransaction: String, restore: Bool) async -> AccountReply {
-        binds.append((session, signedTransaction, restore))
-        if !bindReplies.isEmpty {
-            let reply = bindReplies.removeFirst()
-            if case .ok(let response) = reply, response.premium { entitlementReply = .ok(response) }
-            return reply
-        }
-        let reply = bindDefault ?? PassKey.premium()
-        if case .ok = reply { entitlementReply = reply }
-        return reply
     }
 
     func signOut(session: String) async { signedOut.append(session) }
@@ -285,3 +276,4 @@ struct FakeAccount {
         return self
     }
 }
+#endif

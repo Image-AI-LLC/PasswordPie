@@ -37,6 +37,9 @@ public enum EntitlementError: Error, Equatable, Sendable {
 public enum EntitlementToken {
     public static let issuer = "https://passwordpie.com"
     public static let audience = "passwordpie-app"
+    /// A long-lived token that activates the App Store app from passwordpie.com. A different audience on purpose: neither
+    /// kind of token can stand in for the other (docs/CHANNELS.md).
+    public static let activationAudience = "passwordpie-activation"
     /// The longest token accepted, in bytes. Real ones are a few hundred.
     public static let maxLength = 4096
     /// How far ahead of this Mac's clock the site's may run.
@@ -60,8 +63,8 @@ public enum EntitlementToken {
     }
 
     /// The token's claims when it is good at `now` and signed with `publicKey`, nil otherwise.
-    public static func verify(_ jwt: String, now: Date, publicKey: Data = EntitlementToken.publicKey) -> Entitlement? {
-        try? check(jwt, now: now, publicKey: publicKey).get()
+    public static func verify(_ jwt: String, now: Date, publicKey: Data = EntitlementToken.publicKey, audience: String = EntitlementToken.audience) -> Entitlement? {
+        try? check(jwt, now: now, publicKey: publicKey, audience: audience).get()
     }
 
     /// `verify` against every key in `trustedKeys`. What the bridge uses.
@@ -73,8 +76,16 @@ public enum EntitlementToken {
         return nil
     }
 
+    /// `verifyTrusted` for an activation link's token. What the App Store app uses.
+    public static func verifyActivation(_ jwt: String, now: Date) -> Entitlement? {
+        for key in trustedKeys {
+            if let entitlement = verify(jwt, now: now, publicKey: key, audience: activationAudience) { return entitlement }
+        }
+        return nil
+    }
+
     /// `verify` with the reason it failed.
-    public static func check(_ jwt: String, now: Date, publicKey: Data) -> Result<Entitlement, EntitlementError> {
+    public static func check(_ jwt: String, now: Date, publicKey: Data, audience: String = EntitlementToken.audience) -> Result<Entitlement, EntitlementError> {
         guard jwt.utf8.count <= maxLength else { return .failure(.malformed) }
         let parts = jwt.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3,

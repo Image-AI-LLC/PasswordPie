@@ -3,7 +3,7 @@ import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 
-/// Who may get a two-step code in the browser: docs/ACCOUNTS.md, "Who decides". The same in both channels.
+/// Who may get a two-step code in the browser: docs/ACCOUNTS.md, "Who decides".
 @MainActor
 final class BrowserCodeAccessTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_762_560_000)
@@ -17,9 +17,15 @@ final class BrowserCodeAccessTests: XCTestCase {
         return try XCTUnwrap(json["sampleToken"])
     }
 
+    #if PP_DIRECT
     func testAGoodTokenFromTheExtensionIsEnough() throws {
         XCTAssertTrue(browserCodeAllowed(entitlement: try sampleToken(), now: now, appAccount: { false }))
     }
+    #else
+    func testAnAppStoreBuildTakesNoTokenFromTheExtension() throws {
+        XCTAssertFalse(browserCodeAllowed(entitlement: try sampleToken(), now: now, appAccount: { false }))
+    }
+    #endif
 
     func testTheAppsOwnAccountIsEnough() {
         XCTAssertTrue(browserCodeAllowed(entitlement: nil, now: now, appAccount: { true }))
