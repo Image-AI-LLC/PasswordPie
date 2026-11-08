@@ -122,6 +122,18 @@ describe('FillController toolbar button', () => {
     expect(tabs.opened).toEqual(['https://passwordpie.com/']);
   });
 
+  it('does not send a user whose app runs but did not answer to the website', async () => {
+    channel.answer = () => ({ type: 'error', id: 1, code: 'app-not-responding' });
+    await controller.showPanel();
+    expect(tabs.opened).toEqual([]);
+  });
+
+  it('opens the website for any other answer', async () => {
+    channel.answer = () => ({ type: 'tab', id: 1 });
+    await controller.showPanel();
+    expect(tabs.opened).toEqual(['https://passwordpie.com/']);
+  });
+
   it('opens the website when the app could not be started', async () => {
     channel.answer = () => ({ type: 'error', id: 1, code: 'app-unavailable' });
     await controller.showPanel();

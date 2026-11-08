@@ -284,6 +284,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         if panel.isVisible, !lockingOut { hide() } else { show(anchor) }
     }
 
+    /// The panel is open: make it key again, as the click that asked for it went to another app.
+    func bringForward() {
+        NSApp.activate()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
     func show(_ anchor: PanelAnchor) {
         // The store does not always announce a refund, and a menu-bar app rarely comes forward. Opening the menu is the next chance to ask.
         Task { [session] in await session.premium.refresh() }

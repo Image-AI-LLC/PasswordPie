@@ -6,6 +6,8 @@ export const PROTOCOL_VERSION = 1;
 export const NATIVE_APP = 'com.oldcai.passwordpie';
 /** Where the toolbar button goes when PasswordPie is not installed or cannot be started. */
 export const WEBSITE_URL = 'https://passwordpie.com/';
+/** The host's error for a `show` when PasswordPie runs but did not answer. */
+export const APP_NOT_RESPONDING = 'app-not-responding';
 /** The longest the background keeps a fill: the app's pending fill lasts 30 s from the pick. */
 export const FILL_LIFETIME_MS = 30_000;
 

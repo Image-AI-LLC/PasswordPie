@@ -41,8 +41,8 @@ let package = Package(
                 .linkedFramework("LocalAuthentication")
             ]
         ),
-        // The socket, framing and peer check shared by the app, the Safari extension and the Chrome host. Foundation and
-        // Security only. `-Xswiftc -DPP_DEV_EXTENSION` (make install) also trusts the unpacked Chrome extension.
+        // The socket, framing and peer check shared by the app, the Safari extension and the Chrome host. Foundation, Security, and
+        // AppKit for starting the app (`AppLaunch`). `-Xswiftc -DPP_DEV_EXTENSION` (make install) also trusts the unpacked Chrome extension.
         .target(
             name: "PasswordPieBridge",
             swiftSettings: [.swiftLanguageMode(.v5)],

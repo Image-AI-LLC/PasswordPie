@@ -147,10 +147,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panelController.toggle(.hotkey)
     }
 
-    /// The extension's toolbar button: opens the panel like the shortcut, but a second click does not close it.
+    /// The extension's toolbar button: opens the panel like the shortcut, but a second click brings it forward instead of closing it.
     func showFromExtension() {
         autoLock.registerActivity()
-        if !panelController.isVisible || panelController.lockingOut { panelController.show(.hotkey) }
+        if panelController.isVisible, !panelController.lockingOut {
+            panelController.bringForward()
+        } else {
+            panelController.show(.hotkey)
+        }
     }
 
     func hidePanel() { panelController.hide() }

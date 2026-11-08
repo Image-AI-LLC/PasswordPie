@@ -3,6 +3,7 @@ import {
   EXTENSION_VERSION,
   PROTOCOL_VERSION,
   WEBSITE_URL,
+  APP_NOT_RESPONDING,
   fillOfTabAnswer,
   originOf,
   parseContentMessage,
@@ -86,7 +87,11 @@ export class FillController {
    */
   async showPanel(): Promise<void> {
     const answer = await this.channel.request({ type: 'show' }, SHOW_TIMEOUT_MS);
-    if (typeof answer === 'object' && answer !== null && 'type' in answer && answer.type === 'show') return;
+    if (typeof answer === 'object' && answer !== null && 'type' in answer) {
+      if (answer.type === 'show') return;
+      // Installed and running, but not answering: the download page would not help.
+      if (answer.type === 'error' && 'code' in answer && answer.code === APP_NOT_RESPONDING) return;
+    }
     await this.tabs.openTab(WEBSITE_URL);
   }
 

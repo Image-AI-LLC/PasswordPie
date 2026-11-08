@@ -50,7 +50,9 @@ export default defineBackground(() => {
     return false;
   });
   // No popup: a click on the toolbar button opens the PasswordPie panel over the browser.
-  browser.action.onClicked.addListener(() => void controller.showPanel());
+  browser.action.onClicked.addListener(() => {
+    controller.showPanel().catch(() => {});
+  });
   browser.runtime.onInstalled.addListener(() => controller.report('startup'));
   browser.runtime.onStartup.addListener(() => controller.report('startup'));
 
