@@ -66,31 +66,95 @@ Use a database with two accounts on one site, so the video shows that the right 
 
 ## Premium: two-step codes
 
-**In one line:** PasswordPie is free to install and free to use. Only two-step codes need Premium.
-
-This is the App Store version. A copy downloaded directly from passwordpie.com has no paywall and keeps its codes.
+**In one line:** PasswordPie is free to install and free to use. Only two-step codes need Premium, and Premium belongs
+to your PasswordPie account, so it follows you to every Mac and into the browser extension.
 
 ### The problem
 
 A password manager that also makes your two-step codes saves a trip to your phone at every sign-in. That is the one
 thing worth paying for. Everything else, including storing the secret itself, stays yours for free.
 
+Premium used to live in two places that knew nothing of each other: Apple's purchase history in the App Store app, and
+nothing at all in the downloaded app. A purchase on one Mac did nothing in the browser, and the downloaded app could not
+tell who had paid.
+
 ### What happens now
 
 The free version does everything except make a code: search, copy, fill, edit, import, Touch ID, pinned windows.
 
 An item with a two-step code still says so. Its "one-time password" row shows a lock, "Included with Premium", and an
-Upgrade button. Upgrade opens a small window with the two plans.
+Upgrade button. Upgrade opens a small Premium window.
+
+Premium is a property of your **PasswordPie account**. Sign in inside the app and the codes unlock if the account has
+Premium, wherever it came from: a purchase in the App Store app, or Premium bought or redeemed on passwordpie.com. The
+same account unlocks codes in the browser extension.
 
 | Plan | What you pay |
 |---|---|
 | Lifetime | One payment, in your local currency. |
 | Yearly | A subscription that renews each year until you cancel it. |
 
+Both versions of the app need a signed-in account with Premium for codes. This replaces the decision of 2026-11-05 that
+the downloaded app's codes were free for everyone (see "Premium" in [CHANNELS.md](CHANNELS.md) for the switch that
+brings that back).
+
+### Signing in
+
+The Premium window and Preferences offer the same choices, in this order:
+
+1. **Sign in with Apple.** The first button, in Apple's own style. One click if Safari already knows your Apple Account.
+2. **Other ways to sign in.** Google, or email and password.
+
+Both open passwordpie.com in a secure sign-in sheet that belongs to PasswordPie, and come straight back to the app.
+The app never sees your password. What it keeps is a sign-in token, in your keychain, and it is never written to a log.
+
+Sign Out, in Preferences, forgets the token. Codes lock until you sign in again. Your Premium stays on the account.
+
+### Buying in the App Store app
+
 The App Store sets the prices and the currency. The window shows exactly what Apple gives it.
 
-Buy a plan and the codes appear straight away: the row in an open popover or pinned window turns into a live code.
-There is nothing to relaunch and nothing to type in.
+1. Press a plan. If you are not signed in yet, the window asks you to sign in first, with Sign in with Apple on top,
+   so that Premium goes with your account. Once you are signed in, the purchase carries on by itself.
+2. Apple's purchase sheet opens. Confirm.
+3. "Adding Premium to your account…" for a moment, then the codes appear: the row in an open popover or pinned window
+   turns into a live code. There is nothing to relaunch and nothing to type in.
+
+A purchase that reaches this Mac while you are signed out, such as an Ask to Buy approval or a purchase from another
+Mac, is never lost. It stays on this Mac, the Premium window says "Sign in to add this purchase to your account", and
+it is added as soon as you sign in.
+
+If passwordpie.com cannot be reached right after you buy, the window says your purchase is safe and that PasswordPie adds
+it to your account as soon as it can. It tries again when you open the menu or bring the app forward.
+
+### Restore Purchases and moving Premium to another account
+
+One App Store purchase belongs to one PasswordPie account at a time.
+
+Restore Purchases (sign in first if you have not) asks Apple for this Apple Account's purchases and adds them to your
+account.
+
+- **Already on this account, or on no account yet.** "Purchases restored." The codes unlock.
+- **On another PasswordPie account.** PasswordPie asks first:
+
+  > **Move Premium to this account?**
+  > This purchase is on j•••@gmail.com. Moving it takes Premium from that account. A purchase can move to another
+  > account once a year.
+  >
+  > [Cancel] [Move Premium]
+
+  Move Premium moves it, and the window says so plainly: "Premium moved to this account. j•••@gmail.com no longer has
+  Premium from this purchase."
+- **Moved less than a year ago.** "This purchase moved to another account less than a year ago. It can move again on
+  March 3, 2027." Nothing changes on either account.
+
+The first time a purchase goes onto an account never counts as a move.
+
+### The downloaded app
+
+The copy from passwordpie.com cannot sell through Apple. Its Premium window offers Get Premium, which opens
+passwordpie.com to buy, and Redeem a Key, which opens passwordpie.com/redeem. Back in the app, Premium arrives the next
+time you open the menu, or straight away with Check Again.
 
 ### What the shortcuts do
 
@@ -98,8 +162,8 @@ A shortcut for a code never does nothing, and it never empties your clipboard.
 
 | What you press | With Premium | Without Premium |
 |---|---|---|
-| ⌥⌘C in the menu, on an item with a code | Copies the code, closes the menu | Closes the menu, opens the plans. The clipboard is unchanged. |
-| ⌥⌘C with a pinned window, in any app | Copies the code | Opens the plans. The clipboard is unchanged. |
+| ⌥⌘C in the menu, on an item with a code | Copies the code, closes the menu | Closes the menu, opens the Premium window. The clipboard is unchanged. |
+| ⌥⌘C with a pinned window, in any app | Copies the code | Opens the Premium window. The clipboard is unchanged. |
 | ⌥⌘C on an item with no code | Nothing to copy, same as before | Nothing to copy, same as before |
 | ⌥Return, ⇧Return (Open and Fill, Fill) | Types the username and password | Types the username and password |
 
@@ -107,45 +171,69 @@ Fill never types a code, on either version.
 
 ### Your data stays yours
 
-Going free, or letting a subscription end, never touches your database. The secret stays in the KeePass file exactly
-as it was, and saving keeps it. Import brings codes in too. You can still add or change a secret in the item editor,
-and other KeePass apps can still read it. Subscribe again and the codes come back.
+Going free, signing out, or letting a subscription end never touches your database. The secret stays in the KeePass
+file exactly as it was, and saving keeps it. Import brings codes in too. You can still add or change a secret in the
+item editor, and other KeePass apps can still read it. Get Premium again and the codes come back.
+
+### Offline
+
+passwordpie.com hands the app a signed pass that lasts up to 7 days. The app checks the signature itself, so a pass
+cannot be made up or copied from another account, and it keeps working with no connection until it runs out.
+
+| What happened | What you see |
+|---|---|
+| Offline, pass still good | Codes work. Nothing to see. |
+| Offline for longer than the pass lasts | Codes lock. "PasswordPie could not reach passwordpie.com to renew Premium. Codes unlock as soon as it can." and Check Again |
+| The site signed you out (password changed, session removed) | Codes lock. "You were signed out. Sign in again to use Premium." |
 
 ### When Premium ends
 
 - **Yearly runs out or is cancelled.** Codes lock when the paid year ends.
-- **Apple refunds a purchase.** Codes lock as soon as the App Store tells the app, or at the latest the next time you
-  open the menu.
-- **Another Mac.** Premium follows your Apple Account. Press Restore Purchases if it has not arrived.
+- **Apple refunds a purchase.** Apple tells passwordpie.com, and the account loses Premium. Codes lock the next time the
+  app checks, and within 7 days at the latest.
+- **Premium moved to another account.** The same: this account's codes lock at the next check.
+- **Another Mac.** Sign in with the same account. That is all.
 
-Apple is the only source of who has Premium. The App Store version keeps no flag of its own, so nothing on disk can
-turn it on.
+The app keeps no Premium flag of its own. The only thing on disk that can unlock codes is the signed pass, and only
+while its signature checks and it has not run out.
 
 ### Preferences
 
-Preferences starts with a Premium section: your status, the plans you can still buy, Restore Purchases and Manage
-Subscription. If you hold both plans, it reminds you that the yearly one keeps renewing until you cancel it.
+Preferences starts with an Account section:
+
+- Signed out: what Premium is, Sign in with Apple, and Other ways to sign in.
+- Signed in: the account's email, its Premium status, and Sign Out. In the App Store app also the plans you can still
+  buy, Restore Purchases and Manage Subscription. If you hold both plans, it reminds you that the yearly one keeps
+  renewing until you cancel it. In the downloaded app, Get Premium and Redeem a Key.
 
 ### When something goes wrong
 
 | What happened | What you see |
 |---|---|
+| You close the sign-in sheet | Nothing. The window stays as it was. |
+| Sign-in fails | "Could not sign in. Try again." |
 | The App Store cannot be reached, or lists no plans | "The App Store did not return the plans", and Try Again |
 | A purchase needs approval, such as Ask to Buy | "Waiting for approval". Premium unlocks by itself when it is approved. |
 | You cancel the purchase | "Purchase cancelled." The plans stay. |
 | The purchase fails | The reason from the App Store. The plans stay. |
+| passwordpie.com cannot be reached after a purchase | "Your purchase is safe. PasswordPie adds it to your account as soon as it reaches passwordpie.com." |
+| passwordpie.com does not accept the purchase | "passwordpie.com could not confirm this purchase with Apple. Press Restore Purchases to try again." |
 | You already own the plan | The plan says "Owned" and cannot be bought twice. |
 | Restore finds nothing | "No purchases to restore on this Apple Account." |
 
 ### Demo script
 
-Use a sandbox Apple Account and a database with one login that has a two-step code.
+Use a database with one login that has a two-step code. For the App Store app, a sandbox Apple Account.
 
 1. Press the menu shortcut, search for the login, and press → to open its details. The row shows the lock and Upgrade.
-2. Copy something else to the clipboard. Press ⌥⌘C. The plans open. Paste: your clipboard is unchanged.
-3. Pin the login with ⌘O and close the plans. Press ⌥⌘C from another app. The plans open again.
-4. Buy Lifetime. The plans close, and the pinned window now shows a live code with its countdown.
+2. Copy something else to the clipboard. Press ⌥⌘C. The Premium window opens, asking you to sign in. Paste: your
+   clipboard is unchanged.
+3. Press Sign in with Apple. The window now shows the plans (App Store app) or Get Premium (downloaded app).
+4. Pin the login with ⌘O. Buy Lifetime, or redeem a key on passwordpie.com and press Check Again. The window closes,
+   and the pinned window now shows a live code with its countdown.
 5. Press ⌥⌘C and paste the code.
+6. Restore on a second account: sign out, sign in as someone else, press Restore Purchases, confirm Move Premium. The
+   window names the first account, which no longer has Premium.
 
 ## Lock
 
