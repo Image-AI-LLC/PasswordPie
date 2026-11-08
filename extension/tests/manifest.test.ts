@@ -10,7 +10,21 @@ describe('extensionManifest', () => {
   it('leaves the key out of the Chrome Web Store package, which rejects it', () => {
     const manifest = extensionManifest({ browser: 'chrome', mode: STORE_MODE });
     expect(manifest).not.toHaveProperty('key');
-    expect(manifest.permissions).toEqual(['nativeMessaging', 'tabs', 'webNavigation', 'alarms']);
+  });
+
+  it('asks Chrome for no tabs permission: <all_urls> already exposes the active tab URL', () => {
+    for (const mode of ['development', 'production', STORE_MODE]) {
+      expect(extensionManifest({ browser: 'chrome', mode }).permissions).toEqual(['nativeMessaging', 'webNavigation', 'alarms']);
+    }
+  });
+
+  it('keeps tabs for Safari, where host access is granted per site', () => {
+    expect(extensionManifest({ browser: 'safari', mode: 'production' }).permissions).toEqual([
+      'nativeMessaging',
+      'tabs',
+      'webNavigation',
+      'alarms',
+    ]);
   });
 
   it('never puts a key in the Safari build', () => {

@@ -13,7 +13,9 @@ export function extensionManifest({ browser, mode }: Pick<ConfigEnv, 'browser' |
     name: 'PasswordPie',
     description: 'Fill passwords from PasswordPie on your Mac.',
     version: '0.1.0',
-    permissions: ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'],
+    // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
+    // host access per site and keeps it.
+    permissions: browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms'],
     host_permissions: ['<all_urls>'],
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
     action: { default_title: 'PasswordPie', default_icon: { 16: 'icon/16.png', 32: 'icon/32.png' } },
