@@ -10,7 +10,7 @@ export default defineConfig({
   entrypointsDir: 'app',
   modules: ['@wxt-dev/module-react'],
   manifestVersion: 3,
-  manifest: ({ browser }) => extensionManifest({ browser, storePackage }),
+  manifest: ({ browser }) => extensionManifest({ browser, storePackage, account: process.env.WXT_PP_STORE !== 'mas' }),
   // Its own build folder, so the store package never replaces the unpacked `.output/chrome-mv3` (which keeps the key).
   outDirTemplate: storePackage ? '{{browser}}-mv{{manifestVersion}}-store' : undefined,
   // `-store` keeps the store package apart from a zip with the key.
