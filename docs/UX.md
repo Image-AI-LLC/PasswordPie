@@ -297,7 +297,7 @@ Use a database with a GitHub login, and the PasswordPie extension installed in C
 
 ## Site icons without telling anyone
 
-**In one line:** accounts show their site's logo, and PasswordPie never goes online to get one. The best-known sites'
+**In one line:** accounts show their site's logo, and PasswordPie never asks an icon service for one. The best-known sites'
 logos come with the app; the browser extension fills in the rest as you visit your own sites.
 
 ### The problem
@@ -311,7 +311,7 @@ password manager should keep to itself.
 - The logos of the 100 most popular sites (Google, GitHub, Wikipedia, …) are built into PasswordPie. Those accounts show
   their logo from the first launch, offline.
 - Any other account shows its letter tile at first. The next time you open that site in Chrome or Safari with the
-  PasswordPie extension, the extension hands PasswordPie the icon the browser already shows in the tab. The account's
+  PasswordPie extension, the extension hands PasswordPie the site's own icon, the one the tab shows. The account's
   row picks it up straight away, and it stays from then on.
 - PasswordPie asks the extension for an icon only when the tab's site has an account in your database and that account
   has no logo yet. On every other site, the extension sends nothing.
@@ -327,7 +327,10 @@ password manager should keep to itself.
 
 ### What it will not do
 
-- Fetch a logo from the internet, from Google or from the site itself. PasswordPie makes no network request for icons.
+- Ask Google or any icon service for a logo, so no icon service learns which sites you have accounts on. The app itself
+  makes no network request for icons. The extension downloads the logo only from where the page you are on already
+  loads it (the site, or the image host the page names), over https (plain http only from a page that is itself plain
+  http), without cookies, and only when PasswordPie asked for it.
 - Ask for a logo of a site you have no account for, or learn which pages you visit: the extension tells PasswordPie only
   the site of the tab, as it already does to find accounts.
 - Take an icon it did not ask for, an icon for another site than the one it asked about, or something that is not a small

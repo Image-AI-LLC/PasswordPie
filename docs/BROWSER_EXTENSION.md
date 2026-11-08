@@ -108,11 +108,13 @@ extension learns nothing new about the vault and sends nothing more.
     ← {"type":"error","id":5,"code":"bad-icon"}
 
 Sent only after a `tab` answer with `wantIcon`, for that tab. `origin` is the reported tab's origin, exactly as the
-`tab` report gave it. `png` is base64 of a PNG of at most 128 × 128 pixels and 64 KB. The extension takes the browser's
-own icon for the tab (`tab.favIconUrl`, else the largest `<link rel=icon>` / `apple-touch-icon` the page declares, read
-by the content script of the top frame), draws it into a canvas no larger than 128 × 128, and encodes it as PNG. It
-fetches the icon from the background, with no cookies, only over https or as a `data:` URL, and gives up after 5
-seconds. If it cannot make an icon within the limits, it sends nothing.
+`tab` report gave it. `png` is base64 of a PNG of at most 128 × 128 pixels and 64 KB. The extension tries, in order:
+the page's declared `<link rel=icon>` / `apple-touch-icon` of at least 64 px (largest first; read by the content script
+of the top frame, and only while it is still on that origin), the browser's own `tab.favIconUrl`, the smaller declared
+icons, then `/favicon.ico`. SVG is skipped. It draws the first that decodes into a canvas no larger than 128 × 128 and
+encodes it as PNG. It fetches from the background, with no cookies, only over https, as a `data:` URL, or over plain http
+from the page's own origin when the page itself is http, and gives up on each after 5 seconds. If it cannot make an
+icon within the limits, it sends nothing.
 
 The app keeps it only if all of these hold, else answers `bad-icon` and keeps nothing:
 
