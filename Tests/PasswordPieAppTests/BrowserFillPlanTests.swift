@@ -118,12 +118,12 @@ final class ExtensionBannerTests: XCTestCase {
 #if PP_DIRECT
 final class ChromeHostManifestTests: XCTestCase {
     func testManifestNamesTheHostAndOnlyOurExtension() throws {
-        let data = ChromeHostManifest.manifest(hostPath: "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost", extensionIDs: ["pbbiimlkojflhpopeplkbfeecanbbdoj"])
+        let data = ChromeHostManifest.manifest(hostPath: "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost", extensionIDs: ["ebgkjnfglbkeckkknmeakpkbdpjndjhk"])
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(object["name"] as? String, "com.oldcai.passwordpie")
         XCTAssertEqual(object["type"] as? String, "stdio")
         XCTAssertEqual(object["path"] as? String, "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost")
-        XCTAssertEqual(object["allowed_origins"] as? [String], ["chrome-extension://pbbiimlkojflhpopeplkbfeecanbbdoj/"])
+        XCTAssertEqual(object["allowed_origins"] as? [String], ["chrome-extension://ebgkjnfglbkeckkknmeakpkbdpjndjhk/"])
     }
 
     func testEveryDirectBuildTrustsTheStoreExtensionAndLinksToItsListing() {

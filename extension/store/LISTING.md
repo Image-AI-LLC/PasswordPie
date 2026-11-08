@@ -6,6 +6,12 @@ when the listing changes, so the next update starts from what is live. The packa
 
 ## Package
 
+- Item: `ebgkjnfglbkeckkknmeakpkbdpjndjhk` in the developer dashboard
+  (https://chrome.google.com/webstore/devconsole/4192ce6b-4a2c-48f1-b441-97d51c404964/ebgkjnfglbkeckkknmeakpkbdpjndjhk),
+  listed at https://chromewebstore.google.com/detail/ebgkjnfglbkeckkknmeakpkbdpjndjhk once published. Its public key is
+  `CHROME_KEY` in [../manifest.ts](../manifest.ts).
+- Submitting warns that `<all_urls>` may mean an in-depth review. `activeTab` cannot replace it: a fill starts from a
+  pick in the app, or in a tab the app opened, with no click on the extension.
 - Upload: `extension/.output/passwordpie-extension-<version>-chrome-store.zip` (no `key` in the manifest).
 - Name and summary come from the manifest: **PasswordPie**, "Fills sign-in forms from the PasswordPie app on your Mac.
   Needs PasswordPie for Mac."

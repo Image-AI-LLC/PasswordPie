@@ -4,7 +4,7 @@ import type { ConfigEnv, UserManifest } from 'wxt';
 // build the store's ID, BridgeConstants.chromeExtensionID, which the native host manifest allows
 // (docs/BROWSER_EXTENSION.md, "Chrome"; tests/extension-id.test.ts).
 export const CHROME_KEY =
-  'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0kseYmc4PYVMVdM0iSbi5mu2Z3GTAXmIZTXXTdJLLED61C/5ql+jaokNIOyKWB9LmNAJFP3/V6J/s3GHVNo5vwcx4hAVuGtNFmKXxiZb68Wi49SQL9OkafgiO6LPEVxtl4/POuthz+FO0JG5nhLvn18jmy4VxsmAdAtS5RIEPz7D9Efl5HbfUMMcUJl6HF8lIHh2T6Yd04iPeQ2kgBg8bRCI0aSDGB7FEam8dHdXmPRBNv14meLQrnSG+a54T1fdxL0TCtArVDpV5ixKJs6Wr4RITJlkevvcsY5n8MRdUyKcM18wzKYYG7LTOFumwwEaPo4JAI2DIDnDLQWEvaTPKQIDAQAB';
+  'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2zW0SYYgInyFlKRpe5Pk64yK3+DV8HVkPayUQ7s2Jd/kOKAdSXoSpm/38LlBW2YKEbaq9Uib7W+TSFZyn6XWUYmmLsbhOUDlFaevsV1Ey/Mgpqt9wIqmmzhqoJKJ7QwqRh57e6+WitmJDnDwBe2xO2P1ASD3MpyYtHMZh8Cv+cAq8cwEIiYoTuefGurYDqY69IkYvm6mEKxWpSm289HeHVCwR/JxPWKxGf+8+V6mUrnfiKTsYI1P5LcZI2aAafnLIiupDhN2GCcgQ5HBlrfoOkTROyTDhNyjY1fFhR0pfApiGe4yi7X/mdSQHGWll7a6A3ZPWZ+EQpfalk8+1JpvsQIDAQAB';
 
 /** `wxt zip --mode store`: the package uploaded to the Chrome Web Store, which rejects a manifest with `key`. */
 export const STORE_MODE = 'store';

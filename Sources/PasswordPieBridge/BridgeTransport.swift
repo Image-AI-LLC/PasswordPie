@@ -18,7 +18,7 @@ public enum BridgeConstants {
     /// The Chrome Web Store item's ID. `CHROME_KEY` in extension/manifest.ts is the store's public key, so an unpacked
     /// development build gets the same ID (extension/tests/extension-id.test.ts checks they match). See
     /// docs/BROWSER_EXTENSION.md, "Chrome".
-    public static let chromeExtensionID = "pbbiimlkojflhpopeplkbfeecanbbdoj"
+    public static let chromeExtensionID = "ebgkjnfglbkeckkknmeakpkbdpjndjhk"
     /// The extension IDs Chrome may start the host for.
     public static let chromeExtensionIDs = [chromeExtensionID]
     /// Google Chrome's signing team and identifier. The host only serves a parent process signed with them. Only stable

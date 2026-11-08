@@ -17,10 +17,11 @@ Built with [WXT](https://wxt.dev) and TypeScript, no UI framework. One source, t
 
 ## Chrome
 
-Users install it from the Chrome Web Store (ID `STORE_ID_TBD`). To run your own build, open `chrome://extensions`,
-turn on **Developer mode**, click **Load unpacked** and choose `.output/chrome-mv3`. `CHROME_KEY` in `manifest.ts` is the
-store item's public key, so the unpacked build has the store ID, which the native host manifest written by PasswordPie
-allows. Remove the store copy first: Chrome keeps one extension per ID. PasswordPie must be running (direct-download
+Users install it from the Chrome Web Store
+([ebgkjnfglbkeckkknmeakpkbdpjndjhk](https://chromewebstore.google.com/detail/ebgkjnfglbkeckkknmeakpkbdpjndjhk)). To run
+your own build, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose
+`.output/chrome-mv3`. `CHROME_KEY` in `manifest.ts` is the store item's public key, so the unpacked build has the store
+ID, which the native host manifest written by PasswordPie allows. Remove the store copy first: Chrome keeps one extension per ID. PasswordPie must be running (direct-download
 build) for the extension to connect.
 
 The store package leaves `key` out, which the store requires, and it is the only difference from `pnpm build:chrome`.

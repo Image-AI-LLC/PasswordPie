@@ -211,8 +211,8 @@ script checks `location.origin` again and that it is the top frame or same-origi
 ## Chrome
 
 - The host manifest's `allowed_origins` lists one extension ID, `BridgeConstants.chromeExtensionID`: the Chrome Web Store
-  item's, `STORE_ID_TBD`. `CHROME_KEY` in `extension/manifest.ts` is that item's public key, so an unpacked build
-  (`pnpm build:chrome`) has the same ID and connects to any direct build, released or `make install`.
+  item's, `ebgkjnfglbkeckkknmeakpkbdpjndjhk`. `CHROME_KEY` in `extension/manifest.ts` is that item's public key, so an
+  unpacked build (`pnpm build:chrome`) has the same ID and connects to any direct build, released or `make install`.
   `extension/tests/extension-id.test.ts` fails if the key and the Swift constant disagree. The store package
   (`pnpm zip:chrome-store`) leaves the key out, because the store rejects a manifest with one.
 - That key is public, as every store item's is, so anyone can load an unpacked extension with this ID. It takes Developer
