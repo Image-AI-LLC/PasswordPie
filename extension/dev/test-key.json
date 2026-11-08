@@ -1,0 +1,7 @@
+{
+  "//": "TEST ONLY. This private key is public on purpose: it signs tokens for the mock site (mock-site.mjs) and tests. Only debug and make install builds trust it (EntitlementKeys.test). Never use it on passwordpie.com.",
+  "kid": "pp-test",
+  "x": "0HFLn6glzMnKkdA6-y2G5E_51nQEfbrAa4Mc-fK-5Ro",
+  "d": "BbO5I-z2KMm2RDbIxi-l0MPLsB53pygHdTCazxbPTbk",
+  "sampleToken": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6InBwLXRlc3QifQ.eyJpc3MiOiJodHRwczovL3Bhc3N3b3JkcGllLmNvbSIsImF1ZCI6InBhc3N3b3JkcGllLWFwcCIsInN1YiI6InNhbXBsZSIsInByZW1pdW0iOnRydWUsInBsYW4iOiJsaWZldGltZSIsImlhdCI6MTc2MjU2MDAwMCwiZXhwIjo0MTAyNDQ0ODAwfQ.H1rNqFi1o0iBCTY-uTwaTK1k3gAskp9TpPCM8y8qfyDUrf6tHSDhiavGc_yMokvzUMXT8B6TCdQpqNz03vT7CQ"
+}
