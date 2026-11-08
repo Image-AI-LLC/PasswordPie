@@ -9,7 +9,7 @@
     "typecheck": "wxt prepare && tsc --noEmit",
     "build:chrome": "wxt build -b chrome --mv3",
     "build:safari": "wxt build -b safari --mv3",
-    "zip:chrome-store": "wxt zip -b chrome --mv3 --mode store"
+    "zip:chrome-store": "PP_STORE_PACKAGE=1 wxt zip -b chrome --mv3"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

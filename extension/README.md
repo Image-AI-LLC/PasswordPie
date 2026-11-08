@@ -21,10 +21,11 @@ Users install it from the Chrome Web Store
 ([ebgkjnfglbkeckkknmeakpkbdpjndjhk](https://chromewebstore.google.com/detail/ebgkjnfglbkeckkknmeakpkbdpjndjhk)). To run
 your own build, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose
 `.output/chrome-mv3`. `CHROME_KEY` in `manifest.ts` is the store item's public key, so the unpacked build has the store
-ID, which the native host manifest written by PasswordPie allows. Remove the store copy first: Chrome keeps one extension per ID. PasswordPie must be running (direct-download
-build) for the extension to connect.
+ID, which the native host manifest written by PasswordPie allows. Remove the store copy first: Chrome keeps one
+extension per ID. PasswordPie must be running (direct-download build) for the extension to connect.
 
 The store package leaves `key` out, which the store requires, and it is the only difference from `pnpm build:chrome`.
+It builds into `.output/chrome-mv3-store`, so it never replaces the unpacked `.output/chrome-mv3`.
 Releasing, and the listing text, screenshots and privacy answers, are in
 [docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md) ("Releasing the Chrome extension") and
 [store/LISTING.md](store/LISTING.md).
