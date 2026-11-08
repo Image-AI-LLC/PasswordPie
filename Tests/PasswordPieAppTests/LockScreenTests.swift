@@ -5,10 +5,56 @@ import XCTest
 
 @MainActor
 final class LockScreenTests: XCTestCase {
-    func testCompactPanelReservesRoomForIndependentUnlockAndCreateFields() {
+    // MARK: Height (docs/UX.md, "Unlock": no empty band)
+
+    func testLockFormIsAsTallAsItsContent() {
         XCTAssertEqual(Metrics.width, 300)
-        XCTAssertEqual(Metrics.lockedHeight, 360)
-        XCTAssertEqual(Metrics.createHeight, 410)
+        let plain = LockScreenContent.fittedHeight(LockScreenPresentation(databaseName: "Passwords.kdbx"))
+        let touch = LockScreenContent.fittedHeight(LockScreenPresentation(databaseName: "Passwords.kdbx", touchIDAvailable: true))
+        let create = LockScreenContent.fittedHeight(LockScreenPresentation(databaseName: "Passwords.kdbx", creating: true))
+        XCTAssertEqual(plain, 281, accuracy: 2, "the old panel was 360 pt with a blank band above Open / New")
+        XCTAssertEqual(touch - plain, 26, accuracy: 1, "the Touch ID row and its gap")
+        XCTAssertEqual(create - plain, 46, accuracy: 1, "the confirmation field and its gap")
+    }
+
+    func testAShortErrorTakesTheGuidanceLineWithoutResizing() {
+        let calm = LockScreenPresentation(databaseName: "Passwords.kdbx", touchIDAvailable: true)
+        var wrong = calm
+        wrong.message = "Incorrect password. Please try again."
+        XCTAssertEqual(LockScreenContent.fittedHeight(wrong), LockScreenContent.fittedHeight(calm), accuracy: 0.5)
+        var long = calm
+        long.message = "Touch ID is on, but this version of PasswordPie can't read the saved password. Unlock with the master password."
+        let grown = LockScreenContent.fittedHeight(long) - LockScreenContent.fittedHeight(calm)
+        XCTAssertGreaterThan(grown, 10, "a long message wraps instead of being cut")
+        XCTAssertLessThanOrEqual(grown, 30, "at most three lines")
+    }
+
+    func testTheLockedCardHasOneHeight() {
+        XCTAssertEqual(Metrics.lockCardHeight, 144)
+        var card = LockScreenPresentation(databaseName: "Passwords.kdbx")
+        card.locking = true
+        XCTAssertEqual(LockScreenContent.fittedHeight(card), Metrics.lockCardHeight, accuracy: 0.5)
+    }
+
+    // MARK: Unlocking keeps the form in place
+
+    func testUnlockingKeepsTheFormWhereItWasAndStopsInput() throws {
+        let ready = LockScreenPresentation(databaseName: "Passwords.kdbx", touchIDAvailable: true)
+        var busy = ready
+        busy.unlocking = true
+        busy.busy = true
+        XCTAssertEqual(LockScreenContent.fittedHeight(busy), LockScreenContent.fittedHeight(ready), accuracy: 0.5)
+        var frames: [CGRect] = []
+        for presentation in [ready, busy] {
+            let fields = LockFields()
+            let host = NSHostingView(rootView: makeContent(presentation, fields: fields))
+            host.frame = CGRect(x: 0, y: 0, width: Metrics.width, height: LockScreenContent.fittedHeight(ready))
+            host.layoutSubtreeIfNeeded()
+            let primary = try XCTUnwrap(fields.primary, "the field is still there while unlocking")
+            frames.append(host.convert(primary.bounds, from: primary))
+            XCTAssertEqual(primary.isEnabled, presentation == ready, "no keystroke lands in it while unlocking")
+        }
+        XCTAssertEqual(frames[0], frames[1], "nothing moves")
     }
 
     func testFieldRegistrationDoesNotUnregisterAReplacement() {
@@ -169,13 +215,13 @@ final class LockScreenTests: XCTestCase {
             for mode in ["locked", "create", "options"] {
                 let creating = mode == "create"
                 let options = mode == "options"
-                let height = creating ? Metrics.createHeight : Metrics.lockedHeight
                 let fields = LockFields()
                 let state = LockScreenPresentation(
                     databaseName: "A very long example database filename.kdbx", creating: creating,
                     message: options ? String(repeating: "Something went wrong. ", count: 12) : "",
                     showsKeyFile: options, keyFileName: "a-very-long-key-file-name-that-must-truncate.key",
                     touchIDAvailable: options)
+                let height = LockScreenContent.fittedHeight(state)
                 let content = makeContent(state, fields: fields)
                     .environment(\.colorScheme, dark ? .dark : .light)
                 let host = NSHostingView(rootView: content)

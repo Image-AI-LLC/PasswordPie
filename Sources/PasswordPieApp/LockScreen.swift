@@ -6,7 +6,7 @@ import SwiftUI
 final class LockModel: ObservableObject {
     @Published var turned = false
     @Published var open = false
-    /// The lock scene plays: "Locked" shows where the form will be.
+    /// The lock scene plays: the locked card replaces the form.
     @Published var locking = false
     let fields = LockFields()
 }
@@ -28,7 +28,7 @@ final class LockFields {
 }
 
 /// Values needed to present the lock form, without owning vault or credential state.
-struct LockScreenPresentation {
+struct LockScreenPresentation: Equatable {
     var databaseName: String
     var creating = false
     var message = ""
@@ -37,15 +37,27 @@ struct LockScreenPresentation {
     var touchIDAvailable = false
     /// The database is decrypting: the logo's rim turns.
     var unlocking = false
-    /// Decrypting or just opened: the form stays hidden so it never looks like it is still waiting for input.
-    var hidesForm = false
-    /// Just locked: "Locked" replaces the form until the panel fades out.
+    /// Decrypting or just opened: the form stays where it is, dimmed, and takes no input.
+    var busy = false
+    /// Just locked by ⌘L: the locked card replaces the form until the panel fades out.
     var locking = false
+}
 
-    var formHidden: Bool { hidesForm || locking }
+extension LockScreenPresentation {
+    @MainActor
+    init(session: VaultSession, locking: Bool) {
+        self.init(databaseName: session.databaseURL.lastPathComponent,
+                  creating: session.creating, message: session.message,
+                  showsKeyFile: session.showsKeyFile, keyFileName: session.keyFileName,
+                  touchIDAvailable: session.touchIDAvailable,
+                  unlocking: session.unlocking, busy: session.unlocking || !session.locked,
+                  locking: locking)
+    }
 }
 
 struct LockScreenActions {
+    static let inert = LockScreenActions(unlock: {}, touchID: {}, open: {}, create: {}, keyFile: {}, edit: {})
+
     var unlock: () -> Void
     var touchID: () -> Void
     var open: () -> Void
@@ -72,13 +84,7 @@ struct DoorsView: View {
 
     var body: some View {
         LockScreenContent(
-            presentation: LockScreenPresentation(
-                databaseName: session.databaseURL.lastPathComponent,
-                creating: session.creating, message: session.message,
-                showsKeyFile: session.showsKeyFile, keyFileName: session.keyFileName,
-                touchIDAvailable: session.touchIDAvailable,
-                unlocking: session.unlocking, hidesForm: session.unlocking || !session.locked,
-                locking: lock.locking),
+            presentation: LockScreenPresentation(session: session, locking: lock.locking),
             password: $session.passwordDraft, confirmation: $session.confirmDraft,
             fields: lock.fields, turned: lock.turned,
             actions: LockScreenActions(
@@ -88,7 +94,8 @@ struct DoorsView: View {
                 edit: { if !session.message.isEmpty { session.message = "" } }))
             .scaleEffect(lock.open ? 0.97 : 1)
             .opacity(lock.open ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: lock.open)
+            // The lock scene covers the menu quickly; the unlock fade is slower.
+            .animation(.easeInOut(duration: lock.locking ? 0.15 : 0.3), value: lock.open)
     }
 }
 
@@ -120,7 +127,45 @@ struct LockScreenContent: View {
             .help(presentation.databaseName)
     }
 
+    /// The height the panel needs for this presentation at the given width: the form's content, or the locked card.
+    static func fittedHeight(_ presentation: LockScreenPresentation, width: CGFloat = Metrics.width) -> CGFloat {
+        let content = LockScreenContent(presentation: presentation, password: .constant(""),
+                                        confirmation: .constant(""), fields: LockFields(), actions: .inert)
+        let sizing = NSHostingController(rootView: content.fixedSize(horizontal: false, vertical: true))
+        return ceil(sizing.sizeThatFits(in: CGSize(width: width, height: 10_000)).height)
+    }
+
     var body: some View {
+        Group {
+            if presentation.locking {
+                lockedCard
+            } else {
+                form
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Palette.surface(dark: dark))
+        .animation(.easeInOut(duration: 0.2), value: presentation.locking)
+    }
+
+    /// Shown while ⌘L locks the open menu. It sits at the top, so it does not move while the panel folds around it.
+    private var lockedCard: some View {
+        VStack(spacing: 0) {
+            PasswordPieMark(size: 46, turn: turned ? 1 : 0)
+            Text("Locked")
+                .font(.system(size: 19, weight: .bold, design: .rounded))
+                .foregroundStyle(foreground)
+                .padding(.top, 14)
+                .accessibilityIdentifier("lock.locked")
+            databaseNameLabel
+                .padding(.top, 4)
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
+        .frame(height: Metrics.lockCardHeight)
+    }
+
+    private var form: some View {
         VStack(spacing: 0) {
             PasswordPieMark(size: 64, turn: turned ? 1 : 0, spinning: presentation.unlocking)
             Text("Password Pie")
@@ -128,58 +173,60 @@ struct LockScreenContent: View {
                 .foregroundStyle(foreground)
                 .padding(.top, 4)
             databaseTitle
+            guidance
+                .padding(.top, 3)
+            controls
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+    }
+
+    /// One line of guidance. An error takes its place, so no blank space is kept for one.
+    @ViewBuilder
+    private var guidance: some View {
+        if presentation.message.isEmpty {
             Text(presentation.creating ? "Choose a password for your new database." : "Your passwords, kept safe.")
                 .font(.system(size: 11))
                 .foregroundStyle(secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-                .padding(.top, 3)
-
-            controls
-                .opacity(presentation.formHidden ? 0 : 1)
-                .allowsHitTesting(!presentation.formHidden)
-                .accessibilityHidden(presentation.formHidden)
-                .overlay(alignment: .top) {
-                    if presentation.locking {
-                        Label("Locked", systemImage: "lock.fill")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(secondary)
-                            .padding(.top, 24)
-                            .accessibilityIdentifier("lock.locked")
-                    } else if presentation.hidesForm {
-                        Text("Unlocking…")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(secondary)
-                            .padding(.top, 24)
-                            .accessibilityIdentifier("lock.unlocking")
-                    }
-                }
-                .animation(.easeInOut(duration: 0.2), value: presentation.formHidden)
+        } else {
+            Text(presentation.message)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.error(dark: dark))
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+                .help(presentation.message)
+                .accessibilityIdentifier("lock.error")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.surface(dark: dark))
     }
 
-    /// Everything below the title: the fields, buttons, error line and database links.
+    /// Everything below the guidance line: the fields, buttons and database links. While the database opens they stay
+    /// where they are, dimmed, and take no input.
     private var controls: some View {
-        VStack(spacing: 0) {
+        let busy = presentation.busy
+        return VStack(spacing: 0) {
             VStack(spacing: 8) {
-                secureEntry(placeholder: "Master password", text: $password, isConfirm: false) {
+                Group {
+                    secureEntry(placeholder: "Master password", text: $password, isConfirm: false) {
+                        if presentation.creating {
+                            fields.confirm?.window?.makeFirstResponder(fields.confirm)
+                        } else {
+                            actions.unlock()
+                        }
+                    }
                     if presentation.creating {
-                        fields.confirm?.window?.makeFirstResponder(fields.confirm)
-                    } else {
-                        actions.unlock()
+                        secureEntry(placeholder: "Repeat password", text: $confirmation, isConfirm: true,
+                                    submit: actions.unlock)
                     }
                 }
-                if presentation.creating {
-                    secureEntry(placeholder: "Repeat password", text: $confirmation, isConfirm: true,
-                                submit: actions.unlock)
-                }
+                .opacity(busy ? 0.55 : 1)
+                .disabled(busy)
                 Button(action: actions.unlock) {
-                    Text(presentation.creating ? "Create Database" : "Unlock")
+                    Text(buttonTitle)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Palette.onAccent)
                         .frame(maxWidth: .infinity)
@@ -188,63 +235,63 @@ struct LockScreenContent: View {
                         .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(.plain)
+                .allowsHitTesting(!busy)
                 .accessibilityIdentifier("lock.unlock")
                 // Empty passwords remain actionable for key-file-only databases.
             }
             .padding(.top, 12)
 
-            if presentation.touchIDAvailable && !presentation.creating {
-                Button(action: actions.touchID) {
-                    Label("Unlock with Touch ID", systemImage: "touchid")
-                        .font(.system(size: 11, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 22)
+            VStack(spacing: 0) {
+                if presentation.touchIDAvailable && !presentation.creating {
+                    Button(action: actions.touchID) {
+                        Label("Unlock with Touch ID", systemImage: "touchid")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(secondary)
+                    .accessibilityIdentifier("lock.touchID")
+                    .padding(.top, 4)
                 }
+                if presentation.showsKeyFile {
+                    Button(action: actions.keyFile) {
+                        Label(presentation.keyFileName.isEmpty ? "Choose Key File…" : presentation.keyFileName,
+                              systemImage: "key")
+                            .font(.system(size: 11))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 22)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(secondary)
+                    .help(presentation.keyFileName.isEmpty ? "Choose a key file" : presentation.keyFileName)
+                    .accessibilityIdentifier("lock.keyFile")
+                    .padding(.top, 4)
+                }
+                HStack(spacing: 12) {
+                    Button("Open Database…", action: actions.open)
+                        .accessibilityIdentifier("lock.open")
+                    Rectangle().fill(Palette.border(dark: dark)).frame(width: 1, height: 12)
+                    Button("New Database…", action: actions.create)
+                        .accessibilityIdentifier("lock.new")
+                }
+                .font(.system(size: 11))
                 .buttonStyle(.plain)
                 .foregroundStyle(secondary)
-                .accessibilityIdentifier("lock.touchID")
-                .padding(.top, 4)
+                .frame(height: 18)
+                .padding(.top, 14)
             }
-            if presentation.showsKeyFile {
-                Button(action: actions.keyFile) {
-                    Label(presentation.keyFileName.isEmpty ? "Choose Key File…" : presentation.keyFileName,
-                          systemImage: "key")
-                        .font(.system(size: 11))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 22)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(secondary)
-                .help(presentation.keyFileName.isEmpty ? "Choose a key file" : presentation.keyFileName)
-                .accessibilityIdentifier("lock.keyFile")
-                .padding(.top, 4)
-            }
-
-            Text(presentation.message.isEmpty ? " " : presentation.message)
-                .font(.system(size: 10))
-                .foregroundStyle(Palette.error(dark: dark))
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity)
-                .frame(height: 36, alignment: .top)
-                .help(presentation.message)
-                .accessibilityIdentifier("lock.error")
-                .padding(.top, 6)
-            Spacer(minLength: 0)
-            HStack(spacing: 12) {
-                Button("Open Database…", action: actions.open)
-                    .accessibilityIdentifier("lock.open")
-                Rectangle().fill(Palette.border(dark: dark)).frame(width: 1, height: 12)
-                Button("New Database…", action: actions.create)
-                    .accessibilityIdentifier("lock.new")
-            }
-            .font(.system(size: 11))
-            .buttonStyle(.plain)
-            .foregroundStyle(secondary)
-            .frame(height: 18)
+            .opacity(busy ? 0.4 : 1)
+            .disabled(busy)
         }
+        .animation(.easeInOut(duration: 0.2), value: busy)
+    }
+
+    private var buttonTitle: String {
+        if presentation.busy { return presentation.creating ? "Creating…" : "Unlocking…" }
+        return presentation.creating ? "Create Database" : "Unlock"
     }
 
     private func secureEntry(placeholder: String, text: Binding<String>, isConfirm: Bool,
@@ -322,12 +369,14 @@ struct PasswordField: NSViewRepresentable {
             coordinator?.parent.onFocusChange(focused)
         }
         field.cell?.usesSingleLineMode = true
+        field.isEnabled = context.environment.isEnabled
         fields.register(field, isConfirm: isConfirm)
         return field
     }
 
     func updateNSView(_ field: FocusAwareSecureTextField, context: Context) {
         context.coordinator.parent = self
+        field.isEnabled = context.environment.isEnabled
         applyColors(to: field, scheme: context.environment.colorScheme)
         if field.stringValue != text { field.stringValue = text }
     }
