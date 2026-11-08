@@ -171,6 +171,11 @@ script checks `location.origin` again and that it is the top frame or same-origi
   typed keystrokes.
 - The extension keeps one `chrome.runtime.connectNative` port open. That keeps its service worker alive and the host
   running, and it is how pokes arrive. "Connected" means the app has an authenticated host connection right now.
+- The host exits when its connection to the app ends (the app quit or was updated); the extension's port then reconnects
+  and Chrome starts a fresh host. It must not reconnect itself: an update replaces the host's executable too, and a host
+  still running the old code fails the app's signature check ("the code on disk does not match what is running") on
+  every connection, so the extension would stay disconnected and the panel would keep offering "Add Chrome Extension…".
+  While the app is not running, a new host keeps trying to connect every second.
 - The app writes the host manifest at launch (direct channel only), pointing at the host inside the running app bundle.
 - **App Store channel: no Chrome in v1.** A sandboxed app cannot write into Chrome's `NativeMessagingHosts` folder, and a
   host launched by Chrome from inside a store app would have to be sandboxed without a way to receive Chrome's arguments
