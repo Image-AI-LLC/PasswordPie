@@ -8,7 +8,8 @@
     "test": "vitest run",
     "typecheck": "wxt prepare && tsc --noEmit",
     "build:chrome": "wxt build -b chrome --mv3",
-    "build:safari": "wxt build -b safari --mv3"
+    "build:safari": "wxt build -b safari --mv3",
+    "zip:chrome-store": "wxt zip -b chrome --mv3 --mode store"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
