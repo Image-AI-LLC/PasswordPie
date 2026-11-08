@@ -48,7 +48,8 @@ PRIVATE BY DESIGN
 • Your passwords stay in your KeePass file on your Mac.
 • The extension talks only to the PasswordPie app on the same Mac, through Chrome's native messaging. Nothing is sent to us or to any server.
 • It tells the app only the site of the active tab (such as https://example.com), never the page's full address, its contents or your history.
-• No account, no analytics, no remote code.
+• When PasswordPie has an account for that site but no icon for it, the extension sends the app the site's icon, which it fetches without cookies from the address the page gives for it.
+• No analytics, no tracking, no remote code.
 
 REQUIREMENTS
 • A Mac with macOS 14 or later, and PasswordPie downloaded from passwordpie.com. The Mac App Store version supports Safari only, for now.
@@ -71,7 +72,7 @@ Fill the username and password that the user picks in the PasswordPie app for Ma
 **nativeMessaging**
 
 ```text
-The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and receives the username and password the user picked in the app. It is not used for anything else, and the extension makes no other connections.
+The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and receives the username and password the user picked in the app. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. It is not used for anything else.
 ```
 
 **webNavigation**
@@ -89,7 +90,7 @@ One alarm a minute checks the native messaging connection to the PasswordPie app
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. The content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
+Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
 ```
 
 ### Remote code
@@ -106,6 +107,8 @@ Collected (handled only on the user's Mac, never sent to the developer or a serv
 
 - **Authentication information:** the username and password the user picks in the PasswordPie app, put into the page.
 - **Web history:** the origin of the active tab, sent to the PasswordPie app on the same Mac to list that site's accounts.
+- **Website content:** the site's icon, sent to the PasswordPie app on the same Mac when it has an account for that
+  site but no icon for it.
 
 All three certifications are ticked: not sold or transferred to third parties outside the approved use cases, not used
 for purposes unrelated to the single purpose, not used to determine creditworthiness or for lending.
