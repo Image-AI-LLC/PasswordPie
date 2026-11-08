@@ -345,7 +345,7 @@ Without the extension, or in any other app, Fill types the username and password
 ### Getting the extension
 
 When Chrome is in front and its extension is not connected, the panel's first line, above the search box, is
-**Add Chrome Extension…** with Chrome's icon. Click it to open the install page in Chrome. Once the extension is installed
+**Add Chrome Extension…** with Chrome's icon. Click it to open PasswordPie's page in the Chrome Web Store, in Chrome. Once the extension is installed
 and talking to PasswordPie, the line goes away.
 
 Safari has the same line, **Enable Safari Extension…**. It opens Safari's Extensions settings with PasswordPie selected,

@@ -13,12 +13,20 @@ Built with [WXT](https://wxt.dev) and TypeScript, no UI framework. One source, t
     pnpm typecheck
     pnpm build:chrome    # → .output/chrome-mv3
     pnpm build:safari    # → .output/safari-mv3
+    pnpm zip:chrome-store  # → .output/passwordpie-extension-<version>-chrome-store.zip, for the Chrome Web Store
 
 ## Chrome
 
-Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose `.output/chrome-mv3`. The
-`key` in `wxt.config.ts` pins the unpacked ID to `pbbiimlkojflhpopeplkbfeecanbbdoj`, which the native host manifest
-written by PasswordPie allows. PasswordPie must be running (direct-download build) for the extension to connect.
+Users install it from the Chrome Web Store (ID `STORE_ID_TBD`). To run your own build, open `chrome://extensions`,
+turn on **Developer mode**, click **Load unpacked** and choose `.output/chrome-mv3`. `CHROME_KEY` in `manifest.ts` is the
+store item's public key, so the unpacked build has the store ID, which the native host manifest written by PasswordPie
+allows. Remove the store copy first: Chrome keeps one extension per ID. PasswordPie must be running (direct-download
+build) for the extension to connect.
+
+The store package leaves `key` out, which the store requires, and it is the only difference from `pnpm build:chrome`.
+Releasing, and the listing text, screenshots and privacy answers, are in
+[docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md) ("Releasing the Chrome extension") and
+[store/LISTING.md](store/LISTING.md).
 
 ## Safari
 

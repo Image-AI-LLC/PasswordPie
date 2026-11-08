@@ -210,11 +210,14 @@ script checks `location.origin` again and that it is the top frame or same-origi
 
 ## Chrome
 
-- The host manifest's `allowed_origins` lists only the PasswordPie extension IDs (`BridgeConstants.chromeExtensionIDs`):
-  the Chrome Web Store ID once there is one, and in builds made with `make install` (`-DPP_DEV_EXTENSION`) also the
-  unpacked build, whose ID is pinned by the public `key` in `extension/wxt.config.ts` (`pbbiimlkojflhpopeplkbfeecanbbdoj`).
-  That key is public, so anyone could load an extension with that ID: distributed builds (`make dist-direct`) never trust
-  it. With no ID to trust, they have no Chrome support and no "Add Chrome Extension…" row until the store ID is added.
+- The host manifest's `allowed_origins` lists one extension ID, `BridgeConstants.chromeExtensionID`: the Chrome Web Store
+  item's, `STORE_ID_TBD`. `CHROME_KEY` in `extension/manifest.ts` is that item's public key, so an unpacked build
+  (`pnpm build:chrome`) has the same ID and connects to any direct build, released or `make install`.
+  `extension/tests/extension-id.test.ts` fails if the key and the Swift constant disagree. The store package
+  (`pnpm zip:chrome-store`) leaves the key out, because the store rejects a manifest with one.
+- That key is public, as every store item's is, so anyone can load an unpacked extension with this ID. It takes Developer
+  mode and "Load unpacked" in the user's own Chrome profile: someone who can do that can already install any extension
+  there. The host still requires Google Chrome as its parent, and the app still fills only the site the user picked.
 - The host starts only for Chrome. Chrome passes the caller's origin as the first argument, but whoever starts the host
   can fake that, so the host also requires its parent process to be Google Chrome, checked by code signature (team
   `EQHXZ8M8AV`, `com.google.Chrome`). Chrome Beta, Dev and Canary, like other Chromium browsers, are not in v1: they keep
@@ -231,6 +234,21 @@ script checks `location.origin` again and that it is the top frame or same-origi
   host launched by Chrome from inside a store app would have to be sandboxed without a way to receive Chrome's arguments
   reliably. The host target, the manifest writer and the "Add Chrome Extension…" row are `#if PP_DIRECT` / not assembled
   in `make mas-dev`.
+
+## Releasing the Chrome extension
+
+The listing text, privacy answers, promo tile and screenshots are in `extension/store/` (`LISTING.md`). The publisher
+is the Image AI, LLC account in the Chrome Web Store developer dashboard.
+
+1. Raise `version` in `extension/manifest.ts`; the store needs a higher version for every upload.
+2. `cd extension && pnpm test && pnpm zip:chrome-store`. Upload
+   `.output/passwordpie-extension-<version>-chrome-store.zip` under Package, and submit for review.
+3. Leave "publish automatically after review" off when the update needs a newer app, such as a new message the released
+   app does not answer. Publish by hand once that app is out. Updates the released app already serves can publish
+   automatically.
+
+The first listing went out this way: the extension was submitted with publishing deferred, because direct builds made
+before `chromeExtensionID` was the store ID do not trust it. Publishing waits for a direct release that does.
 
 ## Safari
 
@@ -261,7 +279,7 @@ needs Accessibility to be granted already and never asks for it.
 | | Direct | App Store |
 |---|---|---|
 | Safari extension | yes | yes (needs profiles for the appex and App Group) |
-| Chrome extension, native host | yes | not in v1 |
+| Chrome extension (Chrome Web Store), native host | yes | not in v1 |
 | "Add Chrome Extension…" row | yes | not compiled |
 | "Enable Safari Extension…" row | yes | yes |
 | AX fallback for the current URL | yes, if Accessibility is granted | same code; untested in the sandbox (see CHANNELS.md) |

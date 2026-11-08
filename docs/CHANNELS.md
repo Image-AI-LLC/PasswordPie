@@ -11,7 +11,7 @@ App Store builds do not contain direct-only code.
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
 | Two-step codes (Premium) | need a PasswordPie account with Premium (Get Premium and keys on passwordpie.com) | need a PasswordPie account with Premium; sold here with StoreKit 2 and put onto the account |
-| Browser extension | Safari and Chrome (Chrome needs a trusted extension ID: the store ID, or the unpacked one in `make install` builds) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
+| Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
 
@@ -30,6 +30,10 @@ It runs `make dist-direct`, notarizes and staples the app, then wraps it in `bui
 (with an Applications shortcut), signs, notarizes and staples the DMG, and checks both with `spctl`. Attach the DMG and
 its `.sha256` to a GitHub release tagged `v<version>`; passwordpie.com links to
 `releases/latest/download/PasswordPie.dmg`, so upload a copy under that name too.
+
+Direct builds trust the Chrome Web Store extension's ID (`BridgeConstants.chromeExtensionID`). Releases made before it
+was added cannot connect to the store extension. The Chrome extension itself ships through the Chrome Web Store: see
+"Releasing the Chrome extension" in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
 
 The build is Apple Silicon only: `libargon2.a` comes from Homebrew, which ships it for one architecture. An Intel or
 universal build needs an x86_64 argon2 first.
