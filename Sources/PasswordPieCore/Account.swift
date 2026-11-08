@@ -1,10 +1,11 @@
+#if PP_DIRECT
 import Foundation
 import Security
 
 // The app's own PasswordPie account: what passwordpie.com answers, and what it means for Premium. No networking here;
 // the app's `AccountClient` sends the requests and hands the replies to these types. See "Premium" in docs/CHANNELS.md.
 
-/// The body of `GET /api/premium/entitlement`, and of a successful `POST /api/premium/apple/bind`, which adds the move.
+/// The body of `GET /api/premium/entitlement`.
 public struct AccountEntitlementResponse: Equatable, Sendable {
     public var premium: Bool
     /// `lifetime`, `yearly` or `key`. What to show only: the pass decides.
@@ -13,20 +14,12 @@ public struct AccountEntitlementResponse: Equatable, Sendable {
     public var expiresAt: Date?
     /// The signed pass (an `EntitlementToken`). The only thing that turns Premium on.
     public var token: String?
-    /// Bind only: the purchase came off another account.
-    public var rebound: Bool?
-    public var previousAccountEmailMasked: String?
 
-    public init(
-        premium: Bool, plan: String?, expiresAt: Date?, token: String?,
-        rebound: Bool? = nil, previousAccountEmailMasked: String? = nil
-    ) {
+    public init(premium: Bool, plan: String?, expiresAt: Date?, token: String?) {
         self.premium = premium
         self.plan = plan
         self.expiresAt = expiresAt
         self.token = token
-        self.rebound = rebound
-        self.previousAccountEmailMasked = previousAccountEmailMasked
     }
 }
 
@@ -38,7 +31,7 @@ public enum AccountReply: Equatable, Sendable {
     /// No answer at all: offline, DNS, TLS, timeout.
     case unreachable
     /// Any other status, or a 200 that is not an entitlement.
-    case rejected(status: Int, error: String?, nextAllowedAt: Date?, previousAccountEmailMasked: String?)
+    case rejected(status: Int, error: String?)
 
     public static func parse(status: Int, body: Data) -> AccountReply {
         if status == 401 { return .unauthorized }
@@ -48,17 +41,10 @@ public enum AccountReply: Equatable, Sendable {
                 premium: premium.boolValue,
                 plan: object["plan"] as? String,
                 expiresAt: AccountDates.parse(object["expiresAt"]),
-                token: object["token"] as? String,
-                rebound: (object["rebound"] as? NSNumber)?.boolValue,
-                previousAccountEmailMasked: object["previousAccountEmailMasked"] as? String
+                token: object["token"] as? String
             ))
         }
-        return .rejected(
-            status: status,
-            error: object?["error"] as? String,
-            nextAllowedAt: AccountDates.parse(object?["nextAllowedAt"]),
-            previousAccountEmailMasked: object?["previousAccountEmailMasked"] as? String
-        )
+        return .rejected(status: status, error: object?["error"] as? String)
     }
 }
 
@@ -79,34 +65,6 @@ public enum AccountSessionInfo {
         guard let object = (try? JSONSerialization.jsonObject(with: body, options: .fragmentsAllowed)) as? [String: Any],
               let user = object["user"] as? [String: Any] else { return .none }
         return .some(user["email"] as? String)
-    }
-}
-
-/// What `POST /api/premium/apple/bind` did.
-public enum AppleBindOutcome: Equatable, Sendable {
-    case bound(AccountEntitlementResponse)
-    /// The purchase is on another account. Moving it needs the user's say-so, then `restore: true`.
-    case boundElsewhere(previousAccountEmailMasked: String?)
-    case rebindLimited(nextAllowedAt: Date?)
-    case invalidTransaction
-    case signedOut
-    case unreachable
-    case failed
-
-    public init(reply: AccountReply) {
-        switch reply {
-        case .ok(let response): self = .bound(response)
-        case .unauthorized: self = .signedOut
-        case .unreachable: self = .unreachable
-        case .rejected(let status, let error, let next, let previous):
-            switch (status, error) {
-            case (_, "rebind-limited"): self = .rebindLimited(nextAllowedAt: next)
-            case (_, "invalid-transaction"): self = .invalidTransaction
-            // Any other conflict means another account holds it. Nothing moves without asking.
-            case (409, _), (_, "bound-elsewhere"): self = .boundElsewhere(previousAccountEmailMasked: previous)
-            default: self = .failed
-            }
-        }
     }
 }
 
@@ -264,7 +222,6 @@ public struct AccountSite: Equatable, Sendable {
     }
 
     public var entitlementURL: URL { base.appendingPathComponent("api/premium/entitlement") }
-    public var appleBindURL: URL { base.appendingPathComponent("api/premium/apple/bind") }
     public var exchangeURL: URL { base.appendingPathComponent("api/auth/app/exchange") }
     public var sessionURL: URL { base.appendingPathComponent("api/auth/get-session") }
     public var signOutURL: URL { base.appendingPathComponent("api/auth/sign-out") }
@@ -311,25 +268,4 @@ public enum AccountSignInCallback: Equatable, Sendable {
         }
     }
 }
-
-/// The words for moving an App Store purchase between accounts. One purchase moves at most once a year.
-public enum PremiumMoveText {
-    public static let confirmTitle = "Move Premium to this account?"
-    public static let confirmButton = "Move Premium"
-
-    public static func confirmMessage(previousAccountEmailMasked: String?) -> String {
-        let on = previousAccountEmailMasked.map { "This purchase is on \($0)." } ?? "This purchase is on another PasswordPie account."
-        return "\(on) Moving it takes Premium from that account. A purchase can move to another account once a year."
-    }
-
-    public static func moved(previousAccountEmailMasked: String?) -> String {
-        "Premium moved to this account. \(previousAccountEmailMasked ?? "The other account") no longer has Premium from this purchase."
-    }
-
-    public static func limited(nextAllowedAt: Date?, dateText: (Date) -> String) -> String {
-        guard let nextAllowedAt else {
-            return "This purchase moved to another account less than a year ago, so it cannot move again yet."
-        }
-        return "This purchase moved to another account less than a year ago. It can move again on \(dateText(nextAllowedAt))."
-    }
-}
+#endif

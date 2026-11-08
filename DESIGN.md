@@ -331,27 +331,25 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
 - **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
   in the last 5 s.
-- **Locked one-time code** — no Premium on the signed-in account (or nobody signed in), on both channels. A 11 pt `lock.fill` in `text-secondary` and "Included with
+- **Locked one-time code** — no Premium, on both channels (direct: on the signed-in account, or nobody signed in). A 11 pt `lock.fill` in `text-secondary` and "Included with
   Premium" in `body` `text-secondary`, with a compact primary split action button, Upgrade, always visible at the right.
   Return on the row runs Upgrade. The item's code is never computed.
-- **Premium window** — both channels. 40 pt pie, `title`, one line of `body` `text-secondary`. Signed out: the sign-in
-  block. Signed in: the account line, then on the App Store channel the plan cards, Restore Purchases and Manage
-  Subscription, the renewal terms in `caption` `text-secondary` and two `accent-text` links; on the direct channel Get
-  Premium (primary split action button), Redeem a Key and Check Again. Closes by itself when Premium arrives, unless it
-  has something to say, such as a move between accounts.
-- **Sign-in block** — one `body` `text-secondary` line on what the account is for, then Sign in with Apple full width,
+- **Premium window** — both channels. 40 pt pie, `title`, one line of `body` `text-secondary`. App Store channel: no
+  sign-in block and no account line; the status line, the plan cards, Restore Purchases and Manage Subscription.
+  Direct channel: signed out, the sign-in block; signed in, the account line and Get Premium. It closes by itself when
+  Premium arrives, unless it has something to say, such as an activation.
+- **Sign-in block** (direct channel) — one `body` `text-secondary` line on what the account is for, then Sign in with Apple full width,
   32 pt high, radius 7, black with white type and the `applelogo` symbol (white with black type in dark mode), Apple's
   own look; under it the system button Other Ways to Sign In…. While the sheet is open the pressed one says "Waiting…"
   and both are disabled.
-- **Account line** — `person.crop.circle` in `text-secondary`, the email in `body`, and a small Sign Out at the right;
+- **Account line** (direct channel) — `person.crop.circle` in `text-secondary`, the email in `body`, and a small Sign Out at the right;
   under it the Premium status in `body` medium with its detail in `caption` `text-secondary`.
-- **Move confirmation** — a system alert: "Move Premium to this account?", the other account's masked email and the
-  once-a-year rule, Cancel and a destructive Move Premium.
 - **Plan card** — radius 12 on `field-surface` with an ink 7 % hairline: the plan name from Apple in `body` medium, one
   `caption` line, and a regular split action button at the right: primary for the one-time plan, quiet for the subscription,
   so the surface keeps one main action. The button shows the price from Apple, and no price is ever written in the code. While
   buying it says "Waiting…"; an owned plan shows "Owned" in `text-secondary`.
-- **Account section** — first in Preferences, both channels. The sign-in block, or the account line with the plans
+- **Premium section** (App Store channel) — first in Preferences: the status line, then the plans as rows.
+- **Account section** (direct channel) — first in Preferences. The sign-in block, or the account line with the plans
   divided by hairlines and the same actions and terms (direct: Get Premium, Redeem a Key, Check Again). Errors use `error`; waiting, cancelled and restored use
   `text-secondary`. Orange is never a status.
 - **Strength meter** — 5 pt capsule on a 12 % track, at least 6 pt wide: `strength-weak` below 0.4,

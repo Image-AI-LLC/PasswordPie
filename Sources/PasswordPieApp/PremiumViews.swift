@@ -1,6 +1,9 @@
+#if !PP_DIRECT
 import AppKit
 import PasswordPieCore
 import SwiftUI
+
+// The App Store channel's Premium UI. No account and no sign-in anywhere in it, and no word about buying elsewhere.
 
 /// The small window a locked two-step code opens. It closes by itself when Premium arrives.
 struct PaywallView: View {
@@ -9,24 +12,9 @@ struct PaywallView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                PasswordPieMark(size: 40)
-                    .frame(width: 44, height: 44)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("PasswordPie Premium").font(.system(size: 16, weight: .semibold))
-                    Text("Two-step codes, right beside your passwords. Everything else stays free.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if store.isSignedIn {
-                AccountLine(store: store)
-                PremiumOffer(store: store, style: .cards)
-            } else {
-                AccountSignInView(store: store)
-            }
+            PremiumWindowHeader()
+            PremiumStatusView(store: store)
+            PremiumOffer(store: store, style: .cards)
         }
         .padding(20)
         .frame(width: 400)
@@ -34,171 +22,68 @@ struct PaywallView: View {
         .tint(Palette.brandAccent)
         .task { await store.loadProductsIfNeeded() }
         .onAppear { store.clearMessage() }
-        .premiumMoveConfirmation(store: store)
     }
 }
 
-/// The Account section of Preferences: who is signed in, their Premium, and what can still be done about it.
-struct AccountPreferencesSection: View {
+/// The Premium section of Preferences.
+struct PremiumPreferencesSection: View {
     @ObservedObject var store: PremiumStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if store.isSignedIn {
-                AccountLine(store: store)
-                PremiumOffer(store: store, style: .rows)
-            } else {
-                AccountSignInView(store: store)
-            }
+            PremiumStatusView(store: store)
+            PremiumOffer(store: store, style: .rows)
         }
         .controlSize(.regular)
         .task { await store.loadProductsIfNeeded() }
-        .premiumMoveConfirmation(store: store)
     }
 }
 
-/// What the signed-in account has, and Sign Out.
-private struct AccountLine: View {
+/// What this Mac has, and until when.
+private struct PremiumStatusView: View {
     @ObservedObject var store: PremiumStore
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        let summary = store.summary()
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "person.crop.circle")
-                    .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                    .accessibilityHidden(true)
-                Text(store.email ?? "Signed in")
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 6)
-                Button("Sign Out") { Task { await store.signOut() } }
-                    .controlSize(.small)
-                    .disabled(store.activity.isBusy)
+        let status = store.statusLine()
+        VStack(alignment: .leading, spacing: 3) {
+            Text(status.title).fontWeight(.medium)
+            if !status.detail.isEmpty {
+                small(status.detail)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(summary.title).fontWeight(.medium)
-                if !summary.detail.isEmpty {
-                    Text(summary.detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let note = store.subscriptionNote() {
-                    Text(note)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-}
-
-/// Signing in, Sign in with Apple first (App Store guideline 4.8, and one click when Safari knows the Apple Account).
-struct AccountSignInView: View {
-    @ObservedObject var store: PremiumStore
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Premium belongs to your PasswordPie account, so it works on every Mac and in the browser extension. Sign in to use it here.")
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                .fixedSize(horizontal: false, vertical: true)
-            SignInWithAppleStyleButton(waiting: store.signInState == .waiting(.apple)) {
-                Task { await store.signIn(with: .apple) }
-            }
-            .disabled(isWaiting)
-            Button(store.signInState == .waiting(nil) ? "Waiting for passwordpie.com…" : "Other Ways to Sign In…") {
-                Task { await store.signIn(with: nil) }
-            }
-            .controlSize(.regular)
-            .disabled(isWaiting)
-            if let message = store.signInState.message ?? store.activity.message {
-                PremiumMessageView(message: message, isError: store.signInState == .failed || store.activity.isError)
+            if let note = store.subscriptionNote() {
+                small(note)
             }
         }
     }
 
-    private var isWaiting: Bool {
-        if case .waiting = store.signInState { return true }
-        return false
+    private func small(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// Black on light, white on dark, with the Apple logo: Apple's own look for the button.
-private struct SignInWithAppleStyleButton: View {
-    var waiting: Bool
-    var action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let dark = colorScheme == .dark
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "applelogo").font(.system(size: 14, weight: .medium))
-                Text(waiting ? "Waiting for Apple…" : "Sign in with Apple").font(.system(size: 14, weight: .medium))
-            }
-            .foregroundStyle(dark ? Color.black : Color.white)
-            .frame(maxWidth: .infinity, minHeight: 32)
-            .background(dark ? Color.white : Color.black, in: RoundedRectangle(cornerRadius: 7))
-            .contentShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Sign in with Apple")
-    }
-}
-
-/// What a signed-in account can do about Premium in this channel.
+/// What can still be bought, and the things App Store rules ask for beside it.
 private struct PremiumOffer: View {
     @ObservedObject var store: PremiumStore
     var style: PremiumPlansView.Style
 
     var body: some View {
-        if store.sellsInApp {
-            // Lifetime is the end of the road. Below it there is still something to buy.
-            if !store.ownedPlans.contains(.lifetime) {
-                Divider()
-                PremiumPlansView(store: store, style: style)
-            } else if let message = store.activity.message {
-                PremiumMessageView(message: message, isError: store.activity.isError)
-            }
+        // Lifetime is the end of the road. Below it there is still something to buy.
+        if !store.ownedPlans.contains(.lifetime) {
             Divider()
-            PremiumActionsView(store: store)
-            if !store.ownedPlans.contains(.lifetime) {
-                PremiumDisclosureView(store: store)
-            } else {
-                PremiumLegalLinks()
-            }
-        } else {
-            #if PP_DIRECT
-            if !store.accountHasPremium {
-                Divider()
-                DirectPremiumLinks(store: store)
-            }
-            #endif
-            if let message = store.activity.message {
-                PremiumMessageView(message: message, isError: store.activity.isError)
-            }
+            PremiumPlansView(store: store, style: style)
+        } else if let message = store.activity.message {
+            PremiumMessageView(message: message, isError: store.activity.isError)
         }
-    }
-}
-
-private extension View {
-    /// Asks before a purchase leaves another account: a purchase can move once a year.
-    func premiumMoveConfirmation(store: PremiumStore) -> some View {
-        alert(
-            PremiumMoveText.confirmTitle,
-            isPresented: Binding(get: { store.moveRequest != nil }, set: { if !$0 { store.cancelMove() } }),
-            presenting: store.moveRequest
-        ) { _ in
-            Button("Cancel", role: .cancel) { store.cancelMove() }
-            Button(PremiumMoveText.confirmButton, role: .destructive) { Task { await store.confirmMove() } }
-        } message: { request in
-            Text(PremiumMoveText.confirmMessage(previousAccountEmailMasked: request.previousAccountEmailMasked))
+        Divider()
+        PremiumActionsView(store: store)
+        if !store.ownedPlans.contains(.lifetime) {
+            PremiumDisclosureView(store: store)
+        } else {
+            PremiumLegalLinks()
         }
     }
 }
@@ -302,28 +187,13 @@ private struct PremiumPlanRow: View {
     }
 }
 
-/// How a purchase or restore ended. Orange is never a status: red for failure, secondary for everything else.
-struct PremiumMessageView: View {
-    var message: String
-    var isError: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        Text(message)
-            .font(.system(size: 11))
-            .foregroundStyle(isError ? Palette.error(dark: colorScheme == .dark) : Palette.secondaryText(dark: colorScheme == .dark))
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 /// Restore Purchases and Manage Subscription. Both windows offer them: App Store rule 3.1.1 asks for restore.
 private struct PremiumActionsView: View {
     @ObservedObject var store: PremiumStore
 
     var body: some View {
         HStack(spacing: 8) {
-            Button(store.activity == .restoring || store.activity == .moving ? "Restoring…" : "Restore Purchases") {
+            Button(store.activity == .restoring ? "Restoring…" : "Restore Purchases") {
                 Task { await store.restore() }
             }
             .disabled(store.activity.isBusy)
@@ -379,3 +249,4 @@ private struct PremiumLegalLinks: View {
         .help(url.absoluteString)
     }
 }
+#endif

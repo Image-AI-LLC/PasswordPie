@@ -19,16 +19,12 @@ public struct PremiumTransaction: Equatable, Sendable {
     public var verified: Bool
     public var revocationDate: Date?
     public var expirationDate: Date?
-    /// The transaction as Apple signed it (StoreKit 2's JWS). passwordpie.com checks it with Apple to put the purchase on
-    /// the account. Never logged.
-    public var signedTransaction: String?
 
-    public init(productID: String, verified: Bool, revocationDate: Date?, expirationDate: Date?, signedTransaction: String? = nil) {
+    public init(productID: String, verified: Bool, revocationDate: Date?, expirationDate: Date?) {
         self.productID = productID
         self.verified = verified
         self.revocationDate = revocationDate
         self.expirationDate = expirationDate
-        self.signedTransaction = signedTransaction
     }
 
     /// A purchase that still counts: verified, not refunded, not run out, and one of ours.
@@ -39,8 +35,7 @@ public struct PremiumTransaction: Equatable, Sendable {
     }
 }
 
-/// What this Mac's Apple Account owns, as StoreKit says. On its own it no longer turns codes on: a purchase goes onto the
-/// PasswordPie account, and `AccountPremium` decides. The app uses this for "Owned" and to find purchases to add.
+/// What this Mac's Apple Account owns, as StoreKit says. In the App Store app this is what turns codes on.
 public enum PremiumStatus: Equatable, Sendable {
     /// The store has not answered yet. Not Premium.
     case checking

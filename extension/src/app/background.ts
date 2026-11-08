@@ -58,9 +58,9 @@ const tabs: TabsAdapter = {
 
 export default defineBackground(() => {
   const channel = makeChannel();
-  const account = new AccountStore(storageKV(browser.storage.local));
-  const controller = new FillController({ channel, tabs, account, ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}) });
-  const refresh = () => void refreshEntitlement(account, fetch, SITE_URL).catch(() => undefined);
+  // Spelled out so Vite folds it: the App Store build has no account and sends the site nothing (docs/ACCOUNTS.md).
+  const account = import.meta.env.WXT_PP_STORE === 'mas' ? undefined : new AccountStore(storageKV(browser.storage.local));
+  const controller = new FillController({ channel, tabs, ...(account ? { account } : {}), ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}) });
 
   browser.tabs.onActivated.addListener(() => controller.tabActivated());
   browser.tabs.onUpdated.addListener((tabId, change, tab) => controller.tabUpdated(tabId, change, tab));
@@ -89,16 +89,21 @@ export default defineBackground(() => {
 
   // The service worker may have been restarted, or the host gone; check the port every minute.
   void browser.alarms.create(RECONNECT_ALARM, { periodInMinutes: 1 });
-  // The entitlement once a day (and each time the popup opens), so the token the app checks stays fresh.
-  // Only when it is not scheduled yet: create() replaces an alarm of the same name, and this runs on every service-worker
-  // start, which would push the refresh back each time.
-  void browser.alarms.get(ENTITLEMENT_ALARM).then((existing) => {
-    if (!existing) void browser.alarms.create(ENTITLEMENT_ALARM, { periodInMinutes: 24 * 60, delayInMinutes: 1 });
-  });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === RECONNECT_ALARM) channel.ensureConnected();
-    if (alarm.name === ENTITLEMENT_ALARM) refresh();
   });
+
+  if (import.meta.env.WXT_PP_STORE !== 'mas' && account) {
+    // The entitlement once a day (and each time the popup opens), so the token the app checks stays fresh.
+    // Only when it is not scheduled yet: create() replaces an alarm of the same name, and this runs on every service-worker
+    // start, which would push the refresh back each time.
+    void browser.alarms.get(ENTITLEMENT_ALARM).then((existing) => {
+      if (!existing) void browser.alarms.create(ENTITLEMENT_ALARM, { periodInMinutes: 24 * 60, delayInMinutes: 1 });
+    });
+    browser.alarms.onAlarm.addListener((alarm) => {
+      if (alarm.name === ENTITLEMENT_ALARM) void refreshEntitlement(account, fetch, SITE_URL).catch(() => undefined);
+    });
+  }
 
   controller.start();
 });

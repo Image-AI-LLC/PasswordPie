@@ -18,10 +18,13 @@ export const OPEN_PANEL_COMMAND = 'open-panel';
 export function extensionManifest({
   browser,
   storePackage,
+  account = true,
   googleClientId = process.env.WXT_GOOGLE_CLIENT_ID ?? '',
 }: {
   browser: ConfigEnv['browser'];
   storePackage: boolean;
+  /** False for the App Store build (WXT_PP_STORE=mas): no account, so no `storage` permission. */
+  account?: boolean;
   /** Google sign-in (mkext's identity.getAuthToken flow): Chromium only, and only when the build has a client ID. */
   googleClientId?: string;
 }): UserManifest {
@@ -32,10 +35,11 @@ export function extensionManifest({
     version: '0.1.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
-    // `storage` keeps the passwordpie.com sign-in and entitlement token (docs/ACCOUNTS.md).
+    // `storage` keeps the passwordpie.com sign-in and entitlement token (docs/ACCOUNTS.md); the App Store build has no
+    // account and does not ask for it.
     permissions: [
       ...(browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms']),
-      'storage',
+      ...(account ? ['storage'] : []),
       ...(google ? ['identity'] : []),
     ],
     host_permissions: ['<all_urls>'],

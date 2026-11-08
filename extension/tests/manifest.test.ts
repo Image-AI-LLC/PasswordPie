@@ -32,6 +32,15 @@ describe('extensionManifest', () => {
     ]);
   });
 
+  it('asks for no storage permission in the App Store build, which has no account', () => {
+    expect(extensionManifest({ browser: 'safari', storePackage: false, account: false }).permissions).toEqual([
+      'nativeMessaging',
+      'tabs',
+      'webNavigation',
+      'alarms',
+    ]);
+  });
+
   it('asks for identity and declares OAuth only for Chrome with a Google client ID', () => {
     const googleClientId = 'client.apps.googleusercontent.com';
     const chrome = extensionManifest({ browser: 'chrome', storePackage: true, googleClientId });

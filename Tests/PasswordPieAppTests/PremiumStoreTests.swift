@@ -2,18 +2,17 @@ import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 
-/// Premium is the signed-in PasswordPie account's. The App Store channel also sells, and puts each purchase on the account.
+#if PP_DIRECT
+/// The direct channel: Premium is the signed-in PasswordPie account's.
 @MainActor
-final class PremiumStoreTests: XCTestCase {
+final class AccountPremiumStoreTests: XCTestCase {
     private var clock = PremiumFixtures.now
-    private var backend: FakePremiumBackend!
     private var account: FakeAccount!
     private var store: PremiumStore!
     private var paywalls = 0
 
     override func setUp() async throws {
         clock = PremiumFixtures.now
-        backend = FakePremiumBackend()
         account = FakeAccount()
         paywalls = 0
         store = makeStore()
@@ -23,9 +22,8 @@ final class PremiumStoreTests: XCTestCase {
         store.stop()
     }
 
-    private func makeStore(backend: PremiumBackend?? = nil, freeCodes: Bool = false, firstCheckTimeout: TimeInterval = 3) -> PremiumStore {
+    private func makeStore(freeCodes: Bool = false, firstCheckTimeout: TimeInterval = 3) -> PremiumStore {
         let store = PremiumStore(
-            backend: backend ?? self.backend,
             services: account.services,
             now: { [unowned self] in self.clock },
             freeCodes: freeCodes,
@@ -294,335 +292,18 @@ final class PremiumStoreTests: XCTestCase {
     // MARK: Direct channel switch
 
     func testFreeCodesUnlockTheAppButNotTheAccount() async {
-        let store = makeStore(backend: .some(nil), freeCodes: true)
+        let store = makeStore(freeCodes: true)
         await store.refresh()
         XCTAssertTrue(store.hasPremium)
         XCTAssertFalse(store.accountHasPremium, "the browser still needs the account")
-        XCTAssertFalse(store.sellsInApp)
-    }
-
-    func testWithoutAStoreThereIsNothingToBuyOrRestore() async {
-        _ = account.signedIn()
-        let store = makeStore(backend: .some(nil))
-        await store.refresh()
-        await store.purchase(.lifetime)
-        await store.restore()
-        XCTAssertEqual(store.activity, .idle)
-        XCTAssertEqual(account.client.binds.count, 0)
-        XCTAssertEqual(store.storeStatus, .free)
-    }
-
-    // MARK: Buying
-
-    func testBuyingWhileSignedOutAsksToSignInFirstThenCarriesOn() async {
-        await store.refresh()
-        await store.purchase(.lifetime)
-        XCTAssertEqual(store.activity, .signInFirst)
-        XCTAssertEqual(backend.purchases, [], "nothing is charged before the account is there")
-        await store.signIn(with: .apple)
-        XCTAssertEqual(backend.purchases, [.lifetime])
-        XCTAssertEqual(account.client.binds.map(\.signed), [PremiumFixtures.jws(.lifetime)])
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.activity, .idle)
-    }
-
-    func testABuyGoesOntoTheAccountAndUnlocks() async {
-        _ = account.signedIn()
-        await store.refresh()
-        await store.purchase(.lifetime)
-        XCTAssertEqual(account.client.binds.count, 1)
-        XCTAssertEqual(account.client.binds.first?.restore, false)
-        XCTAssertEqual(account.client.binds.first?.session, "session-1")
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.activity, .idle)
-        XCTAssertTrue(store.ownedPlans.contains(.lifetime))
-    }
-
-    func testABuyTheSiteDidNotHearAboutIsSafeAndGoesOnLater() async {
-        _ = account.signedIn()
-        await store.refresh()
-        account.client.bindReplies = [.unreachable]
-        await store.purchase(.lifetime)
-        XCTAssertEqual(store.activity, .linkPending)
-        XCTAssertFalse(store.hasPremium)
-        XCTAssertTrue(store.activity.message?.contains("Your purchase is safe") == true)
-        await store.refresh(force: true)
-        XCTAssertEqual(account.client.binds.count, 2)
-        XCTAssertEqual(account.client.binds.last?.restore, false)
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.activity, .idle)
-    }
-
-    func testABuyTheSiteCannotConfirmWithAppleSaysSo() async {
-        _ = account.signedIn()
-        await store.refresh()
-        account.client.bindReplies = [.rejected(status: 400, error: "invalid-transaction", nextAllowedAt: nil, previousAccountEmailMasked: nil)]
-        await store.purchase(.lifetime)
-        XCTAssertEqual(store.activity, .failed(PremiumActivity.notConfirmed))
-        XCTAssertFalse(store.hasPremium)
-    }
-
-    func testAPendingPurchaseWaitsThenGoesOntoTheAccountByItself() async {
-        _ = account.signedIn()
-        store.start()
-        let checked = await waitUntil { self.store.account == .free }
-        XCTAssertTrue(checked)
-        backend.purchaseOutcome = .success(.pending)
-        await store.purchase(.yearly)
-        XCTAssertEqual(store.activity, .pending(.yearly))
-        backend.transactions = [PremiumFixtures.transaction(.yearly)]
-        backend.emitUpdate()
-        let unlocked = await waitUntil { self.store.hasPremium }
-        XCTAssertTrue(unlocked)
-        XCTAssertEqual(store.activity, .idle)
-        XCTAssertEqual(account.client.binds.map(\.restore), [false])
-    }
-
-    func testACancelledPurchaseLeavesEverythingAlone() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.purchaseOutcome = .success(.cancelled)
-        await store.purchase(.lifetime)
-        XCTAssertEqual(store.activity, .cancelled)
-        XCTAssertEqual(account.client.binds.count, 0)
-    }
-
-    func testAFailedPurchaseShowsTheStoresReason() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.purchaseOutcome = .failure(.init())
-        await store.purchase(.lifetime)
-        XCTAssertEqual(store.activity, .failed("The App Store said no."))
-    }
-
-    func testAnUnverifiedPurchaseIsNotSent() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.purchaseOutcome = .success(.unverified)
-        await store.purchase(.lifetime)
-        XCTAssertTrue(store.activity.isError)
-        XCTAssertEqual(account.client.binds.count, 0)
-        XCTAssertFalse(store.hasPremium)
-    }
-
-    func testAPlanAlreadyOwnedIsNotBoughtAgain() async {
-        _ = account.signedIn()
-        backend.transactions = [PremiumFixtures.lifetime]
-        await store.refresh()
-        await store.purchase(.lifetime)
-        XCTAssertEqual(backend.purchases, [])
-        XCTAssertEqual(store.activity, .alreadyOwned(.lifetime))
-    }
-
-    func testOnlyOnePurchaseRunsAtATime() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.holdsPurchases = true
-        let first = Task { await store.purchase(.lifetime) }
-        let started = await waitUntil { self.backend.purchaseGate != nil }
-        XCTAssertTrue(started)
-        await store.purchase(.yearly)
-        XCTAssertEqual(backend.purchases, [.lifetime])
-        backend.purchaseGate?.resume()
-        await first.value
-    }
-
-    // MARK: A purchase on this Mac that is on no account yet
-
-    func testAPurchaseHereWhileSignedOutWaitsAndGoesOnAtSignIn() async {
-        backend.transactions = [PremiumFixtures.lifetime]
-        await store.refresh()
-        XCTAssertEqual(store.activity, .unclaimedPurchase)
-        XCTAssertFalse(store.hasPremium, "Premium is the account's")
-        XCTAssertNotNil(store.activity.message)
-        await store.signIn(with: .apple)
-        XCTAssertEqual(account.client.binds.map(\.restore), [false])
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.activity, .idle)
-    }
-
-    func testAPurchaseOnAnotherAccountIsNeverMovedWithoutAsking() async {
-        _ = account.signedIn()
-        backend.transactions = [PremiumFixtures.lifetime]
-        account.client.bindDefault = .rejected(status: 409, error: "bound-elsewhere", nextAllowedAt: nil, previousAccountEmailMasked: "j•••@gmail.com")
-        await store.refresh()
-        XCTAssertEqual(account.client.binds.map(\.restore), [false])
-        XCTAssertEqual(store.activity, .onAnotherAccount)
-        XCTAssertNil(store.moveRequest, "only Restore Purchases offers to move it")
-        await store.refresh(force: true)
-        XCTAssertEqual(account.client.binds.count, 1, "not sent again on every refresh")
-    }
-
-    func testARefundedPurchaseIsNotSent() async {
-        _ = account.signedIn()
-        var refunded = PremiumFixtures.lifetime
-        refunded.revocationDate = later(-10)
-        backend.transactions = [refunded]
-        await store.refresh()
-        XCTAssertEqual(account.client.binds.count, 0)
-    }
-
-    // MARK: Restore and moving Premium
-
-    func testRestoreWhileSignedOutAsksToSignInFirstThenCarriesOn() async {
-        backend.onRestore = { [unowned self] in self.backend.transactions = [PremiumFixtures.lifetime] }
-        await store.restore()
-        XCTAssertEqual(store.activity, .signInFirst)
-        XCTAssertEqual(backend.restores, 0)
-        await store.signIn(with: .apple)
-        XCTAssertEqual(backend.restores, 1)
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.activity, .restored)
-    }
-
-    func testRestoreWithNothingToRestoreSaysSo() async {
-        _ = account.signedIn()
-        await store.refresh()
-        await store.restore()
-        XCTAssertEqual(store.activity, .nothingToRestore)
-    }
-
-    func testRestorePutsThePurchaseOnThisAccount() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.onRestore = { [unowned self] in self.backend.transactions = [PremiumFixtures.lifetime] }
-        await store.restore()
-        XCTAssertEqual(store.activity, .restored)
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(account.client.binds.map(\.restore), [false])
-    }
-
-    func testRestoreAsksBeforeMovingFromAnotherAccount() async throws {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.onRestore = { [unowned self] in self.backend.transactions = [PremiumFixtures.lifetime] }
-        account.client.bindReplies = [.rejected(status: 409, error: "bound-elsewhere", nextAllowedAt: nil, previousAccountEmailMasked: "j•••@gmail.com")]
-        await store.restore()
-        XCTAssertEqual(store.moveRequest, PremiumMoveRequest(signedTransactions: [PremiumFixtures.jws(.lifetime)], previousAccountEmailMasked: "j•••@gmail.com"))
-        XCTAssertEqual(account.client.binds.map(\.restore), [false], "nothing moved yet")
-        XCTAssertFalse(store.hasPremium)
-    }
-
-    func testMovingSaysTheOtherAccountLostPremium() async throws {
-        try await testRestoreAsksBeforeMovingFromAnotherAccount()
-        var moved = try XCTUnwrap({ if case .ok(let r) = PassKey.premium() { return r } else { return nil } }())
-        moved.rebound = true
-        moved.previousAccountEmailMasked = "j•••@gmail.com"
-        account.client.bindReplies = [.ok(moved)]
-        await store.confirmMove()
-        XCTAssertEqual(account.client.binds.map(\.restore), [false, true])
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.activity, .moved(previousAccountEmailMasked: "j•••@gmail.com"))
-        XCTAssertEqual(store.activity.message, "Premium moved to this account. j•••@gmail.com no longer has Premium from this purchase.")
-        XCTAssertNil(store.moveRequest)
-    }
-
-    func testAMoveTooSoonGivesTheNextDate() async throws {
-        try await testRestoreAsksBeforeMovingFromAnotherAccount()
-        let next = later(100 * 86400)
-        account.client.bindReplies = [.rejected(status: 409, error: "rebind-limited", nextAllowedAt: next, previousAccountEmailMasked: nil)]
-        await store.confirmMove()
-        XCTAssertEqual(store.activity, .moveLimited(nextAllowedAt: next))
-        XCTAssertEqual(store.activity.message(dateText: { _ in "March 3, 2027" }), "This purchase moved to another account less than a year ago. It can move again on March 3, 2027.")
-        XCTAssertTrue(store.activity.isError)
-        XCTAssertFalse(store.hasPremium)
-    }
-
-    func testCancellingTheMoveSendsNothing() async throws {
-        try await testRestoreAsksBeforeMovingFromAnotherAccount()
-        store.cancelMove()
-        XCTAssertNil(store.moveRequest)
-        XCTAssertEqual(account.client.binds.count, 1)
-    }
-
-    func testRestoreCancelledAtTheSignInIsQuiet() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.restoreOutcome = .success(.cancelled)
-        await store.restore()
-        XCTAssertEqual(store.activity, .idle)
-    }
-
-    func testRestoreFailingShowsTheReason() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.restoreOutcome = .failure(.init())
-        await store.restore()
-        XCTAssertEqual(store.activity, .failed("The App Store said no."))
-    }
-
-    func testOpeningTheWindowClearsAnOldMessageButNotAWait() async {
-        _ = account.signedIn()
-        await store.refresh()
-        backend.purchaseOutcome = .success(.cancelled)
-        await store.purchase(.lifetime)
-        store.clearMessage()
-        XCTAssertEqual(store.activity, .idle)
-        backend.purchaseOutcome = .success(.pending)
-        await store.purchase(.lifetime)
-        store.clearMessage()
-        XCTAssertEqual(store.activity, .pending(.lifetime), "still waiting for approval")
-    }
-
-    // MARK: Products
-
-    func testProductsLoadInPlanOrder() async {
-        backend.products = .success([FakePremiumBackend.yearly, FakePremiumBackend.lifetime])
-        await store.loadProducts()
-        XCTAssertEqual(store.products, .loaded([FakePremiumBackend.lifetime, FakePremiumBackend.yearly]))
-    }
-
-    func testProductsFailingToLoad() async {
-        backend.products = .failure(.init())
-        await store.loadProducts()
-        XCTAssertEqual(store.products, .failed)
-    }
-
-    /// The store returns an empty list, with no error, for products it does not know.
-    func testAnEmptyProductListCountsAsFailing() async {
-        backend.products = .success([])
-        await store.loadProducts()
-        XCTAssertEqual(store.products, .failed)
-    }
-
-    func testLoadedProductsAreNotFetchedAgainWhenTheWindowReopens() async {
-        await store.loadProductsIfNeeded()
-        await store.loadProductsIfNeeded()
-        XCTAssertEqual(backend.productLoads, 1)
-    }
-
-    // MARK: Words
-
-    func testEveryStateThatNeedsWordsHasThem() {
-        let states: [PremiumActivity] = [
-            .pending(.lifetime), .linking, .linkPending, .moving, .moved(previousAccountEmailMasked: nil), .moveLimited(nextAllowedAt: nil),
-            .onAnotherAccount, .signInFirst, .unclaimedPurchase, .signedOutBySite, .cancelled, .failed("x"), .alreadyOwned(.lifetime),
-            .nothingToRestore, .restored,
-        ]
-        for state in states {
-            XCTAssertNotNil(state.message, "\(state)")
-        }
-        XCTAssertNil(PremiumActivity.idle.message)
-        XCTAssertTrue(PremiumActivity.purchasing(.lifetime).isBusy)
-        XCTAssertTrue(PremiumActivity.restoring.isBusy)
-        XCTAssertTrue(PremiumActivity.linking.isBusy)
-        XCTAssertTrue(PremiumActivity.moving.isBusy)
-        XCTAssertFalse(PremiumActivity.pending(.lifetime).isBusy, "another plan can be tried while one waits for approval")
-    }
-
-    func testTheYearlyReminderForSomeoneWhoAlsoBoughtLifetime() async {
-        backend.transactions = [PremiumFixtures.lifetime, PremiumFixtures.yearly(expires: later(86400))]
-        await store.refresh()
-        XCTAssertTrue(store.subscriptionNote(dateText: { _ in "D" })?.contains("Manage Subscription") == true)
-        backend.transactions = [PremiumFixtures.lifetime]
-        await store.refresh()
-        XCTAssertNil(store.subscriptionNote())
     }
 }
+#endif
 
 /// What each release channel does out of the box.
 @MainActor
 final class PremiumChannelTests: XCTestCase {
+    #if PP_DIRECT
     func testAStoreFromTheChannelStartsWithoutPremium() {
         let store = PremiumChannel.makeStore(services: FakeAccount().services)
         XCTAssertFalse(store.hasPremium)
@@ -640,17 +321,13 @@ final class PremiumChannelTests: XCTestCase {
         XCTAssertTrue(appAccountHasPremium())
     }
 
-    #if PP_DIRECT
-    func testTheDirectChannelNeedsTheAccountForCodesAndSellsNothing() {
+    func testTheDirectChannelNeedsTheAccountForCodes() {
         XCTAssertFalse(directChannelCodesAreFree, "the user's decision of 2026-11-08")
-        let store = PremiumChannel.makeStore(services: FakeAccount().services)
-        XCTAssertFalse(store.sellsInApp)
-        XCTAssertEqual(store.storeStatus, .free)
     }
     #else
-    func testTheStoreChannelSellsThroughApple() {
-        let store = PremiumChannel.makeStore(services: FakeAccount().services)
-        XCTAssertTrue(store.sellsInApp)
+    func testTheStoreChannelStartsCheckingWithoutPremium() {
+        let store = PremiumChannel.makeStore(secrets: FakeAccountSecrets())
+        XCTAssertFalse(store.hasPremium)
         XCTAssertEqual(store.storeStatus, .checking)
     }
     #endif

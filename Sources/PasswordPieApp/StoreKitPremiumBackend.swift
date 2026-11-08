@@ -4,7 +4,7 @@ import PasswordPieCore
 import StoreKit
 
 /// The App Store channel's one link to Apple. The only file that imports StoreKit, so the direct binary does not link it.
-/// It passes on what the store says, with Apple's signed copy of each transaction for passwordpie.com. The account decides Premium.
+/// It passes on what the store says. Nothing leaves this Mac except through StoreKit itself.
 @MainActor
 final class StoreKitPremiumBackend: PremiumBackend {
     private var products: [PremiumPlan: Product] = [:]
@@ -60,10 +60,10 @@ final class StoreKitPremiumBackend: PremiumBackend {
         }
         switch result {
         case .success(let verification):
-            // Only a verified transaction is finished and sent to passwordpie.com, which checks Apple's signature again.
+            // Only a verified transaction is finished.
             guard case .verified(let transaction) = verification else { return .unverified }
             await transaction.finish()
-            return .success(signedTransaction: verification.jwsRepresentation)
+            return .success
         case .pending:
             return .pending
         case .userCancelled:
@@ -87,19 +87,18 @@ private extension PremiumTransaction {
     init(_ result: VerificationResult<Transaction>) {
         switch result {
         case .verified(let transaction):
-            self.init(transaction, verified: true, signed: result.jwsRepresentation)
+            self.init(transaction, verified: true)
         case .unverified(let transaction, _):
-            self.init(transaction, verified: false, signed: nil)
+            self.init(transaction, verified: false)
         }
     }
 
-    init(_ transaction: Transaction, verified: Bool, signed: String?) {
+    init(_ transaction: Transaction, verified: Bool) {
         self.init(
             productID: transaction.productID,
             verified: verified,
             revocationDate: transaction.revocationDate,
-            expirationDate: transaction.expirationDate,
-            signedTransaction: signed
+            expirationDate: transaction.expirationDate
         )
     }
 }

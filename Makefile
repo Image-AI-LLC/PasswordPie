@@ -86,6 +86,8 @@ install: extension $(call ents,Entitlements/direct.entitlements) $(call ents,Ent
 mas-dev: extension-mas $(call ents,Entitlements/mas.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
 	PP_MAS=1 swift build -c release --scratch-path .build-mas
 	$(call assemble_app,$$(PP_MAS=1 swift build -c release --scratch-path .build-mas --show-bin-path),$(MAS_DIR)/$(APP))
+	# Only this channel opens passwordpie://activate links from the website (docs/CHANNELS.md).
+	/usr/libexec/PlistBuddy -c 'Add :CFBundleURLTypes array' -c 'Add :CFBundleURLTypes:0 dict' -c 'Add :CFBundleURLTypes:0:CFBundleURLName string com.oldcai.passwordpie.activate' -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string passwordpie' "$(MAS_DIR)/$(APP)/Contents/Info.plist"
 	$(call sign_app,$(MAS_DIR)/$(APP),--sign "$(SIGN_ID)",$(call ents,Entitlements/mas.entitlements))
 	@codesign -d --entitlements :- "$(MAS_DIR)/$(APP)" 2>/dev/null | grep -q "app-sandbox" && echo "Built sandboxed $(MAS_DIR)/$(APP)"
 

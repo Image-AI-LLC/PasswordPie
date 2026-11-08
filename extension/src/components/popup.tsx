@@ -9,6 +9,8 @@ import type { PopupStatus } from '../lib/protocol';
 export interface PopupApi {
   /** False in the App Store build: no upgrade link and no key field. */
   sellsPremium: boolean;
+  /** False in the App Store build, which has no account at all: no sign-in, and nothing asks passwordpie.com. */
+  accountEnabled: boolean;
   googleAvailable: boolean;
   openPanel(): Promise<void>;
   /** The shortcut Chrome actually gave `open-panel`, such as "⌥⇧P"; "" when it gave none (the key was taken). */
@@ -242,7 +244,7 @@ function Account({ api, user }: { api: PopupApi; user: AccountUser }) {
 }
 
 export function PopupView({ api }: { api: PopupApi }) {
-  const user = useQuery({ queryKey: ['user'], queryFn: () => api.user(), retry: false });
+  const user = useQuery({ queryKey: ['user'], queryFn: () => api.user(), retry: false, enabled: api.accountEnabled });
   const status = useQuery({ queryKey: ['status'], queryFn: () => api.status() });
   const shortcut = useQuery({ queryKey: ['shortcut'], queryFn: () => api.panelShortcut() });
   return (
@@ -264,17 +266,19 @@ export function PopupView({ api }: { api: PopupApi }) {
           The two-step code on {status.data.codeSkippedOn} was not filled: it needs Premium.
         </p>
       )}
-      <section className="border-t border-pp-border pt-3" aria-label="Account">
-        {user.isPending ? (
-          <p className="text-[13px] text-pp-text-tertiary">Checking your account…</p>
-        ) : user.data ? (
-          <Account api={api} user={user.data} />
-        ) : user.isError ? (
-          <p className="text-[13px] text-pp-text-secondary">Could not reach passwordpie.com. Try again later.</p>
-        ) : (
-          <SignIn api={api} />
-        )}
-      </section>
+      {api.accountEnabled && (
+        <section className="border-t border-pp-border pt-3" aria-label="Account">
+          {user.isPending ? (
+            <p className="text-[13px] text-pp-text-tertiary">Checking your account…</p>
+          ) : user.data ? (
+            <Account api={api} user={user.data} />
+          ) : user.isError ? (
+            <p className="text-[13px] text-pp-text-secondary">Could not reach passwordpie.com. Try again later.</p>
+          ) : (
+            <SignIn api={api} />
+          )}
+        </section>
+      )}
     </main>
   );
 }

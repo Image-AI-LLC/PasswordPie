@@ -10,9 +10,10 @@ App Store builds do not contain direct-only code.
 | Sandbox | no (hardened runtime, notarized) | yes (`Entitlements/mas.entitlements`) |
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
-| Two-step codes (Premium) | need a PasswordPie account with Premium (Get Premium and keys on passwordpie.com) | need a PasswordPie account with Premium; sold here with StoreKit 2 and put onto the account |
-| Two-step codes in the browser (Premium) | the app's own account has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the same |
-| Extension popup | account, Upgrade (pricing page) and "Have a key?" | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): account only, no Upgrade, no key field |
+| Two-step codes (Premium) | need a PasswordPie account with Premium (Get Premium and keys on passwordpie.com) | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
+| Two-step codes in the browser (Premium) | the app's own account has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
+| Network from the app | passwordpie.com, for the account only | **none**: no `URLSession`, no `network.client` entitlement |
+| Extension popup | account, Upgrade (pricing page) and "Have a key?" | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): Open PasswordPie only. No account, no Upgrade, no key field, no request to the site |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
@@ -23,6 +24,13 @@ Check no debug preview or mock site can reach a release store build, and that th
 
     strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e PASSWORDPIE_PREMIUM_PREVIEW -e PASSWORDPIE_SITE_URL   # expect 0
     otool -L "$(swift build -c release --show-bin-path)/PasswordPie" | grep -c StoreKit                     # expect 0
+
+Check the store build has no account and no way to reach the site:
+
+    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e api/premium -e app/sign-in -e api/auth   # expect 0
+    otool -L build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c AuthenticationServices.*Web   # informational: AutoFill links the framework
+    codesign -d --entitlements :- build/mas/PasswordPie.app | grep -c network.client                      # expect 0
+    grep -rlE 'api/premium|api/auth' build/mas/PasswordPie.app/Contents/PlugIns/*Safari*/Contents/Resources   # expect nothing
 
 ## Releasing the direct download
 
@@ -69,8 +77,8 @@ These could not be verified without a Distribution certificate and provisioning 
 4. **Touch ID keychain.** The data-protection keychain (`kSecUseDataProtectionKeychain`) returns -34018 without a
    provisioning profile. With a profile the store channel can use the biometric access control the comment in
    `TouchIDSecretStore.swift` describes.
-5. **In-app purchase and the account.** Built: see "Premium" below. What is left is in App Store Connect and on
-   passwordpie.com, under "Before Premium can be sold".
+5. **In-app purchase.** Built: see "Premium" below. What is left is in App Store Connect, under "Before Premium can be
+   sold".
 6. **Site-ranking data licence.** See `Scripts/gen_domain_ranks.py` and the note in the delivery report.
 
 ## Premium
@@ -78,23 +86,40 @@ These could not be verified without a Distribution certificate and provisioning 
 Two-step codes need Premium, on both channels. Everything else is free. The behavior is in "Premium: two-step codes"
 in [UX.md](UX.md).
 
-**Premium is the PasswordPie account's** (user decision, 2026-11-08). An account gets it from a Stripe purchase on
-passwordpie.com, a redeemed key, or an App Store purchase put onto the account. The app, the direct download and the
-browser extension all read the same account.
+**Each channel decides Premium its own way** (user decision, 2026-11-09, replacing 2026-11-08's "Premium is the account's
+on both channels"). The App Store app has no account, no sign-in and no network code, for two reasons: guideline 5.1.1(v)
+asks that an app without significant account-based features be usable without a login, and any account data the app sends
+would have to appear on its App Privacy label. Optional sign-in would not avoid that, so the code is not in the binary.
+The direct download and the browser extension read the PasswordPie account on passwordpie.com.
 
-> **This replaces the decision of 2026-11-05** that the direct download's codes were free for everyone. The direct app
-> now needs a signed-in account with Premium too. To go back, set `directChannelCodesAreFree = true` in
-> `PremiumChannel.swift`: codes in the app are free again, and the browser extension still needs the account
-> (`appAccountHasPremium()` ignores the switch).
+> **The direct app's codes need the account** (2026-11-08), replacing the decision of 2026-11-05 that they were free for
+> everyone. To go back, set `directChannelCodesAreFree = true` in `PremiumChannel.swift`: codes in the app are free again,
+> and the browser extension still needs the account (`appAccountHasPremium()` ignores the switch).
 
 | Product ID | Type | Price |
 |---|---|---|
 | `com.oldcai.passwordpie.premium.lifetime` | Non-consumable | US$29, set in App Store Connect |
 | `com.oldcai.passwordpie.premium.yearly` | Auto-renewable subscription, 1 year | US$10, set in App Store Connect |
 
-### Who has Premium
+### Who has Premium: the App Store channel
 
-`PremiumStore.hasPremium` is true only while the keychain holds a **pass** (the `token` from
+`AppStorePremiumStore.hasPremium` is true while StoreKit reports a verified, unrevoked, unexpired purchase
+(`PremiumStatus`), or while the keychain holds an **activation** that still checks. Nothing is sent anywhere.
+
+An activation is a `passwordpie://activate?token=<JWT>` link opened from passwordpie.com. The token is the same Ed25519
+JWS as the pass below, with `aud: passwordpie-activation`, so neither kind of token works as the other. `exp` is the earlier of
+one year and the end of the account's Premium. It cannot be revoked, because the app never talks to the site, so a refund
+on the site stops counting only at `exp`. The app keeps whichever valid activation runs out latest, and never logs the
+token. Only the App Store build registers the URL scheme (`make mas-dev` adds `CFBundleURLTypes`).
+
+Guideline 3.1.3(b) allows access to what was acquired on your website as long as the same is sold in the app, which it
+is. Guideline 3.1.1 forbids an app's own unlock mechanisms such as license keys, so activation has no UI in the app and no
+field to type into, and the review notes must describe it, or guideline 2.3.1 (no hidden features) applies. If review
+objects, removing `application(_:open:)` and the URL type drops activation and leaves purchases untouched.
+
+### Who has Premium: the direct channel
+
+`AccountPremiumStore.hasPremium` is true only while the keychain holds a **pass** (the `token` from
 `GET /api/premium/entitlement`) whose Ed25519 signature checks against a key built into the app
 (`EntitlementToken.trustedKeys`), with the right `iss` and `aud`, and an `exp` in the future. The site's `premium: true`
 alone grants nothing. The decision is `AccountPremiumDecision.evaluate` in `PasswordPieCore/Account.swift`.
@@ -134,25 +159,13 @@ The app refuses a callback whose `state` it did not send. A callback may carry `
 preferred, so the session token never sits in a URL. The email comes from Better Auth's `GET /api/auth/get-session`,
 and Sign Out calls `POST /api/auth/sign-out`; every call is `Authorization: Bearer`, never cookies.
 
-### App Store purchases go onto the account
+### App Store purchases
 
-`StoreKitPremiumBackend` is the only code that imports StoreKit, and the whole file is outside `PP_DIRECT`. It hands
-over each verified transaction with its JWS (`VerificationResult.jwsRepresentation`).
+`StoreKitPremiumBackend` is the only code that imports StoreKit, and the whole file is outside `PP_DIRECT`.
 
-    POST /api/premium/apple/bind {"signedTransaction": "<JWS>", "restore": false|true}
-    ← 200 entitlement + {"rebound": bool, "previousAccountEmailMasked": string|null}
-    ← 409 {"error": "bound-elsewhere", "previousAccountEmailMasked": "j•••@gmail.com"}   (restore: false only)
-    ← 409 {"error": "rebind-limited", "nextAllowedAt": ISO 8601}
-    ← 400 {"error": "invalid-transaction"}
-
-- **Buy.** Signed out, the window asks for sign-in first, then the purchase carries on. The JWS goes to `bind` with
-  `restore: false`. If the site cannot be reached, the purchase stays on this Mac and goes on at the next refresh.
-- **A purchase that arrives while signed out** (Ask to Buy, another Mac) stays in StoreKit and is sent with
-  `restore: false` after sign-in. Automatic sends never use `restore: true`.
-- **Restore Purchases** runs `AppStore.sync()`, then sends each active purchase with `restore: false`. One that answers
-  `bound-elsewhere` is moved only after the confirmation ("a purchase can move once a year, the other account loses
-  Premium"), with `restore: true`. A move answers `rebound: true`, and the app names the other account, which lost it.
-  `rebind-limited` shows `nextAllowedAt`. Any other 409 is treated as `bound-elsewhere`, so nothing moves without asking.
+- **Buy.** Apple's sheet; the verified transaction unlocks the codes.
+- **Restore Purchases** runs `AppStore.sync()` and reads the entitlements again. No account is involved.
+- **A purchase from elsewhere** (Ask to Buy, another Mac) arrives through `Transaction.updates`.
 
 The prices shown are `Product.displayPrice`. The UI links only to the terms, the privacy policy and Apple's own
 subscription page, and the App Store build says nothing about buying elsewhere (`PremiumGateTests`). Only
@@ -161,56 +174,49 @@ subscription page, and the App Store build says nothing about buying elsewhere (
 **Direct channel.** No StoreKit. The Premium window offers Get Premium (passwordpie.com/pricing), Redeem a Key
 (passwordpie.com/redeem) and Check Again.
 
-**Codes in the browser.** `browserCodeAllowed` in `PremiumChannel.swift` decides, the same in both channels: the account
-signed in inside the app has Premium (`appAccountHasPremium()`), or the `code` request carries a good passwordpie.com
-token from the extension ([ACCOUNTS.md](ACCOUNTS.md)). `directChannelCodesAreFree` does not count there.
+**Codes in the browser.** `browserCodeAllowed` in `PremiumChannel.swift` decides. App Store channel: the app has Premium.
+Direct channel: the account signed in inside the app has Premium (`appAccountHasPremium()`), or the `code` request carries
+a good passwordpie.com token from the extension ([ACCOUNTS.md](ACCOUNTS.md)). `directChannelCodesAreFree` does not count
+there.
 
 **The gate.** `OneTimeCodes.access(for:hasPremium:)` is the only code in the app target that may call `TOTP.code`.
 `PremiumGateTests` fails if a call appears anywhere else. `Search.swift` and the menu never read a code. The gate changes
 nothing on disk: the `otp` field stays in the KeePass file, and saving keeps it.
 
-**Signing.** No entitlement is added for In-App Purchase or the sign-in sheet. In-App Purchase is an App ID capability,
-and StoreKit and `ASWebAuthenticationSession` need only the sandbox's existing `network.client`. The custom scheme is
-caught by the session itself, so Info.plist registers no URL type.
+**Signing.** In-App Purchase is an App ID capability and needs no entitlement. The store build has dropped
+`network.client`, because nothing in the app opens a connection and StoreKit runs in Apple's own process. This has not been
+tested against the real store: do it at step 8 of the checklist. If the products do not load without it, put that one key
+back in `Entitlements/mas.entitlements`; it changes nothing on the App Privacy label. The direct build's sign-in sheet
+catches its own custom scheme, so the shared Info.plist registers no URL type.
 
-### App Store review risk
+### App Store privacy label
 
-Apple dislikes requiring an account to buy (guideline 5.1.1(v)). The case for it here: Premium is an account feature
-used across platforms (the browser extension in Chrome, other Macs), which 5.1.1(v) allows, and 3.1.3(b) lets an app
-unlock what was bought on the web as long as the same is sold in the app, which it is. It can still be rejected. What
-lowers the risk:
+Answer **Data Not Collected** in App Store Connect. Data processed only on the device is not collected, the app has no
+network code, and Apple handles the purchase itself. Keep it true: any new request from the store build, or from the Safari
+extension inside it, needs this answer checked first.
 
-- Sign in with Apple, first and one click.
-- A purchase is never lost: one made or approved while signed out stays on the Mac and goes onto the account at sign-in.
-- No mention of buying elsewhere in the App Store build.
-- Review notes should say why the account exists and give a demo account (see the checklist).
+### Testing without the site
 
-If review rejects it anyway, the fallback is to let a StoreKit purchase unlock codes on this Mac while signed out and
-add it to the account at sign-in; that is a change to `PremiumStore.hasPremium` only.
-
-### Testing the account without the site
-
-`Scripts/mock-account-site.mjs` serves all of the above on `http://localhost:8788`, signing passes with the public test
-key (`extension/dev/test-key.json`, `kid: pp-test`), which only debug and `make install` builds trust:
+**Direct channel.** `Scripts/mock-account-site.mjs` serves the account on `http://localhost:8788`, signing passes with the
+public test key (`extension/dev/test-key.json`, `kid: pp-test`), which only debug and `make install` builds trust:
 
     MOCK_AUTO_APPLE=1 node Scripts/mock-account-site.mjs           # Apple sign-in completes at once
     PASSWORDPIE_SITE_URL=http://localhost:8788 .build/debug/PasswordPie …
     curl localhost:8788/mock/redeem-latest                          # PPIE-TEST-TEST-TEST for the last account
-    curl -X POST localhost:8788/mock/bind  -d '{"originalTransactionId":"preview-lifetime","email":"jane@gmail.com"}'
-    curl -X POST localhost:8788/mock/moved -d '{"originalTransactionId":"preview-lifetime"}'
 
-`PASSWORDPIE_SITE_URL` is read by debug builds only. On the App Store channel, `PASSWORDPIE_PREMIUM_PREVIEW` (debug only)
-fakes StoreKit with JWS-shaped transactions the mock accepts and the real site refuses, and `PASSWORDPIE_PREMIUM_SCRIPT`
-(debug only) runs `sign-in-apple,buy-lifetime,restore,confirm-move,sign-out,refresh` for screenshots.
+`PASSWORDPIE_SITE_URL` is read by debug builds only.
+
+**App Store channel.** `PASSWORDPIE_PREMIUM_PREVIEW` (debug only) fakes StoreKit, and `PASSWORDPIE_PREMIUM_SCRIPT` (debug
+only) runs `buy-lifetime,buy-yearly,restore,refresh` for screenshots. `node Scripts/mint-activation-link.mjs` prints an
+activation link signed with the test key, for a debug build.
 
 **Local StoreKit testing.** `Configuration/PasswordPie.storekit` holds both products. It works only through Xcode's Run
 action: open `Package.swift` in Xcode, run with `PP_MAS=1` in the scheme's environment, and pick the file under Scheme >
-Run > Options > StoreKit Configuration. Launching the built `.app` directly talks to the real store. The JWS from the
-local StoreKit environment is signed by Xcode's local certificate, so the real site refuses it; the mock accepts it.
+Run > Options > StoreKit Configuration. Launching the built `.app` directly talks to the real store.
 
 ### Before Premium can be sold
 
-These are in App Store Connect, the Apple Developer site and passwordpie.com's settings, and cannot be done from this repo.
+These are in App Store Connect and the Apple Developer site, and cannot be done from this repo.
 
 1. Check that In-App Purchase is on for the App ID `com.oldcai.passwordpie`.
 2. Sign the Paid Apps agreement, and fill in the bank and tax details. Until they are active, products do not load.
@@ -220,17 +226,12 @@ These are in App Store Connect, the Apple Developer site and passwordpie.com's s
 5. For both, add a display name, a description and a review screenshot of the Premium window.
 6. Leave Billing Grace Period off. Codes lock at `expirationDate`, so a grace period would charge people for days they
    cannot use. Turning it on needs a code change first.
-7. **App Store Server API key:** Users and Access > Integrations > In-App Purchase: generate a key, and give
-   passwordpie.com the Issuer ID, the Key ID and the `.p8` (Cloudflare secrets).
-8. **App Store Server Notifications V2:** in the app's App Information, set the production and sandbox URLs to
-   `https://passwordpie.com/api/apple/notifications`.
-9. **Sign in with Apple:** turn on the capability for the App ID; create a Services ID (such as
-   `com.oldcai.passwordpie.web`) with `passwordpie.com` as a domain and Better Auth's Apple callback as the return URL;
-   create a Sign in with Apple key, and give passwordpie.com the Services ID, Team ID, Key ID and `.p8`.
-10. `EntitlementToken.publicKey` holds passwordpie.com's production public key (`kid: pp-1`, from passwordpie.com#8).
-    Before a release, check the site signs with its private half (a token from `/api/premium/entitlement` verifies).
-11. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac.
-12. Upload a build, then attach both products to the app version for review. A product's first review has to go with a version.
-13. Review notes: Premium is a PasswordPie account feature used in the browser extension and on other Macs; Sign in with
-    Apple is offered first; give a demo PasswordPie account.
-14. Put the terms link in the app description or the EULA field, as guideline 3.1.2 asks. The privacy policy URL goes in the App Privacy section.
+7. `EntitlementToken.publicKey` holds passwordpie.com's production public key (`kid: pp-1`, from passwordpie.com#8).
+   Before a release, check the site signs with its private half (a token from `/api/premium/entitlement` verifies).
+8. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac. **Buy and restore with it on a `make mas-dev` build, to prove StoreKit works without `network.client`** (see Signing).
+9. Upload a build, then attach both products to the app version for review. A product's first review has to go with a version.
+10. Review notes: the app has no account and needs no login. Say that a customer who bought Premium on passwordpie.com can
+   activate it from the website through the `passwordpie://activate` link (guideline 3.1.3(b); the same plans are sold
+   here), and include a working activation link for the reviewer.
+11. Answer **Data Not Collected** in App Privacy.
+12. Put the terms link in the app description or the EULA field, as guideline 3.1.2 asks. The privacy policy URL goes in the App Privacy section.

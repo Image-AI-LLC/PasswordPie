@@ -23,7 +23,7 @@ Build settings (environment variables at build time):
 | Variable | Default | |
 |---|---|---|
 | `WXT_PP_SITE_URL` | `https://passwordpie.com` | The site for sign-in and Premium. `http://localhost:8787` for the mock. |
-| `WXT_PP_STORE` | unset | `mas`: the Safari build inside the App Store app, with no upgrade link and no key field (`make mas-dev`). |
+| `WXT_PP_STORE` | unset | `mas`: the Safari build inside the App Store app, with no upgrade link, no key field and no `storage` permission (`make mas-dev`). |
 | `WXT_GOOGLE_CLIENT_ID` | unset | The Chrome extension's Google OAuth client. Without it there is no Google button and no `identity` permission. |
 
 ## Testing against the mock site

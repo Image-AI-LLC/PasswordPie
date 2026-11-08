@@ -1,3 +1,4 @@
+#if PP_DIRECT
 import CryptoKit
 import Foundation
 import XCTest
@@ -51,15 +52,6 @@ final class AccountReplyTests: XCTestCase {
         XCTAssertEqual(response.expiresAt, Date(timeIntervalSince1970: 1_825_632_000))
     }
 
-    func testABindAnswerCarriesTheMove() {
-        let reply = AccountReply.parse(status: 200, body: json(
-            #"{"premium":true,"plan":"lifetime","expiresAt":null,"token":"t","rebound":true,"previousAccountEmailMasked":"j•••@gmail.com"}"#
-        ))
-        guard case .ok(let response) = reply else { return XCTFail("\(reply)") }
-        XCTAssertEqual(response.rebound, true)
-        XCTAssertEqual(response.previousAccountEmailMasked, "j•••@gmail.com")
-    }
-
     func test401IsSignedOutWhateverTheBody() {
         XCTAssertEqual(AccountReply.parse(status: 401, body: Data()), .unauthorized)
         XCTAssertEqual(AccountReply.parse(status: 401, body: json(#"{"error":"x"}"#)), .unauthorized)
@@ -67,58 +59,24 @@ final class AccountReplyTests: XCTestCase {
 
     func testAnErrorBodyIsRead() {
         XCTAssertEqual(
-            AccountReply.parse(status: 409, body: json(#"{"error":"rebind-limited","nextAllowedAt":"2027-03-03T00:00:00Z"}"#)),
-            .rejected(status: 409, error: "rebind-limited", nextAllowedAt: Date(timeIntervalSince1970: 1_804_032_000), previousAccountEmailMasked: nil)
+            AccountReply.parse(status: 409, body: json(#"{"error":"some-error"}"#)),
+            .rejected(status: 409, error: "some-error")
         )
         XCTAssertEqual(
             AccountReply.parse(status: 500, body: json("<html>oops</html>")),
-            .rejected(status: 500, error: nil, nextAllowedAt: nil, previousAccountEmailMasked: nil)
+            .rejected(status: 500, error: nil)
         )
     }
 
     func testA200ThatIsNotAnEntitlementIsRejectedNotPremium() {
-        XCTAssertEqual(AccountReply.parse(status: 200, body: json("[]")), .rejected(status: 200, error: nil, nextAllowedAt: nil, previousAccountEmailMasked: nil))
-        XCTAssertEqual(AccountReply.parse(status: 200, body: json(#"{"plan":"lifetime"}"#)), .rejected(status: 200, error: nil, nextAllowedAt: nil, previousAccountEmailMasked: nil))
+        XCTAssertEqual(AccountReply.parse(status: 200, body: json("[]")), .rejected(status: 200, error: nil))
+        XCTAssertEqual(AccountReply.parse(status: 200, body: json(#"{"plan":"lifetime"}"#)), .rejected(status: 200, error: nil))
     }
 
     func testTheSessionEmailIsRead() {
         XCTAssertEqual(AccountSessionInfo.email(from: json(#"{"session":{"id":"s"},"user":{"id":"u","email":"ada@example.com"}}"#)), .some("ada@example.com"))
         XCTAssertEqual(AccountSessionInfo.email(from: json("null")), .none)
         XCTAssertEqual(AccountSessionInfo.email(from: json(#"{"user":{"id":"u"}}"#)), .some(nil))
-    }
-}
-
-final class AppleBindOutcomeTests: XCTestCase {
-    private let entitlement = AccountEntitlementResponse(premium: true, plan: "lifetime", expiresAt: nil, token: "t")
-
-    func testSuccessIsBound() {
-        XCTAssertEqual(AppleBindOutcome(reply: .ok(entitlement)), .bound(entitlement))
-    }
-
-    func testRebindLimitedCarriesTheDate() {
-        let date = Date(timeIntervalSince1970: 1_804_032_000)
-        XCTAssertEqual(AppleBindOutcome(reply: .rejected(status: 409, error: "rebind-limited", nextAllowedAt: date, previousAccountEmailMasked: nil)), .rebindLimited(nextAllowedAt: date))
-    }
-
-    func testBoundElsewhereCarriesTheMaskedEmail() {
-        XCTAssertEqual(
-            AppleBindOutcome(reply: .rejected(status: 409, error: "bound-elsewhere", nextAllowedAt: nil, previousAccountEmailMasked: "j•••@gmail.com")),
-            .boundElsewhere(previousAccountEmailMasked: "j•••@gmail.com")
-        )
-    }
-
-    func testInvalidTransaction() {
-        XCTAssertEqual(AppleBindOutcome(reply: .rejected(status: 400, error: "invalid-transaction", nextAllowedAt: nil, previousAccountEmailMasked: nil)), .invalidTransaction)
-    }
-
-    func testAnUnknown409IsTreatedAsAnotherAccountSoNothingMovesWithoutAsking() {
-        XCTAssertEqual(AppleBindOutcome(reply: .rejected(status: 409, error: "already-bound", nextAllowedAt: nil, previousAccountEmailMasked: nil)), .boundElsewhere(previousAccountEmailMasked: nil))
-    }
-
-    func testEverythingElse() {
-        XCTAssertEqual(AppleBindOutcome(reply: .unauthorized), .signedOut)
-        XCTAssertEqual(AppleBindOutcome(reply: .unreachable), .unreachable)
-        XCTAssertEqual(AppleBindOutcome(reply: .rejected(status: 500, error: nil, nextAllowedAt: nil, previousAccountEmailMasked: nil)), .failed)
     }
 }
 
@@ -166,7 +124,7 @@ final class AccountPremiumDecisionTests: XCTestCase {
 
     func testOfflineKeepsAGoodCachedPass() {
         let pass = signer.pass(expires: week)
-        for reply in [AccountReply.unreachable, .rejected(status: 503, error: nil, nextAllowedAt: nil, previousAccountEmailMasked: nil), nil] {
+        for reply in [AccountReply.unreachable, .rejected(status: 503, error: nil), nil] {
             let decision = decide(cached: pass, reply: reply)
             XCTAssertEqual(decision.state, .premium(Entitlement(subject: "user-1", plan: "lifetime", expiresAt: week), accountExpiresAt: nil))
             XCTAssertEqual(decision.pass, pass)
@@ -217,7 +175,6 @@ final class AccountSignInTests: XCTestCase {
     func testEndpoints() {
         let site = AccountSite(base: URL(string: "http://localhost:8787")!)
         XCTAssertEqual(site.entitlementURL.absoluteString, "http://localhost:8787/api/premium/entitlement")
-        XCTAssertEqual(site.appleBindURL.absoluteString, "http://localhost:8787/api/premium/apple/bind")
         XCTAssertEqual(site.exchangeURL.absoluteString, "http://localhost:8787/api/auth/app/exchange")
         XCTAssertEqual(site.sessionURL.absoluteString, "http://localhost:8787/api/auth/get-session")
         XCTAssertEqual(site.signOutURL.absoluteString, "http://localhost:8787/api/auth/sign-out")
@@ -248,47 +205,6 @@ final class AccountSignInTests: XCTestCase {
     }
 }
 
-final class PremiumMoveTextTests: XCTestCase {
-    private let dateText: (Date) -> String = { _ in "March 3, 2027" }
-
-    func testTheConfirmationNamesTheOtherAccountAndTheYearlyLimit() {
-        let message = PremiumMoveText.confirmMessage(previousAccountEmailMasked: "j•••@gmail.com")
-        XCTAssertTrue(message.contains("j•••@gmail.com"))
-        XCTAssertTrue(message.contains("takes Premium from that account"))
-        XCTAssertTrue(message.contains("once a year"))
-        XCTAssertEqual(PremiumMoveText.confirmTitle, "Move Premium to this account?")
-        XCTAssertEqual(PremiumMoveText.confirmButton, "Move Premium")
-    }
-
-    func testTheConfirmationWithoutAnEmail() {
-        let message = PremiumMoveText.confirmMessage(previousAccountEmailMasked: nil)
-        XCTAssertTrue(message.hasPrefix("This purchase is on another PasswordPie account."))
-        XCTAssertTrue(message.contains("once a year"))
-    }
-
-    func testAMoveSaysTheOldAccountLostIt() {
-        XCTAssertEqual(
-            PremiumMoveText.moved(previousAccountEmailMasked: "j•••@gmail.com"),
-            "Premium moved to this account. j•••@gmail.com no longer has Premium from this purchase."
-        )
-        XCTAssertEqual(
-            PremiumMoveText.moved(previousAccountEmailMasked: nil),
-            "Premium moved to this account. The other account no longer has Premium from this purchase."
-        )
-    }
-
-    func testTheLimitGivesTheNextDate() {
-        XCTAssertEqual(
-            PremiumMoveText.limited(nextAllowedAt: Date(), dateText: dateText),
-            "This purchase moved to another account less than a year ago. It can move again on March 3, 2027."
-        )
-        XCTAssertEqual(
-            PremiumMoveText.limited(nextAllowedAt: nil, dateText: dateText),
-            "This purchase moved to another account less than a year ago, so it cannot move again yet."
-        )
-    }
-}
-
 final class AccountPremiumSummaryTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private let dateText: (Date) -> String = { _ in "Nov 8, 2027" }
@@ -316,3 +232,4 @@ final class AccountPremiumSummaryTests: XCTestCase {
         XCTAssertEqual(summary.title, "Renewing…")
     }
 }
+#endif
