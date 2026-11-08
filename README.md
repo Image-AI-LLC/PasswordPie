@@ -34,7 +34,7 @@ Needs Xcode, Homebrew's `argon2`, and Node with `pnpm` for the browser extension
 
 The source code is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): you may use, change and share it for personal and other noncommercial purposes, but not commercially. For a commercial license, write to [support@passwordpie.com](mailto:support@passwordpie.com).
 
-That license covers this source code. The PasswordPie app you download from [passwordpie.com](https://passwordpie.com/) or the Mac App Store is free for anyone to install and use, including at work, under the [Terms of Service](https://passwordpie.com/terms-of-service). Two-step codes in the App Store version need PasswordPie Premium.
+That license covers this source code. The PasswordPie app you download from [passwordpie.com](https://passwordpie.com/) or the Mac App Store is free for anyone to install and use, including at work, under the [Terms of Service](https://passwordpie.com/terms-of-service). Two-step codes need PasswordPie Premium on a PasswordPie account, in both versions.
 
 Copyright (c) 2026 Image AI, LLC.
 

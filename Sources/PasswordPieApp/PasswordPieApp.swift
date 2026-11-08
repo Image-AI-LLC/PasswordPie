@@ -614,6 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showAbout()
             return
         }
+        runPremiumScript(env["PASSWORDPIE_PREMIUM_SCRIPT"])
         if env["PASSWORDPIE_PAYWALL"] != nil {
             showPaywall()
             return
@@ -632,6 +633,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     #if DEBUG
+    /// Screenshot hook: steps such as `sign-in-apple,buy-lifetime,restore,confirm-move,sign-out,refresh`, 2.5 s apart, so
+    /// the account flows can be recorded without synthetic clicks.
+    private func runPremiumScript(_ script: String?) {
+        guard let script else { return }
+        let premium = session.premium
+        Task { @MainActor in
+            for step in script.split(separator: ",").map(String.init) {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                switch step {
+                case "sign-in-apple": await premium.signIn(with: .apple)
+                case "buy-lifetime": await premium.purchase(.lifetime)
+                case "buy-yearly": await premium.purchase(.yearly)
+                case "restore": await premium.restore()
+                case "confirm-move": await premium.confirmMove()
+                case "sign-out": await premium.signOut()
+                case "refresh": await premium.refresh(force: true)
+                default: break
+                }
+            }
+        }
+    }
+
     /// Unlocking with `PASSWORDPIE_PASSWORD` finishes on a background task, so these wait for it instead of finding the panel still locked.
     private func applyUnlockedDebugHooks(_ env: [String: String]) {
         if session.locked {

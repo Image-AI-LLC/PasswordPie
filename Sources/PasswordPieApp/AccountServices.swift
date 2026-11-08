@@ -145,8 +145,9 @@ final class WebAuthenticationSignIn: NSObject, AccountSignInDriver, ASWebAuthent
     func authenticate(url: URL, callbackScheme: String) async throws -> URL {
         current?.cancel()
         return try await withCheckedThrowingContinuation { continuation in
+            // The completion runs on a background queue.
             let session = ASWebAuthenticationSession(url: url, callbackURLScheme: callbackScheme) { [weak self] callback, error in
-                MainActor.assumeIsolated { self?.current = nil }
+                DispatchQueue.main.async { self?.current = nil }
                 if let callback {
                     continuation.resume(returning: callback)
                 } else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
@@ -167,9 +168,10 @@ final class WebAuthenticationSignIn: NSObject, AccountSignInDriver, ASWebAuthent
     }
 
     nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        MainActor.assumeIsolated {
-            NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey } ?? NSWindow()
+        let anchor = {
+            MainActor.assumeIsolated { NSApp.keyWindow ?? NSApp.windows.first { $0.isVisible && $0.canBecomeKey } ?? NSWindow() }
         }
+        return Thread.isMainThread ? anchor() : DispatchQueue.main.sync(execute: anchor)
     }
 }
 
