@@ -11,7 +11,7 @@ export const STORE_MODE = 'store';
 export function extensionManifest({ browser, mode }: Pick<ConfigEnv, 'browser' | 'mode'>): UserManifest {
   return {
     name: 'PasswordPie',
-    description: 'Fill passwords from PasswordPie on your Mac.',
+    description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
     version: '0.1.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
