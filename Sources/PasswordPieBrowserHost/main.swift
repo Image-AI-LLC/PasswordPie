@@ -52,8 +52,11 @@ final class Relay: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// Keeps a connection to the app, reconnecting every second while the app is not running, and copies its frames to Chrome.
-    func runAppSide() {
+    /// Connects to the app, trying every second while it is not running, and copies its frames to Chrome. When a connection
+    /// ends, the host exits rather than reconnecting: the app quit, or was updated, and an update replaces this executable
+    /// too. A host still running the old code fails the app's signature check on every connection, so Chrome must start
+    /// the new one, which it does when the extension's port reconnects.
+    func runAppSide() -> Never {
         while true {
             guard let fd = try? BridgeClient.connect() else {
                 sleep(1)
@@ -66,7 +69,7 @@ final class Relay: @unchecked Sendable {
                 sendToChrome(frame)
             }
             closeSocket(fd)
-            sleep(1)
+            exit(0)
         }
     }
 
