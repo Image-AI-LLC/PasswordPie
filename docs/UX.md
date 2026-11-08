@@ -222,6 +222,11 @@ With the PasswordPie extension in Chrome or Safari:
 
 Typing in the search box works as always: the first letter replaces the site group with search results.
 
+Clicking the PasswordPie button in the browser's toolbar does the same as `⌘\`: the panel opens over the browser, with
+the site's accounts at the top. A second click while it is open brings it forward. If PasswordPie is installed but not
+running, the click starts it and then opens the panel. If it is not installed, the click opens passwordpie.com in a new
+tab, to download it.
+
 | What you press on an account | The site in the browser is the account's site | It is another site |
 |---|---|---|
 | Return | Fills this page | Opens the account's website in a new tab of the same browser, and fills it when it loads |

@@ -244,6 +244,9 @@ public struct BridgeState: Sendable {
                 expiresIn: max(1, Int(left.rounded(.up)))
             )
             return BridgeResponse(type: "tab", id: request.id, fill: credentials)
+        case "show":
+            // The toolbar button. The app opens its panel; the answer only acknowledges it.
+            return BridgeResponse(type: "show", id: request.id)
         default:
             return .error("bad-request", id: request.id)
         }

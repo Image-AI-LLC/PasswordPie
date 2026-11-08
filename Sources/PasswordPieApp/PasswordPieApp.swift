@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session.browserFill = { [weak self] entry, mode, website in
             self?.bridge.fill(entry, mode, website: website) ?? false
         }
+        bridge.onShowPanel = { [weak self] in self?.showFromExtension() }
         panelController.bridge = bridge
         bridge.start()
     }
@@ -144,6 +145,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func toggleFromHotkey() {
         autoLock.registerActivity()
         panelController.toggle(.hotkey)
+    }
+
+    /// The extension's toolbar button: opens the panel like the shortcut, but a second click brings it forward instead of closing it.
+    func showFromExtension() {
+        autoLock.registerActivity()
+        if panelController.isVisible, !panelController.lockingOut {
+            panelController.bringForward()
+        } else {
+            panelController.show(.hotkey)
+        }
     }
 
     func hidePanel() { panelController.hide() }

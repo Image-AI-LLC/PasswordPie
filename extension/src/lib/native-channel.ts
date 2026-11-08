@@ -2,11 +2,14 @@ import { messageId, type TabReason } from './protocol';
 import { Backoff, systemTimers, type TimerHandle, type Timers } from './timers';
 
 export const REQUEST_TIMEOUT_MS = 5_000;
+/** `show` may wait for the host to start the app (8 s there), so it gets longer. */
+export const SHOW_TIMEOUT_MS = 12_000;
 
 /** A request without its id; the channel adds the id. */
 export type Request =
   | { type: 'hello'; version: number; extension: string }
-  | { type: 'tab'; url: string; reason: TabReason };
+  | { type: 'tab'; url: string; reason: TabReason }
+  | { type: 'show' };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */
@@ -19,7 +22,7 @@ export interface ChannelEvents {
 export interface NativeChannel {
   start(events: ChannelEvents): void;
   /** Resolves with the answer, or undefined for no answer (timeout, disconnect, failure). */
-  request(msg: Request): Promise<unknown>;
+  request(msg: Request, timeoutMs?: number): Promise<unknown>;
   /** Reconnect now if the port is down (the 1-minute alarm). */
   ensureConnected(): void;
 }
@@ -125,12 +128,12 @@ export class ChromeNativeChannel implements NativeChannel {
     if (!this.port.current) this.port.open();
   }
 
-  request(msg: Request): Promise<unknown> {
+  request(msg: Request, timeoutMs = REQUEST_TIMEOUT_MS): Promise<unknown> {
     const port = this.port.current;
     if (!port) return Promise.resolve(undefined);
     const id = this.nextId++;
     return new Promise((resolve) => {
-      const timer = this.timers.setTimeout(() => finish(undefined), REQUEST_TIMEOUT_MS);
+      const timer = this.timers.setTimeout(() => finish(undefined), timeoutMs);
       const finish = (answer: unknown): void => {
         this.timers.clearTimeout(timer);
         this.pending.delete(id);
@@ -190,7 +193,7 @@ export class SafariNativeChannel implements NativeChannel {
     if (!this.port.current) this.port.open();
   }
 
-  async request(msg: Request): Promise<unknown> {
+  async request(msg: Request, timeoutMs = REQUEST_TIMEOUT_MS): Promise<unknown> {
     const id = this.nextId++;
     let sending: Promise<unknown>;
     try {
@@ -198,7 +201,7 @@ export class SafariNativeChannel implements NativeChannel {
     } catch {
       return undefined;
     }
-    const answer = await withTimeout(sending, this.timers, REQUEST_TIMEOUT_MS);
+    const answer = await withTimeout(sending, this.timers, timeoutMs);
     return messageId(answer) === id ? answer : undefined;
   }
 }

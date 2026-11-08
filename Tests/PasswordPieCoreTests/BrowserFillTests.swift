@@ -254,6 +254,17 @@ final class BridgeHandlerTests: XCTestCase {
         XCTAssertEqual((answer["fill"] as? [String: Any])?["origin"] as? String, "https://github.enterprise.example")
     }
 
+    func testShowIsAnsweredAndCarriesNothing() {
+        for locked in [false, true] {
+            var state = BridgeState()
+            let entry = login()
+            let answer = object(state.handle(request(#"{"type":"show","id":4}"#), from: .chrome, locked: locked, now: start) { _ in entry })
+            XCTAssertEqual(answer.keys.sorted(), ["id", "type"])
+            XCTAssertEqual(answer["type"] as? String, "show")
+            XCTAssertEqual(answer["id"] as? Int, 4)
+        }
+    }
+
     func testUnknownTypeIsABadRequest() {
         var state = BridgeState()
         let answer = object(state.handle(request(#"{"type":"steal","id":9}"#), from: .chrome, locked: false, now: start) { _ in nil })

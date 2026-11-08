@@ -109,6 +109,8 @@ final class BrowserBridge: ObservableObject {
     var targetApp: () -> NSRunningApplication? = { nil }
     /// Hides the panel; true gives focus back to the app that was in front.
     var hidePanel: (Bool) -> Void = { _ in }
+    /// The extension's toolbar button was clicked: open the panel as the shortcut does.
+    var onShowPanel: (() -> Void)?
     /// The tab a browser is on changed, so the site list may change.
     var onPageChanged: (() -> Void)?
     var now: () -> Date = Date.init
@@ -198,6 +200,12 @@ final class BrowserBridge: ObservableObject {
             let before = state.currentURL(for: browser, now: now())
             response = state.handle(request, from: browser, locked: session.locked, now: now()) { [session] id in session.entry(id) }
             if state.currentURL(for: browser, now: now()) != before { onPageChanged?() }
+            if response.type == "show" {
+                // After the answer is on its way: the server is waiting on this call to reply.
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated { self?.onShowPanel?() }
+                }
+            }
         } else {
             response = .error("bad-request", id: nil)
         }

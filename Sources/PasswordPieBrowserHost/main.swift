@@ -82,13 +82,25 @@ final class Relay: @unchecked Sendable {
                 exit(0)
             }
             if sendToApp(frame) { continue }
-            sendToChrome(Self.unavailable(answering: frame))
+            // The toolbar button: start the app around this host when it is not running, then ask again.
+            let running = AppLaunch.isAppRunning()
+            switch AppLaunch.fallback(for: frame, appRunning: running) {
+            case .none:
+                sendToChrome(Self.error("app-unavailable", answering: frame))
+            case .wait:
+                if AppLaunch.retry(for: AppLaunch.runningWaitSeconds, { sendToApp(frame) }) { continue }
+                sendToChrome(Self.error(AppLaunch.failureCode(appRunning: AppLaunch.isAppRunning()), answering: frame))
+            case .launch:
+                if let app = Bundle.main.executableURL.flatMap(AppLaunch.containingApp(of:)) { AppLaunch.open(app) }
+                if AppLaunch.retry(for: AppLaunch.showWaitSeconds, { sendToApp(frame) }) { continue }
+                sendToChrome(Self.error(AppLaunch.failureCode(appRunning: AppLaunch.isAppRunning()), answering: frame))
+            }
         }
     }
 
-    /// `{"type":"error","id":…,"code":"app-unavailable"}` for a request the app could not get.
-    static func unavailable(answering frame: Data) -> Data {
-        var answer: [String: Any] = ["type": "error", "code": "app-unavailable"]
+    /// `{"type":"error","id":…,"code":…}` for a request the app could not get.
+    static func error(_ code: String, answering frame: Data) -> Data {
+        var answer: [String: Any] = ["type": "error", "code": code]
         if let request = try? JSONSerialization.jsonObject(with: frame) as? [String: Any], let id = request["id"] as? Int {
             answer["id"] = id
         }

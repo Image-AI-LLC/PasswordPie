@@ -32,6 +32,9 @@ const tabs: TabsAdapter = {
   sendFill(tabId, frameId, msg) {
     return browser.tabs.sendMessage(tabId, msg, { frameId });
   },
+  openTab(url) {
+    return browser.tabs.create({ url });
+  },
 };
 
 export default defineBackground(() => {
@@ -45,6 +48,10 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((msg: unknown, sender) => {
     controller.runtimeMessage(msg, sender);
     return false;
+  });
+  // No popup: a click on the toolbar button opens the PasswordPie panel over the browser.
+  browser.action.onClicked.addListener(() => {
+    controller.showPanel().catch(() => {});
   });
   browser.runtime.onInstalled.addListener(() => controller.report('startup'));
   browser.runtime.onStartup.addListener(() => controller.report('startup'));

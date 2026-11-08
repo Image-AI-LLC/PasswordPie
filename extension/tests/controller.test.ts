@@ -108,6 +108,39 @@ describe('FillController reports', () => {
   });
 });
 
+describe('FillController toolbar button', () => {
+  it('asks the app to show its panel, and sends nothing else', async () => {
+    channel.answer = () => ({ type: 'show', id: 1 });
+    await controller.showPanel();
+    expect(channel.sent).toEqual([{ type: 'show' }]);
+    expect(tabs.opened).toEqual([]);
+  });
+
+  it('opens the website when no app answers: PasswordPie is not installed', async () => {
+    channel.answer = () => undefined;
+    await controller.showPanel();
+    expect(tabs.opened).toEqual(['https://passwordpie.com/']);
+  });
+
+  it('does not send a user whose app runs but did not answer to the website', async () => {
+    channel.answer = () => ({ type: 'error', id: 1, code: 'app-not-responding' });
+    await controller.showPanel();
+    expect(tabs.opened).toEqual([]);
+  });
+
+  it('opens the website for any other answer', async () => {
+    channel.answer = () => ({ type: 'tab', id: 1 });
+    await controller.showPanel();
+    expect(tabs.opened).toEqual(['https://passwordpie.com/']);
+  });
+
+  it('opens the website when the app could not be started', async () => {
+    channel.answer = () => ({ type: 'error', id: 1, code: 'app-unavailable' });
+    await controller.showPanel();
+    expect(tabs.opened).toEqual(['https://passwordpie.com/']);
+  });
+});
+
 describe('FillController fills', () => {
   it('sends the fill to the top frame and same-origin frames only', async () => {
     answerWithFill();

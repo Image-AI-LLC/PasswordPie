@@ -94,6 +94,22 @@ else, so a path, query or fragment (reset links, OAuth codes) never leaves the b
 clears the cached URL and never fills.
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 
+### `show`
+
+    → {"type":"show","id":3}
+    ← {"type":"show","id":3}
+
+The toolbar button was clicked (the extension has no popup). The app opens its panel over the browser as its shortcut
+does, locked or not; a click while the panel is open brings it forward. Carries nothing and returns nothing.
+
+When the app did not get the request, the Chrome host and the Safari extension handler, both inside `PasswordPie.app`,
+look for it by bundle identifier (`AppLaunch`). Not running: they start that app and send the request again for up to
+7 seconds. Running: they only retry for 2 seconds, and answer `app-not-responding` if it still says nothing. The
+extension waits 12 seconds for this answer instead of 5; Safari's tries use 1-second timeouts to stay inside that. Only
+`show` starts the app: a tab report never does. With no answer (Chrome cannot find the host because PasswordPie is not
+installed) or `app-unavailable` (the app did not start), the extension opens `https://passwordpie.com/` in a new tab to
+download it. After `app-not-responding` it does nothing: the app is installed.
+
 ### `poke` (app → extension)
 
     ← {"type":"poke"}
@@ -104,7 +120,7 @@ Ask now: send a `tab` report for the active tab.
 
     ← {"type":"error","id":2,"code":"app-unavailable"}
 
-Codes: `app-unavailable` (host could not reach the app), `bad-request`, `version`. The extension treats any error as "no fill".
+Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request`, `version`. The extension treats any error as "no fill".
 
 ## When a fill is allowed
 

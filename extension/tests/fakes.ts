@@ -37,6 +37,7 @@ export class FakeTabs implements TabsAdapter {
   active: TabInfo | undefined = { id: 1, url: 'https://example.com/login', active: true };
   framesByTab = new Map<number, FrameInfo[]>();
   fills: SentFill[] = [];
+  opened: string[] = [];
   frameAnswer: (tabId: number, frameId: number) => FillResult | undefined = () => ({ username: true, password: true });
 
   async activeTab(): Promise<TabInfo | undefined> {
@@ -50,6 +51,11 @@ export class FakeTabs implements TabsAdapter {
   async sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown> {
     this.fills.push({ tabId, frameId, msg });
     return this.frameAnswer(tabId, frameId);
+  }
+
+  async openTab(url: string): Promise<unknown> {
+    this.opened.push(url);
+    return undefined;
   }
 }
 
