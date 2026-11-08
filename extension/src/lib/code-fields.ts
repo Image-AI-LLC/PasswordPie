@@ -56,10 +56,10 @@ export function findCodeField(root: Document | ShadowRoot | Element): CodeField 
     .filter((el) => el !== login.username && el !== login.password);
   const candidates = inputs.filter(isCodeType);
 
-  const byAutocomplete = candidates.find((el) => tokens(el).includes('one-time-code'));
-  if (byAutocomplete) return { kind: 'single', input: byAutocomplete };
-
+  // Split boxes often mark the first box (or each one) with one-time-code: the whole run is the field then.
   const split = splitRun(inputs);
+  const byAutocomplete = candidates.find((el) => tokens(el).includes('one-time-code'));
+  if (byAutocomplete && !split?.includes(byAutocomplete)) return { kind: 'single', input: byAutocomplete };
   if (split) return { kind: 'split', inputs: split };
 
   const byHint = candidates.filter((el) => el.maxLength !== 1 && hinted(el));
@@ -79,6 +79,7 @@ export function codeFieldIsEmpty(field: CodeField): boolean {
 /** Fills the code the way typing would. Never submits. False when it does not fit the boxes. */
 export function fillCode(field: CodeField, code: string): boolean {
   if (field.kind === 'single') {
+    if (field.input.maxLength > 0 && code.length > field.input.maxLength) return false;
     fillInput(field.input, code);
     return true;
   }

@@ -90,7 +90,11 @@ export default defineBackground(() => {
   // The service worker may have been restarted, or the host gone; check the port every minute.
   void browser.alarms.create(RECONNECT_ALARM, { periodInMinutes: 1 });
   // The entitlement once a day (and each time the popup opens), so the token the app checks stays fresh.
-  void browser.alarms.create(ENTITLEMENT_ALARM, { periodInMinutes: 24 * 60, delayInMinutes: 1 });
+  // Only when it is not scheduled yet: create() replaces an alarm of the same name, and this runs on every service-worker
+  // start, which would push the refresh back each time.
+  void browser.alarms.get(ENTITLEMENT_ALARM).then((existing) => {
+    if (!existing) void browser.alarms.create(ENTITLEMENT_ALARM, { periodInMinutes: 24 * 60, delayInMinutes: 1 });
+  });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === RECONNECT_ALARM) channel.ensureConnected();
     if (alarm.name === ENTITLEMENT_ALARM) refresh();

@@ -37,6 +37,18 @@ describe('findCodeField', () => {
     expect(ids(findCodeField(document))).toEqual(['d1', 'd2', 'd3', 'd4', 'd5', 'd6']);
   });
 
+  it('takes the whole run when the boxes carry one-time-code, and fills one digit each', () => {
+    for (const marked of ['first', 'every']) {
+      document.body.innerHTML = [1, 2, 3, 4, 5, 6]
+        .map((i) => `<input id="b${i}" maxlength="1" inputmode="numeric"${marked === 'every' || i === 1 ? ' autocomplete="one-time-code"' : ''}>`)
+        .join('');
+      const found = findCodeField(document);
+      expect(ids(found)).toEqual(['b1', 'b2', 'b3', 'b4', 'b5', 'b6']);
+      expect(found && fillCode(found, '123456')).toBe(true);
+      expect([1, 2, 3, 4, 5, 6].map((i) => input(`b${i}`).value).join('')).toBe('123456');
+    }
+  });
+
   it('ignores zip, promo, country, phone, captcha, hidden, disabled and short box runs', () => {
     loadFixture('code-decoys.html');
     expect(findCodeField(document)).toBeNull();
@@ -93,6 +105,13 @@ describe('fillCode', () => {
     const found = findCodeField(document);
     expect(found && fillCode(found, '12345678')).toBe(false);
     expect(input('d1').value).toBe('');
+  });
+
+  it('refuses a code longer than the single field maxlength', () => {
+    loadFixture('code-numeric.html');
+    const found = findCodeField(document);
+    expect(found && fillCode(found, '12345678')).toBe(false);
+    expect(input('c').value).toBe('');
   });
 
   it('never submits', () => {
