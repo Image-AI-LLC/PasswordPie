@@ -227,8 +227,8 @@ These are in App Store Connect, the Apple Developer site and passwordpie.com's s
 9. **Sign in with Apple:** turn on the capability for the App ID; create a Services ID (such as
    `com.oldcai.passwordpie.web`) with `passwordpie.com` as a domain and Better Auth's Apple callback as the return URL;
    create a Sign in with Apple key, and give passwordpie.com the Services ID, Team ID, Key ID and `.p8`.
-10. Put passwordpie.com's production public key (`kid: pp-1`) into `EntitlementToken.publicKey`. Until then release
-    builds trust no pass, and nobody has Premium.
+10. `EntitlementToken.publicKey` holds passwordpie.com's production public key (`kid: pp-1`, from passwordpie.com#8).
+    Before a release, check the site signs with its private half (a token from `/api/premium/entitlement` verifies).
 11. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac.
 12. Upload a build, then attach both products to the app version for review. A product's first review has to go with a version.
 13. Review notes: Premium is a PasswordPie account feature used in the browser extension and on other Macs; Sign in with

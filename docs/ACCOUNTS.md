@@ -87,7 +87,7 @@ The app accepts a token only when all of these hold (`EntitlementToken.verify`, 
 
 | `kid` | Trusted by | Private key |
 |---|---|---|
-| `pp-1` | every build (`EntitlementToken.publicKey`) | passwordpie.com's Cloudflare secret. **Not in the app yet: until the site's worker hands over the production public key, release builds trust no key and never send a code to the browser for a token.** |
+| `pp-1` | every build (`EntitlementToken.publicKey`, `h2YWSwg8b--b6tXhehQ6Ccav0CdLqFR0HLeWj9F6dM0`) | passwordpie.com's Cloudflare secret |
 | `pp-test` | debug builds and `make install` (`PP_DEV_EXTENSION`) only (`EntitlementToken.testPublicKey`) | `extension/dev/test-key.json`, public on purpose, for the mock site and tests |
 
 A test key that release builds trusted would let anyone mint Premium, so `pp-test` is compiled only into debug builds

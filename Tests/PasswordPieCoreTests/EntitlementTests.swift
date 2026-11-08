@@ -174,6 +174,13 @@ final class EntitlementTests: XCTestCase {
         XCTAssertNotEqual(EntitlementToken.publicKey, EntitlementToken.testPublicKey)
     }
 
+    /// The production key the site handed over (passwordpie.com#8): every build trusts it.
+    func testEveryBuildTrustsTheSitesProductionKey() {
+        XCTAssertEqual(EntitlementToken.publicKey, Data(base64URL: "h2YWSwg8b--b6tXhehQ6Ccav0CdLqFR0HLeWj9F6dM0"))
+        XCTAssertEqual(EntitlementToken.publicKey.count, 32)
+        XCTAssertTrue(EntitlementToken.trustedKeys.contains(EntitlementToken.publicKey))
+    }
+
     func testTheTestKeyIsTrustedOnlyInDevelopmentBuilds() {
         #if DEBUG || PP_DEV_EXTENSION
         XCTAssertTrue(EntitlementToken.trustedKeys.contains(EntitlementToken.testPublicKey))
