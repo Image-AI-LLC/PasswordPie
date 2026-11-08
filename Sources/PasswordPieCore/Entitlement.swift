@@ -49,9 +49,8 @@ public enum EntitlementToken {
     /// The test key (`kid: pp-test`). Its private half is public in `extension/dev/test-key.json`, for the mock site.
     public static let testPublicKey = Data(base64URL: "0HFLn6glzMnKkdA6-y2G5E_51nQEfbrAa4Mc-fK-5Ro")!
 
-    /// The keys this build trusts: the site's, and in debug or `make install` builds (`PP_DEV_EXTENSION`, which already
-    /// trust the public unpacked Chrome extension) also the test key. A release build that trusted it would let anyone
-    /// mint Premium.
+    /// The keys this build trusts: the site's, and in debug or `make install` builds (`PP_DEV_EXTENSION`) also the test
+    /// key. A release build that trusted it would let anyone mint Premium.
     public static var trustedKeys: [Data] {
         var keys = publicKey.isEmpty ? [] : [publicKey]
         #if DEBUG || PP_DEV_EXTENSION
