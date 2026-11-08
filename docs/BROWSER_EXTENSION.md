@@ -94,6 +94,53 @@ else, so a path, query or fragment (reset links, OAuth codes) never leaves the b
 clears the cached URL and never fills.
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 
+    ← {"type":"tab","id":2,"wantIcon":true}
+
+`wantIcon` (with or without a `fill`) asks for this tab's icon with an `icon` request. The app sets it only while
+unlocked, when the tab's site (eTLD+1) has an account whose website host has no icon yet (none bundled, none cached), and
+at most once per site every 10 minutes (`SiteIconLedger`). On any other site the answer has no `wantIcon`, so the
+extension learns nothing new about the vault and sends nothing more.
+
+### `icon`
+
+    → {"type":"icon","id":5,"origin":"https://news.ycombinator.com","png":"iVBORw0KGgo…"}
+    ← {"type":"icon","id":5}
+    ← {"type":"error","id":5,"code":"bad-icon"}
+
+Sent only after a `tab` answer with `wantIcon`, for that tab. `origin` is the reported tab's origin, exactly as the
+`tab` report gave it. `png` is base64 of a PNG of at most 128 × 128 pixels and 64 KB. The extension takes the browser's
+own icon for the tab (`tab.favIconUrl`, else the largest `<link rel=icon>` / `apple-touch-icon` the page declares, read
+by the content script of the top frame), draws it into a canvas no larger than 128 × 128, and encodes it as PNG. It
+fetches the icon from the background, with no cookies, only over https or as a `data:` URL, and gives up after 5
+seconds. If it cannot make an icon within the limits, it sends nothing.
+
+The app keeps it only if all of these hold, else answers `bad-icon` and keeps nothing:
+
+- it asked this browser (from the peer's signature) for this exact origin less than 60 seconds ago; an ask is used by the
+  first `icon` request for it, kept or not,
+- the vault is unlocked,
+- the bytes are base64 of a PNG (by its content, not a field) that decodes completely, at most 128 pixels a side and
+  65,536 bytes.
+
+The icon is then cached (see "Site icons" below) and the panel redraws.
+
+### Site icons
+
+The app makes no network request for icons. An entry's icon is looked up under its website host (one `www` removed),
+then under that host's registrable domain, in this order:
+
+1. **Bundled:** `Contents/Resources/SiteIcons/<host>.png` (64 px) and `<host>@2x.png` (128 px), for the top 100 sites of
+   the Majestic Million. `make site-icons` (`Scripts/fetch_site_icons.py`) refetches them on a development Mac; sources
+   are in `Assets/SiteIcons/SOURCES.md`.
+2. **Cached:** icons from `icon` requests, in `~/Library/Caches/com.oldcai.passwordpie/favicons/` as
+   `<sha256 of host>.png` (folder 0700, files 0600), so a directory listing is not a site list. An icon is stored under the
+   tab's host, and under its registrable domain when that has no icon yet. macOS may purge the folder; the icon then comes
+   back on the next visit.
+3. **Letter tile.**
+
+Icons are not written into the KDBX: that would change the user's database file under every other KeePass client. A later
+option could save them as KeePass custom icons so they sync between devices; it is not built.
+
 ### `show`
 
     → {"type":"show","id":3}
@@ -120,7 +167,7 @@ Ask now: send a `tab` report for the active tab.
 
     ← {"type":"error","id":2,"code":"app-unavailable"}
 
-Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request`, `version`. The extension treats any error as "no fill".
+Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request`, `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `version`. The extension treats any error as "no fill".
 
 ## When a fill is allowed
 
@@ -155,7 +202,8 @@ script checks `location.origin` again and that it is the top frame or same-origi
 - Credentials exist only in memory: in the app, in the answer frame, in the relay's buffer, in the extension's service
   worker and content script, and then in the page's fields. They are never logged, never written to `storage`, and never
   written to disk by the app. The host and appex log only sizes and error codes.
-- Tab URLs are used for matching and the "this site" list only: held in memory, never logged, never saved.
+- Tab URLs are used for matching, the "this site" list and `wantIcon` only: held in memory, never logged, never saved.
+  A cached icon is the only trace of a visit on disk, and only for a site the vault already has an account on.
 - The fill never submits the form.
 
 ## Chrome
@@ -219,8 +267,8 @@ needs Accessibility to be granted already and never asks for it.
 ## Testing
 
 - `swift test`: public suffix rules, same-site and downgrade rules, pending fill expiry and single use, message coding,
-  framing, the "this site" list.
-- `cd extension && pnpm test`: field finding and filling against HTML fixtures (autocomplete hints, forms with no
+  framing, the "this site" list, site icon lookup order, when `wantIcon` is set, and which `icon` requests are refused.
+- `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures (autocomplete hints, forms with no
   attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin refusal).
 - On a Mac: `make install`, load `extension/.output/chrome-mv3` unpacked in Chrome, enable the extension in Safari. See the
   demo script in UX.md.

@@ -177,8 +177,11 @@ Rows that open a submenu show a 13 pt SF Symbol; on a selected row it uses
 `note.text`, `tint-identity` for `person.crop.rectangle.fill`, and `tint-neutral` for
 `lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`.
 
-Entry rows show the site favicon. A letter tile stands in until it arrives, and stays
-when none does. The tile takes one of six hues (14°, 28°, 42°, 95°, 168°, 345°) from a
+Entry rows show the site icon: bundled for the top 100 sites, otherwise the one the
+browser extension handed over (see "Site icons without telling anyone" in
+[UX.md](docs/UX.md)). The app never fetches icons. A letter tile stands in until one
+arrives, and stays when none does. Extension icons are cached outside the database; an
+option to save them into the KDBX as custom icons, so they sync, may come later. The tile takes one of six hues (14°, 28°, 42°, 95°, 168°, 345°) from a
 stable FNV-1a hash of the title. It runs from saturation 0.45 / brightness 0.95 to
 0.7 / 0.78, with a 0.5 pt black 25 % stroke and a white letter. Favorites get an 8 pt
 star badge: `favorite`, or `on-selection` on a selected row.

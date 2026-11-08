@@ -3,6 +3,7 @@ import { defineBackground } from 'wxt/utils/define-background';
 import { FillController, type TabsAdapter } from '@/lib/controller';
 import { ChromeNativeChannel, SafariNativeChannel, type NativeChannel, type PortLike } from '@/lib/native-channel';
 import { NATIVE_APP } from '@/lib/protocol';
+import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
 const RECONNECT_ALARM = 'passwordpie-reconnect';
 
@@ -34,6 +35,11 @@ const tabs: TabsAdapter = {
   },
   openTab(url) {
     return browser.tabs.create({ url });
+  },
+  async tabIcon(tabId, favIconUrl, origin) {
+    const ask: IconLinksMessage = { type: 'icon-links', origin };
+    const links = parseIconLinks(await browser.tabs.sendMessage(tabId, ask, { frameId: 0 }).catch(() => []));
+    return tabIconPng(iconCandidates(origin, favIconUrl, links), { fetch: (url, init) => fetch(url, init), graphics: offscreenGraphics });
   },
 };
 

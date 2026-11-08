@@ -318,3 +318,48 @@ describe('FillController fills', () => {
     expect(tabs.fills).toHaveLength(0);
   });
 });
+
+describe('FillController site icons', () => {
+  function iconRequests() {
+    return channel.sent.filter((m) => m.type === 'icon');
+  }
+
+  it('sends the tab icon when the app asks for it', async () => {
+    tabs.active = { id: 7, url: 'https://news.example.com/item?id=1', active: true, favIconUrl: 'https://news.example.com/y18.svg' };
+    channel.answer = (msg) => (msg.type === 'tab' ? { type: 'tab', id: 1, wantIcon: true } : { type: 'icon', id: 2 });
+    controller.report('activated');
+    await settle();
+    expect(tabs.iconAsks).toEqual([{ tabId: 7, favIconUrl: 'https://news.example.com/y18.svg', origin: 'https://news.example.com' }]);
+    expect(iconRequests()).toEqual([{ type: 'icon', origin: 'https://news.example.com', png: 'iVBORw0KGgo=' }]);
+  });
+
+  it('sends nothing when the app does not ask', async () => {
+    channel.answer = () => ({ type: 'tab', id: 1 });
+    controller.report('activated');
+    await settle();
+    expect(tabs.iconAsks).toEqual([]);
+    expect(iconRequests()).toEqual([]);
+  });
+
+  it('sends nothing when no icon could be made, or for a page that is not http(s)', async () => {
+    tabs.iconPng = undefined;
+    channel.answer = () => ({ type: 'tab', id: 1, wantIcon: true });
+    controller.report('activated');
+    await settle();
+    expect(iconRequests()).toEqual([]);
+
+    tabs.iconPng = 'iVBORw0KGgo=';
+    tabs.active = { id: 1, url: 'chrome://settings/', active: true };
+    controller.report('activated');
+    await settle();
+    expect(iconRequests()).toEqual([]);
+  });
+
+  it('still fills when the same answer asks for the icon', async () => {
+    channel.answer = (msg) => (msg.type === 'tab' ? { type: 'tab', id: 1, fill: FILL, wantIcon: true } : { type: 'icon', id: 2 });
+    controller.report('activated');
+    await settle();
+    expect(tabs.fills).toHaveLength(1);
+    expect(iconRequests()).toHaveLength(1);
+  });
+});

@@ -112,7 +112,7 @@ func optionRevealHeld(after change: OptionRevealChange) -> Bool {
 final class DetailsModel: ObservableObject {
     let entryID: UUID
     let title: String
-    /// Website host for the favicon. Nil when the entry has no website.
+    /// Website host for the site icon. Nil when the entry has no website.
     let siteHost: String?
     let fields: [DetailField]
     let tags: [String]
@@ -271,24 +271,20 @@ private struct ContentHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-/// The site favicon, or the letter tile when Google has none.
+/// The site icon, or the letter tile when none is bundled or cached.
 private struct SiteIconView: View {
     var host: String?
     var title: String
     var side: CGFloat
-    @State private var logo: NSImage?
+    /// Redraws when the browser extension hands over an icon.
+    @ObservedObject private var icons = SiteIconStore.shared
 
     var body: some View {
-        Image(nsImage: logo ?? SiteIconStore.shared.image(forHost: host) ?? MenuIcons.tile(title))
+        Image(nsImage: icons.image(forHost: host) ?? MenuIcons.tile(title))
             .resizable()
             .scaledToFit()
             .frame(width: side, height: side)
             .accessibilityHidden(true)
-            .task(id: host ?? "") {
-                logo = SiteIconStore.shared.image(forHost: host)
-                let image = await SiteIconStore.shared.load(host)
-                if !Task.isCancelled { logo = image }
-            }
     }
 }
 

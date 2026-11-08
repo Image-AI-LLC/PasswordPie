@@ -26,7 +26,7 @@ public struct MenuRow: Equatable, Sendable {
     public var favorite: Bool
     /// Shown after the title as " — username" when another row in the same list has the same title.
     public var username: String
-    /// Website host for the favicon lookup. Nil when the row is not a site, or the entry has no website.
+    /// Website host for the site icon lookup. Nil when the row is not a site, or the entry has no website.
     public var siteHost: String?
 
     public init(

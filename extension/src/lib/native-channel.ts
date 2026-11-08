@@ -9,7 +9,8 @@ export const SHOW_TIMEOUT_MS = 12_000;
 export type Request =
   | { type: 'hello'; version: number; extension: string }
   | { type: 'tab'; url: string; reason: TabReason }
-  | { type: 'show' };
+  | { type: 'show' }
+  | { type: 'icon'; origin: string; png: string };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */
