@@ -61,10 +61,9 @@ sign_app_sh = $(if $(4),codesign --force $(2) --identifier $(HOST_ID) --entitlem
 # sign_app: the same, as one recipe line.
 sign_app = $(call sign_app_sh,$(1),$(2),$(3),$(4))
 
-# Your own install also trusts the unpacked Chrome extension. Its ID comes from a public key, so distributed builds do not.
 install: extension $(call ents,Entitlements/direct.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
-	swift build -c release -Xswiftc -DPP_DEV_EXTENSION
-	$(call assemble_app,$$(swift build -c release -Xswiftc -DPP_DEV_EXTENSION --show-bin-path),$(APP),host)
+	swift build -c release
+	$(call assemble_app,$$(swift build -c release --show-bin-path),$(APP),host)
 	@if security find-identity -v -p codesigning | grep -F -q "$(SIGN_ID)"; then \
 		$(call sign_app_sh,$(APP),--sign "$(SIGN_ID)",$(call ents,Entitlements/direct.entitlements),host); \
 	else \

@@ -1,7 +1,8 @@
 import type { ConfigEnv, UserManifest } from 'wxt';
 
-// Pins the unpacked Chrome build's ID to pbbiimlkojflhpopeplkbfeecanbbdoj, which the native host
-// manifest's allowed_origins lists (docs/BROWSER_EXTENSION.md, "Chrome").
+// The Chrome Web Store item's public key ("Package > View public key" in the developer dashboard). It gives an unpacked
+// build the store's ID, BridgeConstants.chromeExtensionID, which the native host manifest allows
+// (docs/BROWSER_EXTENSION.md, "Chrome"; tests/extension-id.test.ts).
 export const CHROME_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0kseYmc4PYVMVdM0iSbi5mu2Z3GTAXmIZTXXTdJLLED61C/5ql+jaokNIOyKWB9LmNAJFP3/V6J/s3GHVNo5vwcx4hAVuGtNFmKXxiZb68Wi49SQL9OkafgiO6LPEVxtl4/POuthz+FO0JG5nhLvn18jmy4VxsmAdAtS5RIEPz7D9Efl5HbfUMMcUJl6HF8lIHh2T6Yd04iPeQ2kgBg8bRCI0aSDGB7FEam8dHdXmPRBNv14meLQrnSG+a54T1fdxL0TCtArVDpV5ixKJs6Wr4RITJlkevvcsY5n8MRdUyKcM18wzKYYG7LTOFumwwEaPo4JAI2DIDnDLQWEvaTPKQIDAQAB';
 

@@ -126,9 +126,11 @@ final class ChromeHostManifestTests: XCTestCase {
         XCTAssertEqual(object["allowed_origins"] as? [String], ["chrome-extension://pbbiimlkojflhpopeplkbfeecanbbdoj/"])
     }
 
-    func testThePublicKeyIDIsTrustedOnlyInDevelopmentBuilds() {
-        // `swift test` builds without -DPP_DEV_EXTENSION, like a distributed build.
-        XCTAssertFalse(BridgeConstants.chromeExtensionIDs.contains(BridgeConstants.developmentExtensionID))
+    func testEveryDirectBuildTrustsTheStoreExtensionAndLinksToItsListing() {
+        // One ID for the store build and the unpacked one (extension/tests/extension-id.test.ts), in every direct build.
+        XCTAssertEqual(BridgeConstants.chromeExtensionIDs, [BridgeConstants.chromeExtensionID])
+        XCTAssertTrue(BrowserBridge.chromeSupported)
+        XCTAssertEqual(BrowserBridge.chromeInstallURL.absoluteString, "https://chromewebstore.google.com/detail/\(BridgeConstants.chromeExtensionID)")
     }
 
     func testABareBinaryWritesNothing() throws {

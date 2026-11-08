@@ -15,17 +15,12 @@ public enum BridgeConstants {
     public static let safariExtensionIdentifier = "com.oldcai.passwordpie.safari"
     /// The native messaging host name the extension connects to.
     public static let nativeHostName = "com.oldcai.passwordpie"
-    /// The unpacked build's ID, pinned by the public key in extension/wxt.config.ts. That key is public, so anyone can
-    /// load an extension with this ID: only builds made with `make install` (`-DPP_DEV_EXTENSION`) trust it.
-    public static let developmentExtensionID = "pbbiimlkojflhpopeplkbfeecanbbdoj"
-    /// Chrome Web Store IDs. Empty until the listing exists; see docs/BROWSER_EXTENSION.md.
-    public static let storeExtensionIDs: [String] = []
+    /// The Chrome Web Store item's ID. `CHROME_KEY` in extension/manifest.ts is the store's public key, so an unpacked
+    /// development build gets the same ID (extension/tests/extension-id.test.ts checks they match). See
+    /// docs/BROWSER_EXTENSION.md, "Chrome".
+    public static let chromeExtensionID = "pbbiimlkojflhpopeplkbfeecanbbdoj"
     /// The extension IDs Chrome may start the host for.
-    #if PP_DEV_EXTENSION
-    public static let chromeExtensionIDs = storeExtensionIDs + [developmentExtensionID]
-    #else
-    public static let chromeExtensionIDs = storeExtensionIDs
-    #endif
+    public static let chromeExtensionIDs = [chromeExtensionID]
     /// Google Chrome's signing team and identifier. The host only serves a parent process signed with them. Only stable
     /// Chrome: the host manifest is written to its profile folder alone, and the app tells browsers apart by bundle ID,
     /// so Beta, Dev and Canary keep typed keystrokes in v1.
