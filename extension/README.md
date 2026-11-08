@@ -25,6 +25,13 @@ written by PasswordPie allows. PasswordPie must be running (direct-download buil
 The Safari build is embedded into the app's `PasswordPieSafari.appex` by `make install`; turn it on in Safari's
 Extensions settings (or from the panel's "Enable Safari Extension…" line).
 
+## Icon
+
+`icon.svg` is the brand mark (`art/source/mark.svg`) in orange `#EE8C32`, cropped to the pie so it fills the canvas, on a
+transparent background with a see-through keyhole. Regenerate the PNGs after changing it:
+
+    for s in 16 32 48 128; do rsvg-convert -w $s -h $s icon.svg -o public/icon/$s.png; done
+
 ## Layout
 
 - `src/entrypoints/background.ts`: wires browser events to `FillController`.
