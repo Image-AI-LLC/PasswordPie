@@ -337,6 +337,10 @@ tab, to download it.
 | ⇧Return (Fill) | Fills this page | The same as Return: a new tab, then fill |
 | ⌥Return (Open and Fill) | Opens the website in a new tab and fills it | The same |
 
+Return fills from the account's details too. Press → to see the username and password, then Return: with the username or
+password selected it fills, exactly as Return on the account's row does. On the other fields of the details (a website,
+the one-time password, notes, your own fields) Return keeps doing what that field's button does: open, or copy.
+
 A sign-in that asks for the username first and the password on the next step gets both: the username now, and the password
 when its field appears, within 30 seconds.
 
@@ -379,9 +383,10 @@ Use a database with a GitHub login, and the PasswordPie extension installed in C
    the line is gone.
 2. Go to github.com/login. Press `⌘\`. The top group is GITHUB.COM, with the login selected. Press Return: both fields fill,
    and the page stays on the sign-in form.
-3. Go to example.com. Press `⌘\`, type `github`, press Return. A new tab opens github.com/login and fills it.
-4. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
-5. Repeat 2 and 3 in Safari after "Enable Safari Extension…".
+3. Reload the page. Press `⌘\`, press → to open the login's details, then Return: both fields fill the same way.
+4. Go to example.com. Press `⌘\`, type `github`, press Return. A new tab opens github.com/login and fills it.
+5. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
+6. Repeat 2 to 4 in Safari after "Enable Safari Extension…".
 
 ## Site icons without telling anyone
 
