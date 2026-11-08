@@ -57,6 +57,11 @@ func fieldControl(_ field: DetailField, revealed: Bool, codeLocked: Bool = false
     return FieldControl(primary: .copy, menu: field.secret ? [revealed ? .conceal : .reveal, .largeType] : [])
 }
 
+/// Return on the username or password fills, as Return on the account's row does. Other fields keep their button's action.
+func returnFillsAccount(_ field: DetailField) -> Bool {
+    field.kind == .username || field.kind == .password
+}
+
 enum DetailsPresentation: Equatable {
     /// The menu popover. Copying or opening leaves, because the menu would cover the place being filled.
     case popover
@@ -124,10 +129,12 @@ final class DetailsModel: ObservableObject {
     let presentation: DetailsPresentation
     unowned let session: VaultSession
     private let done: () -> Void
+    /// The account's Return action from the row (fill, or open and fill). Nil when the account has none or the window is pinned.
+    private let fill: (() -> Void)?
     private var monitor: Any?
     private var activationObservers: [NSObjectProtocol] = []
 
-    init(entry: VaultEntry, session: VaultSession, presentation: DetailsPresentation = .popover, done: @escaping () -> Void) {
+    init(entry: VaultEntry, session: VaultSession, presentation: DetailsPresentation = .popover, done: @escaping () -> Void, fill: (() -> Void)? = nil) {
         entryID = entry.id
         title = entry.title.isEmpty ? "Untitled" : entry.title
         siteHost = websiteHost(of: entry)
@@ -136,6 +143,7 @@ final class DetailsModel: ObservableObject {
         self.presentation = presentation
         self.session = session
         self.done = done
+        self.fill = fill
         var fields: [DetailField] = []
         if !entry.username.isEmpty { fields.append(DetailField(id: "username", kind: .username, label: "username", value: entry.username, secret: false)) }
         if !entry.password.isEmpty { fields.append(DetailField(id: "password", kind: .password, label: "password", value: entry.password, secret: true)) }
@@ -249,6 +257,11 @@ final class DetailsModel: ObservableObject {
             self.flashing = false
             // Focus may have moved during the flash; act only on the field Return was pressed on.
             guard self.fields.indices.contains(self.focused), self.fields[self.focused].id == field.id else { return }
+            // The fill hides the panel itself, like Return on the row.
+            if let fill = self.fill, returnFillsAccount(field) {
+                fill()
+                return
+            }
             self.perform(action, on: field)
         }
     }

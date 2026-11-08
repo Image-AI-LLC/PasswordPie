@@ -345,6 +345,10 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         }
     }
 
+    private func hasDefaultAction(_ entry: VaultEntry) -> Bool {
+        entry.category == .login || entry.category == .password
+    }
+
     /// Login: fill the browser tab on its site, or open the site and fill. Password: fill the previous app. Everything else has no default action.
     private func performAction(for id: UUID) {
         guard let entry = session.entry(id) else { return }
@@ -493,7 +497,12 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         closeChildren(after: position)
         closePopover()
         level.list.selectedIndex = index
-        let model = DetailsModel(entry: entry, session: session) { [weak self] in self?.host?.menuHide() }
+        let model = DetailsModel(
+            entry: entry,
+            session: session,
+            done: { [weak self] in self?.host?.menuHide() },
+            fill: hasDefaultAction(entry) ? { [weak self] in self?.performAction(for: id) } : nil
+        )
         let controller = NSHostingController(rootView: DetailsView(model: model))
         controller.sizingOptions = [.preferredContentSize]
         let popover = NSPopover()
