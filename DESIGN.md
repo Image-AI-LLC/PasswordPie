@@ -95,8 +95,7 @@ rounded:
 
 spacing:
   panel-width: 300
-  locked-height: 360
-  create-height: 410
+  lock-card-height: 144
   header-height: 45
   logo-size: 32
   row-height: 21
@@ -229,11 +228,15 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 
 ## Layout
 
-- **Locked panel**: 300 × 360 pt (410 while creating a database), corner radius 16,
-  20 pt horizontal inset. Stacked: 64 pt pie, wordmark, truncated database name with full
-  name in help, one line of guidance. Inputs are 38 pt tall and the primary button 36 pt,
-  both radius 9. Key-file and Touch ID actions have their own rows. Errors reserve up to
-  three lines, with the full message in help. Open / New stay visible at the bottom.
+- **Locked panel**: 300 pt wide and as tall as its content (281 pt for one field, 307 pt with
+  Touch ID), corner radius 16, 20 pt horizontal inset. Stacked: 64 pt pie, wordmark, truncated
+  database name with full name in help, one line of guidance. Inputs are 38 pt tall and the
+  primary button 36 pt, both radius 9. Key-file and Touch ID actions have their own rows.
+  An error replaces the guidance line in `error`, up to three lines, with the full message in
+  help; no blank space is reserved for it. Open / New sit 14 pt under the last row.
+- **Locked card**: shown while ⌘L locks the open menu. The menu's width, 144 pt tall, corner
+  radius 16, hung from the menu's top-left corner. 46 pt pie 24 pt from the top, 14 pt gap,
+  "Locked" in the wordmark face at 19 pt, 4 pt gap, database name in `caption`.
 - **Unlocked panel**: corner radius 5. Header 45 pt (a 40 pt bar and a 5 pt band whose 1 pt
   line sits at y = 40): 32 pt pie at (4, 4), search field at x 38, 24 pt tall, gear
   30 × 30 pt at the right edge minus 34. Below it the menu list, at least 24 pt tall.
@@ -276,10 +279,15 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Lock form** — one secure field and Unlock, or two fields and Create Database. Return moves
   from the first field to confirmation, then submits. Never disable Unlock just because the
   password is empty: a key file may be sufficient.
-- **Unlock and lock motion** — the pie pulses, then 0.4 s later the form fades and scales to 0.97
-  over 0.3 s and the menu takes over. Locking runs in reverse and hides the panel. While a database
-  opens, the pie's rim spins (not with Reduce Motion). A wrong password shakes the window (8 pt, three
-  swings, 0.5 s), then shows the error and selects the password.
+- **Unlock motion** — while a database opens, the form stays in place: the field, the Touch ID and
+  key-file rows and Open / New dim to 55 % and 40 % and stop taking input, the button reads
+  "Unlocking…", and the pie's rim spins (not with Reduce Motion). On success the pie pulses, then
+  0.4 s later the form fades and scales to 0.97 over 0.3 s and the menu takes over. A wrong password
+  shakes the window (8 pt, three swings, 0.5 s), then shows the error and selects the password.
+- **Lock motion (⌘L)** — the locked card fades in over the menu while the panel folds to the card in
+  0.2 s and its corners go from 5 to 16. At 0.22 s the pie settles and the padlock clicks. At 0.9 s
+  the card lifts 6 pt and fades out over 0.3 s. The menu shortcut during the scene grows the card
+  into the lock form.
 - **Header** — pie (opens Open / New Database), search field without chrome, gear (search scope, New
   Item, Lock, Preferences, databases, Quit). The separator shows only while the field is empty.
 - **Reopening** — within 10 seconds of closing, the menu comes back with its search (selected, so typing
@@ -360,8 +368,8 @@ Don't:
 
 ## Responsive behavior
 
-The unlocked panel sizes itself to its rows, and resizes animate in 0.075 s. The locked panel has its two fixed
-heights. Every surface follows light and dark. Dynamic Type is not supported.
+The unlocked panel sizes itself to its rows, and resizes animate in 0.075 s. The locked panel sizes itself to its
+form, and the locked card is always 144 pt tall. Every surface follows light and dark. Dynamic Type is not supported.
 
 ## Known gaps
 
