@@ -61,7 +61,8 @@ sign_app_sh = $(if $(4),codesign --force $(2) --identifier $(HOST_ID) --entitlem
 # sign_app: the same, as one recipe line.
 sign_app = $(call sign_app_sh,$(1),$(2),$(3),$(4))
 
-# Your own install also trusts the unpacked Chrome extension. Its ID comes from a public key, so distributed builds do not.
+# Your own install also trusts the Premium test key (`PP_DEV_EXTENSION`, see EntitlementToken.trustedKeys), whose private
+# half is public for the mock site. Distributed builds do not.
 install: extension $(call ents,Entitlements/direct.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
 	swift build -c release -Xswiftc -DPP_DEV_EXTENSION
 	$(call assemble_app,$$(swift build -c release -Xswiftc -DPP_DEV_EXTENSION --show-bin-path),$(APP),host)

@@ -75,12 +75,11 @@ func extensionBanner(frontBundleID: String?, chromeConnected: Bool, safariEnable
 final class BrowserBridge: ObservableObject {
     nonisolated static let chromeBundleID = "com.google.Chrome"
     nonisolated static let safariBundleID = "com.apple.Safari"
-    /// Where "Add Chrome Extension…" leads. A placeholder until the Chrome Web Store listing exists.
-    static let chromeInstallURL = URL(string: "https://passwordpie.com/chrome-extension")!
+    /// Where "Add Chrome Extension…" leads: the extension's Chrome Web Store listing.
+    static let chromeInstallURL = URL(string: "https://chromewebstore.google.com/detail/\(BridgeConstants.chromeExtensionID)")!
 
     #if PP_DIRECT
-    /// Needs an extension ID Chrome may start the host for: the store listing's, or the unpacked build's in `make install` builds.
-    nonisolated static let chromeSupported = !BridgeConstants.chromeExtensionIDs.isEmpty
+    nonisolated static let chromeSupported = true
     #else
     /// The App Store version has no Chrome host in v1.
     nonisolated static let chromeSupported = false

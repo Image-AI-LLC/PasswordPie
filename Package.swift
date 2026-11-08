@@ -42,7 +42,7 @@ let package = Package(
             ]
         ),
         // The socket, framing and peer check shared by the app, the Safari extension and the Chrome host. Foundation, Security, and
-        // AppKit for starting the app (`AppLaunch`). `-Xswiftc -DPP_DEV_EXTENSION` (make install) also trusts the unpacked Chrome extension.
+        // AppKit for starting the app (`AppLaunch`).
         .target(
             name: "PasswordPieBridge",
             swiftSettings: [.swiftLanguageMode(.v5)],
