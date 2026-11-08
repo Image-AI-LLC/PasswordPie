@@ -1,11 +1,11 @@
 import AppKit
 import SwiftUI
 
-/// Compact branded lock form, drawn natively rather than from a screenshot.
+/// Compact branded lock form, drawn natively rather than from a screenshot. Its height follows its content.
 enum Metrics {
     static let width: CGFloat = 300
-    static let lockedHeight: CGFloat = 360
-    static let createHeight: CGFloat = 410
+    /// The card ⌘L folds the open menu into.
+    static let lockCardHeight: CGFloat = 144
 }
 
 extension Color {

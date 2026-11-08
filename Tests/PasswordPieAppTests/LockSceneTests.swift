@@ -67,6 +67,35 @@ final class LockSceneTests: XCTestCase {
         XCTAssertEqual(panel.panel.alphaValue, 1, "the next showing starts opaque")
     }
 
+    func testCommandLFoldsTheMenuIntoTheCardAtItsWidthAndCorner() async throws {
+        try XCTSkipIf(NSScreen.screens.isEmpty, "the panel needs a screen to become visible")
+        let (_, panel) = openPanel(scene: LockScene(fold: 0.02, settle: 0.05, fadeStart: 0.6, fadeDuration: 0.05))
+        defer { panel.hide() }
+        let menu = panel.panel.frame
+
+        XCTAssertTrue(panel.panel.performKeyEquivalent(with: try commandL(panel)))
+        await waitUntil { panel.panel.frame.height == Metrics.lockCardHeight }
+
+        let card = panel.panel.frame
+        XCTAssertEqual(card.width, menu.width, "the card keeps the menu's width")
+        XCTAssertEqual(card.minX, menu.minX)
+        XCTAssertEqual(card.maxY, menu.maxY, "it hangs from the menu's top-left corner")
+        XCTAssertEqual(panel.lockHost.layer?.cornerRadius, 16)
+    }
+
+    func testTheShortcutDuringTheSceneGrowsTheCardIntoTheForm() async throws {
+        try XCTSkipIf(NSScreen.screens.isEmpty, "the panel needs a screen to become visible")
+        let (session, panel) = openPanel(scene: LockScene(fold: 0.02, settle: 0.05, fadeStart: 0.6, fadeDuration: 0.05))
+        defer { panel.hide() }
+        session.lock()
+        await waitUntil { panel.panel.frame.height == Metrics.lockCardHeight }
+
+        panel.toggle(.hotkey)
+
+        await waitUntil { abs(panel.panel.frame.height - LockScreenContent.fittedHeight(panel.lockPresentation)) < 1 }
+        XCTAssertEqual(panel.panel.frame.width, Metrics.width)
+    }
+
     func testCommandLIsIgnoredWhileLocked() throws {
         try XCTSkipIf(NSScreen.screens.isEmpty, "the panel needs a screen to become visible")
         let (session, panel) = openPanel()

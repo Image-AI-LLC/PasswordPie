@@ -65,11 +65,15 @@ final class PanelContentView: NSVisualEffectView {
 
 /// When each step of the lock scene starts, in seconds after the vault locks. See `docs/UX.md`, "Lock".
 struct LockScene: Equatable {
-    /// The lock screen has faded in; the logo settles and the padlock clicks.
-    var settle: TimeInterval = 0.3
-    /// The panel starts to fade out.
-    var fadeStart: TimeInterval = 1.15
-    var fadeDuration: TimeInterval = 0.35
+    /// The menu folds into the locked card.
+    var fold: TimeInterval = 0.2
+    /// The card is up; the logo settles and the padlock clicks.
+    var settle: TimeInterval = 0.22
+    /// The card starts to lift and fade out.
+    var fadeStart: TimeInterval = 0.9
+    var fadeDuration: TimeInterval = 0.3
+    /// How far the card rises as it fades.
+    static let lift: CGFloat = 6
 }
 
 /// Where the panel opens from.
@@ -105,7 +109,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         view.applyMenuBackdrop()
         return view
     }()
-    private let lockHost: NSHostingView<DoorsView>
+    let lockHost: NSHostingView<DoorsView>
     private var cancellables = Set<AnyCancellable>()
     private var attached = false
     private var keepOpenDepth = 0
@@ -114,6 +118,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// A second click before the deferred panel appears must not open another one.
     private var filePanelQueued = false
     private var animatingLock = false
+    /// The menu's width when ⌘L locked it: the locked card keeps it.
+    private var lockCardWidth = Metrics.width
     /// True while the lock scene plays, from the lock until the panel has faded out.
     private(set) var lockingOut = false
     /// Bumped when a lock scene ends early, so its remaining steps do nothing.
@@ -152,7 +158,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         self.session = session
         menu = MenuController(session: session)
         panel = KeyPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.lockedHeight),
+            contentRect: NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.lockCardHeight),
             styleMask: [.borderless, .nonactivatingPanel, .utilityWindow],
             backing: .buffered,
             defer: false
@@ -182,13 +188,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.onDragEnded = { [weak self] in self?.dragEnded() }
         NotificationCenter.default.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
 
-        container.frame = NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.lockedHeight)
+        container.frame = NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.lockCardHeight)
         container.autoresizingMask = [.width, .height]
         panel.contentView = container
 
         effect.frame = container.bounds
         effect.autoresizingMask = [.width, .height]
-        effect.layer?.cornerRadius = 5
+        effect.layer?.cornerRadius = Self.menuRadius
         container.addSubview(effect)
 
         let scroll = menu.root.scroll
@@ -206,7 +212,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         lockHost.frame = container.bounds
         lockHost.autoresizingMask = [.width, .height]
         lockHost.wantsLayer = true
-        lockHost.layer?.cornerRadius = 16
+        lockHost.layer?.cornerRadius = Self.lockRadius
         lockHost.layer?.masksToBounds = true
         container.addSubview(lockHost)
         lockHost.layoutSubtreeIfNeeded()
@@ -242,6 +248,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             .dropFirst()
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyLayout(locked: self?.session.locked ?? true) } }
             .store(in: &cancellables)
+        // The lock form is as tall as what it holds: a long error, the Touch ID row or the key-file row resize it.
+        // Each stream skips its own current value, so adding one cannot shift what is skipped.
+        Publishers.Merge4(session.$message.dropFirst().map { _ in () }, session.$touchIDAvailable.dropFirst().map { _ in () },
+                          session.$keyFileName.dropFirst().map { _ in () }, session.$databaseURL.dropFirst().map { _ in () })
+            .sink { [weak self] in DispatchQueue.main.async { self?.lockFormChanged() } }
+            .store(in: &cancellables)
         session.$touchIDBusy
             .removeDuplicates()
             .sink { [weak self] busy in
@@ -259,7 +271,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             .dropFirst()
             .sink { [weak self] busy in
                 guard let self, self.panel.isVisible else { return }
-                // The form is hidden while the database decrypts; no keystroke should land in it.
+                // The form is dimmed and disabled while the database decrypts; no keystroke should land in it.
                 if busy {
                     self.panel.makeFirstResponder(nil)
                 } else {
@@ -305,6 +317,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         header.searchField.stringValue = recalled?.searchText ?? ""
         header.showsSeparator = true
         touchIDOffered = false
+        // The shortcut during the lock scene grows the card into the lock form instead of jumping.
+        let growing = lockingOut && panel.isVisible
         endLockScene()
         animatingLock = false
         lockModel.turned = false
@@ -312,7 +326,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         if !session.locked {
             if let recalled { menu.restore(recalled.place) } else { menu.reset() }
         }
-        applyLayout(locked: session.locked)
+        applyLayout(locked: session.locked, animated: growing)
 
         // A test process can have no screens. Still compare Chrome; there is nowhere to place the panel.
         guard let screen = screen(for: anchor) else {
@@ -329,11 +343,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             origin = savedTopLeft() ?? MenuGeometry.centeredTopLeft(screenFrame: screen.frame)
         }
         topLeft = origin
-        effect.layer?.maskedCorners = attached
-            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        effect.layer?.maskedCorners = menuMaskedCorners
         panel.isMovableByWindowBackground = !attached
-        setFrame(animated: false, screen: screen)
+        setFrame(animated: growing, screen: screen)
 
         // Activation is a request that macOS may decline while another app is frontmost; the panel is
         // non-activating, so it still becomes key and the first responder below receives the keys.
@@ -356,10 +368,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     /// The search field when unlocked, the master-password field when locked.
     func focusInitialField() {
-        // The lock scene shows no form; nothing may take the keys until it ends.
+        // The lock scene shows the locked card, not the form; nothing may take the keys until it ends.
         guard !lockingOut else { return }
         if session.locked {
-            // While the database decrypts the form is hidden; the end of unlocking focuses it again on failure.
+            // While the database decrypts the form is dimmed and disabled; the end of unlocking focuses it again on failure.
             guard !session.unlocking else {
                 panel.makeFirstResponder(nil)
                 return
@@ -530,15 +542,28 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens.first
     }
 
-    private func applyLayout(locked: Bool) {
+    private func applyLayout(locked: Bool, animated: Bool = false) {
         lockHost.isHidden = !(locked || animatingLock)
         effect.isHidden = locked && !animatingLock
-        if locked, !animatingLock, let screen = currentScreen { setFrame(animated: false, screen: screen) }
+        if locked, !animatingLock, let screen = currentScreen { setFrame(animated: animated, screen: screen) }
+    }
+
+    /// What the lock screen shows right now; its height is the locked panel's.
+    var lockPresentation: LockScreenPresentation {
+        LockScreenPresentation(session: session, locking: lockModel.locking)
+    }
+
+    private func lockFormChanged() {
+        guard session.locked, !lockingOut, !animatingLock, panel.isVisible, let screen = currentScreen else { return }
+        setFrame(animated: true, screen: screen)
     }
 
     private var panelSize: NSSize {
+        if lockingOut {
+            return NSSize(width: lockCardWidth, height: Metrics.lockCardHeight)
+        }
         if session.locked || animatingLock {
-            return NSSize(width: Metrics.width, height: session.creating ? Metrics.createHeight : Metrics.lockedHeight)
+            return NSSize(width: Metrics.width, height: LockScreenContent.fittedHeight(lockPresentation))
         }
         let visible = currentScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let area = MenuGeometry.confinement(visibleFrame: visible)
@@ -656,8 +681,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
     }
 
-    /// The lock screen fades in over the menu with "Locked" in place of the form, the logo settles as the padlock
-    /// clicks, and the panel fades out. A lock with the panel closed is silent.
+    /// The locked card fades in over the menu while the panel folds to it, the logo settles as the padlock clicks,
+    /// and the card lifts and fades out. A lock with the panel closed is silent.
     private func lockAnimation() {
         sceneGeneration &+= 1
         guard panel.isVisible else {
@@ -667,23 +692,35 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         menu.closeAll()
         animatingLock = true
         lockingOut = true
+        lockCardWidth = panel.frame.width
         lockModel.locking = true
         lockModel.open = true
         lockModel.turned = true
-        // The form is hidden; no keystroke should land in it.
+        // The locked card replaces the form; no keystroke should land in it.
         panel.makeFirstResponder(nil)
         applyLayout(locked: true)
+        // The card starts with the menu's corners, so none of the menu shows past it.
+        lockHost.layer?.cornerRadius = Self.menuRadius
+        // The backdrop follows the card, so the menu's square top corners do not show through its rounded ones.
+        effect.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         let scene = lockScene
-        sceneStep(after: 0) { $0.lockModel.open = false }
+        sceneStep(after: 0) { controller in
+            controller.lockModel.open = false
+            controller.foldIntoCard(duration: scene.fold)
+        }
         sceneStep(after: scene.settle) {
             $0.lockModel.turned = false
             $0.playSound(.lock)
         }
         sceneStep(after: scene.fadeStart) { controller in
             let generation = controller.sceneGeneration
+            var lifted = controller.panel.frame
+            lifted.origin.y += LockScene.lift
             NSAnimationContext.runAnimationGroup({ context in
                 context.duration = scene.fadeDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                 controller.panel.animator().alphaValue = 0
+                controller.panel.animator().setFrame(lifted, display: true)
             }, completionHandler: { [weak controller] in
                 MainActor.assumeIsolated {
                     guard let controller, controller.sceneGeneration == generation else { return }
@@ -692,6 +729,40 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             })
         }
     }
+
+    /// The panel folds from the menu's frame to the locked card, from the same top-left corner, as both layers round
+    /// their corners from the menu's to the card's.
+    private func foldIntoCard(duration: TimeInterval) {
+        guard let screen = currentScreen else { return }
+        let area = MenuGeometry.confinement(visibleFrame: screen.visibleFrame)
+        let corner = NSPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        let card = MenuGeometry.frame(topLeft: corner, size: panelSize, in: area)
+        for layer in [lockHost.layer, effect.layer].compactMap({ $0 }) {
+            let rounding = CABasicAnimation(keyPath: "cornerRadius")
+            rounding.fromValue = layer.cornerRadius
+            rounding.toValue = Self.lockRadius
+            rounding.duration = duration
+            rounding.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.cornerRadius = Self.lockRadius
+            layer.add(rounding, forKey: "cornerRadius")
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(card, display: true)
+        }
+        panel.invalidateShadow()
+    }
+
+    /// An attached menu hangs from the status item, so only its bottom corners are rounded.
+    private var menuMaskedCorners: CACornerMask {
+        attached
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+    }
+
+    static let menuRadius: CGFloat = 5
+    static let lockRadius: CGFloat = 16
 
     /// Runs one step of the current lock scene, unless the scene has ended since.
     private func sceneStep(after delay: TimeInterval, _ body: @escaping (PanelController) -> Void) {
@@ -711,13 +782,20 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         animatingLock = false
         lockModel.open = false
         lockModel.turned = false
+        // A fold still in flight must not hold the presentation at a radius the model no longer has.
+        lockHost.layer?.removeAnimation(forKey: "cornerRadius")
+        effect.layer?.removeAnimation(forKey: "cornerRadius")
+        lockHost.layer?.cornerRadius = Self.lockRadius
+        effect.layer?.cornerRadius = Self.menuRadius
+        effect.layer?.maskedCorners = menuMaskedCorners
         // A zero-length animation replaces a fade still in flight, which would otherwise finish at 0.
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
             panel.animator().alphaValue = 1
         }
         panel.alphaValue = 1
-        applyLayout(locked: session.locked)
+        // Still on screen, the card grows into the lock form; otherwise the next showing places it.
+        applyLayout(locked: session.locked, animated: panel.isVisible)
     }
 
     /// The mark pulses, then the form fades for 0.3 s before the menu takes over.

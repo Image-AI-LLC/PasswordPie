@@ -158,6 +158,10 @@ Locking used to be two clicks deep, in the gear menu. When it happened, the menu
 whether the vault locked or the menu only closed. And locking the Mac with the power button left the vault open: the
 next person to press the shortcut saw every account.
 
+The first version of the lock scene then showed the whole 360 pt lock screen inside whatever size the menu had. A
+short menu cut off its top half, logo and all. And while a password was being checked, the form vanished and left
+"Unlocking…" over a large empty space.
+
 ### What happens now
 
 | What you do | What happens |
@@ -166,22 +170,32 @@ next person to press the shortcut saw every account.
 | Choose Lock in the gear menu | The same. ⌘L is shown next to it. |
 | Lock the Mac: the power button, ⌃⌘Q, or the Lock Screen menu item | The vault locks, even if the screen never goes dark. |
 
-Locking with the menu open plays a short scene, about 1.5 seconds in all:
+Locking with the menu open plays a short scene, about 1.2 seconds in all:
 
-1. The lock screen fades in over the menu, with "Locked" under the logo. There is no password field yet, so nothing
-   you type goes anywhere.
+1. The menu folds up into a small card, with the logo, "Locked" and the database name. The card keeps the menu's
+   width and hangs from its top-left corner, so it is the same card whether the menu was a long list or a single
+   line. The list is covered at once, and there is no password field, so nothing you type goes anywhere.
 2. The logo settles and you hear the macOS padlock click, the same sound as the padlock in System Settings.
-3. The panel fades out. Your screen is clear again.
+3. The card lifts slightly and fades out. Your screen is clear again.
 
-Press the menu shortcut while it fades, and the lock screen stays, ready for your password.
-
-Unlocking plays the padlock's opening click as the menu comes back.
+Press the menu shortcut while it fades, and the card grows into the lock screen, ready for your password.
 
 Locking while the menu is closed (idle, sleep, screen lock) is silent. Nobody wants a click from a Mac that is going to
 sleep.
 
 The sounds follow the system setting "Play user interface sound effects" in Sound settings. Turn that off and
 PasswordPie is quiet too.
+
+### Unlock
+
+The lock screen is only as tall as what it holds: no empty band between Unlock and the Open / New links.
+
+Press Return or Unlock and the form stays exactly where it is while the password is checked. The field and the links
+dim, the button says "Unlocking…", and the logo's rim turns. Nothing moves or empties.
+
+- **Right password.** The padlock's opening click plays, the form fades and the menu takes over.
+- **Wrong password.** The window shakes, the password stays selected so you can retype it, and the line under the
+  database name says what went wrong in red, in place of "Your passwords, kept safe." Typing puts the line back.
 
 ### Why ⌘L
 
@@ -196,9 +210,11 @@ own Lock Screen is ⌃⌘Q, which locks the Mac and, now, the vault with it.
 ### Demo script
 
 1. Press the menu shortcut and search for an account.
-2. Press ⌘L. The lock screen fades in, the padlock clicks, and the panel fades away.
-3. Press the menu shortcut. The lock screen is there, with an empty search behind it. Unlock: the padlock opens.
-4. Press the power button once to lock the Mac. Log back in and press the menu shortcut: the vault is locked.
+2. Press ⌘L. The menu folds into the Locked card, the padlock clicks, and the card fades away.
+3. Press the menu shortcut. The lock screen is there, with an empty search behind it. Unlock: the form stays put,
+   the button says "Unlocking…", then the padlock opens.
+4. Lock again, then type a wrong password: the window shakes and the line under the database name turns red.
+5. Press the power button once to lock the Mac. Log back in and press the menu shortcut: the vault is locked.
 
 ## Fill in the browser
 
