@@ -16,8 +16,12 @@ long error, and the card at 300 and 360 pt. In offscreen renders the keyhole sho
 ## Critic
 
 The boards went through four rounds of blind critique by Gemini (`agy`, `gemini-3.8-flash-high`). The log is in
-`scores.md`. The score settled at 5/10. By round 4 the gaps it raised were the brand (the name, tagline, flat pie,
-centred form) and the unchanged menu, which were out of scope. The owner accepted the round-4 boards at 5.
+`scores.md`. The bar set for the work was 7/10; the score settled at 5/10. By round 4 the gaps it raised were the
+brand (the name, tagline, flat pie, centred form) and the unchanged menu, which were out of scope. Short of that bar,
+the user (the product owner) chose to accept the round-4 boards at 5 and have them implemented, on 2026-11-08.
+
+The boards drew the form at 286 / 314 pt; the shipped form measures 281 / 307 pt, which `DESIGN.md` records. The
+`*.vN.png` names in `scores.md` are the per-round screenshots, kept out of the repo except the final round's.
 
 ## Rebuild
 

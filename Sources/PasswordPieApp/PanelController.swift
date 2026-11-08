@@ -249,9 +249,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             .sink { [weak self] _ in DispatchQueue.main.async { self?.applyLayout(locked: self?.session.locked ?? true) } }
             .store(in: &cancellables)
         // The lock form is as tall as what it holds: a long error, the Touch ID row or the key-file row resize it.
-        Publishers.Merge4(session.$message.map { _ in () }, session.$touchIDAvailable.map { _ in () },
-                          session.$keyFileName.map { _ in () }, session.$databaseURL.map { _ in () })
-            .dropFirst(4)
+        // Each stream skips its own current value, so adding one cannot shift what is skipped.
+        Publishers.Merge4(session.$message.dropFirst().map { _ in () }, session.$touchIDAvailable.dropFirst().map { _ in () },
+                          session.$keyFileName.dropFirst().map { _ in () }, session.$databaseURL.dropFirst().map { _ in () })
             .sink { [weak self] in DispatchQueue.main.async { self?.lockFormChanged() } }
             .store(in: &cancellables)
         session.$touchIDBusy
@@ -337,9 +337,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             origin = savedTopLeft() ?? MenuGeometry.centeredTopLeft(screenFrame: screen.frame)
         }
         topLeft = origin
-        effect.layer?.maskedCorners = attached
-            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        effect.layer?.maskedCorners = menuMaskedCorners
         panel.isMovableByWindowBackground = !attached
         setFrame(animated: growing, screen: screen)
 
@@ -364,10 +362,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     /// The search field when unlocked, the master-password field when locked.
     func focusInitialField() {
-        // The lock scene shows no form; nothing may take the keys until it ends.
+        // The lock scene shows the locked card, not the form; nothing may take the keys until it ends.
         guard !lockingOut else { return }
         if session.locked {
-            // While the database decrypts the form is hidden; the end of unlocking focuses it again on failure.
+            // While the database decrypts the form is dimmed and disabled; the end of unlocking focuses it again on failure.
             guard !session.unlocking else {
                 panel.makeFirstResponder(nil)
                 return
@@ -692,11 +690,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         lockModel.locking = true
         lockModel.open = true
         lockModel.turned = true
-        // The form is hidden; no keystroke should land in it.
+        // The locked card replaces the form; no keystroke should land in it.
         panel.makeFirstResponder(nil)
         applyLayout(locked: true)
         // The card starts with the menu's corners, so none of the menu shows past it.
         lockHost.layer?.cornerRadius = Self.menuRadius
+        // The backdrop follows the card, so the menu's square top corners do not show through its rounded ones.
+        effect.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         let scene = lockScene
         sceneStep(after: 0) { controller in
             controller.lockModel.open = false
@@ -748,6 +748,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.invalidateShadow()
     }
 
+    /// An attached menu hangs from the status item, so only its bottom corners are rounded.
+    private var menuMaskedCorners: CACornerMask {
+        attached
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+    }
+
     static let menuRadius: CGFloat = 5
     static let lockRadius: CGFloat = 16
 
@@ -769,8 +776,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         animatingLock = false
         lockModel.open = false
         lockModel.turned = false
+        // A fold still in flight must not hold the presentation at a radius the model no longer has.
+        lockHost.layer?.removeAnimation(forKey: "cornerRadius")
+        effect.layer?.removeAnimation(forKey: "cornerRadius")
         lockHost.layer?.cornerRadius = Self.lockRadius
         effect.layer?.cornerRadius = Self.menuRadius
+        effect.layer?.maskedCorners = menuMaskedCorners
         // A zero-length animation replaces a fade still in flight, which would otherwise finish at 0.
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
