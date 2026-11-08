@@ -57,6 +57,14 @@ export class FakeTabs implements TabsAdapter {
     this.opened.push(url);
     return undefined;
   }
+
+  iconAsks: Array<{ tabId: number; favIconUrl: string | undefined; origin: string }> = [];
+  iconPng: string | undefined = 'iVBORw0KGgo=';
+
+  async tabIcon(tabId: number, favIconUrl: string | undefined, origin: string): Promise<string | undefined> {
+    this.iconAsks.push({ tabId, favIconUrl, origin });
+    return this.iconPng;
+  }
 }
 
 type Listener<T extends unknown[]> = (...args: T) => void;

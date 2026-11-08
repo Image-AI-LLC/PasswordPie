@@ -99,6 +99,10 @@ final class BrowserBridge: ObservableObject {
 
     private unowned let session: VaultSession
     private var state = BridgeState()
+    /// The site icons asked for in `tab` answers, waiting for the extension's `icon` request.
+    private var iconLedger = SiteIconLedger()
+    /// Where icons from the extension go.
+    var icons: () -> SiteIconStore = { SiteIconStore.shared }
     private var server: BrowserBridgeServer?
     /// From the Accessibility fallback, for the panel's site list only. Replaced every time the panel opens.
     private var readURLs: [BridgeBrowser: String] = [:]
@@ -136,7 +140,10 @@ final class BrowserBridge: ObservableObject {
         refreshSafariState()
         session.$locked
             .filter { $0 }
-            .sink { [weak self] _ in self?.state.pending.clear() }
+            .sink { [weak self] _ in
+                self?.state.pending.clear()
+                self?.iconLedger.clear()
+            }
             .store(in: &cancellables)
     }
 
@@ -194,12 +201,14 @@ final class BrowserBridge: ObservableObject {
 
     // MARK: Messages
 
-    private func answer(_ frame: Data, from browser: BridgeBrowser) -> Data? {
-        let response: BridgeResponse
+    func answer(_ frame: Data, from browser: BridgeBrowser) -> Data? {
+        var response: BridgeResponse
         if let request = try? JSONDecoder().decode(BridgeRequest.self, from: frame) {
+            if request.type == "icon" { return try? JSONEncoder().encode(answerIcon(frame, from: browser)) }
             let before = state.currentURL(for: browser, now: now())
             response = state.handle(request, from: browser, locked: session.locked, now: now()) { [session] id in session.entry(id) }
             if state.currentURL(for: browser, now: now()) != before { onPageChanged?() }
+            if response.type == "tab", wantsIcon(request, from: browser) { response.wantIcon = true }
             if response.type == "show" {
                 // After the answer is on its way: the server is waiting on this call to reply.
                 DispatchQueue.main.async { [weak self] in
@@ -210,6 +219,24 @@ final class BrowserBridge: ObservableObject {
             response = .error("bad-request", id: nil)
         }
         return try? JSONEncoder().encode(response)
+    }
+
+    /// A `tab` answer asks for the tab's icon only when an unlocked account on its site has none yet.
+    private func wantsIcon(_ request: BridgeRequest, from browser: BridgeBrowser) -> Bool {
+        guard !session.locked, let url = request.url else { return false }
+        let store = icons()
+        return iconLedger.shouldAsk(browser: browser, pageURL: url, entries: session.allEntries, hasIcon: { store.hasIcon(forHost: $0) }, now: now())
+    }
+
+    /// The extension's `icon` request: kept only when it answers this browser's recent `wantIcon` for that exact origin.
+    private func answerIcon(_ frame: Data, from browser: BridgeBrowser) -> BridgeResponse {
+        guard let request = try? JSONDecoder().decode(BridgeIconRequest.self, from: frame) else { return .error("bad-request", id: nil) }
+        guard !session.locked,
+              case .success(let delivery) = iconLedger.accept(browser: browser, origin: request.origin ?? "", png: request.png ?? "", now: now()),
+              icons().store(delivery) else {
+            return .error("bad-icon", id: request.id)
+        }
+        return .iconStored(id: request.id)
     }
 
     /// Asks the extension to report its tab now. Carries nothing.

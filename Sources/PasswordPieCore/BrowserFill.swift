@@ -162,6 +162,8 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     public var locked: Bool?
     public var fill: BridgeFill?
     public var code: String?
+    /// `tab` answers: send this tab's icon with an `icon` request (docs/BROWSER_EXTENSION.md, "icon").
+    public var wantIcon: Bool?
 
     public static let poke = BridgeResponse(type: "poke")
 
@@ -170,7 +172,7 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, id, version, locked, fill, code
+        case type, id, version, locked, fill, code, wantIcon
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -181,6 +183,7 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
         try container.encodeIfPresent(locked, forKey: .locked)
         try container.encodeIfPresent(fill, forKey: .fill)
         try container.encodeIfPresent(code, forKey: .code)
+        try container.encodeIfPresent(wantIcon, forKey: .wantIcon)
     }
 }
 

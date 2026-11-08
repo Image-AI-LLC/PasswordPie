@@ -1,120 +1,38 @@
 import AppKit
+import Combine
 import CryptoKit
 import ImageIO
+import PasswordPieCore
 
-/// Google's public favicon service. `https://www.google.com/s2/favicons?domain=…&sz=64`
-/// redirects to `faviconV2`. An unknown site comes back as HTTP 404 with a generic globe, so only 200 is an icon.
-enum GoogleFavicon {
-    static let pixelSize = 64
-
-    /// A public DNS name. Local and private names stay on the letter tile: Google has no icon for them, and the query would publish the vault's internal hosts.
-    static func isPublicSite(_ host: String) -> Bool {
-        guard !host.isEmpty, host.contains(".") else { return false }
-        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
-        guard labels.count >= 2, labels.allSatisfy(isDNSLabel) else { return false }
-        if labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return false }
-        // IANA special-use names (registry of 2026-05-22) and the private suffixes used on local networks.
-        // One `arpa` entry covers every special-use name under it, including reverse DNS.
-        let reserved = [
-            "alt", "arpa", "example", "example.com", "example.net", "example.org",
-            "invalid", "local", "localhost", "localdomain", "onion", "test",
-            "corp", "home", "internal", "intranet", "lan",
-        ]
-        return !reserved.contains { host == $0 || host.hasSuffix("." + $0) }
-    }
-
-    private static func isDNSLabel(_ label: Substring) -> Bool {
-        guard (1...63).contains(label.count), label.first != "-", label.last != "-" else { return false }
-        return label.allSatisfy { character in
-            character.isASCII && (character.isLetter || character.isNumber || character == "-")
-        }
-    }
-
-    static func requestURL(forHost host: String) -> URL? {
-        let host = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard isPublicSite(host) else { return nil }
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "www.google.com"
-        components.path = "/s2/favicons"
-        components.queryItems = [
-            URLQueryItem(name: "domain", value: host),
-            URLQueryItem(name: "sz", value: String(pixelSize)),
-        ]
-        return components.url
-    }
-
-    /// Largest favicon accepted. Above this, the body is not decoded or cached.
-    static let maxBytes = 262_144
-    static let maxPixels = 512
-
-    /// PNG (or other bitmap) bytes when Google has an icon. Nil for the 404 globe, a non-image, or a body past the size cap.
-    static func imageData(status: Int, body: Data) -> Data? {
-        guard status == 200, (1...maxBytes).contains(body.count) else { return nil }
-        guard let source = CGImageSourceCreateWithData(body as CFData, nil),
-              CGImageSourceGetCount(source) > 0,
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
-              let height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
-              (1...maxPixels).contains(width), (1...maxPixels).contains(height),
-              CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCache: false] as CFDictionary) != nil else { return nil }
-        return body
-    }
-}
-
-private enum FaviconHTTP {
-    /// Ephemeral, and it neither sends nor stores cookies. The shared cookie jar can hold a Google login, which would tie these domain lookups to that account.
-    static let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 8
-        config.timeoutIntervalForResource = 15
-        config.waitsForConnectivity = false
-        config.httpShouldSetCookies = false
-        config.httpCookieAcceptPolicy = .never
-        config.httpCookieStorage = nil
-        return URLSession(configuration: config)
-    }()
-
-    static func fetch(_ url: URL) async throws -> (Int, Data) {
-        let (data, response) = try await session.data(from: url)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        return (status, data)
-    }
-}
-
-/// Fetches site icons and keeps them in memory, with a disk cache for the next launch.
-/// A miss keeps the letter tile. A site Google does not have is remembered for this session.
-/// A network failure or a 5xx response waits, then the next menu open tries again.
+/// Site icons, with no network. In order: the icons bundled for the top sites (`Contents/Resources/SiteIcons`, made by
+/// `Scripts/fetch_site_icons.py`), then the ones the browser extension handed over, kept in the cache folder. A host with
+/// neither keeps its letter tile. Each is looked up under the host, then under its registrable domain. docs/UX.md, "Site icons".
 @MainActor
-final class SiteIconStore {
+final class SiteIconStore: ObservableObject {
     static let shared = SiteIconStore(
-        fetch: FaviconHTTP.fetch,
-        cacheDirectory: SiteIconStore.defaultCacheDirectory,
-        allowsNetwork: ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil
+        bundledDirectory: Bundle.main.resourceURL?.appendingPathComponent("SiteIcons", isDirectory: true),
+        cacheDirectory: SiteIconStore.defaultCacheDirectory
     )
 
+    /// Not in the database: writing icons there would change the user's KDBX file under every other KeePass app.
     private static var defaultCacheDirectory: URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
             .appendingPathComponent("com.oldcai.passwordpie", isDirectory: true)
             .appendingPathComponent("favicons", isDirectory: true)
     }
 
-    private let fetch: (URL) async throws -> (Int, Data)
+    /// Cached files written before icons came from the extension may be this large.
+    static let maxCachedBytes = 262_144
+    static let maxCachedPixels = 512
+
+    /// Bumped when an icon arrives, so SwiftUI views redraw.
+    @Published private(set) var revision = 0
+
+    private let bundledDirectory: URL?
     private let cacheDirectory: URL?
-    private let allowsNetwork: Bool
-    private let maxActive: Int
-    private var images: [String: NSImage] = [:]
-    private var missing: Set<String> = []
-    private var retryAfter: [String: Date] = [:]
-    private var retryDelay: [String: TimeInterval] = [:]
-    private var loading: Set<String> = []
-    private var queued: Set<String> = []
-    private var queue: [String] = []
-    private var active = 0
-    private var waiters: [String: [() -> Void]] = [:]
+    /// Every lookup, found or not, until an icon arrives.
+    private var resolved: [String: NSImage?] = [:]
     private var observers: [ObjectIdentifier: ObserverBox] = [:]
-    private let now: () -> Date
-    private let initialRetry: TimeInterval
 
     private final class ObserverBox {
         weak var owner: AnyObject?
@@ -125,40 +43,32 @@ final class SiteIconStore {
         }
     }
 
-    private enum Outcome {
-        case image(Data)
-        case absent
-        case failed
-    }
-
-    init(
-        fetch: @escaping (URL) async throws -> (Int, Data),
-        cacheDirectory: URL?,
-        allowsNetwork: Bool = true,
-        maxActive: Int = 6,
-        now: @escaping () -> Date = { Date() },
-        initialRetry: TimeInterval = 30
-    ) {
-        self.fetch = fetch
+    init(bundledDirectory: URL?, cacheDirectory: URL?) {
+        self.bundledDirectory = bundledDirectory
         self.cacheDirectory = cacheDirectory
-        self.allowsNetwork = allowsNetwork
-        self.maxActive = max(1, maxActive)
-        self.now = now
-        self.initialRetry = initialRetry
     }
 
     /// Cache file name for a public host. The host itself is not in the name, so a directory listing is not a site list.
     static func cacheFileName(forHost host: String) -> String? {
         let host = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard GoogleFavicon.isPublicSite(host) else { return nil }
+        guard SiteIconRules.isPublicSite(host) else { return nil }
         let digest = SHA256.hash(data: Data(host.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
         return hex + ".png"
     }
 
+    /// The icon for `host`: bundled first, then cached, each for the host and then for its registrable domain.
     func image(forHost host: String?) -> NSImage? {
-        guard let host = normalize(host) else { return nil }
-        return images[host]
+        let hosts = SiteIconRules.lookupHosts(forHost: host)
+        guard let key = hosts.first else { return nil }
+        if let known = resolved[key] { return known }
+        let found = hosts.lazy.compactMap { self.bundled($0) }.first ?? hosts.lazy.compactMap { self.cached($0) }.first
+        resolved[key] = .some(found)
+        return found
+    }
+
+    func hasIcon(forHost host: String?) -> Bool {
+        image(forHost: host) != nil
     }
 
     /// Redraw `owner` when an icon arrives. Replaces any earlier callback for the same owner.
@@ -166,137 +76,52 @@ final class SiteIconStore {
         observers[ObjectIdentifier(owner)] = ObserverBox(owner: owner, body: body)
     }
 
-    /// Load icons for `hosts`. `visible` is read from disk before the view draws, so a cached icon does not flash the letter tile.
-    func prepare(_ hosts: [String], visible: [String] = []) {
-        for host in visible { warm(normalize(host)) }
-        guard allowsNetwork else { return }
-        for host in hosts { enqueue(normalize(host)) }
-    }
-
-    func load(_ host: String?) async -> NSImage? {
-        guard let host = normalize(host) else { return nil }
-        if let image = images[host] { return image }
-        if missing.contains(host) || !allowsNetwork { return nil }
-        warm(host)
-        if let image = images[host] { return image }
-        if coolingDown(host) { return nil }
-        return await withCheckedContinuation { continuation in
-            waiters[host, default: []].append { [weak self] in
-                continuation.resume(returning: self?.images[host])
-            }
-            enqueue(host)
-        }
-    }
-
-    private func normalize(_ host: String?) -> String? {
-        guard let host else { return nil }
-        let cleaned = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return cleaned.isEmpty ? nil : cleaned
-    }
-
-    private func warm(_ host: String?) {
-        guard let host, images[host] == nil, !missing.contains(host) else { return }
-        guard let data = readDisk(host), let image = makeImage(data) else { return }
-        images[host] = image
-    }
-
-    private func enqueue(_ host: String?) {
-        guard let host, !coolingDown(host) else { return }
-        if images[host] != nil || missing.contains(host) || loading.contains(host) || queued.contains(host) {
-            if images[host] != nil || missing.contains(host) { flush(host) }
-            return
-        }
-        queued.insert(host)
-        queue.append(host)
-        pump()
-    }
-
-    private func pump() {
-        while active < maxActive, !queue.isEmpty {
-            let host = queue.removeFirst()
-            queued.remove(host)
-            guard images[host] == nil, !missing.contains(host), !loading.contains(host) else {
-                flush(host)
-                continue
-            }
-            loading.insert(host)
-            active += 1
-            Task { await self.run(host) }
-        }
-    }
-
-    private func run(_ host: String) async {
-        let outcome = await retrieve(host)
-        finish(host, outcome)
-    }
-
-    private func retrieve(_ host: String) async -> Outcome {
-        if let data = readDisk(host) { return .image(data) }
-        guard let url = GoogleFavicon.requestURL(forHost: host) else { return .absent }
-        do {
-            let (status, data) = try await fetch(url)
-            if status == 408 || status == 429 || (500...599).contains(status) { return .failed }
-            guard let image = GoogleFavicon.imageData(status: status, body: data) else { return .absent }
-            writeDisk(host, image)
-            return .image(image)
-        } catch {
-            return .failed
-        }
-    }
-
-    /// A dropped connection or a 5xx waits before the next try. The wait doubles, up to ten minutes.
-    private func scheduleRetry(_ host: String) {
-        let delay = min(max(retryDelay[host] ?? initialRetry, 0), 600)
-        retryAfter[host] = now().addingTimeInterval(delay)
-        retryDelay[host] = min(max(delay * 2, 0), 600)
-    }
-
-    private func clearRetry(_ host: String) {
-        retryAfter.removeValue(forKey: host)
-        retryDelay.removeValue(forKey: host)
-    }
-
-    private func coolingDown(_ host: String) -> Bool {
-        guard let until = retryAfter[host] else { return false }
-        if now() >= until {
-            retryAfter.removeValue(forKey: host)
-            return false
-        }
+    /// Keeps an icon from the extension: under the tab's host, and under its registrable domain when that has no icon yet,
+    /// so every account on the site finds it. True when it was stored.
+    @discardableResult
+    func store(_ delivery: SiteIconDelivery) -> Bool {
+        guard SiteIconRules.isAcceptableIcon(delivery.png), makeImage(delivery.png) != nil,
+              let host = delivery.hosts.first else { return false }
+        var targets = [host]
+        for other in delivery.hosts.dropFirst() where !hasIcon(forHost: other) { targets.append(other) }
+        var stored = false
+        for target in targets where writeDisk(target, delivery.png) { stored = true }
+        guard stored else { return false }
+        resolved = [:]
+        revision &+= 1
+        observers = observers.filter { $0.value.owner != nil }
+        for box in observers.values { box.body() }
         return true
     }
 
-    private func finish(_ host: String, _ outcome: Outcome) {
-        active -= 1
-        loading.remove(host)
-        var stored = false
-        switch outcome {
-        case .image(let data):
-            clearRetry(host)
-            if let image = makeImage(data) {
-                images[host] = image
-                stored = true
-            } else {
-                missing.insert(host)
-            }
-        case .absent:
-            clearRetry(host)
-            missing.insert(host)
-        case .failed:
-            scheduleRetry(host)
+    // MARK: Files
+
+    /// `<host>.png` (64 px) and `<host>@2x.png` (128 px). Only public DNS names reach here, so a host never walks out of
+    /// the folder.
+    private func bundled(_ host: String) -> NSImage? {
+        guard let bundledDirectory else { return nil }
+        let reps = ["", "@2x"].compactMap { suffix -> NSBitmapImageRep? in
+            let file = bundledDirectory.appendingPathComponent(host + suffix + ".png")
+            guard let data = try? Data(contentsOf: file) else { return nil }
+            return NSBitmapImageRep(data: data)
         }
-        flush(host)
-        if stored { publish() }
-        pump()
+        guard !reps.isEmpty else { return nil }
+        let image = NSImage(size: NSSize(width: 32, height: 32))
+        for rep in reps {
+            rep.size = image.size
+            image.addRepresentation(rep)
+        }
+        return image
     }
 
-    private func flush(_ host: String) {
-        let callbacks = waiters.removeValue(forKey: host) ?? []
-        callbacks.forEach { $0() }
-    }
-
-    private func publish() {
-        observers = observers.filter { $0.value.owner != nil }
-        for box in observers.values { box.body() }
+    private func cached(_ host: String) -> NSImage? {
+        guard let file = fileURL(host), let data = try? Data(contentsOf: file), (1...Self.maxCachedBytes).contains(data.count),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue,
+              (1...Self.maxCachedPixels).contains(width), (1...Self.maxCachedPixels).contains(height) else { return nil }
+        return makeImage(data)
     }
 
     private func makeImage(_ data: Data) -> NSImage? {
@@ -310,22 +135,18 @@ final class SiteIconStore {
         return cacheDirectory.appendingPathComponent(name)
     }
 
-    private func readDisk(_ host: String) -> Data? {
-        guard let file = fileURL(host) else { return nil }
-        guard let data = try? Data(contentsOf: file) else { return nil }
-        return GoogleFavicon.imageData(status: 200, body: data)
-    }
-
-    private func writeDisk(_ host: String, _ data: Data) {
-        guard let file = fileURL(host), !data.isEmpty else { return }
+    private func writeDisk(_ host: String, _ data: Data) -> Bool {
+        guard let file = fileURL(host), !data.isEmpty else { return false }
         do {
             let directory = file.deletingLastPathComponent()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
             try data.write(to: file, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            return true
         } catch {
-            // The icon is already in memory. A cache miss on the next launch just fetches it again.
+            NSLog("PasswordPie: could not cache a site icon (%@)", String(describing: error))
+            return false
         }
     }
 }

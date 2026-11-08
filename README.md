@@ -44,4 +44,4 @@ We are not accepting outside pull requests for now. Bug reports and ideas are we
 
 ## Credits
 
-Site popularity in search comes from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Argon2 is used under CC0 1.0 / Apache 2.0.
+Site popularity in search, and the list of sites whose icons are bundled, come from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The bundled site icons in `Assets/SiteIcons` are the trademarks of their sites' owners, shown only to identify the site an account belongs to; where each came from is listed in [`Assets/SiteIcons/SOURCES.md`](Assets/SiteIcons/SOURCES.md). Argon2 is used under CC0 1.0 / Apache 2.0.

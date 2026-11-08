@@ -84,7 +84,7 @@ enum MenuPalette {
     static let caret = NSColor.palette(light: 0xA65312, dark: 0xF6B469)
     static let textSelection = NSColor.palette(light: 0xF6C993, dark: 0x7A4E22)
 
-    /// Letter tiles stand in for favicons, so they vary, but only across hues that sit with the brand.
+    /// Letter tiles stand in for site icons, so they vary, but only across hues that sit with the brand.
     static let tileHues: [CGFloat] = [14, 28, 42, 95, 168, 345].map { $0 / 360 }
 
     static let favorite = NSColor.palette(light: 0xF4B400, dark: 0xF4B400)

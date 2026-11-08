@@ -1,6 +1,6 @@
 import Foundation
 
-/// Host used to fetch a site icon.
+/// Host used to look up a site icon.
 /// One leading `www` is removed, so `https://www.github.com/login` and `github.com` share an icon.
 /// Subdomains stay, because `mail.google.com` and `google.com` are different sites.
 public func websiteHost(forWebsite raw: String) -> String? {

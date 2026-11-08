@@ -2,7 +2,8 @@ import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { FillController, type TabsAdapter } from '@/lib/controller';
 import { ChromeNativeChannel, SafariNativeChannel, type NativeChannel, type PortLike } from '@/lib/native-channel';
-import { NATIVE_APP } from '@/lib/protocol';
+import { NATIVE_APP, originOf } from '@/lib/protocol';
+import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
 const RECONNECT_ALARM = 'passwordpie-reconnect';
 
@@ -34,6 +35,15 @@ const tabs: TabsAdapter = {
   },
   openTab(url) {
     return browser.tabs.create({ url });
+  },
+  async tabIcon(tabId, _reportedFavIconUrl, origin) {
+    // Read the tab again: after a navigation, the icon from the report can still be the previous page's.
+    const tab = await browser.tabs.get(tabId).catch(() => undefined);
+    if (!tab?.url || originOf(tab.url) !== origin) return undefined;
+    const favIconUrl = tab.status === 'complete' ? tab.favIconUrl : undefined;
+    const ask: IconLinksMessage = { type: 'icon-links', origin };
+    const links = parseIconLinks(await browser.tabs.sendMessage(tabId, ask, { frameId: 0 }).catch(() => []));
+    return tabIconPng(iconCandidates(origin, favIconUrl, links), { fetch: (url, init) => fetch(url, init), graphics: offscreenGraphics });
   },
 };
 

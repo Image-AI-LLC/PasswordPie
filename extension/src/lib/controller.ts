@@ -15,6 +15,7 @@ import {
   type TabReason,
 } from './protocol';
 import { systemTimers, type TimerHandle, type Timers } from './timers';
+import { wantsIcon } from './site-icon';
 
 export const REPORT_DEBOUNCE_MS = 100;
 const WINDOW_ID_NONE = -1;
@@ -23,6 +24,8 @@ export interface TabInfo {
   id?: number;
   url?: string;
   active?: boolean;
+  /** The icon the browser shows for the tab (Chrome; Safari leaves it out). */
+  favIconUrl?: string;
 }
 
 export interface FrameInfo {
@@ -44,6 +47,8 @@ export interface TabsAdapter {
   sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown>;
   /** Opens `url` in a new tab of the current window. */
   openTab(url: string): Promise<unknown>;
+  /** The tab's icon as base64 PNG (at most 128 × 128 and 64 KB), if the tab is still on `origin`. */
+  tabIcon?(tabId: number, favIconUrl: string | undefined, origin: string): Promise<string | undefined>;
 }
 
 interface Entry extends Credentials {
@@ -150,11 +155,25 @@ export class FillController {
     const url = reportableUrl(tab?.url);
     const tabId = tab?.id;
     const answer = await this.channel.request({ type: 'tab', url, reason });
+    if (wantsIcon(answer) && tabId !== undefined) void this.sendIcon(tabId, tab?.favIconUrl, url);
     const fill = fillOfTabAnswer(answer);
     // The fill is for the tab this report named, and only for the origin of the URL reported.
     if (!fill || tabId === undefined || url === '' || fill.origin !== originOf(url)) return;
     this.keep(tabId, fill);
     await this.fillTab(tabId);
+  }
+
+  /** The app has an account on this site but no icon for it: send the one the browser shows for the tab. */
+  private async sendIcon(tabId: number, favIconUrl: string | undefined, url: string): Promise<void> {
+    const origin = originOf(url);
+    if (!origin || !this.tabs.tabIcon) return;
+    let png: string | undefined;
+    try {
+      png = await this.tabs.tabIcon(tabId, favIconUrl, origin);
+    } catch {
+      return;
+    }
+    if (png) await this.channel.request({ type: 'icon', origin, png }).catch(() => undefined);
   }
 
   private keep(tabId: number, fill: TabFill): void {

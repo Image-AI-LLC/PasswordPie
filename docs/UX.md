@@ -294,3 +294,53 @@ Use a database with a GitHub login, and the PasswordPie extension installed in C
 3. Go to example.com. Press `⌘\`, type `github`, press Return. A new tab opens github.com/login and fills it.
 4. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
 5. Repeat 2 and 3 in Safari after "Enable Safari Extension…".
+
+## Site icons without telling anyone
+
+**In one line:** accounts show their site's logo, and PasswordPie never asks an icon service for one. The best-known sites'
+logos come with the app; the browser extension fills in the rest as you visit your own sites.
+
+### The problem
+
+A logo next to each account makes the list quick to scan. The usual way to get logos is to ask an online icon service
+for every website in the database. That tells the service which sites you have accounts on, which is exactly what a
+password manager should keep to itself.
+
+### What happens now
+
+- The logos of the 100 most popular sites (Google, GitHub, Wikipedia, …) are built into PasswordPie. Those accounts show
+  their logo from the first launch, offline.
+- Any other account shows its letter tile at first. The next time you open that site in Chrome or Safari with the
+  PasswordPie extension, the extension hands PasswordPie the site's own icon, the one the tab shows. The account's
+  row picks it up straight away, and it stays from then on.
+- PasswordPie asks the extension for an icon only when the tab's site has an account in your database and that account
+  has no logo yet. On every other site, the extension sends nothing.
+- Without the extension, accounts outside the top 100 keep their letter tile.
+
+### Where the logos live
+
+- Logos from the extension are kept in PasswordPie's cache folder on this Mac (`~/Library/Caches`), under scrambled
+  names. They are not written into your database file, so your KeePass file does not change and other KeePass apps are
+  not affected. They are not synced to your other Macs.
+- macOS may clear the cache to free space; the logos come back the next time you visit those sites.
+- Later, there may be an option to save them into the database as KeePass custom icons, so they sync with it.
+
+### What it will not do
+
+- Ask Google or any icon service for a logo, so no icon service learns which sites you have accounts on. The app itself
+  makes no network request for icons. The extension downloads the logo only from where the page you are on already
+  loads it (the site, or the image host the page names), over https (plain http only from a page that is itself plain
+  http), without cookies, and only when PasswordPie asked for it.
+- Ask for a logo of a site you have no account for, or learn which pages you visit: the extension tells PasswordPie only
+  the site of the tab, as it already does to find accounts.
+- Take an icon it did not ask for, an icon for another site than the one it asked about, or something that is not a small
+  image.
+
+### Demo script
+
+Use a database with a GitHub login and a login for a smaller site (say `news.ycombinator.com`), and the PasswordPie
+extension in Chrome. Turn off Wi-Fi.
+
+1. Press `⌘\`. GitHub shows its logo; the smaller site shows its letter tile.
+2. Turn Wi-Fi back on and open the smaller site in Chrome. Press `⌘\`: its row now shows the site's logo.
+3. Quit PasswordPie and open it again: the logo is still there.
