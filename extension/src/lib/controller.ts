@@ -1,7 +1,8 @@
-import type { NativeChannel } from './native-channel';
+import { SHOW_TIMEOUT_MS, type NativeChannel } from './native-channel';
 import {
   EXTENSION_VERSION,
   PROTOCOL_VERSION,
+  WEBSITE_URL,
   fillOfTabAnswer,
   originOf,
   parseContentMessage,
@@ -40,6 +41,8 @@ export interface TabsAdapter {
   frames(tabId: number): Promise<FrameInfo[]>;
   /** Resolves with the frame's answer; rejects or resolves undefined when no content script answered. */
   sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown>;
+  /** Opens `url` in a new tab of the current window. */
+  openTab(url: string): Promise<unknown>;
 }
 
 interface Entry extends Credentials {
@@ -75,6 +78,16 @@ export class FillController {
       },
       onPoke: () => this.report('poke'),
     });
+  }
+
+  /**
+   * The toolbar button: ask the app to open its panel, as its shortcut does. Carries nothing. The host starts the app
+   * when it is installed but not running; with no app to answer, the website opens instead, to download it.
+   */
+  async showPanel(): Promise<void> {
+    const answer = await this.channel.request({ type: 'show' }, SHOW_TIMEOUT_MS);
+    if (typeof answer === 'object' && answer !== null && 'type' in answer && answer.type === 'show') return;
+    await this.tabs.openTab(WEBSITE_URL);
   }
 
   /** Report the active tab soon; bursts of events within 100 ms make one report. */

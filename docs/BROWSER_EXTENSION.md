@@ -94,6 +94,19 @@ else, so a path, query or fragment (reset links, OAuth codes) never leaves the b
 clears the cached URL and never fills.
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 
+### `show`
+
+    → {"type":"show","id":3}
+    ← {"type":"show","id":3}
+
+The toolbar button was clicked (the extension has no popup). The app opens its panel over the browser as its shortcut
+does, locked or not; a click while the panel is open leaves it open. Carries nothing and returns nothing.
+
+When the app is not running, the Chrome host and the Safari extension handler, both inside `PasswordPie.app`, start that
+app (`AppLaunch`) and send the request again for up to 8 seconds; the extension waits 12 for this answer instead of 5.
+Only `show` starts the app: a tab report never does. With no answer (Chrome cannot find the host because PasswordPie is
+not installed, or the app did not start), the extension opens `https://passwordpie.com/` in a new tab to download it.
+
 ### `poke` (app → extension)
 
     ← {"type":"poke"}

@@ -25,6 +25,23 @@ final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
               let payload = try? JSONSerialization.data(withJSONObject: message) else {
             return error("bad-request", id: id)
         }
+        if AppLaunch.isShowRequest(payload) {
+            if let data = try? BridgeClient.request(payload, verifyServer: false), let answer = try? JSONSerialization.jsonObject(with: data) {
+                return answer
+            }
+            // The toolbar button while the app is not running: start the app this extension is inside, then ask again.
+            if let app = Bundle.main.executableURL.flatMap(AppLaunch.containingApp(of:)) {
+                AppLaunch.open(app)
+                var answer: Any?
+                _ = AppLaunch.retry(for: AppLaunch.showWaitSeconds, interval: 0.25) {
+                    guard let data = try? BridgeClient.request(payload, verifyServer: false) else { return false }
+                    answer = try? JSONSerialization.jsonObject(with: data)
+                    return answer != nil
+                }
+                if let answer { return answer }
+            }
+            return error("app-unavailable", id: id)
+        }
         do {
             // The sandbox cannot read the app's bundle, so the app's signature cannot be checked from here (securityd
             // answers EPERM). The app checks this extension's signature; the socket is in the team's group container.

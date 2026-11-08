@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChromeNativeChannel, SafariNativeChannel } from '../src/lib/native-channel';
+import { ChromeNativeChannel, SafariNativeChannel, SHOW_TIMEOUT_MS } from '../src/lib/native-channel';
 import { FakePort } from './fakes';
 
 beforeEach(() => {
@@ -60,6 +60,18 @@ describe('ChromeNativeChannel', () => {
     const id = (last().posted[0] as { id: number }).id;
     last().receive({ type: 'tab', id, fill: { origin: 'https://example.com', username: 'u', password: 'p' } });
     expect(result).toBeUndefined(); // a late answer is dropped
+  });
+
+  it('waits longer for show, which may start the app first', async () => {
+    const { channel, last } = chrome();
+    let result: unknown = 'pending';
+    void channel.request({ type: 'show' }, SHOW_TIMEOUT_MS).then((r) => (result = r));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(result).toBe('pending');
+    const id = (last().posted[0] as { id: number }).id;
+    last().receive({ type: 'show', id });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(result).toEqual({ type: 'show', id });
   });
 
   it('treats a message without an id as a push; poke asks for a report', () => {

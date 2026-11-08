@@ -82,6 +82,11 @@ final class Relay: @unchecked Sendable {
                 exit(0)
             }
             if sendToApp(frame) { continue }
+            // The toolbar button while the app is not running: start the app around this host, then ask again.
+            if AppLaunch.isShowRequest(frame), let app = Bundle.main.executableURL.flatMap(AppLaunch.containingApp(of:)) {
+                AppLaunch.open(app)
+                if AppLaunch.retry(for: AppLaunch.showWaitSeconds, { sendToApp(frame) }) { continue }
+            }
             sendToChrome(Self.unavailable(answering: frame))
         }
     }
