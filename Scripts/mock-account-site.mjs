@@ -28,6 +28,7 @@ const usedKeys = new Set();
 
 const b64url = (data) => Buffer.from(data).toString("base64url");
 const token = () => randomBytes(24).toString("base64url");
+const esc = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const mask = (email) => `${email[0]}•••@${email.split("@")[1]}`;
 
 function user(email) {
@@ -76,7 +77,7 @@ async function readBody(req) {
 
 function signInPage(params) {
   const provider = params.get("provider");
-  const hidden = ["state", "callback"].map((n) => `<input type="hidden" name="${n}" value="${params.get(n) ?? ""}">`).join("");
+  const hidden = ["state", "callback"].map((n) => `<input type="hidden" name="${n}" value="${esc(params.get(n) ?? "")}">`).join("");
   const apple = `<form method="post" action="/app/sign-in">${hidden}<input type="hidden" name="email" value="ada@privaterelay.appleid.com">
     <button class="apple"> Continue with Apple</button></form>`;
   const others = `<form method="post" action="/app/sign-in">${hidden}
@@ -196,4 +197,4 @@ createServer(async (req, res) => {
     return send(res, 200, `<p>Redeemed PPIE-TEST-TEST-TEST for ${latest}. Back in PasswordPie, press Check Again.</p>`);
   }
   send(res, 404, { error: "not-found" });
-}).listen(port, () => console.log(`mock passwordpie.com on http://localhost:${port}`));
+}).listen(port, "127.0.0.1", () => console.log(`mock passwordpie.com on http://localhost:${port}`));

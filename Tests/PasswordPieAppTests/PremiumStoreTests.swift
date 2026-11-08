@@ -374,6 +374,7 @@ final class PremiumStoreTests: XCTestCase {
         backend.emitUpdate()
         let unlocked = await waitUntil { self.store.hasPremium }
         XCTAssertTrue(unlocked)
+        XCTAssertEqual(store.activity, .idle)
         XCTAssertEqual(account.client.binds.map(\.restore), [false])
     }
 

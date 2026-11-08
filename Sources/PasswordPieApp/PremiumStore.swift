@@ -319,7 +319,7 @@ final class PremiumStore: ObservableObject {
         if account != state { account = state }
         if hasPremium {
             switch activity {
-            case .linkPending, .unclaimedPurchase, .onAnotherAccount, .signedOutBySite: activity = .idle
+            case .pending, .linkPending, .unclaimedPurchase, .onAnotherAccount, .signedOutBySite: activity = .idle
             default: break
             }
         }
