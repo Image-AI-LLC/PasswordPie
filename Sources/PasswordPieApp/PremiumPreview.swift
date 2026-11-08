@@ -31,14 +31,25 @@ final class PremiumPreviewBackend: PremiumBackend {
     init(_ scenario: Scenario) {
         self.scenario = scenario
         let year = Date().addingTimeInterval(200 * 24 * 3600)
-        let lifetime = PremiumTransaction(productID: PremiumPlan.lifetime.productID, verified: true, revocationDate: nil, expirationDate: nil)
-        let yearly = PremiumTransaction(productID: PremiumPlan.yearly.productID, verified: true, revocationDate: nil, expirationDate: year)
+        let lifetime = Self.transaction(.lifetime, expires: nil)
+        let yearly = Self.transaction(.yearly, expires: year)
         switch scenario {
         case .lifetime: transactions = [lifetime]
         case .yearly: transactions = [yearly]
         case .both: transactions = [lifetime, yearly]
         default: transactions = []
         }
+    }
+
+    /// Shaped like a StoreKit 2 JWS, unsigned, so the mock site (`Scripts/mock-account-site.mjs`) can read it. A real site
+    /// refuses it: it checks Apple's signature.
+    private static func transaction(_ plan: PremiumPlan, expires: Date?) -> PremiumTransaction {
+        let payload = try! JSONSerialization.data(withJSONObject: ["productId": plan.productID, "originalTransactionId": "preview-\(plan.rawValue)"])
+        let body = payload.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        return PremiumTransaction(
+            productID: plan.productID, verified: true, revocationDate: nil, expirationDate: expires,
+            signedTransaction: "eyJhbGciOiJub25lIn0.\(body).preview"
+        )
     }
 
     func currentTransactions() async -> [PremiumTransaction] { transactions }
@@ -67,8 +78,9 @@ final class PremiumPreviewBackend: PremiumBackend {
         case .failed: throw Declined()
         default:
             let expires = plan == .yearly ? Date().addingTimeInterval(365 * 24 * 3600) : nil
-            transactions.append(PremiumTransaction(productID: plan.productID, verified: true, revocationDate: nil, expirationDate: expires))
-            return .success
+            let transaction = Self.transaction(plan, expires: expires)
+            transactions.append(transaction)
+            return .success(signedTransaction: transaction.signedTransaction)
         }
     }
 

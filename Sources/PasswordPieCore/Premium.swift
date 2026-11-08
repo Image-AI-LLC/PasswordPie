@@ -19,15 +19,28 @@ public struct PremiumTransaction: Equatable, Sendable {
     public var verified: Bool
     public var revocationDate: Date?
     public var expirationDate: Date?
+    /// The transaction as Apple signed it (StoreKit 2's JWS). passwordpie.com checks it with Apple to put the purchase on
+    /// the account. Never logged.
+    public var signedTransaction: String?
 
-    public init(productID: String, verified: Bool, revocationDate: Date?, expirationDate: Date?) {
+    public init(productID: String, verified: Bool, revocationDate: Date?, expirationDate: Date?, signedTransaction: String? = nil) {
         self.productID = productID
         self.verified = verified
         self.revocationDate = revocationDate
         self.expirationDate = expirationDate
+        self.signedTransaction = signedTransaction
+    }
+
+    /// A purchase that still counts: verified, not refunded, not run out, and one of ours.
+    public func isActive(at now: Date) -> Bool {
+        guard verified, revocationDate == nil, PremiumPlan(productID: productID) != nil else { return false }
+        if let expirationDate { return expirationDate > now }
+        return PremiumPlan(productID: productID) == .lifetime
     }
 }
 
+/// What this Mac's Apple Account owns, as StoreKit says. On its own it no longer turns codes on: a purchase goes onto the
+/// PasswordPie account, and `AccountPremium` decides. The app uses this for "Owned" and to find purchases to add.
 public enum PremiumStatus: Equatable, Sendable {
     /// The store has not answered yet. Not Premium.
     case checking
@@ -36,10 +49,6 @@ public enum PremiumStatus: Equatable, Sendable {
     case yearly(expires: Date)
     /// Also holds a subscription that is still running, because it keeps charging until it is cancelled.
     case lifetime(subscriptionExpires: Date?)
-    #if PP_DIRECT
-    /// The direct channel has no store. See `directChannelPremiumStatus()`. Not compiled into the App Store channel.
-    case directChannel
-    #endif
 
     /// What the store's transactions add up to. A transaction counts only if it is verified, not revoked and not expired.
     public init(transactions: [PremiumTransaction], now: Date) {
@@ -72,9 +81,6 @@ public enum PremiumStatus: Equatable, Sendable {
         case .checking, .free: return false
         case .yearly(let expires): return expires > now
         case .lifetime: return true
-        #if PP_DIRECT
-        case .directChannel: return true
-        #endif
         }
     }
 
@@ -87,10 +93,6 @@ public enum PremiumStatus: Equatable, Sendable {
         case .lifetime(let subscriptionExpires):
             if let subscriptionExpires, subscriptionExpires > now { return [.lifetime, .yearly] }
             return [.lifetime]
-        #if PP_DIRECT
-        case .directChannel:
-            return []
-        #endif
         }
     }
 
