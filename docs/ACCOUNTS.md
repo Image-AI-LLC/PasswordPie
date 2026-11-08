@@ -1,7 +1,8 @@
 # Accounts and Premium in the browser
 
 How a PasswordPie account unlocks Premium in the browser extension, and how the app checks it before a two-step code
-leaves the Mac. Product decisions of 2026-11-08, including the later one that Premium always belongs to the account. What the user sees is in
+leaves the Mac. This is the direct channel and the Chrome Web Store extension: the App Store app and its Safari extension
+have no account (2026-11-09, [CHANNELS.md](CHANNELS.md)). What the user sees is in
 "Premium in the browser" in [UX.md](UX.md); the messages are in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
 
 ## What is free and what is Premium
@@ -13,10 +14,8 @@ leaves the Mac. Product decisions of 2026-11-08, including the later one that Pr
 | The toolbar button and its popup | |
 
 One PasswordPie account holds one Premium entitlement, and passwordpie.com is the only judge of it. It comes from
-Stripe on passwordpie.com (US$29 once, or US$10 a year, the App Store prices), from a redeemed key, or from an App Store
-purchase that the App Store app binds to the signed-in account (`POST /api/premium/apple/bind`; one account per
-purchase at a time, rebinding at most once a year). The extension, the direct app and the App Store app all read the
-same account. Signing in inside the app, its token and the StoreKit binding are in "Accounts" in
+Stripe on passwordpie.com (US$29 once, or US$10 a year, the App Store prices) or from a redeemed key. The extension and
+the direct app read the same account. Signing in inside the app and its token are in "Premium" in
 [CHANNELS.md](CHANNELS.md); this document is the browser side.
 
 ## Who decides
@@ -24,14 +23,14 @@ same account. Signing in inside the app, its token and the StoreKit binding are 
 The extension's source is public, so anything it decides can be patched out. The **app** decides whether a code may go
 to the browser, and the extension only carries proof:
 
-A code goes to the browser, in both channels, when either holds (`browserCodeAllowed` in `PremiumChannel.swift`):
+A code goes to the browser, in the direct channel, when either holds (`browserCodeAllowed` in `PremiumChannel.swift`):
 
 1. The account signed in inside the app has Premium (`appAccountHasPremium()`).
 2. The `code` request carries an entitlement token whose Ed25519 signature checks against a public key built into the
    app, with the right `iss`, `aud` and an `exp` in the future (`EntitlementToken`).
 
-Nothing else counts: not StoreKit on its own, and not the direct channel's free-codes switch
-(`directChannelCodesAreFree`).
+Nothing else counts, and not the direct channel's free-codes switch (`directChannelCodesAreFree`). In the App Store
+channel a code goes to Safari when the app has Premium, and the extension carries no proof.
 
 ## Signing in (extension)
 
@@ -120,10 +119,10 @@ dashes, and sends the normalized form. Keys are redeemed on passwordpie.com/rede
 
 ## App Store rules
 
-The Safari extension ships inside the App Store app too. A Safari build made for the App Store (`make mas-dev`,
-`WXT_PP_STORE=mas`) signs in to the account and shows its plan, but has no upgrade link and no key field (guideline
-3.1.1: no buying or unlocking outside In-App Purchase), and the page hint says the code needs Premium without saying
-where to get it. Buying there is the app's In-App Purchase, bound to the account.
+The Safari extension ships inside the App Store app, so what it does counts as the app's on the App Privacy label. A
+Safari build made for the App Store (`make mas-dev`, `WXT_PP_STORE=mas`) has no account, makes no request to the site, and
+has no upgrade link or key field (guideline 3.1.1). The page hint says the code needs Premium without saying where to get
+it. Buying there is the app's In-App Purchase.
 
 ## Testing without the site
 
