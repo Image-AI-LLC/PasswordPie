@@ -9,6 +9,8 @@ final class PremiumGateTests: XCTestCase {
     private var backend: FakePremiumBackend!
     private var pasteboard: FakePasteboard!
     private var paywalls = 0
+    private var account: FakeAccount!
+    private var clock = PremiumFixtures.now
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("premium-\(UUID().uuidString)", isDirectory: true)
@@ -18,6 +20,8 @@ final class PremiumGateTests: XCTestCase {
         backend = FakePremiumBackend()
         pasteboard = FakePasteboard()
         paywalls = 0
+        account = FakeAccount().signedIn()
+        clock = PremiumFixtures.now
     }
 
     override func tearDownWithError() throws {
@@ -27,8 +31,8 @@ final class PremiumGateTests: XCTestCase {
     }
 
     private func session(premium: Bool, entries: [VaultEntry] = [PremiumFixtures.login()]) async -> VaultSession {
-        backend.transactions = premium ? [PremiumFixtures.lifetime] : []
-        let store = PremiumStore(backend: backend)
+        account.client.entitlementReply = premium ? PassKey.premium(passExpires: PremiumFixtures.now.addingTimeInterval(30 * 86400)) : PassKey.free
+        let store = PremiumStore(backend: backend, services: account.services, now: { [unowned self] in self.clock })
         await store.refresh()
         store.presentPaywall = { [unowned self] in self.paywalls += 1 }
         let session = VaultSession(premium: store, pasteboard: pasteboard)
@@ -134,11 +138,12 @@ final class PremiumGateTests: XCTestCase {
         panel.hide()
     }
 
-    /// The updates stream does not always fire for a refund, and a menu-bar app rarely comes forward.
-    func testOpeningTheMenuAsksTheStoreAgain() async throws {
+    /// A menu-bar app rarely comes forward, so opening the menu asks again, at most every few minutes.
+    func testOpeningTheMenuAsksTheAccountAgain() async throws {
         let session = await session(premium: true)
         XCTAssertTrue(session.premium.hasPremium)
-        backend.transactions = []
+        account.client.entitlementReply = PassKey.free
+        clock = PremiumFixtures.now.addingTimeInterval(301)
         let panel = PanelController(session: session)
         panel.show(.hotkey)
         let locked = await waitUntil { !session.premium.hasPremium }
@@ -149,21 +154,24 @@ final class PremiumGateTests: XCTestCase {
     func testAShortcutDuringTheFirstCheckCopiesOnceAPremiumAnswerArrives() async throws {
         let session = await session(premium: false)
         let id = try onlyID(session)
-        backend.transactions = [PremiumFixtures.lifetime]
-        backend.holdsAnswers = true
-        let store = PremiumStore(backend: backend)
+        let waitingAccount = FakeAccount().signedIn()
+        waitingAccount.client.entitlementReply = PassKey.premium()
+        waitingAccount.client.holdsAnswers = true
+        let store = PremiumStore(backend: backend, services: waitingAccount.services, now: { PremiumFixtures.now })
         store.presentPaywall = { [unowned self] in self.paywalls += 1 }
-        let check = Task { await store.refresh() }
-        let held = await waitUntil { self.backend.answerGate != nil }
-        XCTAssertTrue(held)
+        store.start()
+        XCTAssertEqual(store.account, .checking)
         let waiting = VaultSession(premium: store, pasteboard: pasteboard)
         waiting.entries = session.entries
         XCTAssertEqual(waiting.runCopyShortcut(.copyOneTimePassword, of: id), .premiumRequired)
         XCTAssertEqual(pasteboard.writes, [])
-        backend.answer()
-        await check.value
-        XCTAssertEqual(pasteboard.writes.count, 1)
+        let held = await waitUntil { waitingAccount.client.answerGate != nil }
+        XCTAssertTrue(held)
+        waitingAccount.client.answer()
+        let copied = await waitUntil { self.pasteboard.writes.count == 1 }
+        XCTAssertTrue(copied)
         XCTAssertEqual(paywalls, 0)
+        store.stop()
     }
 
     // MARK: Fill
@@ -242,15 +250,10 @@ final class PremiumGateTests: XCTestCase {
         let id = try onlyID(session)
         let model = try model(session, presentation: .pinned)
         XCTAssertTrue(model.codeIsLocked)
-        session.premium.start()
-        let checked = await waitUntil { session.premium.status == .free }
-        XCTAssertTrue(checked)
-        backend.transactions = [PremiumFixtures.lifetime]
-        backend.emitUpdate()
-        let unlocked = await waitUntil { !model.codeIsLocked }
-        XCTAssertTrue(unlocked)
+        account.client.entitlementReply = PassKey.premium()
+        await session.premium.refresh(force: true)
+        XCTAssertFalse(model.codeIsLocked)
         XCTAssertEqual(session.runCopyShortcut(.copyOneTimePassword, of: id), .copied)
-        session.premium.stop()
     }
 
     // MARK: Stored data
@@ -338,6 +341,17 @@ final class PremiumGateTests: XCTestCase {
         }
     }
 
+    /// The downloaded app may send people to passwordpie.com to buy or redeem. The App Store app may not (3.1.1), so that
+    /// lives only in files that are wholly direct-channel.
+    func testOnlyDirectOnlyFilesSendPeopleToTheSiteToBuy() throws {
+        let toSite = try NSRegularExpression(pattern: #"(\"pricing\"|\"redeem\"|Redeem a Key|Get Premium\")"#)
+        let files = try appFiles().filter { file in
+            toSite.firstMatch(in: file.text, range: NSRange(file.text.startIndex..., in: file.text)) != nil
+        }
+        XCTAssertEqual(files.map(\.name), ["PremiumDirectViews.swift"])
+        for file in files { XCTAssertTrue(file.text.hasPrefix("#if PP_DIRECT"), file.name) }
+    }
+
     func testThePreviewBackendIsOnlyInDebugStoreBuilds() throws {
         let files = try appFiles()
         let preview = try XCTUnwrap(files.first { $0.name == "PremiumPreview.swift" })
@@ -345,7 +359,9 @@ final class PremiumGateTests: XCTestCase {
         XCTAssertEqual(files.filter { $0.text.contains("PASSWORDPIE_PREMIUM_PREVIEW") }.map(\.name), ["PremiumPreview.swift"])
     }
 
-    func testTheStoreChannelStoresNothingThatCouldGrantPremium() throws {
+    /// The only thing on disk that can turn Premium on is a signed pass, read in `AccountServices.swift`; see
+    /// `testAForgedPassInTheKeychainUnlocksNothingAndIsThrownAway`.
+    func testThePremiumFilesKeepNoFlagOfTheirOwn() throws {
         let store = try appFiles().filter { $0.name.hasPrefix("Premium") || $0.name.hasPrefix("StoreKit") }
         for file in store where file.name != "PremiumPreview.swift" {
             XCTAssertFalse(file.text.contains("UserDefaults"), "\(file.name) keeps a local flag")

@@ -68,7 +68,7 @@ final class PremiumPreviewBackend: PremiumBackend {
         default:
             let expires = plan == .yearly ? Date().addingTimeInterval(365 * 24 * 3600) : nil
             transactions.append(PremiumTransaction(productID: plan.productID, verified: true, revocationDate: nil, expirationDate: expires))
-            return .success
+            return .success(signedTransaction: nil)
         }
     }
 

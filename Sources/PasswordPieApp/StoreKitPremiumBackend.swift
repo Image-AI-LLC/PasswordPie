@@ -4,7 +4,7 @@ import PasswordPieCore
 import StoreKit
 
 /// The App Store channel's one link to Apple. The only file that imports StoreKit, so the direct binary does not link it.
-/// It passes on what the store says, and `PremiumStatus` decides what that means.
+/// It passes on what the store says, with Apple's signed copy of each transaction for passwordpie.com. The account decides Premium.
 @MainActor
 final class StoreKitPremiumBackend: PremiumBackend {
     private var products: [PremiumPlan: Product] = [:]
@@ -59,11 +59,11 @@ final class StoreKitPremiumBackend: PremiumBackend {
             result = try await product.purchase()
         }
         switch result {
-        case .success(.verified(let transaction)):
+        case .success(let verification):
+            // Only a verified transaction is finished and sent to passwordpie.com, which checks Apple's signature again.
+            guard case .verified(let transaction) = verification else { return .unverified }
             await transaction.finish()
-            return .success
-        case .success(.unverified):
-            return .unverified
+            return .success(signedTransaction: verification.jwsRepresentation)
         case .pending:
             return .pending
         case .userCancelled:
@@ -87,18 +87,19 @@ private extension PremiumTransaction {
     init(_ result: VerificationResult<Transaction>) {
         switch result {
         case .verified(let transaction):
-            self.init(transaction, verified: true)
+            self.init(transaction, verified: true, signed: result.jwsRepresentation)
         case .unverified(let transaction, _):
-            self.init(transaction, verified: false)
+            self.init(transaction, verified: false, signed: nil)
         }
     }
 
-    init(_ transaction: Transaction, verified: Bool) {
+    init(_ transaction: Transaction, verified: Bool, signed: String?) {
         self.init(
             productID: transaction.productID,
             verified: verified,
             revocationDate: transaction.revocationDate,
-            expirationDate: transaction.expirationDate
+            expirationDate: transaction.expirationDate,
+            signedTransaction: signed
         )
     }
 }

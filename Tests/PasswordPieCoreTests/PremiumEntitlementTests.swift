@@ -99,12 +99,20 @@ final class PremiumEntitlementTests: XCTestCase {
         XCTAssertNil(PremiumStatus.free.nextExpiration)
     }
 
-    #if PP_DIRECT
-    func testTheDirectChannelStatusGrantsPremiumForever() {
-        XCTAssertTrue(PremiumStatus.directChannel.grantsPremium(at: .distantFuture))
-        XCTAssertEqual(PremiumStatus.directChannel.ownedPlans(at: now), [])
+    func testWhichPurchasesStillCountForAddingToTheAccount() {
+        let lifetime = PremiumTransaction(productID: PremiumPlan.lifetime.productID, verified: true, revocationDate: nil, expirationDate: nil)
+        XCTAssertTrue(lifetime.isActive(at: now))
+        var refunded = lifetime
+        refunded.revocationDate = now
+        XCTAssertFalse(refunded.isActive(at: now))
+        var forged = lifetime
+        forged.verified = false
+        XCTAssertFalse(forged.isActive(at: now))
+        XCTAssertTrue(PremiumTransaction(productID: PremiumPlan.yearly.productID, verified: true, revocationDate: nil, expirationDate: later).isActive(at: now))
+        XCTAssertFalse(PremiumTransaction(productID: PremiumPlan.yearly.productID, verified: true, revocationDate: nil, expirationDate: now).isActive(at: now))
+        XCTAssertFalse(PremiumTransaction(productID: PremiumPlan.yearly.productID, verified: true, revocationDate: nil, expirationDate: nil).isActive(at: now))
+        XCTAssertFalse(PremiumTransaction(productID: "com.other.thing", verified: true, revocationDate: nil, expirationDate: nil).isActive(at: now))
     }
-    #endif
 
     func testPeriodText() {
         XCTAssertEqual(PremiumPeriod(value: 1, unit: .year).text, "1 year")

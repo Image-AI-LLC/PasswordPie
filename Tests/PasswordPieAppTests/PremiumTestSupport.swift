@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import PasswordPieCore
 @testable import PasswordPie
@@ -13,7 +14,8 @@ final class FakePremiumBackend: PremiumBackend {
     /// After this many more answers, `currentTransactions` starts returning these. A store that lags behind a purchase.
     var transactionsAfterRefreshes: (count: Int, transactions: [PremiumTransaction])?
     var products: Result<[PremiumProduct], Failure> = .success([FakePremiumBackend.lifetime, FakePremiumBackend.yearly])
-    var purchaseOutcome: Result<PremiumPurchaseOutcome, Failure> = .success(.success)
+    /// Nil: a success carrying the JWS of the transaction `onPurchase` (or the default) adds.
+    var purchaseOutcome: Result<PremiumPurchaseOutcome, Failure>?
     var restoreOutcome: Result<PremiumRestoreOutcome, Failure> = .success(.finished)
     /// Runs inside `purchase`, as the store records the transaction before it returns.
     var onPurchase: ((PremiumPlan) -> Void)?
@@ -61,8 +63,13 @@ final class FakePremiumBackend: PremiumBackend {
         if holdsPurchases {
             await withCheckedContinuation { purchaseGate = $0 }
         }
-        onPurchase?(plan)
-        return try purchaseOutcome.get()
+        if let onPurchase {
+            onPurchase(plan)
+        } else if purchaseOutcome == nil {
+            transactions.append(PremiumFixtures.transaction(plan))
+        }
+        if let purchaseOutcome { return try purchaseOutcome.get() }
+        return .success(signedTransaction: PremiumFixtures.jws(plan))
     }
 
     func restore() async throws -> PremiumRestoreOutcome {
@@ -100,10 +107,20 @@ final class FakePasteboard: PasteboardLike {
 
 enum PremiumFixtures {
     static let now = Date(timeIntervalSince1970: 1_800_000_000)
-    static let lifetime = PremiumTransaction(productID: PremiumPlan.lifetime.productID, verified: true, revocationDate: nil, expirationDate: nil)
+    static let lifetime = transaction(.lifetime)
+
+    static func jws(_ plan: PremiumPlan) -> String { "apple-jws-\(plan.rawValue)" }
+
+    static func transaction(_ plan: PremiumPlan, expires: Date? = nil) -> PremiumTransaction {
+        PremiumTransaction(
+            productID: plan.productID, verified: true, revocationDate: nil,
+            expirationDate: plan == .yearly ? (expires ?? now.addingTimeInterval(365 * 86400)) : expires,
+            signedTransaction: jws(plan)
+        )
+    }
 
     static func yearly(expires: Date) -> PremiumTransaction {
-        PremiumTransaction(productID: PremiumPlan.yearly.productID, verified: true, revocationDate: nil, expirationDate: expires)
+        transaction(.yearly, expires: expires)
     }
 
     static func login(_ title: String = "Bank", code: Bool = true) -> VaultEntry {
@@ -126,4 +143,145 @@ func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async -> Bool
         try? await Task.sleep(nanoseconds: 2_000_000)
     }
     return true
+}
+
+// MARK: The account
+
+/// passwordpie.com's signing key, made for the test run. The store under test trusts only this one.
+enum PassKey {
+    static let key = Curve25519.Signing.PrivateKey()
+
+    static func verify(_ jwt: String, _ now: Date) -> Entitlement? {
+        EntitlementToken.verify(jwt, now: now, publicKey: key.publicKey.rawRepresentation)
+    }
+
+    static func pass(plan: String = "lifetime", expires: Date, signer: Curve25519.Signing.PrivateKey = key) -> String {
+        func b64(_ data: Data) -> String {
+            data.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        }
+        let header = try! JSONSerialization.data(withJSONObject: ["alg": "EdDSA", "typ": "JWT", "kid": "pp-1"], options: .sortedKeys)
+        let claims = try! JSONSerialization.data(withJSONObject: [
+            "iss": "https://passwordpie.com", "aud": "passwordpie-app", "sub": "user-1", "premium": true, "plan": plan,
+            "iat": 1_700_000_000, "exp": Int(expires.timeIntervalSince1970),
+        ] as [String: Any], options: .sortedKeys)
+        let signing = "\(b64(header)).\(b64(claims))"
+        return "\(signing).\(b64(try! signer.signature(for: Data(signing.utf8))))"
+    }
+
+    static func premium(plan: String = "lifetime", passExpires: Date = PremiumFixtures.now.addingTimeInterval(7 * 86400), until: Date? = nil) -> AccountReply {
+        .ok(AccountEntitlementResponse(premium: true, plan: plan, expiresAt: until, token: pass(plan: plan, expires: passExpires)))
+    }
+
+    static let free = AccountReply.ok(AccountEntitlementResponse(premium: false, plan: nil, expiresAt: nil, token: nil))
+}
+
+@MainActor
+final class FakeAccountSecrets: AccountSecretStore {
+    var values: [AccountSecret: String] = [:]
+    private(set) var reads = 0
+
+    func read(_ secret: AccountSecret) -> String? {
+        reads += 1
+        return values[secret]
+    }
+
+    func write(_ value: String, for secret: AccountSecret) { values[secret] = value }
+    func delete(_ secret: AccountSecret) { values[secret] = nil }
+}
+
+/// passwordpie.com, scripted.
+@MainActor
+final class FakeAccountClient: AccountClient {
+    var entitlementReply: AccountReply = PassKey.free
+    /// Bind answers in order; when empty, `bindDefault`.
+    var bindReplies: [AccountReply] = []
+    /// Nil: the bound account gets `PassKey.premium()`.
+    var bindDefault: AccountReply?
+    var exchangeToken: String? = "session-from-code"
+    var emailReply: String? = "ada@example.com"
+    /// Holds `entitlement` open, as a site that has not answered yet.
+    var holdsAnswers = false
+    var answerGate: CheckedContinuation<Void, Never>?
+    private(set) var entitlementCalls: [String] = []
+    private(set) var binds: [(session: String, signed: String, restore: Bool)] = []
+    private(set) var exchanged: [String] = []
+    private(set) var signedOut: [String] = []
+
+    func exchange(code: String) async -> String? {
+        exchanged.append(code)
+        return exchangeToken
+    }
+
+    func email(session: String) async -> String? { emailReply }
+
+    func entitlement(session: String) async -> AccountReply {
+        entitlementCalls.append(session)
+        if holdsAnswers { await withCheckedContinuation { answerGate = $0 } }
+        return entitlementReply
+    }
+
+    func bindApple(session: String, signedTransaction: String, restore: Bool) async -> AccountReply {
+        binds.append((session, signedTransaction, restore))
+        if !bindReplies.isEmpty {
+            let reply = bindReplies.removeFirst()
+            if case .ok(let response) = reply, response.premium { entitlementReply = .ok(response) }
+            return reply
+        }
+        let reply = bindDefault ?? PassKey.premium()
+        if case .ok = reply { entitlementReply = reply }
+        return reply
+    }
+
+    func signOut(session: String) async { signedOut.append(session) }
+
+    func answer() {
+        holdsAnswers = false
+        answerGate?.resume()
+        answerGate = nil
+    }
+}
+
+/// The sign-in sheet, scripted. By default the site sends back a one-time code for the state it was given.
+@MainActor
+final class FakeSignIn: AccountSignInDriver {
+    enum Script {
+        case code
+        case token(String)
+        case wrongState
+        case cancel
+        case fail
+    }
+
+    var script = Script.code
+    private(set) var opened: [URL] = []
+
+    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
+        opened.append(url)
+        let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "state" }?.value ?? ""
+        switch script {
+        case .code: return URL(string: "passwordpie://auth?code=one-time&state=\(state)")!
+        case .token(let token): return URL(string: "passwordpie://auth?token=\(token)&state=\(state)")!
+        case .wrongState: return URL(string: "passwordpie://auth?code=one-time&state=someone-else")!
+        case .cancel: throw AccountSignInCancelled()
+        case .fail: throw URLError(.cannotConnectToHost)
+        }
+    }
+}
+
+@MainActor
+struct FakeAccount {
+    let client = FakeAccountClient()
+    let secrets = FakeAccountSecrets()
+    let signIn = FakeSignIn()
+
+    var services: AccountServices {
+        AccountServices(site: .production, client: client, secrets: secrets, signIn: signIn, verify: PassKey.verify)
+    }
+
+    /// Signed in already, as after an earlier launch.
+    func signedIn(_ session: String = "session-1") -> FakeAccount {
+        secrets.values[.session] = session
+        secrets.values[.email] = "ada@example.com"
+        return self
+    }
 }

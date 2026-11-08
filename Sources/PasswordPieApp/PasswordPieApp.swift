@@ -56,9 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var aboutWindow: NSWindow?
-    #if !PP_DIRECT
     private var paywallWindow: NSWindow?
-    #endif
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
     private var reporter: StatusReporter?
@@ -348,24 +346,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         preferencesWindow?.makeKeyAndOrderFront(nil)
     }
 
-    /// Starts asking the store who has Premium. On the App Store channel, a locked code opens the plans, and Premium
-    /// arriving closes them. The direct channel has no paywall to wire.
+    /// Starts asking the account who has Premium. A locked code opens the Premium window, and Premium arriving closes it.
     private func wirePremium() {
-        #if !PP_DIRECT
         let premium = session.premium
         premium.presentPaywall = { [weak self] in self?.showPaywall() }
-        premium.$status
+        premium.$account
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard premium.hasPremium else { return }
-                self?.paywallWindow?.close()
+                // After the published value lands: `hasPremium` reads the store, not the sink's argument.
+                DispatchQueue.main.async {
+                    guard premium.hasPremium, premium.activity.message == nil else { return }
+                    self?.paywallWindow?.close()
+                }
             }
             .store(in: &cancellables)
-        #endif
         session.premium.start()
     }
 
-    #if !PP_DIRECT
     func showPaywall() {
         if paywallWindow == nil {
             let host = NSHostingController(rootView: PaywallView(store: session.premium))
@@ -383,7 +380,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
         paywallWindow?.makeKeyAndOrderFront(nil)
     }
-    #endif
 
     func showAbout() {
         if aboutWindow == nil {
@@ -410,9 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        #if !PP_DIRECT
         if window === paywallWindow { paywallWindow = nil }
-        #endif
         if window === editorWindow {
             editorWindow = nil
             if session.editing != nil { session.cancelEditing() }
@@ -620,12 +614,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showAbout()
             return
         }
-        #if !PP_DIRECT
         if env["PASSWORDPIE_PAYWALL"] != nil {
             showPaywall()
             return
         }
-        #endif
         if env["PASSWORDPIE_PREFERENCES"] != nil {
             showPreferences()
             if let rawHeight = env["PASSWORDPIE_PREFERENCES_HEIGHT"], let height = Double(rawHeight), height.isFinite {
