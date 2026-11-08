@@ -194,7 +194,7 @@ createServer(async (req, res) => {
     const latest = [...sessions.values()].at(-1);
     if (!latest) return send(res, 404, "<p>No one is signed in.</p>");
     user(latest).premium = { plan: "key", expiresAt: new Date(Date.now() + 365 * 86400e3).toISOString() };
-    return send(res, 200, `<p>Redeemed PPIE-TEST-TEST-TEST for ${latest}. Back in PasswordPie, press Check Again.</p>`);
+    return send(res, 200, `<p>Redeemed PPIE-TEST-TEST-TEST for ${esc(latest)}. Back in PasswordPie, press Check Again.</p>`);
   }
   send(res, 404, { error: "not-found" });
 }).listen(port, "127.0.0.1", () => console.log(`mock passwordpie.com on http://localhost:${port}`));
