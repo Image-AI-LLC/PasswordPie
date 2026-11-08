@@ -11,6 +11,8 @@ App Store builds do not contain direct-only code.
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
 | Two-step codes (Premium) | need a PasswordPie account with Premium (Get Premium and keys on passwordpie.com) | need a PasswordPie account with Premium; sold here with StoreKit 2 and put onto the account |
+| Two-step codes in the browser (Premium) | the app's own account has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the same |
+| Extension popup | account, Upgrade (pricing page) and "Have a key?" | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): account only, no Upgrade, no key field |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
@@ -159,6 +161,10 @@ subscription page, and the App Store build says nothing about buying elsewhere (
 **Direct channel.** No StoreKit. The Premium window offers Get Premium (passwordpie.com/pricing), Redeem a Key
 (passwordpie.com/redeem) and Check Again.
 
+**Codes in the browser.** `browserCodeAllowed` in `PremiumChannel.swift` decides, the same in both channels: the account
+signed in inside the app has Premium (`appAccountHasPremium()`), or the `code` request carries a good passwordpie.com
+token from the extension ([ACCOUNTS.md](ACCOUNTS.md)). `directChannelCodesAreFree` does not count there.
+
 **The gate.** `OneTimeCodes.access(for:hasPremium:)` is the only code in the app target that may call `TOTP.code`.
 `PremiumGateTests` fails if a call appears anywhere else. `Search.swift` and the menu never read a code. The gate changes
 nothing on disk: the `otp` field stays in the KeePass file, and saving keeps it.
@@ -221,8 +227,8 @@ These are in App Store Connect, the Apple Developer site and passwordpie.com's s
 9. **Sign in with Apple:** turn on the capability for the App ID; create a Services ID (such as
    `com.oldcai.passwordpie.web`) with `passwordpie.com` as a domain and Better Auth's Apple callback as the return URL;
    create a Sign in with Apple key, and give passwordpie.com the Services ID, Team ID, Key ID and `.p8`.
-10. Put passwordpie.com's production public key (`kid: pp-1`) into `EntitlementToken.publicKey`. Until then release
-    builds trust no pass, and nobody has Premium.
+10. `EntitlementToken.publicKey` holds passwordpie.com's production public key (`kid: pp-1`, from passwordpie.com#8).
+    Before a release, check the site signs with its private half (a token from `/api/premium/entitlement` verifies).
 11. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac.
 12. Upload a build, then attach both products to the app version for review. A product's first review has to go with a version.
 13. Review notes: Premium is a PasswordPie account feature used in the browser extension and on other Macs; Sign in with

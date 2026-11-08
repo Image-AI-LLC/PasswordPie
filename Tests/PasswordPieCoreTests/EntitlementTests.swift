@@ -174,12 +174,33 @@ final class EntitlementTests: XCTestCase {
         XCTAssertNotEqual(EntitlementToken.publicKey, EntitlementToken.testPublicKey)
     }
 
+    /// The production key the site handed over (passwordpie.com#8): every build trusts it.
+    func testEveryBuildTrustsTheSitesProductionKey() {
+        XCTAssertEqual(EntitlementToken.publicKey, Data(base64URL: "h2YWSwg8b--b6tXhehQ6Ccav0CdLqFR0HLeWj9F6dM0"))
+        XCTAssertEqual(EntitlementToken.publicKey.count, 32)
+        XCTAssertTrue(EntitlementToken.trustedKeys.contains(EntitlementToken.publicKey))
+    }
+
     func testTheTestKeyIsTrustedOnlyInDevelopmentBuilds() {
         #if DEBUG || PP_DEV_EXTENSION
         XCTAssertTrue(EntitlementToken.trustedKeys.contains(EntitlementToken.testPublicKey))
         #else
         XCTAssertFalse(EntitlementToken.trustedKeys.contains(EntitlementToken.testPublicKey))
         #endif
+    }
+
+    /// passwordpie.com's own published vector (RFC 8032 TEST 1 key pair, docs/premium-api.md in the site's repo): the
+    /// site signs, the app verifies, byte for byte.
+    func testTheSitesPublishedVectorVerifies() throws {
+        let key = try XCTUnwrap(Data(base64URL: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"))
+        let token = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6InBwLTEifQ."
+            + "eyJpc3MiOiJodHRwczovL3Bhc3N3b3JkcGllLmNvbSIsImF1ZCI6InBhc3N3b3JkcGllLWFwcCIsInN1YiI6InVzZXItdGVzdC12ZWN0b3IiLCJwcmVtaXVtIjp0cnVlLCJwbGFuIjoibGlmZXRpbWUiLCJpYXQiOjE3OTM4MzY4MDAsImV4cCI6MTc5NDQ0MTYwMH0."
+            + "U6C9pA9QVxN6wKKvfxMZPTtFJHYv7izRQXo9KYUfabNv7pW88cwe8B4QHHdxvIxDSKtK8nYNPTBgbmIvkFDECw"
+        let inside = Date(timeIntervalSince1970: 1_793_923_200) // 2026-11-06
+        XCTAssertEqual(EntitlementToken.verify(token, now: inside, publicKey: key),
+                       Entitlement(subject: "user-test-vector", plan: "lifetime", expiresAt: Date(timeIntervalSince1970: 1_794_441_600)))
+        XCTAssertNil(EntitlementToken.verify(token, now: Date(timeIntervalSince1970: 1_794_441_600), publicKey: key))
+        XCTAssertNil(EntitlementToken.verify(token, now: inside, publicKey: EntitlementToken.testPublicKey))
     }
 
     /// The private half is in extension/dev/test-key.json for the mock site. Its sample token was made with it.

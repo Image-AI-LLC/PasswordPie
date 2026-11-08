@@ -10,7 +10,9 @@ export type Request =
   | { type: 'hello'; version: number; extension: string }
   | { type: 'tab'; url: string; reason: TabReason }
   | { type: 'show' }
-  | { type: 'icon'; origin: string; png: string };
+  | { type: 'icon'; origin: string; png: string }
+  /** `entitlement` is the passwordpie.com token, or absent; the app decides (docs/ACCOUNTS.md). */
+  | { type: 'code'; url: string; entitlement?: string };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */

@@ -1,0 +1,221 @@
+import { QueryClient } from '@tanstack/react-query';
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { Entitlement } from '../src/lib/account';
+import type { AccountUser } from '../src/lib/auth';
+import { Popup, planLine, type PopupApi } from '../src/components/popup';
+
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+
+const PREMIUM: Entitlement = { premium: true, plan: 'lifetime', expiresAt: null, token: 'jwt', checkedAt: 1 };
+const FREE: Entitlement = { premium: false, plan: null, expiresAt: null, token: null, checkedAt: 1 };
+
+let root: Root | undefined;
+let container: HTMLDivElement;
+let log: string[];
+let user: AccountUser | null;
+let entitlement: Entitlement;
+
+function api(overrides: Partial<PopupApi> = {}): PopupApi {
+  return {
+    sellsPremium: true,
+    googleAvailable: false,
+    upgradeUrl: 'https://passwordpie.com/pricing',
+    signUpUrl: 'https://passwordpie.com/sign-up',
+    forgotPasswordUrl: 'https://passwordpie.com/forgot-password',
+    openPanel: async () => void log.push('open-panel'),
+    panelShortcut: async () => '⌥⇧P',
+    status: async () => ({}),
+    user: async () => user,
+    cachedEntitlement: async () => entitlement,
+    refreshEntitlement: async () => {
+      log.push('refresh');
+      return { ok: true, entitlement };
+    },
+    signIn: async (email, password) => {
+      log.push(`sign-in ${email} ${password}`);
+      if (password !== 'password') return { ok: false, message: 'The email or password is not right.' };
+      user = { email };
+      return { ok: true };
+    },
+    signUp: async () => ({ ok: true }),
+    signInWithGoogle: async () => ({ ok: true }),
+    signOut: async () => {
+      log.push('sign-out');
+      user = null;
+    },
+    redeem: async (code) => {
+      log.push(`redeem ${code}`);
+      if (code === 'PPIE-USED-USED-USED') return { ok: false, reason: 'used' };
+      entitlement = { ...PREMIUM, plan: 'key' };
+      return { ok: true, entitlement };
+    },
+    openUrl: (url) => void log.push(`open ${url}`),
+    ...overrides,
+  };
+}
+
+async function render(a: PopupApi): Promise<void> {
+  root = createRoot(container);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () => root?.render(<Popup api={a} client={client} />));
+  for (let i = 0; i < 3; i += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
+function button(name: string): HTMLButtonElement {
+  const found = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === name);
+  if (!found) throw new Error(`no button ${name}: ${container.textContent}`);
+  return found;
+}
+
+function hasButton(name: string): boolean {
+  return Array.from(container.querySelectorAll('button')).some((b) => b.textContent === name);
+}
+
+async function type(label: string, value: string): Promise<void> {
+  const input = Array.from(container.querySelectorAll('label')).find((l) => l.textContent?.startsWith(label))?.querySelector('input');
+  if (!input) throw new Error(`no field ${label}`);
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  await act(async () => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+async function click(name: string): Promise<void> {
+  await act(async () => {
+    button(name).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+beforeEach(() => {
+  container = document.createElement('div');
+  document.body.append(container);
+  log = [];
+  user = null;
+  entitlement = FREE;
+});
+
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  root = undefined;
+  container.remove();
+});
+
+describe('Popup', () => {
+  it('opens PasswordPie from the big button, signed in or not', async () => {
+    await render(api());
+    await click('Open PasswordPie');
+    expect(log).toContain('open-panel');
+  });
+
+  it('names the shortcut Chrome gave, and the app shortcut when it gave none', async () => {
+    await render(api());
+    expect(container.textContent).toContain('or press ⌥⇧P in the browser');
+    await act(async () => root?.unmount());
+    await render(api({ panelShortcut: async () => '' }));
+    expect(container.textContent).toContain('⌘\\ by default');
+  });
+
+  it('signs in with email and password, then shows the plan', async () => {
+    await render(api());
+    await type('Email', 'ada@example.com');
+    await type('Password', 'password');
+    await click('Sign In');
+    expect(log).toContain('sign-in ada@example.com password');
+    expect(container.textContent).toContain('ada@example.com');
+    expect(container.querySelector('[data-testid="plan"]')?.textContent).toBe('Free');
+  });
+
+  it('says why a sign-in failed', async () => {
+    await render(api());
+    await type('Email', 'ada@example.com');
+    await type('Password', 'wrong');
+    await click('Sign In');
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The email or password is not right.');
+  });
+
+  it('refreshes the entitlement each time it opens', async () => {
+    user = { email: 'ada@example.com' };
+    entitlement = PREMIUM;
+    await render(api());
+    expect(log).toContain('refresh');
+    expect(container.querySelector('[data-testid="plan"]')?.textContent).toBe('Premium · Lifetime');
+    expect(hasButton('Upgrade')).toBe(false);
+    expect(hasButton('Redeem')).toBe(false);
+  });
+
+  it('a free account sees Upgrade, which opens the pricing page, and a key field', async () => {
+    user = { email: 'ada@example.com' };
+    await render(api());
+    await click('Upgrade');
+    expect(log).toContain('open https://passwordpie.com/pricing');
+    expect(hasButton('Redeem')).toBe(true);
+  });
+
+  it('redeems a key and turns Premium on', async () => {
+    user = { email: 'ada@example.com' };
+    await render(api());
+    await type('Have a key?', 'ppie-test-test-test');
+    await click('Redeem');
+    expect(log).toContain('redeem ppie-test-test-test');
+    expect(container.querySelector('[data-testid="plan"]')?.textContent).toBe('Premium · Key');
+  });
+
+  it('says a used key was used', async () => {
+    user = { email: 'ada@example.com' };
+    await render(api());
+    await type('Have a key?', 'PPIE-USED-USED-USED');
+    await click('Redeem');
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('That key was already used.');
+  });
+
+  it('the App Store build has no Upgrade and no key field', async () => {
+    user = { email: 'ada@example.com' };
+    await render(api({ sellsPremium: false, upgradeUrl: undefined }));
+    expect(hasButton('Upgrade')).toBe(false);
+    expect(hasButton('Redeem')).toBe(false);
+    expect(container.textContent).not.toMatch(/pricing|\$/);
+  });
+
+  it('mentions a code that was not filled', async () => {
+    await render(api({ status: async () => ({ codeSkippedOn: 'github.com' }) }));
+    expect(container.textContent).toContain('The two-step code on github.com was not filled: it needs Premium.');
+  });
+
+  it('signs out', async () => {
+    user = { email: 'ada@example.com' };
+    await render(api());
+    await click('Sign Out');
+    expect(log).toContain('sign-out');
+    expect(hasButton('Sign In')).toBe(true);
+  });
+
+  it('shows Google only when it is available', async () => {
+    await render(api());
+    expect(hasButton('Continue with Google')).toBe(false);
+    await act(async () => root?.unmount());
+    await render(api({ googleAvailable: true }));
+    expect(hasButton('Continue with Google')).toBe(true);
+  });
+});
+
+describe('planLine', () => {
+  it('names the plan and the end date', () => {
+    expect(planLine(FREE)).toBe('Free');
+    expect(planLine(null)).toBe('Free');
+    expect(planLine({ ...PREMIUM, plan: 'yearly', expiresAt: '2027-11-08T12:00:00Z' })).toMatch(/^Premium · Yearly · until /);
+  });
+});

@@ -42,9 +42,9 @@ public enum EntitlementToken {
     /// How far ahead of this Mac's clock the site's may run.
     public static let clockSkew: TimeInterval = 300
 
-    /// passwordpie.com's key (`kid: pp-1`), raw 32 bytes. **Empty until the site's worker hands over the production public
-    /// key** (docs/ACCOUNTS.md, "Keys"): until then release builds trust no token.
-    public static let publicKey = Data()
+    /// passwordpie.com's production key (`kid: pp-1`), raw 32 bytes. Its private half is a Cloudflare secret of the site
+    /// (docs/ACCOUNTS.md, "Keys"; the site's docs/premium-api.md and PR passwordpie.com#8).
+    public static let publicKey = Data(base64URL: "h2YWSwg8b--b6tXhehQ6Ccav0CdLqFR0HLeWj9F6dM0")!
 
     /// The test key (`kid: pp-test`). Its private half is public in `extension/dev/test-key.json`, for the mock site.
     public static let testPublicKey = Data(base64URL: "0HFLn6glzMnKkdA6-y2G5E_51nQEfbrAa4Mc-fK-5Ro")!

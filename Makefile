@@ -21,7 +21,7 @@ ents = $(if $(and $(APP_PROFILE),$(APPEX_PROFILE)),$(1),build/noprofile/$(notdir
 MAS_DIR := build/mas
 DIRECT_DIR := build/direct
 
-.PHONY: build extension install icon site-icons mas-dev dist-direct clean-channels
+.PHONY: build extension extension-mas install icon site-icons mas-dev dist-direct clean-channels
 
 build/noprofile/%.entitlements: Entitlements/%.entitlements
 	mkdir -p build/noprofile
@@ -33,6 +33,10 @@ build:
 
 extension:
 	cd extension && pnpm install --frozen-lockfile && pnpm build:chrome && pnpm build:safari
+
+# The Safari build inside the App Store app: no upgrade link and no key field (docs/ACCOUNTS.md, "App Store rules").
+extension-mas:
+	cd extension && pnpm install --frozen-lockfile && WXT_PP_STORE=mas pnpm build:safari
 
 # assemble_app <bin-path> <out-app> [with-chrome-host]: lay out the .app bundle. The Chrome host is direct channel only.
 define assemble_app
@@ -79,7 +83,7 @@ install: extension $(call ents,Entitlements/direct.entitlements) $(call ents,Ent
 
 # App Store channel, signed for local testing only: sandboxed, no PP_DIRECT code, not installed.
 # A real App Store package needs a Distribution certificate and provisioning profile, which this does not use.
-mas-dev: extension $(call ents,Entitlements/mas.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
+mas-dev: extension-mas $(call ents,Entitlements/mas.entitlements) $(call ents,Entitlements/autofill-extension.entitlements)
 	PP_MAS=1 swift build -c release --scratch-path .build-mas
 	$(call assemble_app,$$(PP_MAS=1 swift build -c release --scratch-path .build-mas --show-bin-path),$(MAS_DIR)/$(APP))
 	$(call sign_app,$(MAS_DIR)/$(APP),--sign "$(SIGN_ID)",$(call ents,Entitlements/mas.entitlements))

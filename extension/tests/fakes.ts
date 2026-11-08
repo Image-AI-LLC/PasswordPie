@@ -1,5 +1,5 @@
 import type { ChannelEvents, NativeChannel, PortLike, Request } from '../src/lib/native-channel';
-import type { FillMessage, FillResult } from '../src/lib/protocol';
+import type { FillMessage, FillResult, FrameMessage } from '../src/lib/protocol';
 import type { FrameInfo, TabInfo, TabsAdapter } from '../src/lib/controller';
 
 export class FakeChannel implements NativeChannel {
@@ -51,6 +51,14 @@ export class FakeTabs implements TabsAdapter {
   async sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown> {
     this.fills.push({ tabId, frameId, msg });
     return this.frameAnswer(tabId, frameId);
+  }
+
+  frameMessages: Array<{ tabId: number; frameId: number; msg: FrameMessage }> = [];
+  frameMessageAnswer: (msg: FrameMessage) => unknown = (msg) => (msg.type === 'code' ? true : undefined);
+
+  async sendToFrame(tabId: number, frameId: number, msg: FrameMessage): Promise<unknown> {
+    this.frameMessages.push({ tabId, frameId, msg });
+    return this.frameMessageAnswer(msg);
   }
 
   async openTab(url: string): Promise<unknown> {

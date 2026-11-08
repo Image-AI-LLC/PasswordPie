@@ -1,10 +1,13 @@
 # PasswordPie browser extension
 
-Fills the account picked in the PasswordPie panel into the page, in Chrome and Safari. The design (messages, security
-rules) is in [docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md); what the user sees is "Fill in the browser" in
-[docs/UX.md](../docs/UX.md).
+Fills the account picked in the PasswordPie panel into the page, in Chrome and Safari, and with Premium the two-step code
+too. The design (messages, security rules) is in [docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md), the account
+and Premium in [docs/ACCOUNTS.md](../docs/ACCOUNTS.md); what the user sees is "Fill in the browser" and "Premium in the
+browser" in [docs/UX.md](../docs/UX.md).
 
-Built with [WXT](https://wxt.dev) and TypeScript, no UI framework. One source, two builds.
+Laid out like [mkext](https://mkext.dev) (Apache-2.0): [WXT](https://wxt.dev), a React 19 + Tailwind + TanStack Query
+popup, and Better Auth bearer sign-in against passwordpie.com. The content script stays plain TypeScript with no
+framework, because it runs on every page. One source, two builds.
 
 ## Build
 
@@ -14,6 +17,23 @@ Built with [WXT](https://wxt.dev) and TypeScript, no UI framework. One source, t
     pnpm build:chrome    # → .output/chrome-mv3
     pnpm build:safari    # → .output/safari-mv3
     pnpm zip:chrome-store  # → .output/passwordpie-extension-<version>-chrome-store.zip, for the Chrome Web Store
+
+Build settings (environment variables at build time):
+
+| Variable | Default | |
+|---|---|---|
+| `WXT_PP_SITE_URL` | `https://passwordpie.com` | The site for sign-in and Premium. `http://localhost:8787` for the mock. |
+| `WXT_PP_STORE` | unset | `mas`: the Safari build inside the App Store app, with no upgrade link and no key field (`make mas-dev`). |
+| `WXT_GOOGLE_CLIENT_ID` | unset | The Chrome extension's Google OAuth client. Without it there is no Google button and no `identity` permission. |
+
+## Testing against the mock site
+
+    node dev/mock-site.mjs                                   # http://localhost:8787, see the comment at its top
+    WXT_PP_SITE_URL=http://localhost:8787 pnpm build:chrome
+
+Any email signs in with the password `password`; `PPIE-TEST-TEST-TEST` redeems once. Tokens are signed with the test key
+in `dev/test-key.json`, which only debug and `make install` builds of the app trust. The demo script is in docs/UX.md,
+"Premium in the browser".
 
 ## Chrome
 
@@ -44,8 +64,13 @@ transparent background with a see-through keyhole. Regenerate the PNGs after cha
 
 ## Layout
 
-- `src/entrypoints/background.ts`: wires browser events to `FillController`.
-- `src/entrypoints/content.ts`: wires fill messages and focus events to `PageFiller`.
-- `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting.
+- `src/app/background.ts`: wires browser events, the popup's messages, the panel shortcut and the daily entitlement
+  refresh to `FillController`.
+- `src/app/content.ts`: wires fill and code messages and focus events to `PageFiller` and `CodeFiller`. No React.
+- `src/app/popup/`: the toolbar popup page; `src/components/popup.tsx` is the UI, driven through `PopupApi`.
+- `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting, and the code flow
+  (watch for a code field, ask the app with the entitlement token, fill or hint).
+- `src/lib/account.ts`, `src/lib/auth.ts`, `src/lib/config.ts`: the passwordpie.com session, entitlement and keys.
+- `src/lib/code-fields.ts`, `src/lib/code-filler.ts`: finding and filling two-step code fields, and the page note.
 - `src/lib/native-channel.ts`: `ChromeNativeChannel` (one port, ids, timeout, reconnect) and `SafariNativeChannel`.
 - `src/lib/fields.ts`, `src/lib/page-filler.ts`: finding and filling sign-in fields, waiting for two-step sign-in.

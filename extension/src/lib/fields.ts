@@ -23,12 +23,12 @@ export function collectInputs(root: Document | ShadowRoot | Element): HTMLInputE
   return out;
 }
 
-function tokens(el: HTMLInputElement): string[] {
+export function tokens(el: HTMLInputElement): string[] {
   return (el.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/).filter(Boolean);
 }
 
 /** The element's parent, crossing out of a shadow root to its host. */
-function parentOf(el: Element): Element | null {
+export function parentOf(el: Element): Element | null {
   if (el.parentElement) return el.parentElement;
   const root = el.getRootNode();
   return root instanceof ShadowRoot ? root.host : null;
@@ -53,11 +53,11 @@ function isVisible(el: HTMLInputElement): boolean {
   return true;
 }
 
-function isUsable(el: HTMLInputElement): boolean {
+export function isUsable(el: HTMLInputElement): boolean {
   return !el.disabled && !el.readOnly && isVisible(el);
 }
 
-function isSearch(el: HTMLInputElement): boolean {
+export function isSearch(el: HTMLInputElement): boolean {
   if (el.type === 'search') return true;
   if (SEARCH_NAMES.has(el.name.toLowerCase())) return true;
   for (let node: Element | null = el; node; node = parentOf(node)) {

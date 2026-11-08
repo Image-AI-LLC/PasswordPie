@@ -4,13 +4,15 @@ The PasswordPie extension fills the account chosen in the PasswordPie panel into
 does all the choosing and matching; the extension only reports the active tab, finds the sign-in form and fills it.
 What the user sees is in "Fill in the browser" in [UX.md](UX.md).
 
-v1 is fill only. Not in v1: an icon or menu inside page fields, saving new passwords, two-step codes, Firefox.
+Filling the username and password is free. Filling the two-step code (TOTP) is Premium, and needs a PasswordPie account
+or Premium in the app: see [ACCOUNTS.md](ACCOUNTS.md). Not yet: an icon or menu inside page fields, saving new passwords,
+Firefox.
 
 ## Pieces
 
 | Piece | Where | Channel |
 |---|---|---|
-| Extension (WXT + TypeScript, no UI framework) | `extension/` | Chrome build and Safari build from one source |
+| Extension (WXT + TypeScript, laid out like [mkext](https://mkext.dev): a React + Tailwind + TanStack Query popup, Better Auth bearer sign-in; the content script has no framework) | `extension/` | Chrome build and Safari build from one source |
 | Safari Web Extension app extension | `PasswordPie.app/Contents/PlugIns/PasswordPieSafari.appex`, target `PasswordPieSafari` | both |
 | Chrome native messaging host | `PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost`, target `PasswordPieBrowserHost` | direct only |
 | Host manifest `com.oldcai.passwordpie.json` | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
@@ -87,12 +89,30 @@ Sent when the extension starts and when its port (re)connects. It makes the brow
     → {"type":"tab","id":2,"url":"https://github.com/","reason":"activated"}
     ← {"type":"tab","id":2}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28}}
+    ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28,"otp":true}}
 
 `reason` is one of `activated`, `updated`, `focus`, `poke`, `startup` (diagnostic only; it changes nothing). `url` is the
 origin of the active tab's top frame in the focused window, written as `scheme://host[:port]/`: matching needs nothing
 else, so a path, query or fragment (reset links, OAuth codes) never leaves the browser. An empty or non-http(s) `url`
 clears the cached URL and never fills.
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
+`otp: true` says the account has a two-step code. It carries no code: the app now keeps a **pending code** for that
+browser and the page's site for 30 seconds, and the extension watches that tab's frames of `origin` for a code field.
+
+### `code`
+
+    → {"type":"code","id":5,"url":"https://github.com/","entitlement":"<JWT from passwordpie.com, if signed in>"}
+    ← {"type":"code","id":5,"otp":{"origin":"https://github.com","code":"492039","expiresIn":17}}
+    ← {"type":"code","id":5,"premium":false}
+    ← {"type":"code","id":5}
+
+Sent when a frame of the fill's origin shows an empty code field, at most once per fill. `url` is that frame's origin,
+written as in `tab`. The app answers a code only when the vault is unlocked, the pending code is for this browser and
+the URL's site (same rules as a fill: eTLD+1, no downgrade), it is less than 30 s old, the account still has that website
+and a code, and Premium holds: the app's own account has it, or `entitlement` checks (ACCOUNTS.md, "Who decides").
+`expiresIn` is the seconds left in the code's time step. The pending code is used up by the answer either way.
+`premium: false` means everything matched but there is no Premium: no code was computed. An empty answer means nothing
+was waiting. The token is not logged, kept or passed on by the app, the host or the appex.
 
     ← {"type":"tab","id":2,"wantIcon":true}
 
@@ -148,8 +168,10 @@ option could save them as KeePass custom icons so they sync between devices; it 
     → {"type":"show","id":3}
     ← {"type":"show","id":3}
 
-The toolbar button was clicked (the extension has no popup). The app opens its panel over the browser as its shortcut
-does, locked or not; a click while the panel is open brings it forward. Carries nothing and returns nothing.
+"Open PasswordPie" was clicked in the extension's popup, or its shortcut (`open-panel`, ⌥⇧P by default) was pressed.
+With a popup, the toolbar button no longer sends `action.onClicked`; the popup's first and largest button, shown signed
+in or not, does this instead. The app opens its panel over the browser as its shortcut does, locked or not; a request
+while the panel is open brings it forward. Carries nothing and returns nothing. The popup closes itself.
 
 When the app did not get the request, the Chrome host and the Safari extension handler, both inside `PasswordPie.app`,
 look for it by bundle identifier (`AppLaunch`). Not running: they start that app and send the request again for up to
@@ -195,12 +217,31 @@ All in `PasswordPieCore`, with tests:
 
 Content script → background, never leaving the browser: `{"type":"ready"}` when a content script starts (a frame that
 loads after the answer still gets the fill, if its origin matches), `{"type":"focus"}` from a top frame that regains focus
-(report now), and `{"type":"filled","password":true}` when a password filled late (drop the copy). Background → content
-script: `{"type":"fill","origin","username","password"}`, sent only to frames whose origin equals `origin`; the content
-script checks `location.origin` again and that it is the top frame or same-origin with it.
+(report now), `{"type":"filled","password":true}` when a password filled late (drop the copy), and `{"type":"code-field"}`
+when an empty code field showed up while the frame was watching. Background → content script:
+`{"type":"fill","origin","username","password"}`, `{"type":"watch-code","origin","waitMs"}` (look for a code field until
+then; carries nothing secret), `{"type":"code","origin","code"}` and `{"type":"code-hint","origin","upgradeUrl"?}` (no
+Premium: a small note in the page's corner for 8 seconds, in a closed shadow root, taking no focus). All are sent only to
+frames whose origin equals `origin`; the content script checks `location.origin` again and that it is the top frame or
+same-origin with it. The background accepts a `code-field` only from a frame of the waiting origin.
+
+Popup → background: `{"type":"open-panel"}` (send `show`) and `{"type":"popup-status"}` (answers the site whose code was
+skipped for lack of Premium in the last 10 minutes, kept in memory only). Accepted only from extension pages, which have no
+tab.
+
+### Two-step codes
+
+`findCodeField` (`extension/src/lib/code-fields.ts`) looks, in this order, for a field with `autocomplete="one-time-code"`;
+4 to 8 one-character boxes in a row (filled one digit each); one field whose name, id, placeholder, `aria-label` or label
+says code, OTP, 2FA, MFA, verification or similar, but not zip, postal, promo, coupon, country, phone, card or captcha; or,
+only when no username or password field is on the page, a lone numeric field of 6 to 8 characters. It never takes the
+sign-in fields, hidden, disabled or read-only fields, or a field the user already typed in. It only runs after a fill of
+an account with a code, on that origin, for 30 seconds.
 
 ## Secrets
 
+- Two-step codes and entitlement tokens are never logged; codes are never written to `storage`. The token is kept in
+  `browser.storage.local`, which the site issued it for; it unlocks nothing but the app's check.
 - Credentials exist only in memory: in the app, in the answer frame, in the relay's buffer, in the extension's service
   worker and content script, and then in the page's fields. They are never logged, never written to `storage`, and never
   written to disk by the app. The host and appex log only sizes and error codes.
@@ -288,7 +329,11 @@ needs Accessibility to be granted already and never asks for it.
 
 - `swift test`: public suffix rules, same-site and downgrade rules, pending fill expiry and single use, message coding,
   framing, the "this site" list, site icon lookup order, when `wantIcon` is set, and which `icon` requests are refused.
-- `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures (autocomplete hints, forms with no
-  attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin refusal).
+- `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures
+  (autocomplete hints, forms with no attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin
+  refusal), code fields (one field, split boxes, decoys), the code flow in the background, the account and redeem calls,
+  and the popup.
+- `swift test --filter 'Entitlement|BridgeCode|BrowserCodeAccess'`: the token check (good, wrong key, changed claims or
+  header, expired, wrong `aud` or `iss`, not Premium) and the `code` request rules.
 - On a Mac: `make install`, load `extension/.output/chrome-mv3` unpacked in Chrome, enable the extension in Safari. See the
   demo script in UX.md.
