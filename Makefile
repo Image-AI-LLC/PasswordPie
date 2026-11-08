@@ -21,7 +21,7 @@ ents = $(if $(and $(APP_PROFILE),$(APPEX_PROFILE)),$(1),build/noprofile/$(notdir
 MAS_DIR := build/mas
 DIRECT_DIR := build/direct
 
-.PHONY: build extension install icon mas-dev dist-direct clean-channels
+.PHONY: build extension install icon site-icons mas-dev dist-direct clean-channels
 
 build/noprofile/%.entitlements: Entitlements/%.entitlements
 	mkdir -p build/noprofile
@@ -41,6 +41,8 @@ define assemble_app
 	cp "$(1)/PasswordPie" "$(2)/Contents/MacOS/PasswordPie"
 	cp Sources/PasswordPieApp/Info.plist "$(2)/Contents/Info.plist"
 	cp Assets/AppIcon.icns Assets/Assets.car "$(2)/Contents/Resources/"
+	mkdir -p "$(2)/Contents/Resources/SiteIcons"
+	cp Assets/SiteIcons/*.png "$(2)/Contents/Resources/SiteIcons/"
 	mkdir -p "$(2)/Contents/PlugIns/$(APPEX)/Contents/MacOS"
 	cp "$(1)/PasswordPieAutoFill" "$(2)/Contents/PlugIns/$(APPEX)/Contents/MacOS/PasswordPieAutoFill"
 	cp Sources/PasswordPieAutoFill/Info.plist "$(2)/Contents/PlugIns/$(APPEX)/Contents/Info.plist"
@@ -94,6 +96,10 @@ dist-direct: build extension $(call ents,Entitlements/direct.entitlements) $(cal
 
 clean-channels:
 	rm -rf build .build-mas
+
+# Refetch the bundled site icons (Assets/SiteIcons, top 100 sites) on this Mac. The app never fetches icons itself.
+site-icons:
+	python3 -I Scripts/fetch_site_icons.py
 
 # Compile the Icon Composer source into Assets.car (macOS 26+) and AppIcon.icns (older macOS).
 # Needs librsvg (rsvg-convert) and Xcode's actool (absolute paths: it may resolve relative ones against a stale $$PWD);
