@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private var aboutWindow: NSWindow?
+    private var chromeReviewWindow: NSWindow?
     private var paywallWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
@@ -111,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 pinned.forEach { $0.close() }
             }
             .store(in: &cancellables)
-        session.$entries.combineLatest(session.$liveEntries) { VaultSession.visibleEntries(saved: $0, live: $1) }
+        session.$allEntries
             .receive(on: DispatchQueue.main)
             .sink { [weak self] entries in
                 self?.refreshPinnedEntry(entries)
@@ -254,7 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func pinnedModel(for entry: VaultEntry, previous: DetailsModel?) -> DetailsModel {
         let model = DetailsModel(entry: entry, session: session, presentation: .pinned, done: {})
         if let previous {
-            model.focused = min(previous.focused, max(model.fields.count - 1, 0))
+            model.previousOpen = previous.previousOpen
+            model.focusedRow = model.rowOrder.contains(previous.focusedRow) ? previous.focusedRow : model.focusedRow
             model.revealed = previous.revealed
         }
         return model
@@ -408,6 +410,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         paywallWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// The accounts in a held batch, read-only, with one button that applies them.
+    func showChromeBatchReview() {
+        if chromeReviewWindow == nil {
+            let host = NSHostingController(rootView: ChromeBatchReviewView(session: session) { [weak self] in
+                self?.chromeReviewWindow?.close()
+            })
+            host.sizingOptions = [.preferredContentSize]
+            let window = NSWindow(contentViewController: host)
+            window.styleMask = [.titled, .closable]
+            window.title = "Passwords Changed in Chrome"
+            window.applyWarmTitlebar()
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.center()
+            chromeReviewWindow = window
+        }
+        panelController.hide(refocusPrevious: false)
+        NSApp.activate(ignoringOtherApps: true)
+        chromeReviewWindow?.makeKeyAndOrderFront(nil)
+    }
+
     func showAbout() {
         if aboutWindow == nil {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -434,6 +457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === paywallWindow { paywallWindow = nil }
+        if window === chromeReviewWindow { chromeReviewWindow = nil }
         if window === editorWindow {
             editorWindow = nil
             if session.editing != nil { session.cancelEditing() }
@@ -691,6 +715,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.applyUnlockedDebugHooks(env) }
             return
         }
+        session.noteChromePanelShown()
         if let text = env["PASSWORDPIE_QUERY"] {
             panelController.header.searchField.stringValue = text
             panelController.headerSearchChanged(text)
@@ -705,6 +730,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if let title = env["PASSWORDPIE_PIN"], let id = session.allEntries.first(where: { $0.title == title })?.id {
             session.pinEntry(id)
+        }
+        if env["PASSWORDPIE_REVIEW"] != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showChromeBatchReview() }
+        }
+        if let state = env["PASSWORDPIE_DETAILS"] {
+            // After the hover above has opened the details.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+                self?.panelController.menu.debugDetails { model in
+                    guard state.contains("previous") else { return }
+                    model.previousOpen = true
+                    if state.contains("focus"), let first = model.previous.first { model.focusedRow = .previous(first.id) }
+                }
+            }
         }
         if let path = env["PASSWORDPIE_OPEN"] {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -743,6 +781,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "selectedEntry": menu.currentEntryID?.uuidString ?? NSNull(),
             "popoverOpen": menu.popoverIsOpen,
             "detailsFocus": menu.focusedFieldLabel ?? NSNull(),
+            "panelWindow": panel.isVisible ? panel.windowNumber : NSNull(),
+            "popoverWindow": menu.popoverWindowNumber ?? NSNull(),
+            "reviewWindow": chromeReviewWindow?.windowNumber ?? NSNull(),
+            "chromeSync": session.chromeSyncEnabled,
+            "chromeStatus": session.chromeStatus,
+            "chromeBadges": session.chromeBadgeIDs.count,
+            "chromeBatch": session.chromeBatch?.summary ?? NSNull(),
+            "chromeFailures": session.chromeUpdateFailures.count,
             "rootRows": menu.root.rows.map(\.title),
             "appActive": NSApp.isActive,
             "frontmostApp": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? NSNull(),

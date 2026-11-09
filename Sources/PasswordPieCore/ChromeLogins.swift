@@ -124,19 +124,23 @@ public struct ChromeLoginsResult: Sendable {
     public var failedProfiles: [String]
     /// When Chrome last used each login (its `date_last_used`). Logins Chrome never used, or older Chrome without the column, are absent.
     public var lastUsed: [UUID: Date]
+    /// Every decrypted row, including a second store's copy of a login. `entries` shows one value per login.
+    public var rows: [ChromeRow]
 
     public init(
         entries: [VaultEntry] = [],
         skipped: Int = 0,
         profileCount: Int = 0,
         failedProfiles: [String] = [],
-        lastUsed: [UUID: Date] = [:]
+        lastUsed: [UUID: Date] = [:],
+        rows: [ChromeRow] = []
     ) {
         self.entries = entries
         self.skipped = skipped
         self.profileCount = profileCount
         self.failedProfiles = failedProfiles
         self.lastUsed = lastUsed
+        self.rows = rows
     }
 }
 
@@ -168,7 +172,6 @@ public struct ChromeStoreSignature: Equatable, Sendable {
 public enum ChromeLogins {
     public static let groupName = "Chrome (live)"
     public static let usernameFieldName = "Chrome username"
-    public static let passwordFieldName = "Chrome password"
     static let storeNames = ["Login Data", "Login Data For Account"]
 
     public static var defaultRoot: URL {
@@ -261,6 +264,7 @@ public enum ChromeLogins {
             do {
                 let part = try entries(in: profile, key: key)
                 combined.entries += part.entries
+                combined.rows += part.rows
                 combined.lastUsed.merge(part.lastUsed) { max($0, $1) }
                 combined.skipped += part.skipped
                 combined.profileCount += 1
@@ -293,7 +297,7 @@ public enum ChromeLogins {
     /// Reads one profile's two login stores from private copies, so Chrome's locks are never contended and its files are never written.
     public static func entries(in profile: ChromeProfile, key: Data) throws -> ChromeLoginsResult {
         var result = ChromeLoginsResult()
-        var seen = Set<UUID>()
+        var shown: [UUID: (index: Int, modified: Date?)] = [:]
         var attempted = 0
         var decrypted = 0
         for store in storeNames {
@@ -309,7 +313,16 @@ public enum ChromeLogins {
                 decrypted += 1
                 let id = stableID(profile: profile.directoryName, realm: row.realm, origin: row.origin, username: row.username)
                 if let used = row.lastUsed, used > (result.lastUsed[id] ?? .distantPast) { result.lastUsed[id] = used }
-                guard seen.insert(id).inserted else { continue }
+                result.rows.append(ChromeRow(loginID: id, password: password, modifiedAt: row.passwordModified, isForm: row.isForm))
+                if let existing = shown[id] {
+                    // The list shows one value for a login that both stores hold: the one changed last.
+                    if let modified = row.passwordModified, modified > (existing.modified ?? .distantPast) {
+                        result.entries[existing.index].password = password
+                        shown[id] = (existing.index, modified)
+                    }
+                    continue
+                }
+                shown[id] = (result.entries.count, row.passwordModified)
                 var entry = VaultEntry(id: id, groupPath: groupPath(for: profile))
                 entry.title = BrowserImport.host(of: row.origin).isEmpty ? row.origin : BrowserImport.host(of: row.origin)
                 entry.url = row.origin
@@ -323,25 +336,57 @@ public enum ChromeLogins {
         return result
     }
 
-    /// The list to show: one entry per account. Chrome is only read, so its values are display fields and must not be written back.
+    /// The list to show: one entry per account. Chrome is only read, so nothing here is written back.
     /// Logins with the same username and password on one domain are one account, as Chrome's own password list has it.
-    /// A login joins a saved entry with its own id, then one with the same site and username,
-    /// and the rest of its account comes along. An account with no such entry joins a copy saved from Chrome
-    /// with the same site and password, which is a username renamed in Chrome.
-    /// A value that differs from the saved entry appears as a field. An account that joins nothing is listed as it is.
-    public static func combined(saved: [VaultEntry], live: [VaultEntry]) -> [VaultEntry] {
-        guard !live.isEmpty else { return saved }
+    /// A login joins a saved entry with its own id, then one with the same site, username and password, then the one saved entry
+    /// it could replace the password of. The rest of its account comes along. An account with no such entry joins a copy saved
+    /// from Chrome with the same site and password, which is a username renamed in Chrome. A different password on anything
+    /// else stays its own row, so it can never overwrite another account. An account that joins nothing is listed as it is.
+    public static func combined(saved: [VaultEntry], live: [VaultEntry], rules: ChromeJoinRules = ChromeJoinRules()) -> [VaultEntry] {
+        view(saved: saved, live: live, rules: rules).entries
+    }
+
+    public struct View: Equatable, Sendable {
+        public var entries: [VaultEntry]
+        /// Rows with anything from Chrome in them. These carry the badge.
+        public var fromChrome: Set<UUID>
+    }
+
+    public static func view(saved: [VaultEntry], live: [VaultEntry], rules: ChromeJoinRules = ChromeJoinRules()) -> View {
+        guard !live.isEmpty else { return View(entries: saved, fromChrome: []) }
+        let placed = placement(saved: saved, live: live, rules: rules)
+        var shown = saved
+        var fromChrome = Set(placed.lone.map(\.id))
+        // A keep-separate entry can share a login's id, so the login can't be its own row, but it adds nothing to the entry.
+        for (index, logins) in placed.joined where !EntryMerge.keepsSeparate(saved[index]) {
+            addChromeFields(logins, to: &shown[index])
+            fromChrome.insert(saved[index].id)
+        }
+        return View(entries: shown + placed.lone, fromChrome: fromChrome)
+    }
+
+    struct Placement {
+        var joined: [Int: [VaultEntry]]
+        var lone: [VaultEntry]
+        var writingCounts: [String: Int]
+    }
+
+    static func placement(saved: [VaultEntry], live: [VaultEntry], rules: ChromeJoinRules) -> Placement {
         var byID: [UUID: Int] = [:]
         var byAccount: [String: [Int]] = [:]
+        var writingCounts: [String: Int] = [:]
         for (index, entry) in saved.enumerated() where !entry.trashed {
             if byID[entry.id] == nil { byID[entry.id] = index }
             for key in accountKeys(entry) { byAccount[key, default: []].append(index) }
+            for key in writingKeys(entry) { writingCounts[key, default: 0] += 1 }
         }
         func savedAccount(for login: VaultEntry) -> Int? {
             let candidates = byAccount[BrowserImport.matchKey(login)] ?? []
-            let samePassword = candidates.first { saved[$0].password == login.password }
-            // Without a username the site alone does not say it is the same account.
-            return samePassword ?? (login.username.isEmpty ? nil : candidates.first)
+            if let samePassword = candidates.first(where: { saved[$0].password == login.password && !EntryMerge.keepsSeparate(saved[$0]) }) {
+                return samePassword
+            }
+            let same = candidates.filter { isSameAccountForWriting(saved[$0], login, among: writingCounts, rules: rules) }
+            return same.count == 1 ? same[0] : nil
         }
         var joined: [Int: [VaultEntry]] = [:]
         var unmatched: [[VaultEntry]] = []
@@ -365,7 +410,7 @@ public enum ChromeLogins {
         var lone: [VaultEntry] = []
         if !unmatched.isEmpty {
             var renameCandidates: [String: [Int]] = [:]
-            for (index, entry) in saved.enumerated() where !entry.trashed && joined[index] == nil && isChromeCopy(entry) {
+            for (index, entry) in saved.enumerated() where !entry.trashed && joined[index] == nil && isChromeCopy(entry) && !EntryMerge.keepsSeparate(entry) {
                 let websites = [entry.url] + EntryMerge.otherWebsites(entry).map(\.value)
                 for website in websites {
                     renameCandidates[renameKey(website: website, password: entry.password), default: []].append(index)
@@ -382,11 +427,30 @@ public enum ChromeLogins {
                 }
             }
         }
-        var shown = saved
-        for (index, logins) in joined {
-            addChromeFields(logins, to: &shown[index])
-        }
-        return shown + lone
+        return Placement(joined: joined, lone: lone, writingCounts: writingCounts)
+    }
+
+    /// One live saved entry, the same case-sensitive username, the same scheme, host and port, and an ordinary form login.
+    static func isSameAccountForWriting(_ saved: VaultEntry, _ login: VaultEntry, among counts: [String: Int], rules: ChromeJoinRules) -> Bool {
+        guard !rules.notForms.contains(login.id), !rules.readOnly.contains(saved.id), !EntryMerge.keepsSeparate(saved),
+              !login.username.isEmpty, saved.username == login.username, let origin = writingOrigin(login.url) else { return false }
+        let key = origin + "\u{1}" + login.username
+        return writingKeys(saved).contains(key) && counts[key] == 1
+    }
+
+    /// Where a password write may land: each of the entry's sites with its exact username.
+    private static func writingKeys(_ entry: VaultEntry) -> [String] {
+        guard !entry.username.isEmpty else { return [] }
+        let origins = ([entry.url] + EntryMerge.otherWebsites(entry).map(\.value)).compactMap(writingOrigin)
+        return Array(Set(origins)).map { $0 + "\u{1}" + entry.username }
+    }
+
+    /// Scheme, host and port. `www.` is part of the host here, unlike in search and in showing one row.
+    static func writingOrigin(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parts = URLComponents(string: trimmed), let scheme = parts.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", let host = parts.host?.lowercased(), !host.isEmpty else { return nil }
+        return "\(scheme)://\(host):\(parts.port ?? (scheme == "https" ? 443 : 80))"
     }
 
     /// The part of a host someone registers: `corp.example` for `gitlab.corp.example`, `bbc.co.uk` for `shop.bbc.co.uk`.
@@ -487,7 +551,6 @@ public enum ChromeLogins {
     private static func addChromeFields(_ logins: [VaultEntry], to entry: inout VaultEntry) {
         var taken = Set(entry.fields.map(\.key))
         var usernames = [entry.username]
-        var passwords = [entry.password]
         var hosts = Set(([entry.url] + EntryMerge.otherWebsites(entry).map(\.value)).map(BrowserImport.host(of:)))
         func add(_ value: String, named base: String, protected: Bool, to entry: inout VaultEntry) {
             var key = base
@@ -506,10 +569,6 @@ public enum ChromeLogins {
                 usernames.append(login.username)
                 add(login.username, named: usernameFieldName, protected: false, to: &entry)
             }
-            if !login.password.isEmpty, !passwords.contains(login.password) {
-                passwords.append(login.password)
-                add(login.password, named: passwordFieldName, protected: true, to: &entry)
-            }
         }
     }
 
@@ -519,6 +578,13 @@ public enum ChromeLogins {
         var passwordValue: Data
         var realm: String
         var lastUsed: Date?
+        var passwordModified: Date?
+        /// Chrome's `scheme` column. 0 is an HTML form. An older store without it reads as -1.
+        var scheme: Int32
+
+        var isForm: Bool {
+            scheme == 0 && (realm.hasPrefix("https://") || realm.hasPrefix("http://"))
+        }
     }
 
     private static func groupPath(for profile: ChromeProfile) -> [String] {
@@ -566,7 +632,11 @@ public enum ChromeLogins {
         }
         defer { sqlite3_close(db) }
         var statement: OpaquePointer?
-        let sql = "SELECT origin_url, username_value, password_value, signon_realm, \(hasLastUsedColumn(db) ? "date_last_used" : "0") FROM logins WHERE blacklisted_by_user = 0"
+        let columns = columnNames(db)
+        let lastUsed = columns.contains("date_last_used") ? "date_last_used" : "0"
+        let modified = columns.contains("date_password_modified") ? "date_password_modified" : "0"
+        let scheme = columns.contains("scheme") ? "scheme" : "-1"
+        let sql = "SELECT origin_url, username_value, password_value, signon_realm, \(lastUsed), \(modified), \(scheme) FROM logins WHERE blacklisted_by_user = 0"
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw ChromeLoginsError.database("Chrome's password store has an unexpected layout.")
         }
@@ -583,26 +653,27 @@ public enum ChromeLogins {
                 username: text(statement, 1),
                 passwordValue: Data(bytes: bytes, count: length),
                 realm: text(statement, 3),
-                lastUsed: chromeDate(sqlite3_column_int64(statement, 4))
+                lastUsed: chromeDate(sqlite3_column_int64(statement, 4)),
+                passwordModified: chromeDate(sqlite3_column_int64(statement, 5)),
+                scheme: sqlite3_column_int(statement, 6)
             ))
         }
         return rows
     }
 
-    /// Chrome's `date_last_used` is microseconds since 1601-01-01, and 0 means never. Older Chrome has no such column.
+    /// Chrome's dates are microseconds since 1601-01-01, and 0 means never. Older Chrome has no such columns.
     private static func chromeDate(_ microseconds: Int64) -> Date? {
         guard microseconds > 0 else { return nil }
         return Date(timeIntervalSince1970: Double(microseconds) / 1_000_000 - 11_644_473_600)
     }
 
-    private static func hasLastUsedColumn(_ db: OpaquePointer?) -> Bool {
+    private static func columnNames(_ db: OpaquePointer?) -> Set<String> {
         var statement: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "PRAGMA table_info(logins)", -1, &statement, nil) == SQLITE_OK else { return false }
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(logins)", -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }
-        while sqlite3_step(statement) == SQLITE_ROW {
-            if text(statement, 1) == "date_last_used" { return true }
-        }
-        return false
+        var names = Set<String>()
+        while sqlite3_step(statement) == SQLITE_ROW { names.insert(text(statement, 1)) }
+        return names
     }
 
     private static func text(_ statement: OpaquePointer?, _ column: Int32) -> String {

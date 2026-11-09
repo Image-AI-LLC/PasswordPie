@@ -229,6 +229,102 @@ Use a database with one login that has a two-step code. For the App Store app, a
 6. Activation from the website: on a Mac with no purchase, press Activate the App Store app on passwordpie.com and allow
    the browser to open PasswordPie. The window says Premium is on, and the codes unlock.
 
+## The newest password wins
+
+**In one line:** change a password in Chrome, and PasswordPie fills the new one next time. The old one is a click away.
+
+This is the version downloaded from passwordpie.com. The App Store version does not read Chrome.
+
+### The problem
+
+You change a password when a site asks, and Chrome saves it. Your database still holds the old one. Filling it fails,
+and you have to work out which of the two values is right.
+
+### What happens now
+
+The newest password wins, whichever side it came from. There is no Save button, no notice and no list of conflicts on
+the main screen. Older passwords go into a collapsed **previous passwords** section in the account's details, and one
+click brings any of them back.
+
+- Return, Copy, Fill and the browser extension always use the saved password.
+- Chrome is never changed. Restoring an old password here does not change the website or Chrome either.
+- For 7 days after a Chrome update the label reads `password · [Chrome] updated 2 days ago`. Passwords you changed
+  here have no icon.
+- An account with anything synced from Chrome has a small Chrome badge on its icon. A favorite shows only its star.
+
+### Which password is newest
+
+| Chrome's password | What happens |
+|---|---|
+| Changed later than the saved one | It becomes the saved password. The old one goes to previous passwords. |
+| Older, or changed at exactly the same time | The saved password stays. Chrome's goes to previous passwords. |
+| No date, a date of 0, or a date in the future | The saved password stays. Chrome's goes to previous passwords as `date unknown`. |
+| Several Chrome profiles disagree | The latest change wins. The others go to previous passwords. |
+
+Chrome's date is when that login's password last changed. The saved password's date is when PasswordPie changed it. If
+PasswordPie did not, it is the time of the oldest saved version still holding this password, so favoriting an account
+does not make its password look new.
+
+### When it does not replace anything
+
+A password is replaced only on the same account: one live saved item, the same username with the same capitals, the
+same scheme, host and port, and an ordinary sign-in form. Anything else stays a separate row, so nothing overwrites
+another account.
+
+- An item marked keep-separate never takes a Chrome password.
+- An item that serves several sites is not changed by one of them. Chrome's password goes to its previous passwords,
+  and you can adopt it there.
+- A database PasswordPie cannot write back in place, such as a CSV, is left alone.
+
+### Previous passwords
+
+Below strength, closed by default, with its count: `▸ previous passwords (2)`. Each row shows when the password was set
+on top, and the value with **Restore** and **Copy** on the right. A Chrome password that was never used shows **Use** and
+`not used yet`.
+
+- Up to 10 passwords, each kept for 90 days from when it entered the list. Your own history setting does not affect it.
+- The password most recently replaced is always kept. Passwords from Chrome that were never used go first.
+- **Restore** takes one click and no confirmation, because the password it replaces moves into the same list. Chrome's
+  change that you just undid does not come back. If you change the password in Chrome again later, that newer change wins.
+- `⋯` on the open header has **Clear Previous Passwords**, which asks first, because it cannot be undone.
+
+Keyboard: up and down move between rows. On a previous password, Return copies and never fills, and ⌘Return restores.
+After Restore, the selection moves to the `previous passwords` header, where Return only folds the list.
+
+### Many at once
+
+More than 10 updates inside 24 hours, including the first time after upgrading, write nothing. One row appears in the
+panel, and the panel still works normally:
+
+`12 passwords changed in Chrome   Review   ×`
+
+**Review** lists the accounts, read-only, with one **Apply 12 Updates** button. **×** keeps the saved passwords and does
+not ask about that batch again. Chrome's values stay under previous passwords.
+
+### When something goes wrong
+
+It is silent when it works. If the update cannot be written, the details show:
+
+`[Chrome] Couldn't update. Using the saved password.`  **Try Again**
+
+The database is only replaced after the new file reads back correctly and the file on disk is still the one PasswordPie
+opened, so another app's or a sync client's change is never overwritten. A failed Restore shows on its own row and
+changes nothing.
+
+### Settings
+
+Under the Chrome switch in Preferences: "Newer Chrome passwords replace saved ones. Chrome isn't changed."
+
+### Demo script
+
+Use a test database with `github.com` / `ann`, and Chrome signed in to the same account.
+
+1. Change the password in Chrome. Press `⌘\`: the row shows the Chrome badge, and the details say `updated just now`.
+2. Open **previous passwords (1)**. Press ⌘Return: the old password is back, and the Chrome one is in the list.
+3. Change it in Chrome again: the newer change wins.
+4. Change a dozen passwords, or use a database that is behind: the panel shows `12 passwords changed in Chrome`. Click
+   **Review**, then **Apply 12 Updates**.
+
 ## Lock
 
 **In one line:** press ⌘L and the vault locks with a click you can hear. The menu shows that it locked, then gets

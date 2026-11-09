@@ -10,6 +10,7 @@ public enum EntryMerge {
     public static func isReservedKey(_ key: String) -> Bool {
         key.caseInsensitiveCompare(keepSeparateKey) == .orderedSame
             || key.caseInsensitiveCompare(manifestKey) == .orderedSame
+            || key.caseInsensitiveCompare(PreviousPasswords.key) == .orderedSame
     }
 
     public static func keepsSeparate(_ entry: VaultEntry) -> Bool {
@@ -84,6 +85,9 @@ public enum EntryMerge {
                 }
                 if recorded || alreadyKept {
                     result[index].trashed = true
+                    #if PP_DIRECT
+                    if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
+                    #endif
                 }
             }
             if changed {
@@ -99,7 +103,12 @@ public enum EntryMerge {
         guard let manifest = readManifest(entry), manifest.parts.count >= 2 else { return nil }
         return manifest.parts.enumerated().map { index, part in
             var restored = part.makeEntry()
-            if index == 0 { restored.id = entry.id }
+            if index == 0 {
+                restored.id = entry.id
+                #if PP_DIRECT
+                PreviousPasswords.carry(from: entry, to: &restored, now: Date())
+                #endif
+            }
             restored.trashed = false
             setKeepSeparate(true, on: &restored)
             return restored

@@ -53,10 +53,12 @@ every other target here.
 
 ## Direct-only code
 
-Everything is behind `#if PP_DIRECT`: `ChromeLogins.swift`, `VaultSession+Chrome.swift` (store build has no-op stubs),
-the Chrome section of Preferences, and the Chrome tests. Live Chrome logins are held in `VaultSession.liveEntries`,
-separate from `entries`, so `save()` can never write them into the KeePass file. They are read-only; the user
-either edits them in Chrome or uses "Save to KeePass" on a single login.
+Everything is behind `#if PP_DIRECT`: `ChromeLogins.swift`, `ChromeUpdates.swift`, `VaultSession+Chrome.swift` and
+`VaultSession+ChromeUpdates.swift` (store build has no-op stubs), the Chrome section of Preferences, and the Chrome tests.
+Live Chrome logins are held in `VaultSession.liveEntries`, separate from `entries`, so `save()` can never write them
+into the KeePass file. Chrome itself is read-only. A newer Chrome password on the same account replaces the saved one,
+and older ones move to the protected `PasswordPie.PreviousPasswords` field; see "The newest password wins" in
+[UX.md](UX.md). The store build leaves that field alone and hides it, as it does the other reserved fields.
 
 ## What was verified for the App Store channel (dev-signed, `make mas-dev`)
 

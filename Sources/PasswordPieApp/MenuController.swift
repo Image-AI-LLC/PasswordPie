@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import PasswordPieCore
 import SwiftUI
 
@@ -82,9 +83,15 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     var deepest: MenuLevel { levels[levels.count - 1] }
     var popoverIsOpen: Bool { popover?.isShown ?? false }
 
+    private var badgeSubscription: AnyCancellable?
+
     init(session: VaultSession) {
         self.session = session
         super.init()
+        badgeSubscription = session.$chromeBadgeIDs
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.levels.forEach { $0.list.chromeAccountsChanged() } }
         let level = MenuLevel(rows: [])
         level.list.delegate = self
         levels = [level]
@@ -243,6 +250,12 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     }
 
     // MARK: Keys
+
+    /// ⌘Return on a previous password restores it. Anywhere else it is not this key's business.
+    func handleCommandReturn() -> Bool {
+        guard popoverIsOpen, let details else { return false }
+        return details.restoreFocused()
+    }
 
     /// Returns true when the key was consumed; false lets the text field handle it (caret movement).
     func handle(_ key: MenuKey) -> Bool {
@@ -627,10 +640,20 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         return deepest.selectedRow?.entryID
     }
 
+    #if DEBUG
+    /// Screenshot hook: acts on the details that are open.
+    func debugDetails(_ configure: (DetailsModel) -> Void) {
+        if let details { configure(details) }
+    }
+    #endif
+
+    /// The popover's window (debug status: screenshots capture this window alone, never the screen behind it).
+    var popoverWindowNumber: Int? { popoverIsOpen ? popover?.contentViewController?.view.window?.windowNumber : nil }
+
     /// Label of the focused details field (debug status and tests).
     var focusedFieldLabel: String? {
-        guard popoverIsOpen, let details, details.fields.indices.contains(details.focused) else { return nil }
-        return details.fields[details.focused].label
+        guard popoverIsOpen, let details else { return nil }
+        return details.focusedLabel
     }
 
     var selectedTitle: String? {

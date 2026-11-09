@@ -19,6 +19,12 @@ public enum VaultFile {
         try replace(url, with: data, password: password, expecting: vault, beforeReplace: {})
     }
 
+    /// For a write nobody asked for at that moment: nothing happens unless the file still holds `baseline`, the bytes this
+    /// session last read or wrote. The previous file is kept as the snapshot only once that holds.
+    public static func replace(_ url: URL, with data: Data, password: String, expecting vault: Vault, baseline: Data) throws {
+        try replace(url, with: data, password: password, expecting: vault, baseline: baseline, keepingSnapshot: true, beforeReplace: {})
+    }
+
     /// Opens any vault. A `.kdbx` file with damaged XML opens from repaired text and is then rewritten, with the exact
     /// bytes that were decoded kept in a backup no later save touches. The rewrite happens only if the file still
     /// holds those bytes, so a newer version that sync delivered meanwhile stays. `.snapshot` is left as it was: it may
@@ -39,6 +45,7 @@ public enum VaultFile {
         }
         let decoded = try Data(contentsOf: url)
         var vault = try VaultFormat.load(data: decoded, password: password, keyFile: keyFile, fileName: url.lastPathComponent)
+        vault.noteFileContents(decoded)
         guard let recovery = vault.recovery else { return vault }
         let name = url.lastPathComponent
         guard VaultFormat.writesKDBX(url) else {
@@ -52,6 +59,7 @@ public enum VaultFile {
             let data = try KDBX.save(vault: &healed, password: password)
             try replace(url, with: data, password: password, expecting: healed, baseline: decoded, beforeReplace: beforeReplace)
             vault = healed
+            vault.noteFileContents(data)
             vault.recoveryNotice = "Repaired \(name). The damaged file was kept as \(backup.lastPathComponent).\n\n\(recovery.summary)"
         } catch {
             let reason = (error as? VaultWriteError)?.description ?? error.localizedDescription
@@ -66,15 +74,21 @@ public enum VaultFile {
         password: String,
         expecting expected: Vault,
         baseline: Data? = nil,
+        keepingSnapshot: Bool = false,
         beforeSnapshotCommit: () throws -> Void = {},
-        beforeReplace: () throws -> Void
+        beforeReplace: () throws -> Void,
+        afterCommit: () throws -> Void = {},
+        exchange: (URL, URL) -> Int32 = { renamex_np($0.path, $1.path, UInt32(RENAME_SWAP)) }
     ) throws {
         let manager = FileManager.default
         let exists = manager.fileExists(atPath: url.path)
         if baseline != nil, !exists {
             throw VaultWriteError("The database is no longer on disk.")
         }
-        if exists, baseline == nil {
+        if let baseline, keepingSnapshot, try Data(contentsOf: url) != baseline {
+            throw changedOnDisk
+        }
+        if exists, baseline == nil || keepingSnapshot {
             try copySnapshot(of: url, beforeCommit: beforeSnapshotCommit)
             try restrict(url)
         }
@@ -110,17 +124,50 @@ public enum VaultFile {
         }
         try beforeReplace()
         if exists {
-            let current = try Data(contentsOf: url)
             let reference = try baseline ?? Data(contentsOf: snapshotURL(for: url))
-            guard current == reference else {
-                throw VaultWriteError("The database changed on disk during the save. The original file was kept.")
+            if try commitBySwap(temp: temp, url: url, reference: reference, keepTemp: &consumed, exchange: exchange) {
+                // `temp` now holds the old file, and the defer removes it.
+            } else {
+                guard try Data(contentsOf: url) == reference else { throw changedOnDisk }
+                _ = try manager.replaceItemAt(url, withItemAt: temp)
+                consumed = true
             }
-            _ = try manager.replaceItemAt(url, withItemAt: temp)
         } else {
             try manager.moveItem(at: temp, to: url)
+            consumed = true
         }
-        consumed = true
-        try restrict(url)
+        // The new file is in place. Nothing after this line can be a failed save. It was written 0600 before the commit,
+        // so a failure here cannot leave it looser than that.
+        do {
+            try afterCommit()
+            try restrict(url)
+        } catch {
+            return
+        }
+    }
+
+    private static let changedOnDisk = VaultWriteError("The database changed on disk during the save. The original file was kept.")
+
+    /// Exchanges the two files in one step, so a writer cannot land between the comparison and the replace. What came out
+    /// is compared afterwards, and put back if it was not what this session expected. False where the volume cannot swap.
+    private static func commitBySwap(
+        temp: URL,
+        url: URL,
+        reference: Data,
+        keepTemp: inout Bool,
+        exchange: (URL, URL) -> Int32
+    ) throws -> Bool {
+        guard exchange(temp, url) == 0 else {
+            if errno == ENOTSUP || errno == EINVAL { return false }
+            throw VaultWriteError("The database could not be replaced (\(errno)).")
+        }
+        if (try? Data(contentsOf: temp)) == reference { return true }
+        guard exchange(temp, url) == 0 else {
+            // `temp` is now the only copy of the other writer's version, so it must outlive this call.
+            keepTemp = true
+            throw VaultWriteError("The database changed on disk during the save, and the other version is at \(temp.lastPathComponent).")
+        }
+        throw changedOnDisk
     }
 
     // MARK: Read-back

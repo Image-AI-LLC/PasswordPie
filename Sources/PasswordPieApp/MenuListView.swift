@@ -55,6 +55,26 @@ final class MenuListView: NSView {
         needsDisplay = true
         // An icon the browser extension hands over shows up without reopening the panel.
         SiteIconStore.shared.observe(self) { [weak self] in self?.needsDisplay = true }
+        updateBadgeToolTips()
+    }
+
+    /// The read that finds an account in Chrome often finishes while the list is already on screen.
+    func chromeAccountsChanged() {
+        updateBadgeToolTips()
+        needsDisplay = true
+    }
+
+    private func updateBadgeToolTips() {
+        removeAllToolTips()
+        for index in rows.indices {
+            guard let id = rows[index].entryID,
+                  iconMark(favorite: rows[index].favorite, fromChrome: MenuIcons.chromeAccounts.contains(id)) == .chrome else { continue }
+            addToolTip(NSRect(x: MenuMetrics.iconX, y: rect(of: index).midY - 8, width: 16, height: 16), owner: self, userData: nil)
+        }
+    }
+
+    @objc func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
+        ChromeBadge.tooltip
     }
 
     var contentHeight: CGFloat { max(offsets.last ?? 0, MenuMetrics.minimumListHeight) }
@@ -246,10 +266,7 @@ final class MenuListView: NSView {
         if let icon = MenuIcons.image(for: row, selected: selected) {
             let iconRect = NSRect(x: MenuMetrics.iconX, y: rect.midY - 8, width: 16, height: 16)
             icon.draw(in: IconGeometry.aspectFit(icon.size, in: iconRect), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            if row.favorite, row.entryID != nil, let star = selected ? MenuIcons.selectedFavoriteBadge : MenuIcons.favoriteBadge {
-                let badgeSlot = NSRect(x: iconRect.maxX - 7, y: iconRect.maxY - 7, width: 9, height: 9)
-                star.draw(in: IconGeometry.aspectFit(star.size, in: badgeSlot), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            }
+            drawMark(on: row, icon: iconRect, selected: selected)
         }
         let textColor: NSColor = selected ? MenuPalette.selectionInk : MenuPalette.text
         let reserved: CGFloat = hasArrow ? 28 : 10
@@ -267,6 +284,21 @@ final class MenuListView: NSView {
             )
         }
         if hasArrow { drawArrow(in: rect, selected: selected) }
+    }
+
+    /// A favorite keeps its star where it has always been. See `iconMark`.
+    private func drawMark(on row: MenuRow, icon iconRect: NSRect, selected: Bool) {
+        guard let id = row.entryID else { return }
+        switch iconMark(favorite: row.favorite, fromChrome: MenuIcons.chromeAccounts.contains(id)) {
+        case .favoriteStar:
+            guard let star = selected ? MenuIcons.selectedFavoriteBadge : MenuIcons.favoriteBadge else { return }
+            let badgeSlot = NSRect(x: iconRect.maxX - 7, y: iconRect.maxY - 7, width: 9, height: 9)
+            star.draw(in: IconGeometry.aspectFit(star.size, in: badgeSlot), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        case .chrome:
+            ChromeBadge.draw(icon: iconRect, selected: selected)
+        case .none:
+            break
+        }
     }
 
     private func drawArrow(in rect: NSRect, selected: Bool) {
@@ -305,6 +337,8 @@ final class MenuListView: NSView {
 @MainActor
 enum MenuIcons {
     private static var tiles: [String: NSImage] = [:]
+    /// Rows with something from Chrome in them. Set whenever the catalog changes; rows are redrawn then.
+    static var chromeAccounts: Set<UUID> = []
 
     static func image(for row: MenuRow, selected: Bool) -> NSImage? {
         if row.entryID != nil {

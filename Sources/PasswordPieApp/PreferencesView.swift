@@ -324,12 +324,17 @@ struct PreferencesView: View {
     }
 
     #if PP_DIRECT
+    private var chromeReplacesCopy: String { "Newer Chrome passwords replace saved ones. Chrome isn't changed." }
+
     private var chromeSync: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Sync Chrome passwords").fontWeight(.medium)
-                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. Opening PasswordPie checks those files again, and reads them only when they have changed. PasswordPie never changes Chrome. A password is saved to your database only when you edit or favorite it, and it stays one item: if the saved values later differ, the item also shows what Chrome holds. macOS asks once for the Chrome Safe Storage key: choose Always Allow. Reading the files also needs Google Chrome turned on for PasswordPie under Privacy & Security → Files & Folders.")
+                    Text("Reads the passwords saved in Chrome on this Mac and searches them with your own. Opening PasswordPie checks those files again, and reads them only when they have changed. PasswordPie never changes Chrome. macOS asks once for the Chrome Safe Storage key: choose Always Allow. Reading the files also needs Google Chrome turned on for PasswordPie under Privacy & Security → Files & Folders.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(chromeReplacesCopy)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
