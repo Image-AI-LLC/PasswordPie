@@ -85,7 +85,9 @@ public enum EntryMerge {
                 }
                 if recorded || alreadyKept {
                     result[index].trashed = true
+                    #if PP_DIRECT
                     if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
+                    #endif
                 }
             }
             if changed {
@@ -103,7 +105,9 @@ public enum EntryMerge {
             var restored = part.makeEntry()
             if index == 0 {
                 restored.id = entry.id
+                #if PP_DIRECT
                 PreviousPasswords.carry(from: entry, to: &restored, now: Date())
+                #endif
             }
             restored.trashed = false
             setKeepSeparate(true, on: &restored)

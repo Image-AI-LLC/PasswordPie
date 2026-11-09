@@ -187,12 +187,32 @@ final class ChromeUpdateSessionTests: XCTestCase {
         await read(session, logins: [login()])
         let model = try details(session, own.id)
         let item = try XCTUnwrap(model.previous.first)
-        let before = try onDisk()
-        session.openedFiles[0].url = databaseURL.deletingPathExtension().appendingPathExtension("bak")
+        let copy = databaseURL.deletingPathExtension().appendingPathExtension("bak")
+        try FileManager.default.copyItem(at: databaseURL, to: copy)
+        let before = try Data(contentsOf: copy)
+        session.openedFiles[0].url = copy
+        session.publishCatalog()
 
         XCTAssertFalse(session.restorePreviousPassword(item.id, of: own.id))
 
-        XCTAssertEqual(try onDisk(), before)
+        XCTAssertEqual(try Data(contentsOf: copy), before)
+    }
+
+    func testTheSiblingCheckBeforeTheFirstReadLeavesAWaitingBatchAlone() async throws {
+        let (session, logins) = many(11)
+        await read(session, logins: logins)
+        let held = session.chromeHeldEvents
+        session.chromeRows = []
+        session.liveEntries = []
+        session.reconcileChromeUpdates()
+        XCTAssertEqual(session.chromeHeldEvents, held)
+    }
+
+    func testTurningChromeOffDoesNotReleaseTheSiblingWait() {
+        let session = session()
+        session.chromeAwaitingSiblings = true
+        session.clearChrome()
+        XCTAssertTrue(session.chromeAwaitingSiblings)
     }
 
     func testAnAccountThatFailsTheWritingGateStaysASeparateRowAndNothingIsWritten() async throws {

@@ -183,12 +183,10 @@ public enum PreviousPasswords {
 
     /// A split brings back the first account as it was before the merge. Its list stays, and the password it had goes on it.
     public static func carry(from merged: VaultEntry, to restored: inout VaultEntry, now: Date) {
-        guard isReadable(merged), let record = merged.fields.first(where: { $0.key == key }) else {
-            if merged.password != restored.password { recordChange(from: merged.password, on: &restored, previousDate: nil, now: now) }
-            return
+        if let record = merged.fields.first(where: { $0.key == key }) {
+            restored.fields.removeAll { $0.key == key }
+            restored.fields.append(record)
         }
-        restored.fields.removeAll { $0.key == key }
-        restored.fields.append(record)
         recordChange(from: merged.password, on: &restored, previousDate: passwordDate(of: merged, fallback: nil), now: now)
     }
 

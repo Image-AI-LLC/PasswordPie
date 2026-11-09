@@ -357,7 +357,8 @@ public enum ChromeLogins {
         let placed = placement(saved: saved, live: live, rules: rules)
         var shown = saved
         var fromChrome = Set(placed.lone.map(\.id))
-        for (index, logins) in placed.joined {
+        // A keep-separate entry can share a login's id, so the login can't be its own row, but it adds nothing to the entry.
+        for (index, logins) in placed.joined where !EntryMerge.keepsSeparate(saved[index]) {
             addChromeFields(logins, to: &shown[index])
             fromChrome.insert(saved[index].id)
         }

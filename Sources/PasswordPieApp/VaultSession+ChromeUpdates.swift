@@ -63,7 +63,8 @@ extension VaultSession {
 
     /// After every read. Silent when it works. More than the limit writes nothing and waits for the person.
     func reconcileChromeUpdates() {
-        guard !locked, chromeSyncEnabled, !chromeAwaitingSiblings else { return }
+        // No rows means nothing has been read since unlocking, which says nothing about a batch that is waiting.
+        guard !locked, chromeSyncEnabled, !chromeAwaitingSiblings, !chromeRows.isEmpty else { return }
         let now = chromeClock()
         if chromeWriteInFlight {
             chromeReconcileAgain = true

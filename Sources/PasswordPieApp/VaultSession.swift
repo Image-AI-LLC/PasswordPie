@@ -578,7 +578,7 @@ final class VaultSession: ObservableObject {
         message = ""
         importStatus = ""
         importStatusIsError = false
-        clearChrome(keepingHeld: true)
+        clearChrome(locking: true)
         refreshTouchID()
     }
 

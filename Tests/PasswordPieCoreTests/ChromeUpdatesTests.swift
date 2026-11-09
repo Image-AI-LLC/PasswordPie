@@ -254,6 +254,7 @@ final class ChromeUpdatesTests: XCTestCase {
         EntryMerge.setKeepSeparate(true, on: &saved)
         let live = entry("chrome", id: id)
         XCTAssertTrue(plan([saved], [live], rows(for: live, [("chrome", ago(1))]), savedDate: ago(30)).isEmpty)
+        XCTAssertEqual(ChromeLogins.view(saved: [saved], live: [live]), ChromeLogins.View(entries: [saved], fromChrome: []), "one row, unmarked")
     }
 
     func testOnlyAnOrdinaryFormLoginWrites() {

@@ -33,8 +33,9 @@ extension VaultSession {
         #endif
     }
 
-    /// Locking keeps the batch that is waiting: it stays waiting until the person answers it.
-    func clearChrome(keepingHeld: Bool = false) {
+    /// Locking ends the session's writes and sibling loads, but the batch that is waiting stays waiting until the person answers it.
+    /// Turning Chrome off is the opposite: a write or a sibling load in progress carries on, and the question goes away.
+    func clearChrome(locking: Bool = false) {
         chromeGeneration += 1
         chromeKey = nil
         liveEntries = []
@@ -50,11 +51,14 @@ extension VaultSession {
         chromeStoreSignature = nil
         chromeRecheckAfterRead = false
         chromeRows = []
-        if !keepingHeld { chromeHeldEvents = [] }
         chromeReconcileAgain = false
-        chromeAwaitingSiblings = false
-        // A write still running belongs to the session that just ended. It sees the generation moved and drops its result.
-        chromeWriteInFlight = false
+        if locking {
+            // A write still running belongs to the session that just ended. It sees the generation moved and drops its result.
+            chromeWriteInFlight = false
+            chromeAwaitingSiblings = false
+        } else {
+            chromeHeldEvents = []
+        }
         #endif
     }
 

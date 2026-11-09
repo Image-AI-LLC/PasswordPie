@@ -105,6 +105,7 @@ final class PreviousPasswordsTests: XCTestCase {
         XCTAssertEqual(entry.value(for: PreviousPasswords.key), raw)
     }
 
+    #if PP_DIRECT
     private func merged(_ first: VaultEntry, _ second: VaultEntry) throws -> VaultEntry {
         let result = EntryMerge.merged([first, second])
         return try XCTUnwrap(result.first { !$0.trashed })
@@ -135,6 +136,17 @@ final class PreviousPasswordsTests: XCTestCase {
         let values = Set(PreviousPasswords.items(of: parts[0], now: Date()).map(\.value))
         XCTAssertEqual(values, ["older", "changed-after-the-merge"])
     }
+
+    func testASplitKeepsARecordThisVersionCannotRead() throws {
+        var first = login("same"), second = login("same")
+        first.title = "one"
+        second.title = "two"
+        var folded = try merged(first, second)
+        folded.setValue("{\"v\":99}", for: PreviousPasswords.key, protected: true)
+        let parts = try XCTUnwrap(EntryMerge.split(folded))
+        XCTAssertEqual(parts[0].value(for: PreviousPasswords.key), "{\"v\":99}")
+    }
+    #endif
 
     func testTheCapDoesNotDependOnHistoryMaxItems() {
         XCTAssertEqual(PreviousPasswords.maxItems, 10)
