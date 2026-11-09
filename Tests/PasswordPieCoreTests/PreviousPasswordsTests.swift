@@ -95,6 +95,47 @@ final class PreviousPasswordsTests: XCTestCase {
         XCTAssertEqual(trimmed.last?.used, true, "the value that was once saved keeps that fact")
     }
 
+    func testAnEditOrClearLeavesARecordThisVersionCannotRead() {
+        var entry = login("old")
+        entry.setValue("{\"v\":99}", for: PreviousPasswords.key, protected: true)
+        let raw = entry.value(for: PreviousPasswords.key)
+        entry.password = "new"
+        PreviousPasswords.recordChange(from: "old", on: &entry, previousDate: nil, now: now)
+        PreviousPasswords.clear(on: &entry)
+        XCTAssertEqual(entry.value(for: PreviousPasswords.key), raw)
+    }
+
+    private func merged(_ first: VaultEntry, _ second: VaultEntry) throws -> VaultEntry {
+        let result = EntryMerge.merged([first, second])
+        return try XCTUnwrap(result.first { !$0.trashed })
+    }
+
+    func testAMergeKeepsBothLists() throws {
+        var first = login("same"), second = login("same")
+        var state = PreviousPasswords.State()
+        state.items = [item("from-first", used: true, entered: day)]
+        PreviousPasswords.set(state, on: &first)
+        state.items = [item("from-second", used: true, entered: 2 * day)]
+        PreviousPasswords.set(state, on: &second)
+        let values = Set(PreviousPasswords.items(of: try merged(first, second), now: Date()).map(\.value))
+        XCTAssertEqual(values, ["from-first", "from-second"])
+    }
+
+    func testASplitKeepsTheListAndTheNewestPassword() throws {
+        var first = login("same"), second = login("same")
+        first.title = "one"
+        second.title = "two"
+        var folded = try merged(first, second)
+        var state = PreviousPasswords.State()
+        state.items = [item("older", used: true, entered: day)]
+        PreviousPasswords.set(state, on: &folded)
+        folded.password = "changed-after-the-merge"
+        let parts = try XCTUnwrap(EntryMerge.split(folded))
+        XCTAssertEqual(parts[0].password, "same")
+        let values = Set(PreviousPasswords.items(of: parts[0], now: Date()).map(\.value))
+        XCTAssertEqual(values, ["older", "changed-after-the-merge"])
+    }
+
     func testTheCapDoesNotDependOnHistoryMaxItems() {
         XCTAssertEqual(PreviousPasswords.maxItems, 10)
     }

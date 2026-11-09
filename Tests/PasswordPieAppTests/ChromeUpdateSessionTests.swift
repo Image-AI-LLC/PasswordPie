@@ -167,6 +167,34 @@ final class ChromeUpdateSessionTests: XCTestCase {
         XCTAssertFalse(session.chromeWriteInFlight, "the write belonged to the session that ended")
     }
 
+    func testNothingIsWrittenUntilEveryOpenDatabaseHasLoaded() async throws {
+        let session = session()
+        let own = account(session)
+        session.chromeAwaitingSiblings = true
+        await read(session, logins: [login()])
+        XCTAssertEqual(session.entry(own.id)?.password, "mine")
+        XCTAssertEqual(try stored().first?.password, "mine")
+
+        session.chromeAwaitingSiblings = false
+        session.reconcileChromeUpdates()
+        await waitUntil { !session.chromeWriteInFlight && session.entry(own.id)?.password == "from-chrome" }
+        XCTAssertEqual(try stored().first?.password, "from-chrome")
+    }
+
+    func testRestoreLeavesAFileThatMustNotBeRewrittenAlone() async throws {
+        let session = session()
+        let own = account(session)
+        await read(session, logins: [login()])
+        let model = try details(session, own.id)
+        let item = try XCTUnwrap(model.previous.first)
+        let before = try onDisk()
+        session.openedFiles[0].url = databaseURL.deletingPathExtension().appendingPathExtension("bak")
+
+        XCTAssertFalse(session.restorePreviousPassword(item.id, of: own.id))
+
+        XCTAssertEqual(try onDisk(), before)
+    }
+
     func testAnAccountThatFailsTheWritingGateStaysASeparateRowAndNothingIsWritten() async throws {
         let session = session()
         let own = account(session)
@@ -395,6 +423,15 @@ final class ChromeUpdateSessionTests: XCTestCase {
         XCTAssertEqual(session.chromeBatch?.summary, "11 passwords changed in Chrome")
         XCTAssertEqual(session.chromeBatch?.applyTitle, "Apply 11 Updates")
         XCTAssertTrue(session.allEntries.allSatisfy { $0.password == "mine" }, "the panel keeps working on the saved passwords")
+    }
+
+    func testAWaitingBatchStaysWaitingAcrossALock() async throws {
+        let (session, logins) = many(11)
+        await read(session, logins: logins)
+        let held = session.chromeHeldEvents
+        XCTAssertFalse(held.isEmpty)
+        session.lock()
+        XCTAssertEqual(session.chromeHeldEvents, held)
     }
 
     func testApplyWritesTheWholeBatchInOneWrite() async throws {

@@ -152,7 +152,7 @@ public enum PreviousPasswords {
 
     /// `entry` already holds the new password. The one it replaced goes to the list.
     public static func recordChange(from oldValue: String, on entry: inout VaultEntry, previousDate: Date?, now: Date) {
-        guard oldValue != entry.password else { return }
+        guard oldValue != entry.password, isReadable(entry) else { return }
         var state = state(of: entry)
         retire(oldValue, into: &state, previousDate: previousDate, now: now)
         state.items.removeAll { $0.value == entry.password }
@@ -175,9 +175,38 @@ public enum PreviousPasswords {
 
     /// Empties the list. What was decided about Chrome's changes stays, so a cleared value does not return on the next read.
     public static func clear(on entry: inout VaultEntry) {
+        guard isReadable(entry) else { return }
         var state = state(of: entry)
         state.items = []
         set(state, on: &entry)
+    }
+
+    /// A split brings back the first account as it was before the merge. Its list stays, and the password it had goes on it.
+    public static func carry(from merged: VaultEntry, to restored: inout VaultEntry, now: Date) {
+        guard isReadable(merged), let record = merged.fields.first(where: { $0.key == key }) else {
+            if merged.password != restored.password { recordChange(from: merged.password, on: &restored, previousDate: nil, now: now) }
+            return
+        }
+        restored.fields.removeAll { $0.key == key }
+        restored.fields.append(record)
+        recordChange(from: merged.password, on: &restored, previousDate: passwordDate(of: merged, fallback: nil), now: now)
+    }
+
+    /// Two accounts folding into one keep both lists. False when nothing changed.
+    @discardableResult
+    public static func absorb(_ other: VaultEntry, into entry: inout VaultEntry, now: Date) -> Bool {
+        guard isReadable(entry), isReadable(other) else { return false }
+        let incoming = state(of: other)
+        guard !incoming.items.isEmpty || !incoming.events.isEmpty else { return false }
+        let existing = state(of: entry)
+        var combined = existing
+        combined.items += incoming.items.filter { $0.value != entry.password }
+        let known = Set(existing.events.map(\.id))
+        combined.events = incoming.events.filter { !known.contains($0.id) } + existing.events
+        let result = trimmed(combined, now: now)
+        guard result != existing else { return false }
+        set(result, on: &entry)
+        return true
     }
 
     /// Moves the value leaving the saved slot into the list. It carries the source and date it had while saved.

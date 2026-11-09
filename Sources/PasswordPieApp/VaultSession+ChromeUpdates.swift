@@ -63,7 +63,7 @@ extension VaultSession {
 
     /// After every read. Silent when it works. More than the limit writes nothing and waits for the person.
     func reconcileChromeUpdates() {
-        guard !locked, chromeSyncEnabled else { return }
+        guard !locked, chromeSyncEnabled, !chromeAwaitingSiblings else { return }
         let now = chromeClock()
         if chromeWriteInFlight {
             chromeReconcileAgain = true
@@ -166,6 +166,7 @@ extension VaultSession {
     private func transact(_ id: UUID, _ change: (inout VaultEntry) -> Bool) -> Bool {
         guard !chromeWriteInFlight, let path = listPaths[id], let slot = listSlots[id], let origin = listOrigins[id],
               let index = openedFiles.firstIndex(where: { $0.url.path == path }),
+              VaultFormat.writesKDBX(openedFiles[index].url),
               openedFiles[index].vault.entries.indices.contains(slot),
               openedFiles[index].vault.entries[slot].id == origin,
               let baseline = openedFiles[index].vault.fileBaseline else { return false }

@@ -150,6 +150,8 @@ final class VaultSession: ObservableObject {
     #if PP_DIRECT
     /// Every row from the last read, including a login's second store.
     var chromeRows: [ChromeRow] = []
+    /// Other open databases are still decrypting. "Exactly one saved entry" can't be answered until they have arrived.
+    var chromeAwaitingSiblings = false
     /// Replaced in tests, so a fixture's dates can be in this clock's past.
     var chromeClock: () -> Date = Date.init
     /// Events already waiting for a decision. Not persisted: a restart works it out again.
@@ -576,7 +578,7 @@ final class VaultSession: ObservableObject {
         message = ""
         importStatus = ""
         importStatusIsError = false
-        clearChrome()
+        clearChrome(keepingHeld: true)
         refreshTouchID()
     }
 
@@ -999,8 +1001,12 @@ final class VaultSession: ObservableObject {
                 openedFiles[index].vault.entries = before
             }
             publishCatalog()
+        } else {
+            #if !PP_DIRECT
+            editing = nil
+            #endif
+            // Direct channel: `persist` undid the failed write, and the editor stays open with what was typed.
         }
-        // A failed write of an existing item is undone by `persist`. The editor stays open with what was typed.
     }
 
     /// The editor holds a copy from when it opened. A Chrome update or a Restore may have landed since.
@@ -1370,9 +1376,20 @@ final class VaultSession: ObservableObject {
             let key = url.pathExtension.lowercased() == "kdb" ? stored.keyFile : nil
             return SiblingJob(path: path, password: stored.password, keyFile: key)
         }
+        #if PP_DIRECT
+        chromeAwaitingSiblings = !jobs.isEmpty
+        #endif
         guard !jobs.isEmpty else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
+            #if PP_DIRECT
+            defer {
+                if generation == self.catalogGeneration {
+                    self.chromeAwaitingSiblings = false
+                    self.reconcileChromeUpdates()
+                }
+            }
+            #endif
             for job in jobs {
                 if CatalogLoad.step(
                     generation: generation,
@@ -1460,11 +1477,13 @@ final class VaultSession: ObservableObject {
     @discardableResult
     private func persist(path: String) -> Bool {
         let written = write(path: path)
-        // Nothing unsaved stays in memory, so a later write cannot carry a change the person was told had failed.
+        #if PP_DIRECT
+        // Nothing unsaved stays in memory, so a background Chrome write cannot carry a change the person was told had failed.
         if !written, let index = openedFiles.firstIndex(where: { $0.url.path == path }), openedFiles[index].vault.entries != openedFiles[index].committedEntries {
             openedFiles[index].vault.entries = openedFiles[index].committedEntries
             publishCatalog()
         }
+        #endif
         return written
     }
 

@@ -240,6 +240,22 @@ final class ChromeUpdatesTests: XCTestCase {
         XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [live]).count, 2)
     }
 
+    func testKeepSeparateEntriesDoNotJoinAnEqualPasswordEither() {
+        var saved = entry("same")
+        EntryMerge.setKeepSeparate(true, on: &saved)
+        let live = entry("same")
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [live]).count, 2)
+        XCTAssertFalse(ChromeLogins.view(saved: [saved], live: [live]).fromChrome.contains(saved.id))
+    }
+
+    func testAKeepSeparateCopyWithTheLoginsOwnIDIsNotWrittenOrListed() {
+        let id = UUID()
+        var saved = entry("mine", id: id)
+        EntryMerge.setKeepSeparate(true, on: &saved)
+        let live = entry("chrome", id: id)
+        XCTAssertTrue(plan([saved], [live], rows(for: live, [("chrome", ago(1))]), savedDate: ago(30)).isEmpty)
+    }
+
     func testOnlyAnOrdinaryFormLoginWrites() {
         let saved = entry("mine"), live = entry("chrome")
         XCTAssertFalse(replaces(saved: saved, live: live, form: false, rules: ChromeJoinRules(notForms: [live.id])))

@@ -96,7 +96,7 @@ public enum ChromeUpdates {
         var plan = Plan()
         for (index, logins) in placed.joined.sorted(by: { $0.key < $1.key }) {
             let entry = saved[index]
-            guard !rules.readOnly.contains(entry.id), PreviousPasswords.isReadable(entry) else { continue }
+            guard !rules.readOnly.contains(entry.id), !EntryMerge.keepsSeparate(entry), PreviousPasswords.isReadable(entry) else { continue }
             let previousDate = PreviousPasswords.passwordDate(of: entry, fallback: dates[entry.id])
             let handled = Set(PreviousPasswords.state(of: entry).events.map(\.id))
             let servesOneSite = EntryMerge.otherWebsites(entry).isEmpty

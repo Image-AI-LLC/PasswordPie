@@ -85,6 +85,7 @@ public enum EntryMerge {
                 }
                 if recorded || alreadyKept {
                     result[index].trashed = true
+                    if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
                 }
             }
             if changed {
@@ -100,7 +101,10 @@ public enum EntryMerge {
         guard let manifest = readManifest(entry), manifest.parts.count >= 2 else { return nil }
         return manifest.parts.enumerated().map { index, part in
             var restored = part.makeEntry()
-            if index == 0 { restored.id = entry.id }
+            if index == 0 {
+                restored.id = entry.id
+                PreviousPasswords.carry(from: entry, to: &restored, now: Date())
+            }
             restored.trashed = false
             setKeepSeparate(true, on: &restored)
             return restored

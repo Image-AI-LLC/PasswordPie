@@ -381,7 +381,9 @@ public enum ChromeLogins {
         }
         func savedAccount(for login: VaultEntry) -> Int? {
             let candidates = byAccount[BrowserImport.matchKey(login)] ?? []
-            if let samePassword = candidates.first(where: { saved[$0].password == login.password }) { return samePassword }
+            if let samePassword = candidates.first(where: { saved[$0].password == login.password && !EntryMerge.keepsSeparate(saved[$0]) }) {
+                return samePassword
+            }
             let same = candidates.filter { isSameAccountForWriting(saved[$0], login, among: writingCounts, rules: rules) }
             return same.count == 1 ? same[0] : nil
         }
@@ -407,7 +409,7 @@ public enum ChromeLogins {
         var lone: [VaultEntry] = []
         if !unmatched.isEmpty {
             var renameCandidates: [String: [Int]] = [:]
-            for (index, entry) in saved.enumerated() where !entry.trashed && joined[index] == nil && isChromeCopy(entry) {
+            for (index, entry) in saved.enumerated() where !entry.trashed && joined[index] == nil && isChromeCopy(entry) && !EntryMerge.keepsSeparate(entry) {
                 let websites = [entry.url] + EntryMerge.otherWebsites(entry).map(\.value)
                 for website in websites {
                     renameCandidates[renameKey(website: website, password: entry.password), default: []].append(index)
