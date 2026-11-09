@@ -172,6 +172,23 @@ extension VaultFileTests {
         XCTAssertTrue(leftoverWrites(in: directory).isEmpty)
     }
 
+    func testAFailedSwapBackKeepsTheOtherWritersFile() throws {
+        let job = try prepared()
+        let theirs = Data("landed during the save".utf8)
+        var calls = 0
+        XCTAssertThrowsError(try VaultFile.replace(
+            job.url, with: job.saved, password: "secret", expecting: job.vault,
+            baseline: job.baseline, keepingSnapshot: true,
+            beforeReplace: { try theirs.write(to: job.url) },
+            exchange: { first, second in
+                calls += 1
+                return calls == 1 ? renamex_np(first.path, second.path, UInt32(RENAME_SWAP)) : -1
+            }
+        ))
+        let kept = try XCTUnwrap(leftoverWrites(in: directory).first)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(kept)), theirs, "the only copy of the newer file")
+    }
+
     func testAFailureAfterTheCommitIsNotAFailedWrite() throws {
         let job = try prepared()
         XCTAssertNoThrow(try VaultFile.replace(

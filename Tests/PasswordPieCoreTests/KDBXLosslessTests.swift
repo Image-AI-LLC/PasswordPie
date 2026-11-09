@@ -551,6 +551,20 @@ final class PasswordDateTests: XCTestCase {
         return try KDBX.load(data: data, password: "pw").passwordDates().values.first
     }
 
+    func testATimeThatWouldOverflowIsNoTime() {
+        XCTAssertNil(parseTime(Data([0, 0, 0, 0, 0, 0, 0, 0x80]).base64EncodedString()))
+    }
+
+    func testTwoLiveEntriesSharingAnIDGetNoDate() throws {
+        var text = xml(live: ("a", t0), history: [])
+        let start = try XCTUnwrap(text.range(of: "<Entry>"))
+        let end = try XCTUnwrap(text.range(of: "</Entry>", options: .backwards))
+        text.insert(contentsOf: String(text[start.lowerBound..<end.upperBound]), at: end.upperBound)
+        let vault = try KDBX.load(data: KDBX.testingDatabase(xml: text, password: "pw"), password: "pw")
+        XCTAssertEqual(vault.entries.count, 2)
+        XCTAssertTrue(vault.passwordDates().isEmpty, "with no date, nothing can replace either password")
+    }
+
     func testAnEntryWithNoHistoryUsesItsOwnTime() throws {
         XCTAssertEqual(try date(("a", t0), []), t0)
     }

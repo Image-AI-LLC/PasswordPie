@@ -51,6 +51,8 @@ extension VaultSession {
         chromeRows = []
         chromeHeldEvents = []
         chromeReconcileAgain = false
+        // A write still running belongs to the session that just ended. It sees the generation moved and drops its result.
+        chromeWriteInFlight = false
         #endif
     }
 

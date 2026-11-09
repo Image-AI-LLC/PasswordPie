@@ -402,8 +402,11 @@ final class KDBXPreserve: @unchecked Sendable {
     /// `LastModificationTime` moves on any edit, including a favorite. The oldest version still holding the password is
     /// the earliest it can be known to have been there, so that time is an upper bound on when it was set.
     func passwordDates() -> [UUID: Date] {
+        let entries = walkDatabase().entries.filter { !$0.location.trashed }
+        // The model is keyed by id. Two live entries sharing one can't be told apart, so neither gets a date.
+        let counts = Dictionary(entries.map { ($0.id, 1) }, uniquingKeysWith: +)
         var dates: [UUID: Date] = [:]
-        for live in walkDatabase().entries where !live.location.trashed && dates[live.id] == nil {
+        for live in entries where counts[live.id] == 1 {
             let password = passwordText(of: live.element)
             var earliest = modificationTime(of: live.element)
             let versions = direct(live.element, "History").flatMap { direct($0, "Entry") }
@@ -870,7 +873,9 @@ func parseTime(_ text: String) -> Date? {
     guard let data = Data(base64Encoded: trimmed), data.count == 8 else { return nil }
     var value: UInt64 = 0
     for byte in data.reversed() { value = value << 8 | UInt64(byte) }
-    return Date(timeIntervalSince1970: TimeInterval(Int64(bitPattern: value) - 62_135_596_800))
+    // The bytes come from the file, so the subtraction must not be able to trap.
+    let (seconds, overflowed) = Int64(bitPattern: value).subtractingReportingOverflow(62_135_596_800)
+    return overflowed ? nil : Date(timeIntervalSince1970: TimeInterval(seconds))
 }
 
 /// KeePass epoch is 0001-01-01 UTC. ISO is used only when the file already writes ISO timestamps.

@@ -2,7 +2,8 @@ import AppKit
 import PasswordPieCore
 
 #if PP_DIRECT
-/// Everything a write needs, with nothing tied to the main actor. It runs off the main thread: deriving the key can take seconds.
+/// Everything a write needs, with nothing tied to the main actor. A background update runs it off the main thread, because deriving
+/// the key can take seconds. Restore runs it in place, like every other save the person asked for.
 private struct ChromeWrite: Sendable {
     var path: String
     var url: URL

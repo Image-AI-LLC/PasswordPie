@@ -77,7 +77,8 @@ public enum VaultFile {
         keepingSnapshot: Bool = false,
         beforeSnapshotCommit: () throws -> Void = {},
         beforeReplace: () throws -> Void,
-        afterCommit: () throws -> Void = {}
+        afterCommit: () throws -> Void = {},
+        exchange: (URL, URL) -> Int32 = { renamex_np($0.path, $1.path, UInt32(RENAME_SWAP)) }
     ) throws {
         let manager = FileManager.default
         let exists = manager.fileExists(atPath: url.path)
@@ -124,7 +125,7 @@ public enum VaultFile {
         try beforeReplace()
         if exists {
             let reference = try baseline ?? Data(contentsOf: snapshotURL(for: url))
-            if try commitBySwap(temp: temp, url: url, reference: reference, written: data) {
+            if try commitBySwap(temp: temp, url: url, reference: reference, keepTemp: &consumed, exchange: exchange) {
                 // `temp` now holds the old file, and the defer removes it.
             } else {
                 guard try Data(contentsOf: url) == reference else { throw changedOnDisk }
@@ -135,7 +136,8 @@ public enum VaultFile {
             try manager.moveItem(at: temp, to: url)
             consumed = true
         }
-        // The new file is in place. Nothing after this line can be a failed save.
+        // The new file is in place. Nothing after this line can be a failed save. It was written 0600 before the commit,
+        // so a failure here cannot leave it looser than that.
         do {
             try afterCommit()
             try restrict(url)
@@ -148,13 +150,21 @@ public enum VaultFile {
 
     /// Exchanges the two files in one step, so a writer cannot land between the comparison and the replace. What came out
     /// is compared afterwards, and put back if it was not what this session expected. False where the volume cannot swap.
-    private static func commitBySwap(temp: URL, url: URL, reference: Data, written: Data) throws -> Bool {
-        guard renamex_np(temp.path, url.path, UInt32(RENAME_SWAP)) == 0 else {
+    private static func commitBySwap(
+        temp: URL,
+        url: URL,
+        reference: Data,
+        keepTemp: inout Bool,
+        exchange: (URL, URL) -> Int32
+    ) throws -> Bool {
+        guard exchange(temp, url) == 0 else {
             if errno == ENOTSUP || errno == EINVAL { return false }
             throw VaultWriteError("The database could not be replaced (\(errno)).")
         }
         if (try? Data(contentsOf: temp)) == reference { return true }
-        guard renamex_np(temp.path, url.path, UInt32(RENAME_SWAP)) == 0 else {
+        guard exchange(temp, url) == 0 else {
+            // `temp` is now the only copy of the other writer's version, so it must outlive this call.
+            keepTemp = true
             throw VaultWriteError("The database changed on disk during the save, and the other version is at \(temp.lastPathComponent).")
         }
         throw changedOnDisk

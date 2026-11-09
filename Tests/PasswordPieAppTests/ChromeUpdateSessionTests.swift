@@ -159,6 +159,14 @@ final class ChromeUpdateSessionTests: XCTestCase {
         XCTAssertEqual(try stored().first?.password, "mine")
     }
 
+    func testLockingDuringAWriteDoesNotStopLaterOnes() async throws {
+        let session = session()
+        _ = account(session)
+        session.chromeWriteInFlight = true
+        session.lock()
+        XCTAssertFalse(session.chromeWriteInFlight, "the write belonged to the session that ended")
+    }
+
     func testAnAccountThatFailsTheWritingGateStaysASeparateRowAndNothingIsWritten() async throws {
         let session = session()
         let own = account(session)
