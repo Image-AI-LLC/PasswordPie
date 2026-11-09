@@ -52,6 +52,11 @@ final class PanelContentView: NSVisualEffectView {
     var bannerHeight: CGFloat = 0 {
         didSet { if oldValue != bannerHeight { needsLayout = true } }
     }
+    /// "12 passwords changed in Chrome", under the search field. Zero height when hidden.
+    weak var batchRow: NSView?
+    var batchRowHeight: CGFloat = 0 {
+        didSet { if oldValue != batchRowHeight { needsLayout = true } }
+    }
 
     override func layout() {
         super.layout()
@@ -59,7 +64,10 @@ final class PanelContentView: NSVisualEffectView {
         banner?.isHidden = bannerHeight == 0
         let top = bounds.height - bannerHeight
         header?.frame = NSRect(x: 0, y: top - HeaderView.height, width: bounds.width, height: HeaderView.height)
-        list?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(top - HeaderView.height, 0))
+        let belowHeader = top - HeaderView.height
+        batchRow?.frame = NSRect(x: 0, y: belowHeader - batchRowHeight, width: bounds.width, height: batchRowHeight)
+        batchRow?.isHidden = batchRowHeight == 0
+        list?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(belowHeader - batchRowHeight, 0))
     }
 }
 
@@ -92,6 +100,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     let header = HeaderView(frame: NSRect(x: 0, y: 0, width: 300, height: HeaderView.height))
     let lockModel = LockModel()
     let banner = ExtensionBannerView(frame: NSRect(x: 0, y: 0, width: 300, height: ExtensionBannerView.height))
+    let batchRow = ChromeBatchRowView(frame: NSRect(x: 0, y: 0, width: 300, height: ChromeBatchRowView.height))
     /// What the panel shows in the banner: an extension the front browser is missing. Nil hides it.
     private(set) var shownBanner: ExtensionBanner?
     /// The browser extensions. Set once by the app delegate.
@@ -203,10 +212,21 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         effect.addSubview(scroll)
         effect.addSubview(header)
         effect.addSubview(banner)
+        effect.addSubview(batchRow)
+        effect.batchRow = batchRow
         effect.header = header
         effect.list = scroll
         effect.banner = banner
         banner.onClick = { [weak self] in self?.installBannerExtension() }
+        batchRow.onReview = { [weak self] in
+            self?.hide(refocusPrevious: false)
+            AppDelegate.shared?.showChromeBatchReview()
+        }
+        batchRow.onDismiss = { [weak self] in self?.session.dismissChromeBatch() }
+        session.$chromeBatch
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] batch in self?.chromeBatchChanged(batch) }
+            .store(in: &cancellables)
         menu.siteSection = { [weak self] in self?.siteSectionRows() ?? [] }
 
         lockHost.frame = container.bounds
@@ -567,7 +587,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         let visible = currentScreen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let area = MenuGeometry.confinement(visibleFrame: visible)
-        let top = HeaderView.height + effect.bannerHeight
+        let top = HeaderView.height + effect.bannerHeight + effect.batchRowHeight
         let height = top + min(max(contentHeight, MenuMetrics.minimumListHeight), max(area.height - top, 0))
         return NSSize(width: max(contentWidth, MenuGeometry.rootWidth), height: height)
     }
@@ -627,6 +647,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         shownBanner = session.locked ? nil : bridge?.banner(for: previousApp)
         if let shownBanner { banner.show(shownBanner) }
         effect.bannerHeight = shownBanner == nil ? 0 : ExtensionBannerView.height
+    }
+
+    /// A row in the panel, not a window: the rest of the panel keeps working while the question waits.
+    private func chromeBatchChanged(_ batch: ChromeBatch?) {
+        batchRow.show(batch?.summary)
+        effect.batchRowHeight = batch == nil ? 0 : ChromeBatchRowView.height
+        if panel.isVisible, !session.locked, !animatingLock, let screen = currentScreen { setFrame(animated: true, screen: screen) }
     }
 
     private func installBannerExtension() {
@@ -966,6 +993,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private func handleKeyEquivalent(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags.contains(.command), let key = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        if key == "\r", flags == .command, !session.locked, menu.handleCommandReturn() { return true }
         let shift = flags.contains(.shift)
         let option = flags.contains(.option)
         let control = flags.contains(.control)

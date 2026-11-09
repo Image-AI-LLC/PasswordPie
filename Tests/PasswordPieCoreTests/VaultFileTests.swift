@@ -128,3 +128,64 @@ final class VaultFileTests: XCTestCase {
         return names.filter { $0.contains(".passwordpie-write") }
     }
 }
+
+extension VaultFileTests {
+    private func prepared(_ name: String = "Passwords.kdbx") throws -> (url: URL, baseline: Data, vault: Vault, saved: Data) {
+        let url = directory.appendingPathComponent(name)
+        let original = try database(title: "Before", password: "secret")
+        try original.write(to: url)
+        var vault = Vault(name: "After", entries: [account("After")], kdf: .fastTest)
+        let saved = try KDBX.save(vault: &vault, password: "secret")
+        return (url, original, vault, saved)
+    }
+
+    func testABaselineWriteKeepsThePreviousFileAsTheSnapshot() throws {
+        let job = try prepared()
+        try VaultFile.replace(job.url, with: job.saved, password: "secret", expecting: job.vault, baseline: job.baseline)
+        XCTAssertEqual(try Data(contentsOf: job.url), job.saved)
+        XCTAssertEqual(try Data(contentsOf: VaultFile.snapshotURL(for: job.url)), job.baseline)
+        XCTAssertEqual(try mode(job.url), 0o600)
+        XCTAssertTrue(leftoverWrites(in: directory).isEmpty)
+    }
+
+    func testABaselineConflictChangesNeitherTheFileNorTheSnapshot() throws {
+        let job = try prepared()
+        let earlierSnapshot = Data("earlier".utf8)
+        try earlierSnapshot.write(to: VaultFile.snapshotURL(for: job.url))
+        let theirs = Data("written by a sync client".utf8)
+        try theirs.write(to: job.url)
+        XCTAssertThrowsError(try VaultFile.replace(job.url, with: job.saved, password: "secret", expecting: job.vault, baseline: job.baseline))
+        XCTAssertEqual(try Data(contentsOf: job.url), theirs)
+        XCTAssertEqual(try Data(contentsOf: VaultFile.snapshotURL(for: job.url)), earlierSnapshot, "the last good snapshot is not spent on a write that never happened")
+        XCTAssertTrue(leftoverWrites(in: directory).isEmpty)
+    }
+
+    func testAWriterLandingAfterTheCheckIsPutBack() throws {
+        let job = try prepared()
+        let theirs = Data("landed during the save".utf8)
+        XCTAssertThrowsError(try VaultFile.replace(
+            job.url, with: job.saved, password: "secret", expecting: job.vault,
+            baseline: job.baseline, keepingSnapshot: true,
+            beforeReplace: { try theirs.write(to: job.url) }
+        ))
+        XCTAssertEqual(try Data(contentsOf: job.url), theirs)
+        XCTAssertTrue(leftoverWrites(in: directory).isEmpty)
+    }
+
+    func testAFailureAfterTheCommitIsNotAFailedWrite() throws {
+        let job = try prepared()
+        XCTAssertNoThrow(try VaultFile.replace(
+            job.url, with: job.saved, password: "secret", expecting: job.vault,
+            baseline: job.baseline, keepingSnapshot: true,
+            beforeReplace: {},
+            afterCommit: { throw VaultWriteError("permissions could not be set") }
+        ))
+        XCTAssertEqual(try Data(contentsOf: job.url), job.saved)
+    }
+
+    func testAMissingFileFailsABaselineWrite() throws {
+        let job = try prepared()
+        try FileManager.default.removeItem(at: job.url)
+        XCTAssertThrowsError(try VaultFile.replace(job.url, with: job.saved, password: "secret", expecting: job.vault, baseline: job.baseline))
+    }
+}

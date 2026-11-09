@@ -245,15 +245,11 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [live]), [saved])
     }
 
-    func testADifferentChromePasswordBecomesAProtectedFieldOnTheOneEntry() {
+    func testADifferentChromePasswordOnTheSameAccountIsNotAFieldAnyMore() {
         let saved = login("https://github.com", "ann", "mine")
         let live = login("https://github.com", "ann", "chrome")
         let shown = ChromeLogins.combined(saved: [saved], live: [live])
-        XCTAssertEqual(shown.count, 1)
-        XCTAssertEqual(shown[0].id, saved.id)
-        XCTAssertEqual(shown[0].password, "mine")
-        XCTAssertEqual(shown[0].fields.first { $0.key == ChromeLogins.passwordFieldName }?.value, "chrome")
-        XCTAssertEqual(shown[0].fields.first { $0.key == ChromeLogins.passwordFieldName }?.protected, true)
+        XCTAssertEqual(shown, [saved], "one row, the saved password; the value goes through previous passwords")
     }
 
     func testAnEntrySavedFromChromeStaysOneAfterItsUsernameAndPasswordChange() {
@@ -264,7 +260,6 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertEqual(shown.count, 1)
         XCTAssertEqual(shown[0].username, "renamed")
         XCTAssertEqual(shown[0].value(for: ChromeLogins.usernameFieldName), "ann")
-        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "chrome")
     }
 
     func testAUsernameRenamedInChromeStaysOnTheCopySavedFromChrome() {
@@ -287,22 +282,56 @@ final class ChromeLoginsTests: XCTestCase {
         XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [login("https://github.com", "", "mine")]).count, 1)
     }
 
-    func testTwoChromeProfilesWithDifferentPasswordsAreBothKeptOnTheEntry() {
+    func testTwoChromeProfilesWithDifferentPasswordsJoinTheOneEntry() {
         let saved = login("https://github.com", "ann", "mine")
         let work = login("https://github.com", "ann", "work")
         let home = login("https://github.com", "ann", "home")
-        let shown = ChromeLogins.combined(saved: [saved], live: [work, home])
-        XCTAssertEqual(shown.count, 1)
-        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "work")
-        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName + " (2)"), "home")
+        XCTAssertEqual(ChromeLogins.combined(saved: [saved], live: [work, home]), [saved])
     }
 
-    func testAFieldTheUserNamedTheSameIsNotOverwritten() {
+    func testAFieldTheUserNamedChromePasswordIsLeftAlone() {
         var saved = login("https://github.com", "ann", "mine")
-        saved.setValue("user value", for: ChromeLogins.passwordFieldName)
+        saved.setValue("user value", for: "Chrome password")
         let shown = ChromeLogins.combined(saved: [saved], live: [login("https://github.com", "ann", "chrome")])[0]
-        XCTAssertEqual(shown.value(for: ChromeLogins.passwordFieldName), "user value")
-        XCTAssertEqual(shown.value(for: ChromeLogins.passwordFieldName + " (2)"), "chrome")
+        XCTAssertEqual(shown.value(for: "Chrome password"), "user value")
+    }
+
+    func testTheNewestStoreIsTheValueShownAndEveryRowIsReported() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let dir = root.appendingPathComponent("Profile 7", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let older: Int64 = 13_300_000_000_000_000
+        let newer: Int64 = 13_400_000_000_000_000
+        try writeWithDates([("https://a.example/", "u", "first", older, 0)], to: dir.appendingPathComponent("Login Data"), key: key)
+        try writeWithDates([("https://a.example/", "u", "second", newer, 0)], to: dir.appendingPathComponent("Login Data For Account"), key: key)
+        let result = try ChromeLogins.entries(in: ChromeProfile(directoryName: "Profile 7", name: "P", directory: dir), key: key)
+        XCTAssertEqual(result.entries.map(\.password), ["second"])
+        XCTAssertEqual(result.rows.map(\.password).sorted(), ["first", "second"])
+        let dated = try XCTUnwrap(result.rows.first { $0.password == "second" }?.modifiedAt)
+        XCTAssertEqual(dated.timeIntervalSince1970, Double(newer) / 1_000_000 - 11_644_473_600, accuracy: 1)
+    }
+
+    func testAZeroDateIsNoDateAndAnOldStoreHasNone() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        let dir = root.appendingPathComponent("Profile 8", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try writeWithDates([("https://a.example/", "u", "p", 0, 0)], to: dir.appendingPathComponent("Login Data"), key: key)
+        XCTAssertNil(try ChromeLogins.entries(in: ChromeProfile(directoryName: "Profile 8", name: "P", directory: dir), key: key).rows.first?.modifiedAt)
+        let plain = try makeProfile("Profile 9", rows: [Row(origin: "https://b.example/", realm: "https://b.example/", user: "u", password: "p", key: key)])
+        XCTAssertNil(try ChromeLogins.entries(in: plain, key: key).rows.first?.modifiedAt)
+    }
+
+    func testOnlyAnHTMLFormOnAWebRealmIsAnOrdinaryLogin() throws {
+        let key = try ChromeSafeStorage.deriveKey(password: Data("k".utf8))
+        func isForm(scheme: Int64, realm: String, name: String) throws -> Bool? {
+            let dir = root.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try writeWithDates([("https://a.example/", "u", "p", 0, scheme)], to: dir.appendingPathComponent("Login Data"), key: key, realm: realm)
+            return try ChromeLogins.entries(in: ChromeProfile(directoryName: name, name: "P", directory: dir), key: key).rows.first?.isForm
+        }
+        XCTAssertEqual(try isForm(scheme: 0, realm: "https://a.example/", name: "Profile 10"), true)
+        XCTAssertEqual(try isForm(scheme: 1, realm: "https://a.example/Secure Area", name: "Profile 11"), false, "HTTP authentication")
+        XCTAssertEqual(try isForm(scheme: 0, realm: "android://hash@com.example/", name: "Profile 12"), false)
     }
 
     func testATrashedEntryDoesNotAbsorbTheChromeLogin() {
@@ -442,9 +471,7 @@ final class ChromeLoginsTests: XCTestCase {
             login("https://gitlab.corp.example/", "ann", "pw"),
             login("https://stash.corp.example/", "ann", "pw")
         ])
-        XCTAssertEqual(shown.count, 2)
-        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "pw")
-        XCTAssertEqual(shown[1].value(for: ChromeLogins.passwordFieldName), "pw")
+        XCTAssertEqual(shown.map(\.password), ["old", "old2"])
     }
 
     func testARenameInChromeRejoinsTheSavedAccountThroughAnySite() throws {
@@ -642,6 +669,29 @@ final class ChromeLoginsTests: XCTestCase {
             _ = blob.withUnsafeBytes { sqlite3_bind_blob(statement, 4, $0.baseAddress, Int32(blob.count), transient) }
             sqlite3_bind_text(statement, 5, origin, -1, transient)
             sqlite3_bind_int64(statement, 6, lastUsed)
+            XCTAssertEqual(sqlite3_step(statement), SQLITE_DONE)
+        }
+    }
+
+    private func writeWithDates(_ rows: [(String, String, String, Int64, Int64)], to url: URL, key: Data, realm: String? = nil) throws {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        try exec(db, loginsSchema.replacingOccurrences(of: "times_used INTEGER)", with: "times_used INTEGER, date_password_modified INTEGER NOT NULL DEFAULT 0)"))
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for (origin, user, password, modified, scheme) in rows {
+            let blob = try encrypt(password, key: key)
+            var statement: OpaquePointer?
+            let sql = "INSERT INTO logins (origin_url, action_url, username_value, password_value, signon_realm, date_created, blacklisted_by_user, scheme, times_used, date_password_modified) VALUES (?, ?, ?, ?, ?, 0, 0, ?, 1, ?)"
+            XCTAssertEqual(sqlite3_prepare_v2(db, sql, -1, &statement, nil), SQLITE_OK)
+            defer { sqlite3_finalize(statement) }
+            sqlite3_bind_text(statement, 1, origin, -1, transient)
+            sqlite3_bind_text(statement, 2, origin, -1, transient)
+            sqlite3_bind_text(statement, 3, user, -1, transient)
+            _ = blob.withUnsafeBytes { sqlite3_bind_blob(statement, 4, $0.baseAddress, Int32(blob.count), transient) }
+            sqlite3_bind_text(statement, 5, realm ?? origin, -1, transient)
+            sqlite3_bind_int64(statement, 6, scheme)
+            sqlite3_bind_int64(statement, 7, modified)
             XCTAssertEqual(sqlite3_step(statement), SQLITE_DONE)
         }
     }

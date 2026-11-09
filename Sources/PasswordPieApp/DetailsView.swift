@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import PasswordPieCore
 import SwiftUI
 
@@ -62,6 +63,36 @@ func returnFillsAccount(_ field: DetailField) -> Bool {
     field.kind == .username || field.kind == .password
 }
 
+/// Which row of the details the keyboard is on. Rows come and go when Chrome or Restore changes the list, so this is never an index.
+enum DetailFocus: Hashable {
+    case field(String)
+    case previousHeader
+    case previous(UUID)
+}
+
+/// `updated 2 days ago`. Rough on purpose: this is a label, not a record.
+func chromeUpdatedText(_ date: Date, now: Date = Date()) -> String {
+    let seconds = max(now.timeIntervalSince(date), 0)
+    func count(_ n: Int, _ unit: String) -> String { "\(n) \(unit)\(n == 1 ? "" : "s") ago" }
+    if seconds < 60 { return "just now" }
+    if seconds < 3_600 { return count(Int(seconds / 60), "minute") }
+    if seconds < 86_400 { return count(Int(seconds / 3_600), "hour") }
+    return count(Int(seconds / 86_400), "day")
+}
+
+/// The top line of a previous password: `updated Oct 20` or `date unknown`, then `not used yet` for a value never saved.
+func previousPasswordCaption(_ item: PreviousPasswords.Item, now: Date = Date()) -> String {
+    var caption = "date unknown"
+    if let date = item.date {
+        let calendar = Calendar(identifier: .gregorian)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.setLocalizedDateFormatFromTemplate(calendar.isDate(date, equalTo: now, toGranularity: .year) ? "MMMd" : "yMMMd")
+        caption = "updated " + formatter.string(from: date)
+    }
+    return item.used ? caption : caption + " · not used yet"
+}
+
 enum DetailsPresentation: Equatable {
     /// The menu popover. Copying or opening leaves, because the menu would cover the place being filled.
     case popover
@@ -119,20 +150,44 @@ final class DetailsModel: ObservableObject {
     let title: String
     /// Website host for the site icon. Nil when the entry has no website.
     let siteHost: String?
-    let fields: [DetailField]
+    @Published private(set) var fields: [DetailField] = []
     let tags: [String]
-    @Published var focused = 0
+    @Published var focusedRow: DetailFocus = .field("")
+    /// Older values of the password, kept with the account.
+    @Published private(set) var previous: [PreviousPasswords.Item] = []
+    @Published var previousOpen = false
+    /// Which rows say Restore could not be written.
+    @Published private(set) var restoreFailures: Set<UUID> = []
+    @Published var confirmingClear = false
+    @Published private(set) var clearFailed = false
+    /// The last Chrome update for this account could not be written.
+    @Published private(set) var updateFailed = false
+    /// When Chrome updated the saved password, for the label. Nil means it stays plain.
+    @Published private(set) var chromeUpdatedAt: Date?
+    @Published private(set) var fromChrome = false
     @Published var revealed: Set<String> = []
     @Published var optionHeld = false
     @Published var flashing = false
     @Published var favorite: Bool
     let presentation: DetailsPresentation
     unowned let session: VaultSession
-    private let done: () -> Void
+    fileprivate let done: () -> Void
     /// The account's Return action from the row (fill, or open and fill). Nil when the account has none or the window is pinned.
     private let fill: (() -> Void)?
     private var monitor: Any?
     private var activationObservers: [NSObjectProtocol] = []
+    private var subscriptions: [AnyCancellable] = []
+
+    /// An index into `fields`, for what only moves among fields. Off the end while a previous password is focused.
+    var focused: Int {
+        get {
+            if case .field(let id) = focusedRow, let index = fields.firstIndex(where: { $0.id == id }) { return index }
+            return fields.count
+        }
+        set {
+            if fields.indices.contains(newValue) { focusedRow = .field(fields[newValue].id) }
+        }
+    }
 
     init(entry: VaultEntry, session: VaultSession, presentation: DetailsPresentation = .popover, done: @escaping () -> Void, fill: (() -> Void)? = nil) {
         entryID = entry.id
@@ -144,28 +199,31 @@ final class DetailsModel: ObservableObject {
         self.session = session
         self.done = done
         self.fill = fill
-        var fields: [DetailField] = []
-        if !entry.username.isEmpty { fields.append(DetailField(id: "username", kind: .username, label: "username", value: entry.username, secret: false)) }
-        if !entry.password.isEmpty { fields.append(DetailField(id: "password", kind: .password, label: "password", value: entry.password, secret: true)) }
-        if !entry.url.isEmpty { fields.append(DetailField(id: "url", kind: .url, label: "website", value: entry.url, secret: false)) }
-        let otherWebsites = EntryMerge.otherWebsites(entry)
-        for website in otherWebsites {
-            fields.append(DetailField(id: "custom:" + website.key, kind: .otherWebsite(website.key), label: "website", value: website.value, secret: false))
-        }
-        if OneTimeCodes.hasCode(entry) { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
-        let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
-        for field in entry.fields where !handled.contains(field.key.lowercased()) && !otherWebsites.contains(field) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
-            fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))
-        }
-        if !entry.notes.isEmpty { fields.append(DetailField(id: "notes", kind: .notes, label: "notes", value: entry.notes, secret: false)) }
-        self.fields = fields
-        focused = fields.firstIndex { $0.kind == .password } ?? 0
+        apply(entry)
+        focusedRow = .field(fields.first { $0.kind == .password }?.id ?? fields.first?.id ?? "")
         let optionDown = NSEvent.modifierFlags.contains(.option)
         optionHeld = optionRevealHeld(after: .opened(presentation: presentation, optionDown: optionDown))
         monitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             self?.optionHeld = optionRevealHeld(after: .flagsChanged(optionDown: event.modifierFlags.contains(.option)))
             return event
         }
+        // A background Chrome write, or a Restore, changes what this row shows while it is open.
+        // These publish before the property changes, so each takes the new value it is handed.
+        let id = entry.id
+        updateFailed = session.chromeUpdateFailures.contains(id)
+        fromChrome = session.chromeBadgeIDs.contains(id)
+        subscriptions = [
+            session.$allEntries.sink { [weak self] all in
+                guard let self, let current = all.first(where: { $0.id == id && !$0.trashed }) else { return }
+                self.apply(current)
+            },
+            session.$chromeUpdateFailures.sink { [weak self] failures in
+                guard let self else { return }
+                self.updateFailed = failures.contains(id)
+                self.refreshUpdateLabel()
+            },
+            session.$chromeBadgeIDs.sink { [weak self] ids in self?.fromChrome = ids.contains(id) }
+        ]
         // The pinned window stays visible over the form. A local monitor misses the key-up
         // in the other app, so resign hides the Option reveal and the next activation samples the key again.
         // `revealed` is an explicit click and is left alone.
@@ -192,10 +250,151 @@ final class DetailsModel: ObservableObject {
         }
     }
 
-    /// Up and down move between copyable fields and stop at the ends.
+    private func apply(_ entry: VaultEntry) {
+        favorite = entry.favorite
+        fields = Self.detailFields(of: entry)
+        #if PP_DIRECT
+        previous = PreviousPasswords.items(of: entry, now: Date())
+        #endif
+        current = entry
+        refreshUpdateLabel()
+        repairFocus()
+    }
+
+    private var current: VaultEntry?
+
+    private func refreshUpdateLabel() {
+        #if PP_DIRECT
+        chromeUpdatedAt = updateFailed ? nil : current.flatMap { PreviousPasswords.chromeUpdateDate(of: $0, now: Date()) }
+        #endif
+    }
+
+    /// The row the keyboard was on left, because the list folded or Restore took it. The header is the nearest thing left.
+    private func repairFocus() {
+        guard !rowOrder.contains(focusedRow) else { return }
+        if case .previous = focusedRow, !previous.isEmpty {
+            focusedRow = .previousHeader
+        } else {
+            focusedRow = .field(fields.first { $0.kind == .password }?.id ?? fields.first?.id ?? "")
+        }
+    }
+
+    /// The order up and down walk: previous passwords sit right after the password's row.
+    var rowOrder: [DetailFocus] {
+        var order: [DetailFocus] = []
+        for field in fields {
+            order.append(.field(field.id))
+            if field.kind == .password, !previous.isEmpty {
+                order.append(.previousHeader)
+                if previousOpen { order += previous.map { .previous($0.id) } }
+            }
+        }
+        return order
+    }
+
+    static func detailFields(of entry: VaultEntry) -> [DetailField] {
+        var fields: [DetailField] = []
+        if !entry.username.isEmpty { fields.append(DetailField(id: "username", kind: .username, label: "username", value: entry.username, secret: false)) }
+        if !entry.password.isEmpty { fields.append(DetailField(id: "password", kind: .password, label: "password", value: entry.password, secret: true)) }
+        if !entry.url.isEmpty { fields.append(DetailField(id: "url", kind: .url, label: "website", value: entry.url, secret: false)) }
+        let otherWebsites = EntryMerge.otherWebsites(entry)
+        for website in otherWebsites {
+            fields.append(DetailField(id: "custom:" + website.key, kind: .otherWebsite(website.key), label: "website", value: website.value, secret: false))
+        }
+        if OneTimeCodes.hasCode(entry) { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
+        let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
+        for field in entry.fields where !handled.contains(field.key.lowercased()) && !otherWebsites.contains(field) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
+            fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))
+        }
+        if !entry.notes.isEmpty { fields.append(DetailField(id: "notes", kind: .notes, label: "notes", value: entry.notes, secret: false)) }
+        return fields
+    }
+
+    /// Up and down move between rows and stop at the ends.
     func move(_ delta: Int) {
-        guard !fields.isEmpty else { return }
-        focused = min(max(focused + delta, 0), fields.count - 1)
+        let order = rowOrder
+        guard !order.isEmpty else { return }
+        let position = order.firstIndex(of: focusedRow) ?? 0
+        focusedRow = order[min(max(position + delta, 0), order.count - 1)]
+    }
+
+    func isFocused(_ row: DetailFocus) -> Bool {
+        focusedRow == row
+    }
+
+    func togglePrevious() {
+        previousOpen.toggle()
+        confirmingClear = false
+        if !previousOpen { repairFocus() }
+    }
+
+    func previousKey(_ item: PreviousPasswords.Item) -> String {
+        "previous:" + item.id.uuidString
+    }
+
+    func isShown(_ item: PreviousPasswords.Item) -> Bool {
+        revealed.contains(previousKey(item)) || optionHeld
+    }
+
+    func toggleReveal(_ item: PreviousPasswords.Item) {
+        let key = previousKey(item)
+        if revealed.contains(key) { revealed.remove(key) } else { revealed.insert(key) }
+    }
+
+    /// Copy never fills, unlike Return on the password. The popover goes away as it does for any copy.
+    func copyPrevious(_ item: PreviousPasswords.Item) {
+        session.copy(item.value)
+        if fieldActionClosesDetails(.copy, presentation: presentation) { done() }
+    }
+
+    func restore(_ item: PreviousPasswords.Item) {
+        guard session.restorePreviousPassword(item.id, of: entryID) else {
+            restoreFailures.insert(item.id)
+            return
+        }
+        restoreFailures.remove(item.id)
+        revealed.removeAll()
+        focusedRow = .previousHeader
+        announce("Password restored. The website and Chrome aren't changed.")
+    }
+
+    /// ⌘Return. Only a previous password takes it.
+    func restoreFocused() -> Bool {
+        guard case .previous(let id) = focusedRow, let item = previous.first(where: { $0.id == id }) else { return false }
+        restore(item)
+        return true
+    }
+
+    func clearPrevious() {
+        confirmingClear = false
+        if session.clearPreviousPasswords(of: entryID) {
+            clearFailed = false
+            previousOpen = false
+            repairFocus()
+            announce("Previous passwords cleared.")
+        } else {
+            clearFailed = true
+        }
+    }
+
+    func retryUpdate() {
+        session.retryChromeUpdates()
+    }
+
+    private func announce(_ text: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: text,
+            .priority: NSAccessibilityPriorityLevel.high.rawValue
+        ])
+    }
+
+    /// What the debug status reports as focused.
+    var focusedLabel: String? {
+        switch focusedRow {
+        case .field(let id): fields.first { $0.id == id }?.label
+        case .previousHeader: "previous passwords"
+        case .previous: "previous password"
+        }
     }
 
     /// True while a one-time code here needs Premium. Read fresh, so an open row unlocks the moment Premium arrives.
@@ -248,6 +447,23 @@ final class DetailsModel: ObservableObject {
 
     /// Return: flash the field's button (0.3 s), then run its primary action.
     func activateFocused() {
+        switch focusedRow {
+        case .previousHeader:
+            togglePrevious()
+            return
+        case .previous(let id):
+            guard !flashing, let item = previous.first(where: { $0.id == id }) else { return }
+            flashing = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self else { return }
+                self.flashing = false
+                guard self.focusedRow == .previous(id) else { return }
+                self.copyPrevious(item)
+            }
+            return
+        case .field:
+            break
+        }
         guard fields.indices.contains(focused), !flashing else { return }
         let field = fields[focused]
         let action = fieldControl(field, revealed: revealed.contains(field.id), codeLocked: codeIsLocked).primary
@@ -302,6 +518,7 @@ private struct SiteIconView: View {
 }
 
 struct DetailsView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: DetailsModel
     var onHeight: ((CGFloat) -> Void)? = nil
     @State private var contentHeight: CGFloat = 120
@@ -311,9 +528,11 @@ struct DetailsView: View {
             VStack(spacing: 0) {
                 header
                 ForEach(Array(model.fields.enumerated()), id: \.element.id) { index, field in
-                    DetailRow(model: model, premium: model.session.premium, field: field, focused: index == model.focused)
+                    DetailRow(model: model, premium: model.session.premium, field: field, focused: model.isFocused(.field(field.id)))
                     if field.kind == .password {
                         StrengthRow(password: field.value)
+                        if model.updateFailed { UpdateFailedRow(model: model) }
+                        if !model.previous.isEmpty { PreviousPasswordsSection(model: model) }
                     }
                 }
                 if !model.tags.isEmpty {
@@ -332,9 +551,23 @@ struct DetailsView: View {
         }
     }
 
+    @ViewBuilder
+    private var headerBadge: some View {
+        if iconMark(favorite: model.favorite, fromChrome: model.fromChrome) == .chrome {
+            let side = 32 * ChromeBadge.detailsRatio
+            ChromeGlyph(side: side)
+                .padding(ChromeBadge.detailsRing)
+                .background(Circle().fill(Palette.surface(dark: colorScheme == .dark)))
+                .offset(x: ChromeBadge.detailsRing * 2, y: ChromeBadge.detailsRing * 2)
+                .help(ChromeBadge.tooltip)
+                .accessibilityLabel(ChromeBadge.tooltip)
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             SiteIconView(host: model.siteHost, title: model.title, side: 32)
+                .overlay(alignment: .bottomTrailing) { headerBadge }
             Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
             Spacer(minLength: 0)
             Button { model.edit() } label: {
@@ -366,11 +599,16 @@ struct DetailsView: View {
 private struct DetailChrome<Content: View>: View {
     var label: String
     var highlighted = false
+    /// After the label: where this value came from.
+    var labelDetail: AnyView? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
+                if let labelDetail { labelDetail }
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -395,7 +633,7 @@ private struct DetailRow: View {
         let control = fieldControl(field, revealed: model.revealed.contains(field.id), codeLocked: !premium.hasPremium)
         // Upgrade is how a locked row says what to do, so it does not wait for a hover.
         let actionShown = fieldActionsStayVisible(model.presentation) || control.primary == .upgrade || hovering || (focused && model.flashing)
-        DetailChrome(label: field.label, highlighted: focused) { value }
+        DetailChrome(label: field.label, highlighted: focused, labelDetail: updateLabel) { value }
             .contentShape(Rectangle())
             .onTapGesture { model.perform(control.primary, on: field) }
             .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
@@ -407,6 +645,16 @@ private struct DetailRow: View {
                 }
             }
             .onHover { hovering = $0 }
+    }
+
+    /// `· [Chrome] updated 2 days ago`, only on the password and only for a Chrome update.
+    private var updateLabel: AnyView? {
+        guard field.kind == .password, let date = model.chromeUpdatedAt else { return nil }
+        return AnyView(HStack(spacing: 4) {
+            Text("·").font(.system(size: 10)).foregroundStyle(.secondary).accessibilityHidden(true)
+            ChromeGlyph(side: 10)
+            Text("updated " + chromeUpdatedText(date)).font(.system(size: 10)).foregroundStyle(.secondary)
+        })
     }
 
     @ViewBuilder
@@ -437,6 +685,150 @@ private struct DetailRow: View {
         ) {
             model.perform(control.primary, on: field)
         }
+    }
+}
+
+/// `[Chrome] Couldn't update. Using the saved password.` with Try Again. Silent when the update worked.
+private struct UpdateFailedRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var model: DetailsModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ChromeGlyph()
+            Text("Couldn't update. Using the saved password.")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.error(dark: colorScheme == .dark))
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            SplitActionButton(title: "Try Again", prominence: .quiet, items: []) { model.retryUpdate() }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(minHeight: 30)
+        .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
+    }
+}
+
+/// `▸ previous passwords (2)` and, when open, one two-line row per value.
+private struct PreviousPasswordsSection: View {
+    @ObservedObject var model: DetailsModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            if model.previousOpen {
+                ForEach(model.previous) { item in
+                    PreviousPasswordRow(model: model, item: item)
+                }
+            }
+            if model.confirmingClear { confirmation }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: model.previousOpen ? "chevron.down" : "chevron.right")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
+                .accessibilityHidden(true)
+            Text("previous passwords (\(model.previous.count))")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            if model.previousOpen {
+                Menu {
+                    Button("Clear Previous Passwords") { model.confirmingClear = true }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel("More")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 28)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { model.togglePrevious() }
+        .background(model.isFocused(.previousHeader) ? Palette.brandAccent.opacity(0.2) : Color.clear)
+        .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Previous passwords, \(model.previous.count)")
+        .accessibilityHint(model.previousOpen ? "Collapse the list" : "Expand the list")
+    }
+
+    private var confirmation: some View {
+        HStack(spacing: 8) {
+            Text("Clear all previous passwords? This can't be undone.")
+                .font(.system(size: 11))
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            SplitActionButton(title: "Cancel", prominence: .quiet, items: []) { model.confirmingClear = false }
+            SplitActionButton(title: "Clear", prominence: .quiet, items: []) { model.clearPrevious() }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
+    }
+}
+
+/// Time on top, the value below, Restore and Copy on the right. Both buttons are neutral: neither one is the default.
+private struct PreviousPasswordRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var model: DetailsModel
+    var item: PreviousPasswords.Item
+
+    private var focused: Bool { model.isFocused(.previous(item.id)) }
+    private var restoreTitle: String { item.used ? "Restore" : "Use" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                if item.source == .chrome { ChromeGlyph(side: 10) }
+                Text(previousPasswordCaption(item)).font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            Group {
+                if model.isShown(item) {
+                    Text(item.value).font(.system(size: 13, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                } else {
+                    Text(String(repeating: "•", count: min(max(item.value.count, 8), 16))).font(.system(size: 13))
+                }
+            }
+            .padding(.trailing, focused ? 170 : 140)
+            if model.restoreFailures.contains(item.id) {
+                Text("Couldn't restore. Nothing changed.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.error(dark: colorScheme == .dark))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .frame(minHeight: 38)
+        .background(focused ? Palette.brandAccent.opacity(0.2) : Color.clear)
+        .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 6) {
+                SplitActionButton(title: focused ? restoreTitle + " ⌘↩" : restoreTitle, prominence: .quiet, items: []) { model.restore(item) }
+                    .help("The website and Chrome aren't changed.")
+                SplitActionButton(
+                    title: focused ? "Copy ↩" : "Copy",
+                    prominence: .quiet,
+                    items: [
+                        SplitActionButton.Item(title: model.isShown(item) ? "Conceal" : "Reveal") { model.toggleReveal(item) },
+                        SplitActionButton.Item(title: "Large Type") { model.session.showLargeType(item.value) }
+                    ]
+                ) { model.copyPrevious(item) }
+                .opacity(focused && model.flashing ? 0.4 : 1)
+            }
+            .padding(.trailing, 10)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(previousPasswordCaption(item))
     }
 }
 

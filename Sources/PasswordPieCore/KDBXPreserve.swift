@@ -285,6 +285,11 @@ final class KDBXPreserve: @unchecked Sendable {
         let tagsDiffer = live.tags != model.tags
         let moved = moved(live.location, toward: model)
         guard fieldsDiffer || tagsDiffer || moved else { return }
+        // Bookkeeping about older passwords is not an edit of the account: no new version, and its dates stay.
+        if fieldsDiffer, !tagsDiffer, !moved, onlyPreviousPasswordsDiffer(live.fields, model.fields) {
+            try applyFields(model.fields, to: live.element)
+            return
+        }
         try rememberPreviousVersion(of: live.element)
         if fieldsDiffer {
             try applyFields(model.fields, to: live.element)
@@ -298,6 +303,10 @@ final class KDBXPreserve: @unchecked Sendable {
             let parent = try targetGroup(for: model, fallbackName: rootName)
             move(live.element, to: parent)
         }
+    }
+
+    private func onlyPreviousPasswordsDiffer(_ lhs: [VaultField], _ rhs: [VaultField]) -> Bool {
+        lhs.filter { $0.key != PreviousPasswords.key } == rhs.filter { $0.key != PreviousPasswords.key }
     }
 
     /// An entry already in the bin stays there even if the model still carries its old folder.
@@ -386,6 +395,34 @@ final class KDBXPreserve: @unchecked Sendable {
         if entry.parent === parent { return }
         entry.detach()
         parent.addChild(entry)
+    }
+
+    // MARK: Password dates
+
+    /// `LastModificationTime` moves on any edit, including a favorite. The oldest version still holding the password is
+    /// the earliest it can be known to have been there, so that time is an upper bound on when it was set.
+    func passwordDates() -> [UUID: Date] {
+        var dates: [UUID: Date] = [:]
+        for live in walkDatabase().entries where !live.location.trashed && dates[live.id] == nil {
+            let password = passwordText(of: live.element)
+            var earliest = modificationTime(of: live.element)
+            let versions = direct(live.element, "History").flatMap { direct($0, "Entry") }
+            for version in versions.reversed() {
+                guard passwordText(of: version) == password else { break }
+                if let time = modificationTime(of: version) { earliest = min(earliest ?? time, time) }
+            }
+            if let earliest { dates[live.id] = earliest }
+        }
+        return dates
+    }
+
+    private func passwordText(of entry: XMLElement) -> String {
+        let field = direct(entry, "String").first { direct($0, "Key").first?.stringValue == "Password" }
+        return field.flatMap { direct($0, "Value").first }?.stringValue ?? ""
+    }
+
+    private func modificationTime(of entry: XMLElement) -> Date? {
+        direct(entry, "Times").first.flatMap { direct($0, "LastModificationTime").first }?.stringValue.flatMap(parseTime)
     }
 
     // MARK: History
@@ -822,6 +859,18 @@ func walkElements(_ element: XMLElement, _ body: (XMLElement) -> Void) {
 
 private func isNilUUID(_ id: UUID) -> Bool {
     id.uuidString == "00000000-0000-0000-0000-000000000000"
+}
+
+/// Either form a KeePass time can take: base64 seconds since 0001-01-01, or ISO 8601.
+func parseTime(_ text: String) -> Date? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.contains("-") || trimmed.contains(":") {
+        return ISO8601DateFormatter().date(from: trimmed)
+    }
+    guard let data = Data(base64Encoded: trimmed), data.count == 8 else { return nil }
+    var value: UInt64 = 0
+    for byte in data.reversed() { value = value << 8 | UInt64(byte) }
+    return Date(timeIntervalSince1970: TimeInterval(Int64(bitPattern: value) - 62_135_596_800))
 }
 
 /// KeePass epoch is 0001-01-01 UTC. ISO is used only when the file already writes ISO timestamps.

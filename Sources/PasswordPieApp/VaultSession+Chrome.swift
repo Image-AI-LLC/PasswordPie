@@ -42,9 +42,15 @@ extension VaultSession {
         chromeStatus = ""
         chromeStatusIsError = false
         chromeNeedsSettings = false
+        chromeBatch = nil
+        chromeBatchError = ""
+        chromeUpdateFailures = []
         #if PP_DIRECT
         chromeStoreSignature = nil
         chromeRecheckAfterRead = false
+        chromeRows = []
+        chromeHeldEvents = []
+        chromeReconcileAgain = false
         #endif
     }
 
@@ -64,6 +70,9 @@ extension VaultSession {
 
     func startChromeSyncIfEnabled() {
         chromeSyncEnabled = UserDefaults.standard.bool(forKey: Self.chromeSyncKey)
+        #if DEBUG
+        if ChromeFixture.path != nil { chromeSyncEnabled = true }
+        #endif
     }
 
     /// The panel is on screen. Compare the login files and, when they changed, read them without blocking the menu.
@@ -138,6 +147,7 @@ extension VaultSession {
         chromeNeedsSettings = false
         chromeStatusIsError = false
         chromeStatus = chromeSummary(loaded.result)
+        chromeRows = loaded.result.rows
         let lastUsedChanged = loaded.result.lastUsed != chromeLastUsed
         if lastUsedChanged {
             chromeLastUsed = loaded.result.lastUsed
@@ -149,6 +159,7 @@ extension VaultSession {
         } else if lastUsedChanged {
             catalogChanged()
         }
+        reconcileChromeUpdates()
     }
 
     private func applyChromeFailure(_ error: Error) {
@@ -208,5 +219,29 @@ extension VaultSession {
     func startChromeSyncIfEnabled() {}
     func noteChromePanelShown() {}
     func refreshChrome() {}
+    func retryChromeUpdates() {}
+    func applyChromeBatch() {}
+    func dismissChromeBatch() {}
+    func restorePreviousPassword(_ itemID: UUID, of id: UUID) -> Bool { false }
+    func clearPreviousPasswords(of id: UUID) -> Bool { false }
     #endif
+}
+
+/// Accounts waiting for a decision. See "Many at once" in docs/UX.md.
+struct ChromeBatch: Equatable {
+    struct Account: Equatable, Identifiable {
+        var id: UUID
+        var title: String
+        var username: String
+    }
+
+    var accounts: [Account]
+
+    var summary: String {
+        accounts.count == 1 ? "1 password changed in Chrome" : "\(accounts.count) passwords changed in Chrome"
+    }
+
+    var applyTitle: String {
+        accounts.count == 1 ? "Apply 1 Update" : "Apply \(accounts.count) Updates"
+    }
 }

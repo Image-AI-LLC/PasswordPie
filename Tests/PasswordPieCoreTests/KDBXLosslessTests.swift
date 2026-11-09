@@ -524,3 +524,75 @@ final class KDBXLosslessTests: XCTestCase {
         return text
     }
 }
+
+/// The date of a password comes from the versions that held it, because any edit moves `LastModificationTime`.
+final class PasswordDateTests: XCTestCase {
+    private func time(_ date: Date) -> String { formatTime(date, like: nil) }
+
+    private func xml(live: (String, Date), history: [(String, Date)]) -> String {
+        func strings(_ password: String) -> String {
+            "<String><Key>Title</Key><Value>t</Value></String><String><Key>Password</Key><Value Protected=\"True\">\(password)</Value></String>"
+        }
+        let versions = history.map { value, date in
+            "<Entry><UUID>AAAAAAAAAAAAAAAAAAAAAQ==</UUID><Times><LastModificationTime>\(time(date))</LastModificationTime></Times>\(strings(value))</Entry>"
+        }.joined()
+        return """
+        <?xml version="1.0" encoding="utf-8" standalone="yes"?>
+        <KeePassFile><Meta><DatabaseName>d</DatabaseName></Meta><Root><Group><UUID>AAAAAAAAAAAAAAAAAAAAAg==</UUID><Name>r</Name>
+        <Entry><UUID>AAAAAAAAAAAAAAAAAAAAAQ==</UUID><Times><LastModificationTime>\(time(live.1))</LastModificationTime></Times>\(strings(live.0))<History>\(versions)</History></Entry>
+        </Group></Root></KeePassFile>
+        """
+    }
+
+    private let t0 = Date(timeIntervalSince1970: 1_600_000_000)
+
+    private func date(_ live: (String, Date), _ history: [(String, Date)]) throws -> Date? {
+        let data = try KDBX.testingDatabase(xml: xml(live: live, history: history), password: "pw")
+        return try KDBX.load(data: data, password: "pw").passwordDates().values.first
+    }
+
+    func testAnEntryWithNoHistoryUsesItsOwnTime() throws {
+        XCTAssertEqual(try date(("a", t0), []), t0)
+    }
+
+    func testTheEarliestVersionInTheRunIsTheDate() throws {
+        let result = try date(("b", t0.addingTimeInterval(500)), [("a", t0), ("b", t0.addingTimeInterval(100)), ("b", t0.addingTimeInterval(200))])
+        XCTAssertEqual(result, t0.addingTimeInterval(100))
+    }
+
+    func testAnOlderRunOfTheSamePasswordDoesNotCount() throws {
+        let result = try date(("a", t0.addingTimeInterval(500)), [("a", t0), ("b", t0.addingTimeInterval(100)), ("a", t0.addingTimeInterval(300))])
+        XCTAssertEqual(result, t0.addingTimeInterval(300))
+    }
+
+    func testFavoritingDoesNotMoveThePasswordDate() throws {
+        var vault = try KDBX.load(data: KDBX.testingDatabase(xml: xml(live: ("a", t0), history: []), password: "pw"), password: "pw")
+        vault.entries[0].favorite = true
+        _ = try KDBX.save(vault: &vault, password: "pw")
+        XCTAssertEqual(vault.passwordDates().values.first, t0)
+    }
+
+    func testBookkeepingAddsNoVersionAndKeepsTheTime() throws {
+        var vault = try KDBX.load(data: KDBX.testingDatabase(xml: xml(live: ("a", t0), history: []), password: "pw"), password: "pw")
+        var state = PreviousPasswords.State()
+        state.items = [PreviousPasswords.Item(value: "x", source: .chrome, date: nil, enteredAt: t0, used: false)]
+        PreviousPasswords.set(state, on: &vault.entries[0])
+        let saved = try KDBX.save(vault: &vault, password: "pw")
+        let loaded = try KDBX.load(data: saved, password: "pw")
+        XCTAssertEqual(loaded.passwordDates().values.first, t0)
+        XCTAssertEqual(PreviousPasswords.items(of: loaded.entries[0], now: t0).map(\.value), ["x"])
+        let root = try XCTUnwrap(loaded.preserve?.document.rootElement())
+        var versions = 0
+        walkElements(root) { element in
+            if element.name == "History" { versions += direct(element, "Entry").count }
+        }
+        XCTAssertEqual(versions, 0)
+    }
+
+    func testAnEntryInTheRecycleBinHasNoDate() throws {
+        var vault = try KDBX.load(data: KDBX.testingDatabase(xml: xml(live: ("a", t0), history: []), password: "pw"), password: "pw")
+        vault.entries[0].trashed = true
+        _ = try KDBX.save(vault: &vault, password: "pw")
+        XCTAssertTrue(vault.passwordDates().isEmpty)
+    }
+}

@@ -3,7 +3,8 @@ import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 
-/// Chrome is only ever read. A login reaches the KeePass file when the user edits or favorites it, and stays one entry.
+/// Chrome is only ever read. A login reaches the KeePass file when the user edits or favorites it, or when a newer password
+/// replaces a saved one (ChromeUpdateSessionTests). Either way it stays one entry.
 @MainActor
 final class LiveEntriesTests: XCTestCase {
     private var directory: URL!
@@ -158,7 +159,7 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertEqual(session.entry(live.id)?.groupPath, ["Chrome"], "open details and pinned windows keep working")
     }
 
-    func testChangingTheUsernameAndPasswordKeepsOneEntryAndShowsChromesValues() throws {
+    func testChangingTheUsernameAndPasswordKeepsOneEntryAndShowsChromesUsername() throws {
         let session = unlockedSession()
         let live = liveLogin()
         session.liveEntries = [live]
@@ -174,8 +175,7 @@ final class LiveEntriesTests: XCTestCase {
         XCTAssertEqual(shown.username, "ann-renamed")
         XCTAssertEqual(shown.password, "my-own-secret")
         XCTAssertEqual(shown.value(for: ChromeLogins.usernameFieldName), "ann")
-        XCTAssertEqual(shown.value(for: ChromeLogins.passwordFieldName), "chrome-secret")
-        XCTAssertEqual(session.value(of: .custom(ChromeLogins.passwordFieldName), in: shown), "chrome-secret")
+        XCTAssertFalse(shown.fields.contains { $0.value == "chrome-secret" }, "a different Chrome password is no longer a field")
     }
 
     func testChromesValuesAreOnlyDisplayedAndNeverReachTheFile() throws {
@@ -198,7 +198,6 @@ final class LiveEntriesTests: XCTestCase {
             XCTAssertFalse(entry.fields.contains { $0.value == "chrome-secret" })
         }
         XCTAssertEqual(session.entry(live.id)?.favorite, true)
-        XCTAssertEqual(session.entry(live.id)?.value(for: ChromeLogins.passwordFieldName), "chrome-secret")
 
         session.edit(live.id)
         session.deleteEditing()
@@ -312,10 +311,10 @@ final class LiveEntriesTests: XCTestCase {
         session.liveEntries = [liveLogin()]
 
         XCTAssertEqual(session.allEntries.filter { !$0.trashed }.map(\.id), [own.id])
-        XCTAssertEqual(session.entry(own.id)?.value(for: ChromeLogins.passwordFieldName), "chrome-secret")
+        XCTAssertEqual(session.entry(own.id)?.password, "my-own-secret")
     }
 
-    func testAChromePasswordChangedLaterShowsBesideTheSavedOne() throws {
+    func testAChromePasswordChangedLaterAddsNoFieldAndNoSecondRow() throws {
         let session = unlockedSession()
         let live = liveLogin()
         session.liveEntries = [live]
@@ -325,8 +324,8 @@ final class LiveEntriesTests: XCTestCase {
         changed.password = "changed-in-chrome"
         session.liveEntries = [changed]
 
-        XCTAssertEqual(session.entry(live.id)?.password, "chrome-secret")
-        XCTAssertEqual(session.entry(live.id)?.value(for: ChromeLogins.passwordFieldName), "changed-in-chrome")
+        XCTAssertEqual(session.entry(live.id)?.password, "chrome-secret", "with no row read, there is no date to replace it on")
+        XCTAssertFalse(session.entry(live.id)?.fields.contains { $0.value == "changed-in-chrome" } ?? true)
         XCTAssertEqual(session.allEntries.filter { !$0.trashed }.count, 1)
     }
 
@@ -355,22 +354,7 @@ final class LiveEntriesTests: XCTestCase {
         saved.password = "my-own-secret"
         let shown = VaultSession.visibleEntries(saved: [saved], live: [live])
         XCTAssertEqual(shown.count, 1)
-        XCTAssertEqual(shown[0].value(for: ChromeLogins.passwordFieldName), "chrome-secret")
-    }
-
-    func testTheChromePasswordFieldCanBeRevealedAndCopied() throws {
-        let session = unlockedSession()
-        let live = liveLogin()
-        var saved = live
-        saved.password = "my-own-secret"
-        session.saveEditing(saved)
-        session.liveEntries = [live]
-
-        let model = DetailsModel(entry: try XCTUnwrap(session.entry(live.id)), session: session) {}
-        let field = try XCTUnwrap(model.fields.first { $0.label == ChromeLogins.passwordFieldName })
-        XCTAssertTrue(field.secret)
-        XCTAssertFalse(model.isShown(field), "masked until asked")
-        XCTAssertEqual(fieldControl(field, revealed: false), FieldControl(primary: .copy, menu: [.reveal, .largeType]))
+        XCTAssertEqual(shown[0].password, "my-own-secret")
     }
     #endif
 

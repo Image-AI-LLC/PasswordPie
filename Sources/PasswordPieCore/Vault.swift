@@ -120,6 +120,8 @@ public struct Vault: Equatable, Sendable {
     public var recovery: KDBXRecovery?
     /// One line for the person when opening the file repaired it or could not.
     public var recoveryNotice: String?
+    /// The bytes last read from or written to this file. A background write is refused if the file no longer holds them.
+    public private(set) var fileBaseline: Data?
 
     public init(
         name: String = "PasswordPie",
@@ -132,6 +134,16 @@ public struct Vault: Equatable, Sendable {
         self.entries = entries
         self.kdf = kdf
         self.preserve = nil
+    }
+
+    /// When each entry's current password was set, as far as the file can tell. Entries in the recycle bin are left out.
+    public func passwordDates() -> [UUID: Date] {
+        preserve?.passwordDates() ?? [:]
+    }
+
+    /// Records what the file holds after a read or a write.
+    public mutating func noteFileContents(_ data: Data) {
+        fileBaseline = data
     }
 
     public static func == (lhs: Vault, rhs: Vault) -> Bool {

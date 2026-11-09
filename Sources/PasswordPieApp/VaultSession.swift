@@ -61,13 +61,27 @@ private enum TouchIDGate {
     case failed(String)
 }
 
-private struct OpenedFile {
+struct OpenedFile {
     var url: URL
     var vault: Vault
     var password: String
     var keyFile: Data?
     /// Set when an import was written to a sibling but its keychain secret did not move.
     var pendingSaveURL: URL?
+    /// What the file holds. A failed write comes back to this, so a later write cannot carry it to disk.
+    var committedEntries: [VaultEntry]
+    /// Goes up on every write. A background write that finds it moved was overtaken.
+    var revision: Int
+
+    init(url: URL, vault: Vault, password: String, keyFile: Data?, pendingSaveURL: URL? = nil, revision: Int = 0) {
+        self.url = url
+        self.vault = vault
+        self.password = password
+        self.keyFile = keyFile
+        self.pendingSaveURL = pendingSaveURL
+        self.committedEntries = vault.entries
+        self.revision = revision
+    }
 }
 
 /// A decrypted database and the key file that opened it.
@@ -97,11 +111,11 @@ final class VaultSession: ObservableObject {
     @Published var message = ""
     @Published var importStatus = ""
     @Published var importStatusIsError = false
-    /// Chrome logins read live. A save writes `entries`, so a login reaches the database only when the user edits or favorites it.
+    /// Chrome logins read live. These are never saved as they are. A newer password reaches the saved entry through `reconcileChromeUpdates`.
     @Published var liveEntries: [VaultEntry] = [] {
         didSet { catalogChanged() }
     }
-    /// One row per account: the database's entries, showing what Chrome holds when it differs, plus Chrome logins with no entry yet.
+    /// One row per account: the database's entries, plus Chrome logins with no entry yet.
     /// Search and menus read this. Saving must not: use `storedEntry`, because Chrome's values here are for display.
     /// Kept up to date when either list changes, so lookups do not merge the lists again.
     @Published private(set) var allEntries: [VaultEntry] = []
@@ -125,15 +139,39 @@ final class VaultSession: ObservableObject {
     var chromeGeneration = 0
     /// Chrome's own last-used times for the live logins. Replaced on every refresh, cleared on lock.
     var chromeLastUsed: [UUID: Date] = [:]
+    /// Rows with anything from Chrome in them, as listed.
+    @Published private(set) var chromeBadgeIDs: Set<UUID> = []
+    /// Set while more updates are waiting than may be written without asking.
+    @Published var chromeBatch: ChromeBatch?
+    /// Set when Apply or dismiss could not be written.
+    @Published var chromeBatchError = ""
+    /// Entries whose newest update could not be written. They keep the saved password.
+    @Published var chromeUpdateFailures: Set<UUID> = []
     #if PP_DIRECT
+    /// Every row from the last read, including a login's second store.
+    var chromeRows: [ChromeRow] = []
+    /// Replaced in tests, so a fixture's dates can be in this clock's past.
+    var chromeClock: () -> Date = Date.init
+    /// Events already waiting for a decision. Not persisted: a restart works it out again.
+    var chromeHeldEvents: Set<String> = []
+    var chromeWriteInFlight = false
+    var chromeReconcileAgain = false
     /// Login-file signature from the last successful read. Nil until then, and again after lock, so the next open reads.
     var chromeStoreSignature: ChromeStoreSignature?
     /// The panel opened again while a read was running. Check the files once more when that read finishes.
     var chromeRecheckAfterRead = false
-    var chromeSource = ChromeSnapshotSource.live
+    var chromeSource: ChromeSnapshotSource = {
+        #if DEBUG
+        // A fixture run must never reach the real Chrome folder, not even to compare file sizes.
+        if let fixture = ChromeFixture.source() { return fixture }
+        #endif
+        return .live
+    }()
     #endif
     private let usage: UsageStore
     @Published var editing: VaultEntry?
+    /// The item as the editor opened it. Nil for something new.
+    private var editingOriginal: VaultEntry?
     @Published var editingIsNew = false
     @Published var touchIDAvailable = false
     @Published var touchIDEnabled = false
@@ -186,20 +224,20 @@ final class VaultSession: ObservableObject {
     var onActivity: (() -> Void)?
 
     private(set) var vaultName = "PasswordPie"
-    private var masterPassword = ""
+    private(set) var masterPassword = ""
     private var rootName = "PasswordPie"
     private var kdf = KDFParameters.default
     /// Decrypted databases for this unlock. Cleared on lock so secrets do not outlive the session.
-    private var openedFiles: [OpenedFile] = []
+    var openedFiles: [OpenedFile] = []
     /// Bumped on lock and on each unlock. A sibling decrypt still running from the previous generation must not publish.
-    private var catalogGeneration: UInt = 0
+    private(set) var catalogGeneration: UInt = 0
     /// Bumped by lock(). A decrypt that started before a lock must not unlock the vault afterwards.
     private var unlockGeneration: UInt = 0
     /// Menu id → id stored in that file. They differ only when two files share a UUID.
-    private var listOrigins: [UUID: UUID] = [:]
+    private(set) var listOrigins: [UUID: UUID] = [:]
     /// Menu id → index in that file. Two entries in one file can share a stored UUID.
-    private var listSlots: [UUID: Int] = [:]
-    private var listPaths: [UUID: String] = [:]
+    private(set) var listSlots: [UUID: Int] = [:]
+    private(set) var listPaths: [UUID: String] = [:]
     private var keyFileData: Data?
     private var roster = DatabaseRoster(current: "")
     private var applyingRoster = false
@@ -879,17 +917,26 @@ final class VaultSession: ObservableObject {
         #endif
     }
 
+    private func visibleCatalog() -> (entries: [VaultEntry], badges: Set<UUID>) {
+        #if PP_DIRECT
+        let view = ChromeLogins.view(saved: entries, live: liveEntries, rules: chromeJoinRules())
+        return (view.entries, view.fromChrome)
+        #else
+        return (entries, [])
+        #endif
+    }
+
     /// A Chrome login with no database entry yet.
     func isLive(_ id: UUID) -> Bool {
         liveEntries.contains { $0.id == id } && storedEntry(id) == nil
     }
 
-    /// The entry as shown, with Chrome's differing values as fields. Change and save `storedEntry` instead.
+    /// The entry as shown. Change and save `storedEntry` instead.
     func entry(_ id: UUID) -> VaultEntry? {
         allEntries.first { $0.id == id && !$0.trashed }
     }
 
-    private func storedEntry(_ id: UUID) -> VaultEntry? {
+    func storedEntry(_ id: UUID) -> VaultEntry? {
         entries.first { $0.id == id && !$0.trashed }
     }
 
@@ -910,6 +957,7 @@ final class VaultSession: ObservableObject {
     func newEntry() {
         onActivity?()
         editing = VaultEntry()
+        editingOriginal = nil
         editingIsNew = true
     }
 
@@ -918,18 +966,21 @@ final class VaultSession: ObservableObject {
         if let draft = chromeDraft(id) {
             onActivity?()
             editing = draft
+            editingOriginal = nil
             editingIsNew = true
             return
         }
         guard let entry = storedEntry(id) else { return }
         onActivity?()
         editing = entry
+        editingOriginal = entry
         editingIsNew = false
     }
 
     func saveEditing(_ entry: VaultEntry) {
         var entry = entry
         if entry.title.isEmpty { entry.title = "Untitled" }
+        carryPasswordBookkeeping(into: &entry)
         let path = listPaths[entry.id] ?? databaseURL.path
         // A new item, or a Chrome draft that may reuse the row of its trashed copy. A failed write has nothing else holding it,
         // so it comes back out of the database and the editor stays open with what the user typed.
@@ -948,9 +999,21 @@ final class VaultSession: ObservableObject {
                 openedFiles[index].vault.entries = before
             }
             publishCatalog()
-        } else {
-            editing = nil
         }
+        // A failed write of an existing item is undone by `persist`. The editor stays open with what was typed.
+    }
+
+    /// The editor holds a copy from when it opened. A Chrome update or a Restore may have landed since.
+    private func carryPasswordBookkeeping(into entry: inout VaultEntry) {
+        #if PP_DIRECT
+        guard let stored = storedEntry(entry.id) else { return }
+        if entry.password == editingOriginal?.password { entry.password = stored.password }
+        entry.fields.removeAll { $0.key == PreviousPasswords.key }
+        if let record = stored.fields.first(where: { $0.key == PreviousPasswords.key }) { entry.fields.append(record) }
+        if entry.password != stored.password {
+            PreviousPasswords.recordChange(from: stored.password, on: &entry, previousDate: chromePasswordDates()[entry.id], now: chromeClock())
+        }
+        #endif
     }
 
     func cancelEditing() {
@@ -1347,7 +1410,7 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    private func publishCatalog() {
+    func publishCatalog() {
         let merged = EntryCatalog.merge(openedFiles.map { (path: $0.url.path, entries: $0.vault.entries) })
         listOrigins = Dictionary(uniqueKeysWithValues: merged.map { ($0.listID, $0.entry.id) })
         listSlots = EntryCatalog.indexes(in: merged)
@@ -1396,6 +1459,16 @@ final class VaultSession: ObservableObject {
     /// Writes one file. The merged list is never saved into a single database. Returns whether the file was written.
     @discardableResult
     private func persist(path: String) -> Bool {
+        let written = write(path: path)
+        // Nothing unsaved stays in memory, so a later write cannot carry a change the person was told had failed.
+        if !written, let index = openedFiles.firstIndex(where: { $0.url.path == path }), openedFiles[index].vault.entries != openedFiles[index].committedEntries {
+            openedFiles[index].vault.entries = openedFiles[index].committedEntries
+            publishCatalog()
+        }
+        return written
+    }
+
+    private func write(path: String) -> Bool {
         onActivity?()
         let index = openedFiles.firstIndex { $0.url.path == path }
         var vault = index.map { openedFiles[$0].vault }
@@ -1423,6 +1496,7 @@ final class VaultSession: ObservableObject {
         do {
             let data = try KDBX.save(vault: &vault, password: password)
             try VaultFile.replace(destination, with: data, password: password, expecting: vault)
+            vault.noteFileContents(data)
             // Move the secret before the opened file changes path. A failed move keeps the
             // source path, so the next save still finds this vault and rewrites the same sibling.
             let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
@@ -1432,7 +1506,8 @@ final class VaultSession: ObservableObject {
                 vault: vault,
                 password: password,
                 keyFile: index.flatMap { openedFiles[$0].keyFile },
-                pendingSaveURL: decision.pendingPath.map { URL(fileURLWithPath: $0) }
+                pendingSaveURL: decision.pendingPath.map { URL(fileURLWithPath: $0) },
+                revision: index.map { openedFiles[$0].revision + 1 } ?? 0
             )
             if let index {
                 openedFiles[index] = stored
@@ -1532,7 +1607,10 @@ extension VaultSession {
 
     /// Called whenever `entries` or `liveEntries` changes.
     func catalogChanged() {
-        let visible = Self.visibleEntries(saved: entries, live: liveEntries)
+        let catalog = visibleCatalog()
+        let visible = catalog.entries
+        MenuIcons.chromeAccounts = catalog.badges
+        chromeBadgeIDs = catalog.badges
         allEntries = visible
         menuGeneration &+= 1
         menuWork.forEach { $0.cancel() }

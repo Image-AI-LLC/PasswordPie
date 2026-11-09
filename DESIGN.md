@@ -187,6 +187,13 @@ hash of the title. It runs from saturation 0.45 / brightness 0.95 to 0.7 / 0.78,
 a 0.5 pt black 25 % stroke and a white letter. Favorites get an 8 pt star badge:
 `favorite`, or `on-selection` on a selected row.
 
+An icon carries at most one mark, in its bottom-right corner. An account with anything synced from Chrome (direct
+channel) shows a colour Chrome badge, 44 % of the 16 pt list icon and 38 % of the 32 pt details icon, with a 1 pt
+(list) or 1.5 pt (details) ring in the colour of the row behind it: `surface`, or `selection` on a selected row. A
+favorite shows only its star, where it has always been, and no badge. The badge is drawn, because the app icon's
+padding leaves nothing readable at 7 pt. `[Chrome] updated …` on the `password` label and on previous passwords
+describes one change, so it stays on favorites too.
+
 ### Large Type
 
 Black 88 % panel. Letters, digits and symbols use the three `large-type-*` inks, so
@@ -306,7 +313,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Hover timing** — a submenu or the generator opens 0.2 s after the pointer rests on its row. The first
   details popover since launch waits 0.7 s and animates in; later ones open at once. Moving towards an
   open submenu delays the change of selection by 0.2 s.
-- **Details popover** — header, then one field per value: username, password (+ strength), website,
+- **Details popover** — header, then one field per value: username, password (+ strength and previous passwords), website,
   one-time password, custom fields, notes, tags. Pin opens that account in its own utility window and
   hides the menu.
 - **Pinned window** — one window per account; pinning again brings it forward and leaves it in place. A
@@ -329,6 +336,15 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   primary action). In the popover, copy and open hide the panel. Masked secrets show 8 to 16 bullets; holding
   Option or Reveal shows them in `body-code`. The pinned window does not inherit a held Option, and that
   reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
+- **Previous passwords** — direct channel. Below strength: a 28 pt row, `▸ previous passwords (2)`, in `caption`
+  `text-secondary`, keeping its count when open, with `⋯` at the right once open. A row is two lines: `label` for the time
+  (`updated Oct 20`, `date unknown`, then `· not used yet` for a value never saved, and the Chrome mark for a value from
+  Chrome), and the value below. Two compact quiet split action buttons sit at the right and are always visible: Restore
+  (Use for a value never saved) and Copy. Focused, they read `Restore ⌘↩` and `Copy ↩`, and neither is styled as the
+  default. Clear Previous Passwords asks inline, because a modal would close the popover.
+- **Chrome update failed** — below strength: the Chrome mark, `caption` `error` text and a compact quiet Try Again.
+- **Chrome batch row** — 26 pt, under the search field, ink 3 % fill and an ink 25 % line under it: `caption`-sized `text`
+  summary, `accent-text` Review and a `text-secondary` ×. It never takes the keyboard.
 - **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
   in the last 5 s.
 - **Locked one-time code** — no Premium, on both channels (direct: on the signed-in account, or nobody signed in). A 11 pt `lock.fill` in `text-secondary` and "Included with

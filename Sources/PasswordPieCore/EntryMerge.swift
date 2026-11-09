@@ -10,6 +10,7 @@ public enum EntryMerge {
     public static func isReservedKey(_ key: String) -> Bool {
         key.caseInsensitiveCompare(keepSeparateKey) == .orderedSame
             || key.caseInsensitiveCompare(manifestKey) == .orderedSame
+            || key.caseInsensitiveCompare(PreviousPasswords.key) == .orderedSame
     }
 
     public static func keepsSeparate(_ entry: VaultEntry) -> Bool {
