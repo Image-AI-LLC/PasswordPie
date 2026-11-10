@@ -175,7 +175,9 @@ Rows that open a submenu show a 13 pt SF Symbol; on a selected row it uses
 `on-selection`. Tints are in the front matter: `favorite` for `star.fill`,
 `tint-folder` for `folder.fill`, `tint-tag` for `tag.fill`, `tint-note` for
 `note.text`, `tint-identity` for `person.crop.rectangle.fill`, and `tint-neutral` for
-`lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`.
+`lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`. The empty database's action rows use
+`tint-neutral` too: `square.and.arrow.down.fill` (Import Passwords…), `arrow.triangle.2.circlepath` (Sync Chrome
+Passwords…) and `plus.square.fill` (New Item…).
 
 Entry rows show the site icon: bundled for the top 100 sites, otherwise the one the
 browser extension handed over (see "Site icons without telling anyone" in
@@ -312,7 +314,18 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Show N more** — selectable; replaces itself with the hidden rows.
 - **Hover timing** — a submenu or the generator opens 0.2 s after the pointer rests on its row. The first
   details popover since launch waits 0.7 s and animates in; later ones open at once. Moving towards an
-  open submenu delays the change of selection by 0.2 s.
+  open submenu delays the change of selection by 0.2 s. This holds for a row that is already selected (the first
+  row of a new showing, or one the keyboard moved to) and is not open yet: the pointer moving onto it opens it
+  with the same delays. A row whose submenu, generator or details are open stays as it is. A panel that appears
+  under a resting pointer opens nothing until the pointer moves.
+- **Empty database** — when the open databases hold no visible entries (the Recycle Bin does not count), the
+  menu is: Password Generator (first, selected), a separator, "No items yet" as a disabled row, then three
+  action rows. "Import Passwords…" opens Preferences at Import passwords. "Sync Chrome Passwords…" (direct
+  channel only; the App Store app has no Chrome reader) opens Preferences at Chrome, and does not switch sync
+  on: that asks macOS for the Chrome key, which the user has not asked for yet. "New Item…" opens the editor,
+  as the gear's New Item. Action rows are selectable, run on Return or click with the usual flash, have no
+  arrow, and hide the panel. They all go with the first entry. Searching an empty database still shows "No
+  items found", and the browser's site section stays above everything.
 - **Details popover** — header, then one field per value: username, password (+ strength and previous passwords), website,
   one-time password, custom fields, notes, tags. Pin opens that account in its own utility window and
   hides the menu.

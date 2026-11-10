@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var pinnedOrder: [UUID] = []
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
+    private let preferencesNavigator = PreferencesNavigator()
     private var aboutWindow: NSWindow?
     private var chromeReviewWindow: NSWindow?
     private var paywallWindow: NSWindow?
@@ -328,14 +329,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         editorWindow?.makeKeyAndOrderFront(nil)
     }
 
-    func showPreferences() {
+    /// Opens Preferences; with `section`, scrolled to it.
+    func showPreferences(at section: PreferencesSection? = nil) {
+        preferencesNavigator.target = section
         if preferencesWindow == nil {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             window.styleMask.insert(.resizable)
             window.title = "PasswordPie Preferences"
             window.applyWarmTitlebar()
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: PreferencesView(session: session))
+            window.contentView = NSHostingView(rootView: PreferencesView(session: session, navigator: preferencesNavigator))
             window.setContentSize(NSSize(width: 560, height: 800))
             window.contentMinSize = NSSize(width: 560, height: 480)
             if let screen = NSScreen.main {
@@ -784,6 +787,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "panelWindow": panel.isVisible ? panel.windowNumber : NSNull(),
             "popoverWindow": menu.popoverWindowNumber ?? NSNull(),
             "reviewWindow": chromeReviewWindow?.windowNumber ?? NSNull(),
+            "preferencesWindow": preferencesWindow?.isVisible == true ? preferencesWindow?.windowNumber ?? NSNull() : NSNull(),
+            "editorWindow": editorWindow?.isVisible == true ? editorWindow?.windowNumber ?? NSNull() : NSNull(),
             "chromeSync": session.chromeSyncEnabled,
             "chromeStatus": session.chromeStatus,
             "chromeBadges": session.chromeBadgeIDs.count,

@@ -137,8 +137,31 @@ final class TopLevelMenuTests: XCTestCase {
         rows.map { $0.kind == .separator ? "-" : $0.title }
     }
 
-    func testEmptyVaultShowsOnlyTheGenerator() {
-        XCTAssertEqual(titles(MenuBuilder.topLevel(entries: [])), ["Password Generator"])
+    func testEmptyDatabaseShowsWhatToDoNext() {
+        let rows = MenuBuilder.topLevel(entries: [], channel: .direct)
+        XCTAssertEqual(titles(rows), ["Password Generator", "-", "No items yet", "Import Passwords…", "Sync Chrome Passwords…", "New Item…"])
+        XCTAssertEqual(rows.map(\.kind), [
+            .generator, .separator, .disabled, .action(.importPasswords), .action(.syncChrome), .action(.newItem)
+        ])
+        XCTAssertFalse(rows[2].isSelectable, "the hint is not a row you can pick")
+        for row in rows.suffix(3) {
+            XCTAssertTrue(row.isSelectable, row.title)
+            XCTAssertFalse(row.opensSubmenu, row.title)
+            XCTAssertNotNil(row.icon, row.title)
+        }
+    }
+
+    func testTheAppStoreAppHasNoChromeRow() {
+        let rows = MenuBuilder.topLevel(entries: [], channel: .appStore)
+        XCTAssertEqual(titles(rows), ["Password Generator", "-", "No items yet", "Import Passwords…", "New Item…"])
+    }
+
+    func testOneEntryRemovesTheEmptyRows() {
+        for channel in [AppChannel.direct, .appStore] {
+            let rows = MenuBuilder.topLevel(entries: [entry("GitHub", user: "u", password: "p")], channel: channel)
+            XCTAssertEqual(titles(rows), ["Password Generator", "-", "Logins"])
+            XCTAssertFalse(rows.contains { if case .action = $0.kind { return true } else { return false } })
+        }
     }
 
     func testTopLevelOrderHasNoItems() {
@@ -190,7 +213,11 @@ final class TopLevelMenuTests: XCTestCase {
     func testTrashAndDuplicateFavoriteAppear() {
         var gone = entry("Gone", user: "u", tags: "Favorite")
         gone.trashed = true
-        XCTAssertEqual(titles(MenuBuilder.topLevel(entries: [gone])), ["Password Generator"])
+        XCTAssertEqual(
+            titles(MenuBuilder.topLevel(entries: [gone], channel: .direct)),
+            titles(MenuBuilder.topLevel(entries: [], channel: .direct)),
+            "a database holding only trashed entries is empty"
+        )
     }
 
     func testTheSameTitleFromTwoFilesShowsTheFileName() {

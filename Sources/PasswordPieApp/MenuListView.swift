@@ -241,7 +241,7 @@ final class MenuListView: NSView {
         case .showMore:
             if selected { fillSelection(rect) }
             drawText(row.title, in: rect, x: 42, color: selected ? MenuPalette.selectionInk : MenuPalette.tertiaryText, width: rect.width - 52)
-        case .entry, .submenu, .generator:
+        case .entry, .submenu, .generator, .action:
             drawItem(row, in: rect, selected: selected)
         }
     }
@@ -352,6 +352,9 @@ enum MenuIcons {
         case .generator: name = "key.fill"; tint = MenuPalette.neutralIcon
         case .folders, .folder: name = "folder.fill"; tint = MenuPalette.folder
         case .tags, .tag: name = "tag.fill"; tint = MenuPalette.tag
+        case .importPasswords: name = "square.and.arrow.down.fill"; tint = MenuPalette.neutralIcon
+        case .syncChrome: name = "arrow.triangle.2.circlepath"; tint = MenuPalette.neutralIcon
+        case .newItem: name = "plus.square.fill"; tint = MenuPalette.neutralIcon
         case nil:
             guard let category = row.category else { return nil }
             (name, tint) = symbol(for: category)
