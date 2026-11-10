@@ -7,14 +7,14 @@ import XCTest
 final class AppStorePremiumStoreTests: XCTestCase {
     private var clock = PremiumFixtures.now
     private var backend: FakePremiumBackend!
-    private var secrets: FakeAccountSecrets!
+    private var secrets: FakeSecrets!
     private var store: AppStorePremiumStore!
     private var paywalls = 0
 
     override func setUp() async throws {
         clock = PremiumFixtures.now
         backend = FakePremiumBackend()
-        secrets = FakeAccountSecrets()
+        secrets = FakeSecrets()
         paywalls = 0
         store = makeStore()
     }

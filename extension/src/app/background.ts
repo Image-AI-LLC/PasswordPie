@@ -5,6 +5,7 @@ import { storageKV } from '@/lib/browser-kv';
 import { SITE_URL, UPGRADE_URL } from '@/lib/config';
 import { FillController, type TabsAdapter } from '@/lib/controller';
 import { ChromeNativeChannel, SafariNativeChannel, type NativeChannel, type PortLike } from '@/lib/native-channel';
+import { PassRelay, relayKeysChanged } from '@/lib/pass-relay';
 import { NATIVE_APP, originOf, parsePopupMessage } from '@/lib/protocol';
 import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
@@ -60,7 +61,18 @@ export default defineBackground(() => {
   const channel = makeChannel();
   // Spelled out so Vite folds it: the App Store build has no account and sends the site nothing (docs/ACCOUNTS.md).
   const account = import.meta.env.WXT_PP_STORE === 'mas' ? undefined : new AccountStore(storageKV(browser.storage.local));
-  const controller = new FillController({ channel, tabs, ...(account ? { account } : {}), ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}) });
+  // The app has no sign-in: this hands it the account's pass, and takes it back on sign-out (docs/BROWSER_EXTENSION.md).
+  const relay =
+    import.meta.env.WXT_PP_STORE === 'mas' || !account
+      ? undefined
+      : new PassRelay({ channel, account, kv: storageKV(browser.storage.local) });
+  const controller = new FillController({
+    channel,
+    tabs,
+    ...(account ? { account } : {}),
+    ...(relay ? { relay } : {}),
+    ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}),
+  });
 
   browser.tabs.onActivated.addListener(() => controller.tabActivated());
   browser.tabs.onUpdated.addListener((tabId, change, tab) => controller.tabUpdated(tabId, change, tab));
@@ -75,6 +87,9 @@ export default defineBackground(() => {
       sendResponse(true);
     } else if (popup?.type === 'popup-status') {
       sendResponse(controller.popupStatus());
+    } else if (popup?.type === 'app-premium') {
+      controller.appPremium().then(sendResponse, () => sendResponse('none'));
+      return true; // answers later
     } else {
       controller.runtimeMessage(msg, sender);
     }
@@ -92,6 +107,13 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === RECONNECT_ALARM) channel.ensureConnected();
   });
+
+  if (import.meta.env.WXT_PP_STORE !== 'mas' && relay) {
+    // Sign-in, sign-out, a renewal from the popup or the alarm, and a 401 all land in storage: tell the app each time.
+    browser.storage.onChanged.addListener((changes, area) => {
+      if (relayKeysChanged(changes, area)) void relay.sync();
+    });
+  }
 
   if (import.meta.env.WXT_PP_STORE !== 'mas' && account) {
     // The entitlement once a day (and each time the popup opens), so the token the app checks stays fresh.

@@ -3,33 +3,81 @@ import AppKit
 import PasswordPieCore
 import SwiftUI
 
-/// The downloaded app cannot sell through Apple, so it sends people to passwordpie.com to buy or redeem a key. Not
-/// compiled into the App Store channel, which may not point anywhere else to buy (guideline 3.1.1).
-struct DirectPremiumLinks: View {
-    @ObservedObject var store: PremiumStore
+// The downloaded app's Premium UI. There is no sign-in: Premium reaches this Mac from the PasswordPie browser extension,
+// or from Activate on passwordpie.com. It sends people to passwordpie.com to buy or redeem a key, so it is not compiled
+// into the App Store channel, which may not point anywhere else to buy (guideline 3.1.1).
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Get Premium on passwordpie.com, or redeem a key there. It shows up here straight after.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                SplitActionButton(title: "Get Premium", size: .regular, prominence: .primary) {
-                    NSWorkspace.shared.open(store.site.base.appendingPathComponent("pricing"))
-                }
-                Button("Redeem a Key") {
-                    NSWorkspace.shared.open(store.site.base.appendingPathComponent("redeem"))
-                }
-                Spacer(minLength: 4)
-                Button("Check Again") { Task { await store.refresh(force: true) } }
+/// The passwordpie.com pages the downloaded app opens in the browser. The app itself sends them nothing.
+enum DirectPremiumSite {
+    static let base = URL(string: "https://passwordpie.com")!
+    static var pricing: URL { base.appendingPathComponent("pricing") }
+    static var redeem: URL { base.appendingPathComponent("redeem") }
+    /// The account settings, where Activate is.
+    static var activate: URL { base.appendingPathComponent("settings/premium") }
+}
+
+/// What the Premium window says about Premium, and which actions it offers. Words only; the views lay them out.
+struct DirectPremiumCopy: Equatable {
+    var title: String
+    var detail: String
+    /// An activation ends within `warningDays`: say so before the codes stop.
+    var warning: String?
+    /// Get Premium, Redeem a Key, and how Premium bought already reaches this Mac.
+    var offersPremium: Bool
+    /// Open Account Settings, where Activate is.
+    var showsActivate: Bool
+
+    static let warningDays: TimeInterval = 30
+
+    static func make(
+        status: DirectPremiumStatus,
+        lapse: PremiumLapse?,
+        now: Date,
+        dateText: (Date) -> String = { $0.formatted(date: .long, time: .omitted) }
+    ) -> DirectPremiumCopy {
+        switch status {
+        case .fromBrowser:
+            return DirectPremiumCopy(
+                title: "Premium is on",
+                detail: "The PasswordPie extension in your browser keeps it up to date.",
+                warning: nil, offersPremium: false, showsActivate: false
+            )
+        case .activation(let until):
+            let ending = until.timeIntervalSince(now) <= warningDays * 86400
+            return DirectPremiumCopy(
+                title: "Premium is on",
+                detail: "Activated through \(dateText(until)). To renew it, press Activate in your account settings on passwordpie.com again, at any time.",
+                warning: ending ? "Premium on this Mac ends on \(dateText(until)). Renew it before then to keep your two-step codes." : nil,
+                offersPremium: false, showsActivate: true
+            )
+        case .none:
+            let off = "Premium is off"
+            let detail: (String, String)
+            switch lapse {
+            case nil:
+                detail = ("Free", "Two-step codes need Premium. Everything else in PasswordPie is free.")
+            case .signedOutInBrowser:
+                detail = (off, "You signed out of the PasswordPie extension in your browser. Sign in there again, or activate this Mac on passwordpie.com.")
+            case .browserAccountFree:
+                detail = (off, "The account in your PasswordPie browser extension no longer has Premium.")
+            case .passRanOut:
+                detail = (off, "Your PasswordPie browser extension has not renewed Premium for a week. Open the browser it is signed in to, and Premium comes back by itself.")
+            case .activationRanOut(let ended):
+                detail = (off, "The activation from passwordpie.com ended on \(dateText(ended)). Press Activate in your account settings to renew it.")
             }
-            .controlSize(.regular)
+            return DirectPremiumCopy(title: detail.0, detail: detail.1, warning: nil, offersPremium: true, showsActivate: true)
         }
     }
 }
 
-/// The small window a locked two-step code opens. It closes by itself when Premium arrives.
+extension DirectPremiumStore {
+    func copy(dateText: (Date) -> String = { $0.formatted(date: .long, time: .omitted) }) -> DirectPremiumCopy {
+        DirectPremiumCopy.make(status: status, lapse: lapse, now: now(), dateText: dateText)
+    }
+}
+
+/// The small window a locked two-step code or an activation link opens. It closes by itself when Premium arrives, unless
+/// it has something to say.
 struct PaywallView: View {
     @ObservedObject var store: PremiumStore
     @Environment(\.colorScheme) private var colorScheme
@@ -37,12 +85,7 @@ struct PaywallView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             PremiumWindowHeader()
-            if store.isSignedIn {
-                AccountLine(store: store)
-                DirectOffer(store: store)
-            } else {
-                AccountSignInView(store: store)
-            }
+            DirectPremiumContent(store: store)
         }
         .padding(20)
         .frame(width: 400)
@@ -52,123 +95,62 @@ struct PaywallView: View {
     }
 }
 
-/// The Account section of Preferences: who is signed in, their Premium, and what can still be done about it.
-struct AccountPreferencesSection: View {
+/// The Premium section of Preferences: the same as the window, without its header.
+struct PremiumPreferencesSection: View {
     @ObservedObject var store: PremiumStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if store.isSignedIn {
-                AccountLine(store: store)
-                DirectOffer(store: store)
-            } else {
-                AccountSignInView(store: store)
+        DirectPremiumContent(store: store)
+            .controlSize(.regular)
+    }
+}
+
+/// What this Mac has, what a link just did, and what can be done about it.
+private struct DirectPremiumContent: View {
+    @ObservedObject var store: PremiumStore
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let copy = store.copy()
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(copy.title).fontWeight(.medium)
+                small(copy.detail)
+            }
+            if let warning = copy.warning {
+                Text(warning)
+                    .font(.system(size: 13, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let message = store.activity.message {
+                PremiumMessageView(message: message, isError: store.activity.isError)
+            }
+            if copy.offersPremium {
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    small("Get Premium on passwordpie.com, once or yearly, or redeem a key there.")
+                    HStack(spacing: 8) {
+                        SplitActionButton(title: "Get Premium", size: .regular, prominence: .primary) {
+                            NSWorkspace.shared.open(DirectPremiumSite.pricing)
+                        }
+                        Button("Redeem a Key") { NSWorkspace.shared.open(DirectPremiumSite.redeem) }
+                    }
+                }
+                Divider()
+                small("Already have Premium? Sign in to the PasswordPie extension in your browser, and Premium reaches this Mac by itself. Or press Activate in your account settings on passwordpie.com.")
+            }
+            if copy.showsActivate {
+                Button("Open Account Settings") { NSWorkspace.shared.open(DirectPremiumSite.activate) }
             }
         }
         .controlSize(.regular)
     }
-}
 
-/// What a signed-in account can still do about Premium.
-private struct DirectOffer: View {
-    @ObservedObject var store: PremiumStore
-
-    var body: some View {
-        if !store.accountHasPremium {
-            Divider()
-            DirectPremiumLinks(store: store)
-        }
-        if let message = store.activity.message {
-            PremiumMessageView(message: message, isError: false)
-        }
-    }
-}
-
-/// What the signed-in account has, and Sign Out.
-private struct AccountLine: View {
-    @ObservedObject var store: PremiumStore
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let summary = store.summary()
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: "person.crop.circle")
-                    .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                    .accessibilityHidden(true)
-                Text(store.email ?? "Signed in")
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 6)
-                Button("Sign Out") { Task { await store.signOut() } }
-                    .controlSize(.small)
-            }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(summary.title).fontWeight(.medium)
-                if !summary.detail.isEmpty {
-                    Text(summary.detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-}
-
-/// Signing in, Sign in with Apple first: one click when Safari knows the Apple Account.
-struct AccountSignInView: View {
-    @ObservedObject var store: PremiumStore
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Premium belongs to your PasswordPie account, so it works on every Mac and in the browser extension. Sign in to use it here.")
-                .font(.system(size: 13))
-                .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-                .fixedSize(horizontal: false, vertical: true)
-            SignInWithAppleStyleButton(waiting: store.signInState == .waiting(.apple)) {
-                Task { await store.signIn(with: .apple) }
-            }
-            .disabled(isWaiting)
-            Button(store.signInState == .waiting(nil) ? "Waiting for passwordpie.com…" : "Other Ways to Sign In…") {
-                Task { await store.signIn(with: nil) }
-            }
-            .controlSize(.regular)
-            .disabled(isWaiting)
-            if let message = store.signInState.message ?? store.activity.message {
-                PremiumMessageView(message: message, isError: store.signInState == .failed)
-            }
-        }
-    }
-
-    private var isWaiting: Bool {
-        if case .waiting = store.signInState { return true }
-        return false
-    }
-}
-
-/// Black on light, white on dark, with the Apple logo: Apple's own look for the button.
-private struct SignInWithAppleStyleButton: View {
-    var waiting: Bool
-    var action: () -> Void
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        let dark = colorScheme == .dark
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: "applelogo").font(.system(size: 14, weight: .medium))
-                Text(waiting ? "Waiting for Apple…" : "Sign in with Apple").font(.system(size: 14, weight: .medium))
-            }
-            .foregroundStyle(dark ? Color.black : Color.white)
-            .frame(maxWidth: .infinity, minHeight: 32)
-            .background(dark ? Color.white : Color.black, in: RoundedRectangle(cornerRadius: 7))
-            .contentShape(RoundedRectangle(cornerRadius: 7))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Sign in with Apple")
+    private func small(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 #endif

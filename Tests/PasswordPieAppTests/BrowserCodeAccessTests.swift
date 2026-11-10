@@ -19,25 +19,25 @@ final class BrowserCodeAccessTests: XCTestCase {
 
     #if PP_DIRECT
     func testAGoodTokenFromTheExtensionIsEnough() throws {
-        XCTAssertTrue(browserCodeAllowed(entitlement: try sampleToken(), now: now, appAccount: { false }))
+        XCTAssertTrue(browserCodeAllowed(entitlement: try sampleToken(), now: now, appPremium: { false }))
     }
     #else
     func testAnAppStoreBuildTakesNoTokenFromTheExtension() throws {
-        XCTAssertFalse(browserCodeAllowed(entitlement: try sampleToken(), now: now, appAccount: { false }))
+        XCTAssertFalse(browserCodeAllowed(entitlement: try sampleToken(), now: now, appPremium: { false }))
     }
     #endif
 
-    func testTheAppsOwnAccountIsEnough() {
-        XCTAssertTrue(browserCodeAllowed(entitlement: nil, now: now, appAccount: { true }))
+    func testTheAppsOwnPremiumIsEnough() {
+        XCTAssertTrue(browserCodeAllowed(entitlement: nil, now: now, appPremium: { true }))
     }
 
     func testNeitherMeansNoCode() throws {
-        XCTAssertFalse(browserCodeAllowed(entitlement: nil, now: now, appAccount: { false }))
-        XCTAssertFalse(browserCodeAllowed(entitlement: "not.a.token", now: now, appAccount: { false }))
+        XCTAssertFalse(browserCodeAllowed(entitlement: nil, now: now, appPremium: { false }))
+        XCTAssertFalse(browserCodeAllowed(entitlement: "not.a.token", now: now, appPremium: { false }))
         var tampered = try sampleToken()
         let last = tampered.removeLast()
         tampered.append(last == "A" ? "B" : "A")
-        XCTAssertFalse(browserCodeAllowed(entitlement: tampered, now: now, appAccount: { false }))
+        XCTAssertFalse(browserCodeAllowed(entitlement: tampered, now: now, appPremium: { false }))
     }
 
     /// The direct app's codes are free in its own panel; that must not leak into the browser.

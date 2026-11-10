@@ -211,7 +211,8 @@ final class BrowserBridge: ObservableObject {
                 from: browser,
                 locked: session.locked,
                 now: now,
-                codeAllowed: { token in browserCodeAllowed(entitlement: token, now: now) }
+                codeAllowed: { token in browserCodeAllowed(entitlement: token, now: now) },
+                premium: PremiumChannel.passRelay(from: browser)
             ) { [session] id in session.entry(id) }
             if state.currentURL(for: browser, now: now) != before { onPageChanged?() }
             if response.type == "tab", wantsIcon(request, from: browser) { response.wantIcon = true }

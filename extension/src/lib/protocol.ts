@@ -67,7 +67,7 @@ export type ContentMessage =
   | { type: 'code-field' };
 
 /** popup → background */
-export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' };
+export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' } | { type: 'app-premium' };
 
 /** The background's answer to `popup-status`. */
 export interface PopupStatus {
@@ -149,6 +149,7 @@ export function parsePopupMessage(value: unknown): PopupMessage | undefined {
   if (!isRecord(value)) return undefined;
   if (value.type === 'open-panel') return { type: 'open-panel' };
   if (value.type === 'popup-status') return { type: 'popup-status' };
+  if (value.type === 'app-premium') return { type: 'app-premium' };
   return undefined;
 }
 

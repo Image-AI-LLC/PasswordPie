@@ -36,9 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static var shared: AppDelegate?
     private var statusItem: NSStatusItem!
     private var session: VaultSession!
-    #if !PP_DIRECT
     private var pendingOpenURLs: [URL] = []
-    #endif
     private(set) var panelController: PanelController!
     private(set) var bridge: BrowserBridge!
     private var autoLock: AutoLockMonitor!
@@ -369,15 +367,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             .store(in: &cancellables)
         session.premium.start()
-        #if !PP_DIRECT
         let waiting = pendingOpenURLs
         pendingOpenURLs = []
         openActivationLinks(waiting)
-        #endif
     }
 
-    #if !PP_DIRECT
-    /// passwordpie.com opening `passwordpie://activate?…`. Can arrive before launch has finished and `session` exists.
+    /// passwordpie.com opening `passwordpie://activate?…`, in both channels. Can arrive before launch has finished and
+    /// `session` exists. Any other `passwordpie://` URL, such as the old `auth` callback, does nothing.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard session != nil else {
             pendingOpenURLs += urls
@@ -393,7 +389,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // On the next turn of the run loop, so a link that launched the app finds launch finished.
         DispatchQueue.main.async { [weak self] in self?.showPaywall() }
     }
-    #endif
 
     func showPaywall() {
         if paywallWindow == nil {
@@ -687,8 +682,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     #if DEBUG
-    /// Screenshot hook: steps such as `buy-lifetime,restore,refresh` (App Store) or `sign-in-apple,sign-out,refresh`
-    /// (direct), 2.5 s apart, so the Premium flows can be recorded without synthetic clicks.
+    /// Screenshot hook: steps such as `buy-lifetime,restore,refresh` (App Store), 2.5 s apart, so the Premium flows can be
+    /// recorded without synthetic clicks.
     private func runPremiumScript(_ script: String?) {
         guard let script else { return }
         let premium = session.premium
@@ -696,10 +691,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             for step in script.split(separator: ",").map(String.init) {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 switch step {
-                #if PP_DIRECT
-                case "sign-in-apple": await premium.signIn(with: .apple)
-                case "sign-out": await premium.signOut()
-                #else
+                #if !PP_DIRECT
                 case "buy-lifetime": await premium.purchase(.lifetime)
                 case "buy-yearly": await premium.purchase(.yearly)
                 case "restore": await premium.restore()
