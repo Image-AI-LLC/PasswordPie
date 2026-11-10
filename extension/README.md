@@ -1,7 +1,7 @@
 # PasswordPie browser extension
 
 Fills the account picked in the PasswordPie panel into the page, in Chrome and Safari, and with Premium the two-step code
-too. The design (messages, security rules) is in [docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md), the account
+too. It is also where you sign in: the PasswordPie app has no sign-in, and the extension hands it the account's Premium. The design (messages, security rules) is in [docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md), the account
 and Premium in [docs/ACCOUNTS.md](../docs/ACCOUNTS.md); what the user sees is "Fill in the browser" and "Premium in the
 browser" in [docs/UX.md](../docs/UX.md).
 
@@ -64,12 +64,14 @@ transparent background with a see-through keyhole. Regenerate the PNGs after cha
 
 ## Layout
 
-- `src/app/background.ts`: wires browser events, the popup's messages, the panel shortcut and the daily entitlement
-  refresh to `FillController`.
+- `src/app/background.ts`: wires browser events, the popup's messages, the panel shortcut, the daily entitlement
+  refresh and the storage changes that drive `PassRelay` to `FillController`.
 - `src/app/content.ts`: wires fill and code messages and focus events to `PageFiller` and `CodeFiller`. No React.
 - `src/app/popup/`: the toolbar popup page; `src/components/popup.tsx` is the UI, driven through `PopupApi`.
 - `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting, and the code flow
   (watch for a code field, ask the app with the entitlement token, fill or hint).
+- `src/lib/pass-relay.ts`: hands the account's pass to the app (`premium`) on sign-in, renewal and connect, and takes it
+  back on sign-out, 401 or `premium: false`. Not in the App Store build.
 - `src/lib/account.ts`, `src/lib/auth.ts`, `src/lib/config.ts`: the passwordpie.com session, entitlement and keys.
 - `src/lib/code-fields.ts`, `src/lib/code-filler.ts`: finding and filling two-step code fields, and the page note.
 - `src/lib/native-channel.ts`: `ChromeNativeChannel` (one port, ids, timeout, reconnect) and `SafariNativeChannel`.

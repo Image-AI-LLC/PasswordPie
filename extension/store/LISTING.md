@@ -72,7 +72,7 @@ Fill the username and password that the user picks in the PasswordPie app for Ma
 **nativeMessaging**
 
 ```text
-The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and receives the username and password the user picked in the app. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. It is not used for anything else.
+The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and receives the username and password the user picked in the app, and with Premium the two-step code. When the user is signed in to a PasswordPie account with Premium, it hands the app the signed Premium token from passwordpie.com, because the app has no sign-in of its own, and takes it back when the user signs out. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. It is not used for anything else.
 ```
 
 **webNavigation**

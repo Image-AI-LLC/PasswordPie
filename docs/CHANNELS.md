@@ -10,10 +10,10 @@ App Store builds do not contain direct-only code.
 | Sandbox | no (hardened runtime, notarized) | yes (`Entitlements/mas.entitlements`) |
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
-| Two-step codes (Premium) | need a PasswordPie account with Premium (Get Premium and keys on passwordpie.com) | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
-| Two-step codes in the browser (Premium) | the app's own account has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
-| Network from the app | passwordpie.com, for the account only | **none**: no `URLSession`, no `network.client` entitlement |
-| Extension popup | account, Upgrade (pricing page) and "Have a key?" | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): Open PasswordPie only. No account, no Upgrade, no key field, no request to the site |
+| Two-step codes (Premium) | a pass from the PasswordPie browser extension (signed in to an account with Premium), or an activation from passwordpie.com. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
+| Two-step codes in the browser (Premium) | the app has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
+| Network from the app | **none** of its own (see "Network" below) | **none**: no `URLSession`, no `network.client` entitlement |
+| Extension popup | account, Upgrade (pricing page) and "Have a key?"; it hands the account's pass to the app | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): Open PasswordPie only. No account, no Upgrade, no key field, no request to the site |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
@@ -25,9 +25,10 @@ Check no debug preview or mock site can reach a release store build, and that th
     strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e PASSWORDPIE_PREMIUM_PREVIEW -e PASSWORDPIE_SITE_URL   # expect 0
     otool -L "$(swift build -c release --show-bin-path)/PasswordPie" | grep -c StoreKit                     # expect 0
 
-Check the store build has no account and no way to reach the site:
+Check neither build has an account or a way to reach the site:
 
     strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e api/premium -e app/sign-in -e api/auth   # expect 0
+    strings -a build/direct/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e api/premium -e app/sign-in -e api/auth   # expect 0
     otool -L build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c AuthenticationServices.*Web   # informational: AutoFill links the framework
     codesign -d --entitlements :- build/mas/PasswordPie.app | grep -c network.client                      # expect 0
     grep -rlE 'api/premium|api/auth' build/mas/PasswordPie.app/Contents/PlugIns/*Safari*/Contents/Resources   # expect nothing
@@ -50,6 +51,26 @@ universal build needs an x86_64 argon2 first.
 
 The AutoFill extension's restricted entitlement is stripped unless `APP_PROFILE` and `APPEX_PROFILE` are passed, as with
 every other target here.
+
+## Network
+
+Neither channel's app opens a network connection of its own. `NetworkSourceTests` fails if any file under `Sources/`
+(the app, its core, the bridge, the Chrome host, the Safari and AutoFill extensions) names `URLSession`, `URLRequest`,
+`ASWebAuthenticationSession`, `NWConnection` or another networking API (`Network`, `WebKit`, BSD inet sockets), except
+files on its allow-list, and the allow-list is empty. No entitlement file asks for `network.client`. Every
+`Data(contentsOf:)` in the sources reads a file URL (checked by reading them; the test does not prove it).
+
+What remains, none of it a connection the app makes:
+
+- **Pages it opens in your browser.** Get Premium, Redeem a Key and Open Account Settings (passwordpie.com), Add Chrome
+  Extension… (the Chrome Web Store), a database entry's website, the links in About. The browser loads them, not the app.
+- **The browser extensions.** The app talks to them over a Unix socket in its App Group container, on this Mac. The
+  Chrome host and the Safari extension relay frames to that socket and nothing else. The extension itself talks to
+  passwordpie.com (sign-in, Premium, keys); that is the extension's network use, listed on its store page.
+- **macOS.** The system may check the app's signature and notarization, and Safari, Chrome and Passwords do their own
+  networking. None of it is PasswordPie's code.
+
+Site icons come bundled or from the extension (BROWSER_EXTENSION.md, "Site icons"); there is no update check.
 
 ## Direct-only code
 
@@ -88,15 +109,20 @@ These could not be verified without a Distribution certificate and provisioning 
 Two-step codes need Premium, on both channels. Everything else is free. The behavior is in "Premium: two-step codes"
 in [UX.md](UX.md).
 
-**Each channel decides Premium its own way** (user decision, 2026-11-09, replacing 2026-11-08's "Premium is the account's
-on both channels"). The App Store app has no account, no sign-in and no network code, for two reasons: guideline 5.1.1(v)
-asks that an app without significant account-based features be usable without a login, and any account data the app sends
-would have to appear on its App Privacy label. Optional sign-in would not avoid that, so the code is not in the binary.
-The direct download and the browser extension read the PasswordPie account on passwordpie.com.
+**Neither app has an account** (user decision, 2026-11-10, replacing 2026-11-08's "the direct app signs in"). People sign in
+in two places only: the PasswordPie browser extension and passwordpie.com. The direct app has no sign-in, no session and
+no call to passwordpie.com; it has Premium while it holds a **pass** the extension handed over, or an **activation** from
+the website. The two channels now differ only in how Premium is bought: Apple's In-App Purchase in the App Store app,
+passwordpie.com for the direct one.
 
-> **The direct app's codes need the account** (2026-11-08), replacing the decision of 2026-11-05 that they were free for
+> **2026-11-09** (still in force for the App Store app): it has no account, no sign-in and no network code, for two
+> reasons: guideline 5.1.1(v) asks that an app without significant account-based features be usable without a login, and
+> any account data the app sends would have to appear on its App Privacy label. Optional sign-in would not avoid that, so
+> the code is not in the binary.
+
+> **The direct app's codes need Premium** (2026-11-08), replacing the decision of 2026-11-05 that they were free for
 > everyone. To go back, set `directChannelCodesAreFree = true` in `PremiumChannel.swift`: codes in the app are free again,
-> and the browser extension still needs the account (`appAccountHasPremium()` ignores the switch).
+> and the browser extension still needs Premium (`appHasPremium()` ignores the switch).
 
 | Product ID | Type | Price |
 |---|---|---|
@@ -112,7 +138,9 @@ An activation is a `passwordpie://activate?token=<JWT>` link opened from passwor
 JWS as the pass below, with `aud: passwordpie-activation`, so neither kind of token works as the other. `exp` is the earlier of
 one year and the end of the account's Premium. It cannot be revoked, because the app never talks to the site, so a refund
 on the site stops counting only at `exp`. The app keeps whichever valid activation runs out latest, and never logs the
-token. Only the App Store build registers the URL scheme (`make mas-dev` adds `CFBundleURLTypes`).
+token. Both channels register the `passwordpie` URL scheme (`CFBundleURLTypes` in the shared `Info.plist`) and share
+`ActivationVault`; any other `passwordpie://` URL does nothing. An activation lasts a year for every plan, lifetime included:
+pressing Activate again renews it, and no longer token is issued.
 
 Guideline 3.1.3(b) allows access to what was acquired on your website as long as the same is sold in the app, which it
 is. Guideline 3.1.1 forbids an app's own unlock mechanisms such as license keys, so activation has no UI in the app and no
@@ -121,45 +149,47 @@ objects, removing `application(_:open:)` and the URL type drops activation and l
 
 ### Who has Premium: the direct channel
 
-`AccountPremiumStore.hasPremium` is true only while the keychain holds a **pass** (the `token` from
-`GET /api/premium/entitlement`) whose Ed25519 signature checks against a key built into the app
-(`EntitlementToken.trustedKeys`), with the right `iss` and `aud`, and an `exp` in the future. The site's `premium: true`
-alone grants nothing. The decision is `AccountPremiumDecision.evaluate` in `PasswordPieCore/Account.swift`.
+`DirectPremiumStore.hasPremium` is true while the keychain holds a **pass** or an **activation** that checks: its Ed25519
+signature against a key built into the app (`EntitlementToken.trustedKeys`), `iss`, `aud`, and an `exp` in the future. A
+pass is checked against `aud: passwordpie-app` and an activation against `aud: passwordpie-activation`, so neither stands
+in for the other. The rules are `DirectPremium` in `PasswordPieCore/DirectPremium.swift` (tested in `DirectPremiumTests`).
+The app trusts the signature, never the sender.
+
+- **A pass** is the 7-day token passwordpie.com already issues to a signed-in extension (`token` in
+  `GET /api/premium/entitlement`). The extension hands it over the bridge with a `premium` request
+  ([BROWSER_EXTENSION.md](BROWSER_EXTENSION.md)) after it signs in, each time it renews it (popup, daily alarm), and when
+  its connection to the app comes up. Each browser's pass is kept apart.
+- **An activation** is the `passwordpie://activate` link above, exactly as in the App Store app.
 
 | What happened | Premium |
 |---|---|
-| Signed out | No, whatever is left in the keychain |
-| The site answers with a good pass | Yes, until the pass's `exp` (at most 7 days) |
-| The site answers `premium: false` | No; the cached pass is deleted |
-| The site answers `premium: true` with a pass that does not check | No ("Not confirmed") |
-| The site cannot be reached, cached pass still good | Yes |
-| The site cannot be reached, cached pass ran out | No, and the app says it could not renew |
-| 401 | Signed out: session, pass and email are deleted |
+| A browser hands over a pass that checks | Yes, until its `exp`; nothing on the window shows that date |
+| A browser hands over a pass that does not check | Nothing changes, and nothing stored changes |
+| That browser signs out, gets a 401, or the site answers `premium: false` | That browser's pass is deleted. Another browser's pass, or an activation, still counts |
+| No browser renews the pass for 7 days | No, from its `exp`; the window says the extension has not renewed it |
+| An activation link that checks | Yes, until its `exp` (the latest one held wins) |
+| An activation link that ran out, or a pass sent as an activation | Refused, with a plain message. Nothing changes |
+| Neither | No |
 
-The app asks the site at launch, when it comes forward, when the menu opens (at most every 5 minutes), when the pass
-runs out, and at least once a day; every 15 minutes while it cannot reach it.
+The app re-evaluates when a token arrives, at launch, when the menu opens, and when the earliest `exp` passes. No timer
+talks to a site, because nothing does.
 
-**Keychain.** The legacy login keychain, service `com.oldcai.passwordpie.account` (`.dev` for a debug build pointed at
-a mock site), accounts `session`, `pass` and `email`. It works in the sandbox without a profile (see above). None of them
-is ever logged. Nothing is read from it before `PremiumStore.start()`.
+**Migration.** A direct build from before this decision signed in inside the app and kept `session`, `pass` and `email`.
+The released v0.1.0 never did (it had no account and no bridge); only builds made from `main` between #37 and this change
+did. A `pass` left by one counts until its `exp` and is never renewed; `session` and `email` are deleted at every launch.
 
-**The browser.** `appAccountHasPremium()` (the seam the browser bridge shares with the extension) is the signed-in
-account's Premium, the same check.
+**Keychain.** The legacy login keychain, service `com.oldcai.passwordpie.account` (`.dev` in any debug build), accounts
+`pass.chrome`, `pass.safari`, `activation`, and the old `pass`. It works in the sandbox without a profile (see above).
+None of them is ever logged, echoed over the bridge or written anywhere else. Nothing is read from it before
+`PremiumStore.start()` or a token arriving.
 
-### Signing in
+**The browser.** `appHasPremium()` (the seam the browser bridge shares with the extension) is this Mac's own Premium:
+a pass or an activation, not the free-codes switch.
 
-`ASWebAuthenticationSession` (`AccountServices.swift`) opens passwordpie.com, sharing Safari's cookies, so a remembered
-Apple Account or Google sign-in is one click. Sign in with Apple is the first button (guideline 4.8: the app offers
-Google, so it must offer Sign in with Apple).
-
-    GET  https://passwordpie.com/app/sign-in?state=<random>&provider=apple|google&callback=passwordpie://auth
-         (no provider: every way to sign in, Apple first)
-    →    302 passwordpie://auth?code=<one-time, 60 s>&state=<as sent>      (or &error=<code>)
-    POST /api/auth/app/exchange {"code"} → {"token": "<Better Auth bearer session token>"}   400 {"error":"invalid-code"}
-
-The app refuses a callback whose `state` it did not send. A callback may carry `token=` instead of `code=`; the code is
-preferred, so the session token never sits in a URL. The email comes from Better Auth's `GET /api/auth/get-session`,
-and Sign Out calls `POST /api/auth/sign-out`; every call is `Authorization: Bearer`, never cookies.
+**What a shared pass allows.** A pass is a bearer proof. Whoever copies one from a Premium extension and hands it to
+another Mac's bridge gives that Mac Premium until its `exp`, at most 7 days, with no further renewal unless that Mac's
+own extension signs in. An activation link works the same way for up to a year. The site could limit how many it issues
+per account; nothing in the app limits it.
 
 ### App Store purchases
 
@@ -174,12 +204,11 @@ subscription page, and the App Store build says nothing about buying elsewhere (
 `PremiumDirectViews.swift`, wholly `#if PP_DIRECT`, sends people to passwordpie.com to buy or redeem a key.
 
 **Direct channel.** No StoreKit. The Premium window offers Get Premium (passwordpie.com/pricing), Redeem a Key
-(passwordpie.com/redeem) and Check Again.
+(passwordpie.com/redeem) and Open Account Settings (passwordpie.com/settings/premium, where Activate is).
 
 **Codes in the browser.** `browserCodeAllowed` in `PremiumChannel.swift` decides. App Store channel: the app has Premium.
-Direct channel: the account signed in inside the app has Premium (`appAccountHasPremium()`), or the `code` request carries
-a good passwordpie.com token from the extension ([ACCOUNTS.md](ACCOUNTS.md)). `directChannelCodesAreFree` does not count
-there.
+Direct channel: this Mac has Premium (`appHasPremium()`: a pass or an activation), or the `code` request carries a good
+passwordpie.com token from the extension ([ACCOUNTS.md](ACCOUNTS.md)). `directChannelCodesAreFree` does not count there.
 
 **The gate.** `OneTimeCodes.access(for:hasPremium:)` is the only code in the app target that may call `TOTP.code`.
 `PremiumGateTests` fails if a call appears anywhere else. `Search.swift` and the menu never read a code. The gate changes
@@ -188,8 +217,7 @@ nothing on disk: the `otp` field stays in the KeePass file, and saving keeps it.
 **Signing.** In-App Purchase is an App ID capability and needs no entitlement. The store build has dropped
 `network.client`, because nothing in the app opens a connection and StoreKit runs in Apple's own process. This has not been
 tested against the real store: do it at step 8 of the checklist. If the products do not load without it, put that one key
-back in `Entitlements/mas.entitlements`; it changes nothing on the App Privacy label. The direct build's sign-in sheet
-catches its own custom scheme, so the shared Info.plist registers no URL type.
+back in `Entitlements/mas.entitlements`; it changes nothing on the App Privacy label.
 
 ### App Store privacy label
 
@@ -199,18 +227,16 @@ extension inside it, needs this answer checked first.
 
 ### Testing without the site
 
-**Direct channel.** `Scripts/mock-account-site.mjs` serves the account on `http://localhost:8788`, signing passes with the
-public test key (`extension/dev/test-key.json`, `kid: pp-test`), which only debug and `make install` builds trust:
+**Direct channel.** A pass comes from the extension built against the mock site (`extension/dev/mock-site.mjs`, see
+[ACCOUNTS.md](ACCOUNTS.md), "Testing without the site"), which signs with the public test key
+(`extension/dev/test-key.json`, `kid: pp-test`) that only debug and `make install` builds trust.
 
-    MOCK_AUTO_APPLE=1 node Scripts/mock-account-site.mjs           # Apple sign-in completes at once
-    PASSWORDPIE_SITE_URL=http://localhost:8788 .build/debug/PasswordPie …
-    curl localhost:8788/mock/redeem-latest                          # PPIE-TEST-TEST-TEST for the last account
-
-`PASSWORDPIE_SITE_URL` is read by debug builds only.
+**Both channels.** `node Scripts/mint-activation-link.mjs [days] [plan] [audience]` prints an activation link signed with
+the test key: a negative `days` for one that has run out, `passwordpie-app` as the audience for a pass dressed as an
+activation. Open it with `open -a <the debug .app> '<link>'`.
 
 **App Store channel.** `PASSWORDPIE_PREMIUM_PREVIEW` (debug only) fakes StoreKit, and `PASSWORDPIE_PREMIUM_SCRIPT` (debug
-only) runs `buy-lifetime,buy-yearly,restore,refresh` for screenshots. `node Scripts/mint-activation-link.mjs` prints an
-activation link signed with the test key, for a debug build.
+only) runs `buy-lifetime,buy-yearly,restore,refresh` for screenshots.
 
 **Local StoreKit testing.** `Configuration/PasswordPie.storekit` holds both products. It works only through Xcode's Run
 action: open `Package.swift` in Xcode, run with `PP_MAS=1` in the scheme's environment, and pick the file under Scheme >
