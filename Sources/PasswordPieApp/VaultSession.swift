@@ -213,8 +213,18 @@ final class VaultSession: ObservableObject {
     @Published private(set) var databasePaths: [String] = []
     /// Menu id → file path. Set before `entries` so a refresh can label rows from other files.
     private(set) var entrySources: [UUID: String] = [:]
-    /// Shown on the lock screen only for a KeePass 1 database.
-    @Published private(set) var keyFileName = ""
+    /// The key file the lock screen holds for `databaseURL`: chosen there, or remembered in this Mac's keychain.
+    /// Shown for KeePass databases (`.kdbx`, `.kdb`).
+    @Published var keyFileName = ""
+    /// The lock screen's key file came from this Mac's keychain.
+    @Published var keyFileRemembered = false
+    /// The unlocked database is locked with a key file. Preferences offers Remove Key File and Forget Key File from this.
+    @Published var databaseUsesKeyFile = false
+    /// The outcome of the last key file or master password change, shown in Preferences.
+    @Published var keyFileStatus = ""
+    @Published var keyFileStatusIsError = false
+    /// The last unlock that failed had a key file, so the error names both keys.
+    var lastUnlockHadKeyFile = false
 
     // Wired by the app delegate.
     var hidePanel: (() -> Void)?
@@ -226,9 +236,9 @@ final class VaultSession: ObservableObject {
     var onActivity: (() -> Void)?
 
     private(set) var vaultName = "PasswordPie"
-    private(set) var masterPassword = ""
-    private var rootName = "PasswordPie"
-    private var kdf = KDFParameters.default
+    var masterPassword = ""
+    var rootName = "PasswordPie"
+    var kdf = KDFParameters.default
     /// Decrypted databases for this unlock. Cleared on lock so secrets do not outlive the session.
     var openedFiles: [OpenedFile] = []
     /// Bumped on lock and on each unlock. A sibling decrypt still running from the previous generation must not publish.
@@ -240,13 +250,19 @@ final class VaultSession: ObservableObject {
     /// Menu id → index in that file. Two entries in one file can share a stored UUID.
     private(set) var listSlots: [UUID: Int] = [:]
     private(set) var listPaths: [UUID: String] = [:]
-    private var keyFileData: Data?
+    /// The key file's contents for the lock screen. Belongs to `keyFileOwner`, cleared when another database is chosen.
+    var keyFileData: Data?
+    var keyFileOwner = ""
+    /// Where remembered key files live: the login keychain, one item per database path. Tests pass their own.
+    let keyFileMemory: KeyFileKeychain
+    /// The dialogs the key file actions show. Tests replace them.
+    lazy var keyFilePrompts: KeyFilePrompting = AppKitKeyFilePrompts()
     private var roster = DatabaseRoster(current: "")
     private var applyingRoster = false
     private let clipboard: ClipboardGuard
     /// Who has Premium. Changes without a relaunch, and it is never written to the database or to disk.
     let premium: PremiumStore
-    private let secretStore = TouchIDSecretStore()
+    let secretStore = TouchIDSecretStore()
 
     var databaseMenuTitles: [String] { DatabaseRoster.menuTitles(for: databasePaths) }
 
@@ -261,11 +277,17 @@ final class VaultSession: ObservableObject {
     }
 
     var hasMasterPassword: Bool { !masterPassword.isEmpty }
-    var showsKeyFile: Bool { !creating && databaseURL.pathExtension.lowercased() == "kdb" }
+    /// KeePass databases, old and new, can have a key file. Imports (CSV, 1Password, Bitwarden, Proton Pass) cannot.
+    var showsKeyFile: Bool { Self.takesKeyFile(databaseURL) }
+
+    nonisolated static func takesKeyFile(_ url: URL) -> Bool {
+        ["kdbx", "kdb"].contains(url.pathExtension.lowercased())
+    }
 
     /// Both come from the channel unless a test passes its own.
-    init(premium: PremiumStore? = nil, pasteboard: PasteboardLike? = nil) {
+    init(premium: PremiumStore? = nil, pasteboard: PasteboardLike? = nil, keyFileMemory: KeyFileKeychain? = nil) {
         self.premium = premium ?? PremiumChannel.makeStore()
+        self.keyFileMemory = keyFileMemory ?? TouchIDSecretStore(service: VaultSession.keyFileService)
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("PasswordPie", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
@@ -297,6 +319,7 @@ final class VaultSession: ObservableObject {
 
     func restore() {
         creating = !FileManager.default.fileExists(atPath: databaseURL.path)
+        syncKeyFileDraft()
         refreshTouchID()
         applyDebugOverrides()
     }
@@ -315,7 +338,8 @@ final class VaultSession: ObservableObject {
 
     func unlock() {
         let password = passwordDraft
-        let keyOnly = showsKeyFile && keyFileData != nil
+        // A new database always gets a master password, with or without a key file.
+        let keyOnly = !creating && keyFileForUnlock != nil
         guard !password.isEmpty || keyOnly else {
             message = "Enter the master password."
             return
@@ -333,6 +357,10 @@ final class VaultSession: ObservableObject {
             confirmDraft = ""
             message = ""
             save()
+            if let key = keyFileForUnlock, openedFiles.contains(where: { $0.url.path == databaseURL.path }) {
+                rememberKeyFile(key)
+                databaseUsesKeyFile = true
+            }
             loadRememberedDatabases()
             didUnlock(withMasterPassword: true)
             return
@@ -346,8 +374,9 @@ final class VaultSession: ObservableObject {
                 session.didUnlock(withMasterPassword: true)
             case .failure(let error):
                 if session.isWrongPassword(error) {
+                    session.lastUnlockHadKeyFile = session.keyFileForUnlock != nil
                     session.onWrongPassword?()
-                    if session.onWrongPassword == nil { session.message = "Incorrect password. Please try again." }
+                    if session.onWrongPassword == nil { session.message = session.wrongPasswordMessage }
                 } else {
                     session.message = session.openErrorText(error)
                 }
@@ -423,9 +452,13 @@ final class VaultSession: ObservableObject {
     }
 
     /// The file keeps its own password. After this unlock, the login keychain holds it
-    /// so the next lock can open with Touch ID. A key file is stored with the password.
+    /// so the next lock can open with Touch ID. A key file is not part of it: it has its own item
+    /// (`keyFileMemory`), which outlives Touch ID's 7-day window and goes only with Forget Key File. A database with no
+    /// password is the exception: its key file is never kept on its own (that would open it with no secret at all), so
+    /// Touch ID holds it, as it always did for KeePass 1.
     private func rememberUnlockSecret() {
-        let secret = StoredUnlock(password: masterPassword, keyFile: showsKeyFile ? keyFileData : nil).encoded
+        let keyOnly = masterPassword.isEmpty ? openedFiles.first { $0.url.path == databaseURL.path }?.keyFile : nil
+        let secret = StoredUnlock(password: masterPassword, keyFile: keyOnly).encoded
         guard !secret.isEmpty else { return }
         let status = secretStore.save(secret: secret, account: databaseURL.path)
         switch TouchIDEnrollment.refreshAfterMasterUnlock(saveStatus: status) {
@@ -459,9 +492,11 @@ final class VaultSession: ObservableObject {
                 self.message = "The open database changed. Try Touch ID again."
                 return
             }
-            if let keyFile = stored.keyFile {
+            // Older builds kept a KeePass 1 key file inside the Touch ID secret.
+            if let keyFile = stored.keyFile, self.showsKeyFile {
                 self.keyFileData = keyFile
-                if self.keyFileName.isEmpty { self.keyFileName = "Saved key file" }
+                self.keyFileOwner = account
+                if self.keyFileName.isEmpty { self.keyFileName = "Key file" }
             }
             guard !self.unlocking else { return }
             self.decrypt(password: stored.password) { session, result in
@@ -471,7 +506,9 @@ final class VaultSession: ObservableObject {
                     session.didUnlock(withMasterPassword: false)
                 case .failure(let error):
                     if session.isWrongPassword(error) {
-                        session.message = "The saved Touch ID password doesn't match this database. Unlock with the master password."
+                        session.message = session.keyFileForUnlock == nil && session.showsKeyFile
+                            ? "The saved Touch ID password doesn't open this database. If it needs a key file, choose it first."
+                            : "The saved Touch ID password doesn't match this database. Unlock with the master password."
                     } else {
                         session.message = session.openErrorText(error)
                     }
@@ -488,7 +525,6 @@ final class VaultSession: ObservableObject {
         }
         guard !touchIDBusy else { return }
         let password = masterPassword
-        let keyFile = showsKeyFile ? keyFileData : nil
         let account = databaseURL.path
         touchIDBusy = true
         touchIDStatus = ""
@@ -516,7 +552,7 @@ final class VaultSession: ObservableObject {
                 self.touchIDStatusIsError = true
                 return
             case .write(let target, let showOnCurrentDatabase):
-                let stored = StoredUnlock(password: password, keyFile: keyFile)
+                let stored = StoredUnlock(password: password)
                 let status = self.secretStore.save(secret: stored.encoded, account: target)
                 guard status == errSecSuccess else {
                     self.touchIDStatus = "Couldn't save the Touch ID unlock (\(status))."
@@ -578,6 +614,10 @@ final class VaultSession: ObservableObject {
         message = ""
         importStatus = ""
         importStatusIsError = false
+        databaseUsesKeyFile = false
+        keyFileStatus = ""
+        keyFileStatusIsError = false
+        syncKeyFileDraft()
         clearChrome(locking: true)
         refreshTouchID()
     }
@@ -806,6 +846,13 @@ final class VaultSession: ObservableObject {
     /// An import saved as a sibling `.kdbx` keeps its keychain secret. A failed copy leaves the old path listed.
     private func migrateUnlockSecret(from old: String, to new: String) -> Bool {
         guard old != new else { return true }
+        // A KeePass 1 file's key file stays with the .kdbx written from it.
+        let key = keyFileMemory.load(account: old)
+        if let remembered = key.secret, !remembered.isEmpty {
+            guard keyFileMemory.save(secret: remembered, account: new) == errSecSuccess else { return false }
+        } else if key.status != errSecItemNotFound {
+            return false
+        }
         let loaded = secretStore.load(account: old)
         if let secret = loaded.secret, !secret.isEmpty {
             guard secretStore.save(secret: secret, account: new) == errSecSuccess else { return false }
@@ -874,23 +921,23 @@ final class VaultSession: ObservableObject {
         unlockWithTouchID()
     }
 
+    /// The lock screen's key file row. While creating a database it adds a new or existing key file to it.
     func chooseKeyFile() {
-        AppDelegate.shared?.presentFilePanel { [weak self] in
-            guard let self else { return }
-            let chooser = NSOpenPanel()
-            chooser.canChooseFiles = true
-            chooser.canChooseDirectories = false
-            chooser.allowsOtherFileTypes = true
-            chooser.message = "Choose the KeePass 1 key file"
-            guard chooser.runModal() == .OK, let url = chooser.url else { return }
-            do {
-                self.keyFileData = try Data(contentsOf: url)
+        if creating {
+            addKeyFileToNewDatabase()
+            return
+        }
+        runKeyFileFlow { [weak self] in
+            guard let self, let url = self.keyFilePrompts.existingKeyFile(message: "Choose the database's key file") else { return }
+            switch Self.readKeyFile(at: url, kdbxRules: self.databaseURL.pathExtension.lowercased() != "kdb") {
+            case .success(let data):
+                self.keyFileData = data
                 self.keyFileName = url.lastPathComponent
+                self.keyFileOwner = self.databaseURL.path
+                self.keyFileRemembered = false
                 self.message = ""
-            } catch {
-                self.keyFileData = nil
-                self.keyFileName = ""
-                self.message = "The key file could not be read."
+            case .failure(let error):
+                self.message = error.description
             }
         }
     }
@@ -1370,6 +1417,9 @@ final class VaultSession: ObservableObject {
         kdf = vault.kdf
         masterPassword = password
         passwordDraft = ""
+        // Not for a key-file-only database: keeping its key would open it with nothing typed.
+        if let keyFile, !password.isEmpty { rememberKeyFile(keyFile) }
+        databaseUsesKeyFile = keyFile != nil
         let file = OpenedFile(url: databaseURL, vault: vault, password: password, keyFile: keyFile)
         if let index = openedFiles.firstIndex(where: { $0.url.path == databaseURL.path }) {
             openedFiles[index] = file
@@ -1392,7 +1442,7 @@ final class VaultSession: ObservableObject {
         let jobs: [SiblingJob] = databasePaths.compactMap { path in
             guard path != currentPath, let stored = rememberedUnlock(for: path) else { return nil }
             let url = URL(fileURLWithPath: path)
-            let key = url.pathExtension.lowercased() == "kdb" ? stored.keyFile : nil
+            let key = Self.takesKeyFile(url) ? (stored.keyFile ?? rememberedKeyFile(for: path)?.data) : nil
             return SiblingJob(path: path, password: stored.password, keyFile: key)
         }
         #if PP_DIRECT
@@ -1435,9 +1485,8 @@ final class VaultSession: ObservableObject {
                 case .publish:
                     guard let loaded, !self.openedFiles.contains(where: { $0.url.path == job.path }) else { continue }
                     let url = URL(fileURLWithPath: job.path)
-                    let key = url.pathExtension.lowercased() == "kdb" ? job.keyFile : nil
                     self.openedFiles.append(OpenedFile(
-                        url: url, vault: loaded, password: job.password, keyFile: key
+                        url: url, vault: loaded, password: job.password, keyFile: job.keyFile
                     ))
                     self.publishCatalog()
                     self.autoMergeFile(at: job.path)
@@ -1466,7 +1515,7 @@ final class VaultSession: ObservableObject {
                     url: URL(fileURLWithPath: path),
                     vault: Vault(name: vaultName, rootName: rootName, entries: [], kdf: kdf),
                     password: masterPassword,
-                    keyFile: keyFileForUnlock
+                    keyFile: path == databaseURL.path ? keyFileForUnlock : nil
                 ),
                 at: 0
             )
@@ -1514,6 +1563,8 @@ final class VaultSession: ObservableObject {
         let password = index.map { openedFiles[$0].password } ?? masterPassword
         let fileURL = index.map { openedFiles[$0].url } ?? URL(fileURLWithPath: path)
         let isCurrent = path == databaseURL.path
+        // A file keeps the key file it opened with. A new database takes the one chosen on the lock screen.
+        let keyFile = index.map { openedFiles[$0].keyFile } ?? (isCurrent ? keyFileForUnlock : nil)
         if isCurrent {
             vault.name = vaultName
             vault.rootName = rootName
@@ -1532,8 +1583,8 @@ final class VaultSession: ObservableObject {
         let pending = index.flatMap { openedFiles[$0].pendingSaveURL?.path } ?? pendingImportPath(for: path)
         let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
         do {
-            let data = try KDBX.save(vault: &vault, password: password)
-            try VaultFile.replace(destination, with: data, password: password, expecting: vault)
+            let data = try KDBX.save(vault: &vault, password: password, keyFile: keyFile)
+            try VaultFile.replace(destination, with: data, password: password, keyFile: keyFile, expecting: vault)
             vault.noteFileContents(data)
             // Move the secret before the opened file changes path. A failed move keeps the
             // source path, so the next save still finds this vault and rewrites the same sibling.
@@ -1543,7 +1594,7 @@ final class VaultSession: ObservableObject {
                 url: URL(fileURLWithPath: decision.openedPath),
                 vault: vault,
                 password: password,
-                keyFile: index.flatMap { openedFiles[$0].keyFile },
+                keyFile: keyFile,
                 pendingSaveURL: decision.pendingPath.map { URL(fileURLWithPath: $0) },
                 revision: index.map { openedFiles[$0].revision + 1 } ?? 0
             )
@@ -1581,13 +1632,17 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    private var keyFileForUnlock: Data? {
-        databaseURL.pathExtension.lowercased() == "kdb" ? keyFileData : nil
+    var keyFileForUnlock: Data? {
+        Self.takesKeyFile(databaseURL) && keyFileOwner == databaseURL.path ? keyFileData : nil
     }
 
-    private func clearKeyFile() {
+    func clearKeyFile() {
         keyFileData = nil
         keyFileName = ""
+        keyFileRemembered = false
+        keyFileOwner = databaseURL.path
+        keyFileStatus = ""
+        keyFileStatusIsError = false
     }
 
     /// A file picked inside a .opvault bundle opens the bundle, which is the database.
@@ -1602,15 +1657,16 @@ final class VaultSession: ObservableObject {
         return url
     }
 
-    private func isWrongPassword(_ error: Error) -> Bool {
+    func isWrongPassword(_ error: Error) -> Bool {
         if let open = error as? VaultOpenError, case .wrongPassword = open { return true }
         if let kdbx = error as? KDBXError, kdbx == .wrongPassword { return true }
         return false
     }
 
-    private func openErrorText(_ error: Error) -> String {
+    func openErrorText(_ error: Error) -> String {
         if let open = error as? VaultOpenError { return open.description }
         if let kdbx = error as? KDBXError { return kdbx.description }
+        if let keyFile = error as? KeyFileError { return keyFile.description }
         return error.localizedDescription
     }
 }

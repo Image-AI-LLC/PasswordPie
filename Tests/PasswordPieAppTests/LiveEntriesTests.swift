@@ -1,5 +1,5 @@
 import AppKit
-import PasswordPieCore
+@testable import PasswordPieCore
 import XCTest
 @testable import PasswordPie
 

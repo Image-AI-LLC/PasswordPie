@@ -400,8 +400,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   closes it.
 - **Preferences > Database, key file and master password** — below Touch ID, each after a divider. "Key file": `body`
   medium title, a `caption` `text-secondary` line that says what the open database needs, and "On" with a check when it
-  has one. Below that, system buttons: Add Key File…, Use Existing Key File…, Remove Key File… (only with a key file),
-  and Forget Key File at the right (only when this Mac keeps one). The outcome is a `caption` line, `error` when it
+  has one. Below that, system buttons at their natural width: Add Key File… and Use Existing Key File…; then, on a second
+  row, Remove Key File… (only with a key file) and Forget Key File at the right (only when this Mac keeps one). The outcome is a `caption` line, `error` when it
   failed. "Master password": the same title and line, and Change Master Password… at the right. Every button that changes
   keys is disabled while the database is locked or is not a `.kdbx`. The warnings are system alerts (warning style), not
   custom views: Without this key file, the database cannot be opened, and PasswordPie cannot recover it. Keep a backup

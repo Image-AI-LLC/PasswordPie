@@ -862,7 +862,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         shake()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, self.session.locked else { return }
-            self.session.message = "Incorrect password. Please try again."
+            self.session.message = self.session.wrongPasswordMessage
             self.lockModel.fields.primary?.selectText(nil)
         }
     }

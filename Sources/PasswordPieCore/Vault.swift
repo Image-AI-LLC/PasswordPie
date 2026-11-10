@@ -164,9 +164,10 @@ public struct KDFParameters: Equatable, Sendable {
         self.kind = kind
     }
 
-    /// Argon2id, 32 MiB, 3 passes, 2 lanes. A KeePassXC-compatible default that stays quick to unlock.
+    /// Argon2id, 64 MiB, 3 passes, 2 lanes: what a new database gets. KeePassXC-compatible, and about 0.1 s to unlock on
+    /// an M2. An existing database keeps the parameters in its own header; saving never changes them.
     public static let `default` = KDFParameters(
-        kind: .argon2id(memoryKiB: 32 * 1024, iterations: 3, parallelism: 2, version: 0x13)
+        kind: .argon2id(memoryKiB: 64 * 1024, iterations: 3, parallelism: 2, version: 0x13)
     )
 
     public static let fastTest = KDFParameters(kind: .aes(rounds: 100))
