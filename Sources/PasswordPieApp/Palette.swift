@@ -94,6 +94,16 @@ enum MenuPalette {
     static let note = NSColor.palette(light: 0xD9A520, dark: 0xE8BC4C)
     static let identity = NSColor.palette(light: 0xB8694A, dark: 0xD48A6B)
 
+    /// An empty database's action rows: an orange tile behind an `accent-text` symbol. The dark surface needs more of
+    /// the orange for the tile to read as one.
+    static let actionTile = NSColor(name: nil) { appearance in
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return NSColor(srgbRed: 0xEE / 255, green: 0x8C / 255, blue: 0x32 / 255, alpha: dark ? 0.26 : 0.2)
+    }
+    static let actionSymbol = NSColor.palette(light: 0xA65312, dark: 0xF6B469)
+    static let selectedActionTile = NSColor.palette(light: 0x302315, dark: 0x302315, alpha: 0.14)
+    static let selectedActionDetail = NSColor.palette(light: 0x302315, dark: 0x302315, alpha: 0.78)
+
     /// Warm lines and fills: brown on a light surface, cream on a dark one.
     static func ink(_ alpha: CGFloat) -> NSColor {
         NSColor.palette(light: 0x302A24, dark: 0xFFF6E7, alpha: alpha)

@@ -91,9 +91,9 @@ final class CatalogIndexingTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(session.searchIndex.count, 0, "a chunk from before the lock must not publish")
         // The catalog is empty again: the generator and what to do next, never the rows of the locked database.
-        var empty = ["Password Generator", "", "No items yet", "Import Passwords…"]
+        var empty = ["Get Started", "Import Passwords…"]
         if AppChannel.current == .direct { empty.append("Sync Chrome Passwords…") }
-        empty.append("New Item…")
+        empty += ["New Item…", "", "Password Generator"]
         XCTAssertEqual(session.topLevelRows?.map(\.title), empty)
     }
 

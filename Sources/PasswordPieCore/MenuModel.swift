@@ -58,6 +58,8 @@ public struct MenuRow: Equatable, Sendable {
     public var username: String
     /// Website host for the site icon lookup. Nil when the row is not a site, or the entry has no website.
     public var siteHost: String?
+    /// A second line under the title. Only the empty database's action rows have one; it makes them two-line rows.
+    public var detail: String
 
     public init(
         kind: Kind,
@@ -67,7 +69,8 @@ public struct MenuRow: Equatable, Sendable {
         icon: Icon? = nil,
         favorite: Bool = false,
         username: String = "",
-        siteHost: String? = nil
+        siteHost: String? = nil,
+        detail: String = ""
     ) {
         self.kind = kind
         self.title = title
@@ -77,6 +80,7 @@ public struct MenuRow: Equatable, Sendable {
         self.favorite = favorite
         self.username = username
         self.siteHost = siteHost
+        self.detail = detail
     }
 
     public static let separator = MenuRow(kind: .separator)
@@ -154,19 +158,30 @@ public enum MenuBuilder {
         return rows
     }
 
-    /// Nothing to list yet: the generator, then where entries come from. Each row goes away with the first entry.
+    /// Nothing to list yet: a "Get Started" group of where entries come from, then the generator. The group goes away
+    /// with the first entry. Each line says only what the app does (docs/UX.md, "A new database says what to do next").
     static func emptyDatabase(channel: AppChannel) -> [MenuRow] {
         var rows: [MenuRow] = [
-            MenuRow(kind: .generator, title: "Password Generator", icon: .generator),
-            .separator,
-            MenuRow(kind: .disabled, title: "No items yet"),
-            MenuRow(kind: .action(.importPasswords), title: "Import Passwords…", icon: .importPasswords)
+            MenuRow(kind: .header, title: "Get Started"),
+            MenuRow(
+                kind: .action(.importPasswords),
+                title: "Import Passwords…",
+                icon: .importPasswords,
+                detail: "From a Chrome or Apple Passwords export"
+            )
         ]
         // The App Store app has no Chrome reader.
         if channel == .direct {
-            rows.append(MenuRow(kind: .action(.syncChrome), title: "Sync Chrome Passwords…", icon: .syncChrome))
+            rows.append(MenuRow(
+                kind: .action(.syncChrome),
+                title: "Sync Chrome Passwords…",
+                icon: .syncChrome,
+                detail: "Search what Chrome saved on this Mac"
+            ))
         }
-        rows.append(MenuRow(kind: .action(.newItem), title: "New Item…", icon: .newItem))
+        rows.append(MenuRow(kind: .action(.newItem), title: "New Item…", icon: .newItem, detail: "A login, password or secure note"))
+        rows.append(.separator)
+        rows.append(MenuRow(kind: .generator, title: "Password Generator", icon: .generator))
         return rows
     }
 
