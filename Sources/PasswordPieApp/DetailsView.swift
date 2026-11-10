@@ -856,35 +856,45 @@ private struct StrengthRow: View {
 }
 
 private struct OneTimePasswordValue: View {
-    @Environment(\.colorScheme) private var colorScheme
     var entryID: UUID
     @ObservedObject var session: VaultSession
     @ObservedObject var premium: PremiumStore
 
     var body: some View {
         if let entry = session.entry(entryID) {
-            switch session.oneTimeCodeAccess(for: entry) {
-            case .available(let settings):
-                TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                    let period = Double(settings.period)
-                    let remaining = period - context.date.timeIntervalSince1970.truncatingRemainder(dividingBy: period)
-                    let urgent = remaining <= 5
-                    HStack(spacing: 8) {
-                        Text(groupedCode(OneTimeCodes.code(settings: settings, at: context.date)))
-                            .font(.system(size: 17, weight: .medium, design: .monospaced))
-                            .foregroundStyle(urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark))
-                        CountdownPie(fraction: remaining / period, color: urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark)).frame(width: 14, height: 14)
-                    }
+            OneTimeCodeView(access: session.oneTimeCodeAccess(for: entry))
+        }
+    }
+}
+
+/// The current code with its countdown, or the locked row without Premium. The details row, the item editor and the
+/// Add Two-Step Code window all draw it, so codes are made in this file and `VaultSession` only (`PremiumGateTests`).
+struct OneTimeCodeView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var access: OneTimeCodeAccess
+
+    var body: some View {
+        switch access {
+        case .available(let settings):
+            TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                let period = Double(settings.period)
+                let remaining = period - context.date.timeIntervalSince1970.truncatingRemainder(dividingBy: period)
+                let urgent = remaining <= 5
+                HStack(spacing: 8) {
+                    Text(groupedCode(OneTimeCodes.code(settings: settings, at: context.date)))
+                        .font(.system(size: 17, weight: .medium, design: .monospaced))
+                        .foregroundStyle(urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark))
+                    CountdownPie(fraction: remaining / period, color: urgent ? Palette.error(dark: colorScheme == .dark) : Palette.accentText(dark: colorScheme == .dark)).frame(width: 14, height: 14)
                 }
-            case .locked:
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.fill").font(.system(size: 11)).accessibilityHidden(true)
-                    Text("Included with Premium").font(.system(size: 13))
-                }
-                .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
-            case .noCode:
-                EmptyView()
             }
+        case .locked:
+            HStack(spacing: 6) {
+                Image(systemName: "lock.fill").font(.system(size: 11)).accessibilityHidden(true)
+                Text("Included with Premium").font(.system(size: 13))
+            }
+            .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
+        case .noCode:
+            EmptyView()
         }
     }
 }

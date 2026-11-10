@@ -60,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var aboutWindow: NSWindow?
     private var chromeReviewWindow: NSWindow?
     private var paywallWindow: NSWindow?
+    private var scanWindow: NSWindow?
+    /// True while the scan window closes because the vault locked: the scan keeps waiting for the unlock.
+    private var closingScanForLock = false
+    private(set) var otpScan: OTPScanModel!
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
     private var reporter: StatusReporter?
@@ -75,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.bridge.fill(entry, mode, website: website) ?? false
         }
         bridge.onShowPanel = { [weak self] in self?.showFromExtension() }
+        otpScan = OTPScanModel(session: session)
+        otpScan.present = { [weak self] in self?.presentScan() }
+        otpScan.codeAdded = { [weak self] id, browser, origin in self?.bridge.expectScannedCode(entryID: id, browser: browser, origin: origin) }
+        bridge.onScan = { [weak self] scanned, origin, browser in self?.otpScan.receive(scanned, origin: origin, browser: browser) }
         panelController.bridge = bridge
         bridge.start()
     }
@@ -105,10 +113,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session.$locked
             .filter { $0 }
             .sink { [weak self] _ in
+                self?.closeScanForLock()
                 self?.largeTypeWindow?.close()
                 self?.largeTypeWindow = nil
                 let pinned = Array(self?.pinnedAccounts.values.map(\.panel) ?? [])
                 pinned.forEach { $0.close() }
+            }
+            .store(in: &cancellables)
+        // A scan that arrived while locked shows once the vault is open.
+        session.$locked
+            .removeDuplicates()
+            .filter { !$0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.otpScan.isWaiting else { return }
+                self.otpScan.prepare()
+                self.showScanWindow()
             }
             .store(in: &cancellables)
         session.$allEntries
@@ -408,6 +428,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         paywallWindow?.makeKeyAndOrderFront(nil)
     }
 
+    // MARK: Two-step QR codes from the extension
+
+    /// A scan arrived. Locked: the panel opens on the unlock screen and the window follows the unlock.
+    private func presentScan() {
+        autoLock.registerActivity()
+        if session.locked {
+            scanWindow?.close()
+            if panelController.isVisible { panelController.bringForward() } else { panelController.show(.hotkey) }
+        } else {
+            showScanWindow()
+        }
+    }
+
+    /// The Add Two-Step Code window. It floats, so the code stays in view while it is typed into the browser.
+    func showScanWindow() {
+        if scanWindow == nil {
+            let host = NSHostingController(rootView: OTPScanConfirmView(model: otpScan, session: session, premium: session.premium) { [weak self] in
+                self?.scanWindow?.close()
+            })
+            host.sizingOptions = [.preferredContentSize]
+            let window = NSWindow(contentViewController: host)
+            window.styleMask = [.titled, .closable]
+            window.title = "Add Two-Step Code"
+            window.applyWarmTitlebar()
+            window.isReleasedWhenClosed = false
+            window.level = .floating
+            window.delegate = self
+            window.center()
+            scanWindow = window
+        }
+        panelController.hide(refocusPrevious: false)
+        NSApp.activate(ignoringOtherApps: true)
+        scanWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Locking hides other items' names. A scan still waiting comes back after the unlock; a finished one is done.
+    private func closeScanForLock() {
+        if case .added = otpScan?.phase { otpScan.cancel() }
+        guard let window = scanWindow else { return }
+        closingScanForLock = true
+        window.close()
+        closingScanForLock = false
+    }
+
     /// The accounts in a held batch, read-only, with one button that applies them.
     func showChromeBatchReview() {
         if chromeReviewWindow == nil {
@@ -456,6 +520,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         if window === paywallWindow { paywallWindow = nil }
         if window === chromeReviewWindow { chromeReviewWindow = nil }
+        if window === scanWindow {
+            scanWindow = nil
+            // The close button is Cancel. Locking only hides the window.
+            if !closingScanForLock { otpScan.cancel() }
+        }
         if window === editorWindow {
             editorWindow = nil
             if session.editing != nil { session.cancelEditing() }
