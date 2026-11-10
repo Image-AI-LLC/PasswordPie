@@ -149,10 +149,10 @@ describe('PassRelay', () => {
     expect(await relay.sync()).toBe('refused');
   });
 
-  it('treats a pass the app did not accept as not taken', async () => {
+  it('treats a pass the app did not accept as invalid, not as an old app', async () => {
     await signedIn();
     channel.answer = () => ({ type: 'premium', id: 1, accepted: false });
-    expect(await relay.sync()).toBe('refused');
+    expect(await relay.sync()).toBe('invalid');
     expect(kv.data.has(RELAYED_KEY)).toBe(false);
   });
 

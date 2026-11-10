@@ -162,6 +162,35 @@ final class DirectPremiumStoreTests: XCTestCase {
         XCTAssertFalse(store.hasPremium, "read at every use")
     }
 
+    func testAPassArrivingSweepsAnotherBrowsersExpiredPass() {
+        store.start()
+        store.receive(.pass(pass(1)), from: .safari)
+        clock = later(1).addingTimeInterval(1)
+        store.receive(.pass(pass(7)), from: .chrome)
+        XCTAssertNil(secrets.values[.safariPass])
+        XCTAssertNotNil(secrets.values[.chromePass])
+    }
+
+    func testADropAfterThePassRanOutStillSaysItRanOut() {
+        store.start()
+        store.receive(.pass(pass(1)), from: .chrome)
+        clock = later(1).addingTimeInterval(1)
+        store.receive(.drop(.signedOut), from: .chrome)
+        XCTAssertEqual(store.lapse, .passRanOut)
+        store.reevaluate()
+        XCTAssertEqual(store.lapse, .passRanOut)
+    }
+
+    func testALaterSweepDoesNotOverwriteSignedOut() {
+        store.start()
+        store.receive(.pass(pass(7)), from: .chrome)
+        store.receive(.pass(pass(1)), from: .safari)
+        clock = later(1).addingTimeInterval(1)
+        store.receive(.drop(.signedOut), from: .chrome)
+        store.reevaluate()
+        XCTAssertEqual(store.lapse, .signedOutInBrowser)
+    }
+
     func testTheStoreLooksAgainWhenThePassRunsOut() async {
         let realStore = DirectPremiumStore.testing(secrets: secrets, now: Date.init)
         realStore.start()

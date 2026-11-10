@@ -70,8 +70,9 @@ never held a pass from here, so that also clears it. Requests run one at a time,
 the pass before it. The App Store build of the Safari extension has no account and no relay, and sends nothing.
 
 The popup asks the background whether the app took the pass. With Premium and the app holding it, the popup says nothing
-more. If the app did not answer, or answered without taking it (an older app), the popup says so in one line and never
-claims the Mac app has Premium.
+more. If the app did not answer, or answered without knowing the message (an older app), the popup says so in one
+line. If the app understood and did not take the pass (it did not check, for example it ran out), the popup shows no line.
+It never claims the Mac app has Premium.
 
 ## Entitlement API (passwordpie.com)
 

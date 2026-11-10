@@ -186,6 +186,13 @@ describe('Popup', () => {
     expect(container.querySelector('[data-testid="app-premium"]')?.textContent).toBe('Update PasswordPie on this Mac to bring Premium to it.');
   });
 
+  it('shows no line when the app understood and did not take the pass', async () => {
+    user = { email: 'ada@example.com' };
+    entitlement = PREMIUM;
+    await render(api({ appPremium: async () => 'invalid' }));
+    expect(container.querySelector('[data-testid="app-premium"]')).toBeNull();
+  });
+
   it('a free account asks the app nothing', async () => {
     user = { email: 'ada@example.com' };
     await render(api({ appPremium: async () => 'unreachable' }));

@@ -259,7 +259,9 @@ same-origin with it. The background accepts a `code-field` only from a frame of 
 
 Popup → background: `{"type":"open-panel"}` (send `show`), `{"type":"popup-status"}` (answers the site whose code was
 skipped for lack of Premium in the last 10 minutes, kept in memory only) and `{"type":"app-premium"}` (send `premium` now
-and answer `delivered`, `unreachable`, `refused` or `none`). Accepted only from extension pages, which have no tab.
+and answer `delivered`, `unreachable`, `refused` (an app from before the message), `invalid` (the app did not accept
+the pass, for example it ran out; the popup shows no line) or `none`). Accepted only from extension pages, which have no
+tab.
 
 ### Two-step codes
 

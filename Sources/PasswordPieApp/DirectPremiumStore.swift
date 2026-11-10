@@ -158,7 +158,7 @@ final class DirectPremiumStore: ObservableObject {
     /// nothing. Taking it back drops only what this browser delivered. Returns whether a pass was kept.
     @discardableResult
     func receive(_ relay: PassRelay, from source: PassSource) -> Bool {
-        load()
+        reevaluate()
         var next = premium
         switch relay {
         case .pass(let token):
@@ -181,7 +181,7 @@ final class DirectPremiumStore: ObservableObject {
     /// Takes a `passwordpie://activate?token=…` link. Returns false for any other URL.
     @discardableResult
     func activate(_ url: URL) -> Bool {
-        load()
+        reevaluate()
         guard let outcome = vault.open(url, now: now()) else { return false }
         switch outcome {
         case .refused(let expired):

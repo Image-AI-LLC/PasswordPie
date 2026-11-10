@@ -12,10 +12,11 @@ export const RELAYED_KEY = 'app-has-pass';
  * What the app has from this browser:
  * - `delivered`: it took the pass;
  * - `unreachable`: nothing answered (PasswordPie is not running);
- * - `refused`: it answered but did not take it (an app from before this message, or a pass that did not check);
+ * - `refused`: it answered but not to this message (an app from before it);
+ * - `invalid`: the app understood and did not take the pass (it did not check, e.g. it ran out); nothing is shown for it;
  * - `none`: there was nothing to hand over.
  */
-export type AppPremium = 'delivered' | 'unreachable' | 'refused' | 'none';
+export type AppPremium = 'delivered' | 'unreachable' | 'refused' | 'invalid' | 'none';
 
 /** Where the relay reads the account: `AccountStore`. */
 export interface RelayAccount {
@@ -65,7 +66,8 @@ export class PassRelay {
     if (session && entitlement?.premium && entitlement.token) {
       const answer = await channel.request({ type: 'premium', pass: entitlement.token });
       if (!fromApp(answer)) return 'unreachable';
-      if (answer.type !== 'premium' || answer.accepted !== true) return 'refused';
+      if (answer.type !== 'premium') return 'refused';
+      if (answer.accepted !== true) return 'invalid';
       await kv.set(RELAYED_KEY, true);
       return 'delivered';
     }

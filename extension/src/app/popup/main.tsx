@@ -23,7 +23,7 @@ const api: PopupApi = {
   },
   async appPremium() {
     const answer: unknown = await browser.runtime.sendMessage({ type: 'app-premium' }).catch(() => undefined);
-    return answer === 'delivered' || answer === 'unreachable' || answer === 'refused' ? answer : 'none';
+    return answer === 'delivered' || answer === 'unreachable' || answer === 'refused' || answer === 'invalid' ? answer : 'none';
   },
   async status() {
     const answer: unknown = await browser.runtime.sendMessage({ type: 'popup-status' }).catch(() => undefined);

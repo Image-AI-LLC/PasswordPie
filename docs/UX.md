@@ -585,7 +585,7 @@ at all: it fills codes whenever the app has Premium.
 |---|---|
 | Signed out | **Open PasswordPie**, then Sign In with email and password (and Continue with Google in Chrome), Create an account, Forgot password? |
 | Signed in, free | Your email and Sign Out; "Free · Two-step codes in the browser need Premium." with **Upgrade** (opens the pricing page) and a "Have a key?" field |
-| Signed in, Premium | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did. |
+| Signed in, Premium | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did, or when it understood and did not take the pass (for example, the browser's cached pass has run out). |
 
 The popup asks passwordpie.com for your Premium every time it opens, and the extension asks once a day. Offline, it keeps
 what it knew; a session that ended signs you out.
