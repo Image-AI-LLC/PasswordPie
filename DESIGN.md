@@ -144,7 +144,7 @@ All values are sRGB.
 |---|---|---|---|
 | `brand-accent` | `#EE8C32` | same | Pie mark, primary action, toggles and control tint. Not for text. |
 | `on-accent` | `#302315` | same | Label on the primary action. |
-| `selection` / `on-selection` | `#EE8C32` / `#302315` | same | Selected row, and its text, icon, arrow and favorite badge (an action row's line at 78 %). White fails contrast on this orange. |
+| `selection` / `on-selection` | `#EE8C32` / `#302315` | same | Selected row, and its text, icon, arrow and favorite badge (an action row's line at 85 %). White fails contrast on this orange. |
 | `surface` | `#FFF6E7` | `#28231F` | Lock screen, panel, submenus, details, generator, Preferences, About, editor, pinned windows. |
 | `field-surface` | `#FFFFFF` | `#37302A` | Inputs, cards, generator well. |
 | `text` | `#302A24` | `#FFF6E7` | Headings, row titles, search text. |
@@ -181,9 +181,11 @@ Rows that open a submenu show a 13 pt SF Symbol; on a selected row it uses
 `note.text`, `tint-identity` for `person.crop.rectangle.fill`, and `tint-neutral` for
 `lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`.
 
-The empty database's action rows put a 14 pt symbol on a 28 × 28 pt tile, radius 7: `square.and.arrow.down.fill`
-(Import Passwords…), `arrow.triangle.2.circlepath` (Sync Chrome Passwords…) and `plus.square.fill` (New Item…). The
-tile is `brand-accent` at 20 % (light) or 26 % (dark) with an `accent-text` symbol; on a selected row it is
+The empty database's action rows put a 14 pt medium symbol, centred at its own size, on a 28 × 28 pt tile, radius 7:
+`square.and.arrow.down` (Import Passwords…), `arrow.triangle.2.circlepath` (Sync Chrome Passwords…) and `plus` (New
+Item…). They are single-layer outlines: a filled square on the tile would read as a second tile. The
+tile is `brand-accent` at 20 % in both appearances (on the dark surface it stands out more than on cream, 1.4:1
+against 1.2:1, so it needs no dark value of its own) with an `accent-text` symbol; on a selected row it is
 `on-selection` at 14 % with an `on-selection` symbol. It is the only filled icon background in the menu.
 
 Entry rows show the site icon: bundled for the top 100 sites, otherwise the one the
@@ -338,7 +340,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   has not asked for yet. "New Item…" (A login, password or secure note) opens the editor, as the gear's New Item.
   The first action is selected on open. Action rows are selectable, run on Return or click with the usual flash, hide
   the panel, have no arrow, and open nothing on hover. Selected, the row takes the `selection` fill with
-  `on-selection` title, symbol and tile (14 %) and its line at 78 %. VoiceOver reads the title, then the line. The
+  `on-selection` title, symbol and tile (14 %) and its line at 85 % (78 % falls to 4.1:1). VoiceOver reads the title, then the line. The
   group and the rows go with the first entry, and the generator returns to its usual place. Searching an empty
   database still shows "No items found", and the browser's site section stays above everything.
 - **Details popover** — header, then one field per value: username, password (+ strength and previous passwords), website,

@@ -23,6 +23,47 @@ final class ThemePaletteTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try contrast(Palette.selectionInk, Palette.selectionFill), 4.5)
     }
 
+    /// `top` drawn over the opaque `bottom` in `appearance`, as the menu list draws it.
+    private func composite(_ top: NSColor, over bottom: NSColor, in appearance: NSAppearance.Name) throws -> NSColor {
+        var result: NSColor?
+        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+            guard let upper = top.usingColorSpace(.sRGB), let lower = bottom.usingColorSpace(.sRGB) else { return }
+            let alpha = upper.alphaComponent
+            func mix(_ one: CGFloat, _ two: CGFloat) -> CGFloat { alpha * one + (1 - alpha) * two }
+            result = NSColor(
+                srgbRed: mix(upper.redComponent, lower.redComponent),
+                green: mix(upper.greenComponent, lower.greenComponent),
+                blue: mix(upper.blueComponent, lower.blueComponent),
+                alpha: 1
+            )
+        }
+        return try XCTUnwrap(result)
+    }
+
+    private func contrast(_ one: NSColor, _ other: NSColor) throws -> CGFloat {
+        let first = try luminance(one)
+        let second = try luminance(other)
+        return (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    func testAnActionRowsLineIsReadableOnTheSelection() throws {
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let line = try composite(MenuPalette.selectedActionDetail, over: MenuPalette.selectionFill, in: name)
+            let fill = try composite(MenuPalette.selectionFill, over: MenuPalette.selectionFill, in: name)
+            XCTAssertGreaterThanOrEqual(try contrast(line, fill), 4.5, name.rawValue)
+        }
+    }
+
+    /// The light tile is the approved look; the dark surface must not lose it.
+    func testAnActionTileStandsOutOnTheDarkSurfaceAsMuchAsOnTheLightOne() throws {
+        func tileContrast(_ name: NSAppearance.Name) throws -> CGFloat {
+            let tile = try composite(MenuPalette.actionTile, over: MenuPalette.backdrop, in: name)
+            let surface = try composite(MenuPalette.backdrop, over: MenuPalette.backdrop, in: name)
+            return try contrast(tile, surface)
+        }
+        XCTAssertGreaterThanOrEqual(try tileContrast(.darkAqua), try tileContrast(.aqua))
+    }
+
     func testWhiteOnBrandOrangeWouldFailSoSelectionMustNotUseIt() throws {
         XCTAssertLessThan(try contrast(Color(hex: 0xFFFFFF), Palette.selectionFill), 4.5)
     }

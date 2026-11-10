@@ -358,10 +358,9 @@ final class MenuListView: NSView {
         (selected ? MenuPalette.selectedActionTile : MenuPalette.actionTile).setFill()
         NSBezierPath(roundedRect: tile, xRadius: MenuMetrics.actionTileRadius, yRadius: MenuMetrics.actionTileRadius).fill()
         if let symbol = MenuIcons.actionSymbol(for: row, selected: selected) {
-            symbol.draw(
-                in: IconGeometry.aspectFit(symbol.size, in: tile.insetBy(dx: 6, dy: 6)),
-                from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil
-            )
+            // At its own 14 pt size, centred: scaling would make the glyphs differ in weight.
+            let glyph = NSRect(x: tile.midX - symbol.size.width / 2, y: tile.midY - symbol.size.height / 2, width: symbol.size.width, height: symbol.size.height)
+            symbol.draw(in: glyph, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         }
         let width = rect.width - MenuMetrics.actionTextX - MenuMetrics.actionTrailing
         drawLine(
@@ -374,13 +373,19 @@ final class MenuListView: NSView {
         )
     }
 
-    /// One line of text at x 50 whose baseline sits at `baseline`.
+    /// One line of text at x 50 whose baseline sits at `baseline`. The line fragment puts the baseline at the layout
+    /// manager's offset (14 for 14 pt), not at the font's ascender (13.5).
     private func drawLine(_ text: String, baseline: CGFloat, width: CGFloat, font: NSFont, color: NSColor) {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: style]
-        let height = ceil(font.ascender - font.descender + font.leading)
-        let target = NSRect(x: MenuMetrics.actionTextX, y: baseline - font.ascender, width: max(width, 0), height: height)
+        let layout = NSLayoutManager()
+        let target = NSRect(
+            x: MenuMetrics.actionTextX,
+            y: baseline - layout.defaultBaselineOffset(for: font),
+            width: max(width, 0),
+            height: layout.defaultLineHeight(for: font)
+        )
         (text as NSString).draw(with: target, options: [.usesLineFragmentOrigin], attributes: attributes)
     }
 
@@ -473,14 +478,18 @@ enum MenuIcons {
 
     /// The symbol on an action row's tile: 14 pt, `accent-text`, or `on-selection` on a selected row.
     static func actionSymbol(for row: MenuRow, selected: Bool) -> NSImage? {
+        // Single-layer outline glyphs: a filled square inside the tile would read as a second tile.
         let name: String
         switch row.icon {
-        case .importPasswords: name = "square.and.arrow.down.fill"
+        case .importPasswords: name = "square.and.arrow.down"
         case .syncChrome: name = "arrow.triangle.2.circlepath"
-        case .newItem: name = "plus.square.fill"
+        case .newItem: name = "plus"
         default: return nil
         }
-        return symbol(name, color: selected ? MenuPalette.selectionInk : MenuPalette.actionSymbol, size: 14)
+        let color = selected ? MenuPalette.selectionInk : MenuPalette.actionSymbol
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     }
 
     static func symbol(_ name: String, color: NSColor, size: CGFloat = 13) -> NSImage? {
