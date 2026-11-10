@@ -386,9 +386,9 @@ final class VaultSession: ObservableObject {
 
     /// The key derivation can take a second, so it runs off the main thread and the lock screen keeps animating.
     /// The result is dropped when the database changed or something else unlocked it in the meantime.
-    private func decrypt(password: String, then finish: @escaping @MainActor (VaultSession, Result<DecryptedVault, Error>) -> Void) {
+    private func decrypt(password: String, keyFile keyFileOverride: Data? = nil, then finish: @escaping @MainActor (VaultSession, Result<DecryptedVault, Error>) -> Void) {
         let url = databaseURL
-        let keyFile = keyFileForUnlock
+        let keyFile = keyFileOverride ?? keyFileForUnlock
         unlocking = true
         let generation = unlockGeneration
         Task { @MainActor [weak self] in
@@ -484,29 +484,34 @@ final class VaultSession: ObservableObject {
         refreshTouchID()
         guard touchIDAvailable, !touchIDBusy, !unlocking else { return }
         let account = databaseURL.path
+        let generation = unlockGeneration
         touchIDBusy = true
         Task { @MainActor in
             defer { self.touchIDBusy = false }
             guard let stored = await self.authenticateTouchID(reason: "Unlock PasswordPie", account: account) else { return }
+            // lock() ran while the prompt was up: it must not get a key file back.
+            guard self.unlockGeneration == generation else { return }
             guard self.databaseURL.path == account else {
                 self.message = "The open database changed. Try Touch ID again."
                 return
             }
             // Older builds kept a KeePass 1 key file inside the Touch ID secret.
-            if let keyFile = stored.keyFile, self.showsKeyFile {
-                self.keyFileData = keyFile
-                self.keyFileOwner = account
-                if self.keyFileName.isEmpty { self.keyFileName = "Key file" }
-            }
+            let storedKeyFile = stored.keyFile.flatMap { self.showsKeyFile ? $0 : nil }
             guard !self.unlocking else { return }
-            self.decrypt(password: stored.password) { session, result in
+            self.decrypt(password: stored.password, keyFile: storedKeyFile) { session, result in
                 switch result {
                 case .success(let opened):
+                    // Only a decrypt that lock() did not cancel gets here, and only a success keeps the key file in the draft.
+                    if let keyFile = storedKeyFile {
+                        session.keyFileData = keyFile
+                        session.keyFileOwner = account
+                        if session.keyFileName.isEmpty { session.keyFileName = "Key file" }
+                    }
                     session.apply(opened.vault, password: stored.password, keyFile: opened.keyFile)
                     session.didUnlock(withMasterPassword: false)
                 case .failure(let error):
                     if session.isWrongPassword(error) {
-                        session.message = session.keyFileForUnlock == nil && session.showsKeyFile
+                        session.message = storedKeyFile == nil && session.keyFileForUnlock == nil && session.showsKeyFile
                             ? "The saved Touch ID password doesn't open this database. If it needs a key file, choose it first."
                             : "The saved Touch ID password doesn't match this database. Unlock with the master password."
                     } else {
@@ -597,6 +602,8 @@ final class VaultSession: ObservableObject {
     }
 
     func lock() {
+        // A database with no password: its key file is the only secret, so the lock screen must not keep it.
+        let keyOnlyDatabase = databaseUsesKeyFile && masterPassword.isEmpty
         unlockGeneration &+= 1
         catalogGeneration &+= 1
         openedFiles = []
@@ -617,6 +624,7 @@ final class VaultSession: ObservableObject {
         databaseUsesKeyFile = false
         keyFileStatus = ""
         keyFileStatusIsError = false
+        if keyOnlyDatabase { clearKeyFile() }
         syncKeyFileDraft()
         clearChrome(locking: true)
         refreshTouchID()

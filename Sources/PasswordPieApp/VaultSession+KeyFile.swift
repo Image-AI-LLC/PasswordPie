@@ -237,6 +237,10 @@ extension VaultSession {
         runKeyFileFlow { [weak self] in
             guard let self, self.keyChangeAllowed() else { return }
             guard self.databaseUsesKeyFile else { return }
+            guard !self.masterPassword.isEmpty else {
+                self.reportKeyFile(.failed("This database has no master password. Change the master password first, then remove the key file."))
+                return
+            }
             let choice = self.keyFilePrompts.choose(
                 title: "Remove the key file from \(self.databaseURL.lastPathComponent)?",
                 text: "The database will open with the master password alone. Anyone with a copy of it and the password can read it.",
@@ -267,6 +271,7 @@ extension VaultSession {
             }
             let keyFile = self.openedFiles.first { $0.url.path == self.databaseURL.path }?.keyFile
             self.rekey(password: change.new, keyFile: keyFile, keyFileName: keyFile == nil ? nil : self.keyFileName,
+                       keepOnThisMac: self.keyFileRemembered,
                        done: keyFile == nil ? "The master password was changed." : "The master password was changed. The key file stays the same.")
         }
     }
@@ -300,7 +305,8 @@ extension VaultSession {
 
     /// Writes the current database with new keys. `VaultFile.rekey` opens the new file with them before it replaces
     /// anything, and refuses if the file changed on disk since this session read it.
-    private func rekey(password: String, keyFile: Data?, keyFileName name: String?, done: String) {
+    /// `keepOnThisMac` is false when the person had forgotten the key file: a password change must not remember it again.
+    private func rekey(password: String, keyFile: Data?, keyFileName name: String?, keepOnThisMac: Bool = true, done: String) {
         let path = databaseURL.path
         guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
         guard let baseline = openedFiles[index].vault.fileBaseline else {
@@ -331,8 +337,10 @@ extension VaultSession {
         databaseUsesKeyFile = keyFile != nil
         var notes = [done]
         if let keyFile, !password.isEmpty {
-            keyFileRemembered = false
-            if !rememberKeyFile(keyFile, name: name) { notes.append(keyFileStatus) }
+            if keepOnThisMac {
+                keyFileRemembered = false
+                if !rememberKeyFile(keyFile, name: name) { notes.append(keyFileStatus) }
+            }
         } else if !forgetKeyFile() {
             notes.append(keyFileStatus)
         } else if let keyFile {
