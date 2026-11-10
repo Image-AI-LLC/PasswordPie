@@ -150,13 +150,19 @@ final class OTPScanModel: ObservableObject {
     /// Picks the best item, now that the vault can be read. Does nothing while locked.
     func prepare() {
         guard !session.locked, phase == .choosing, target == nil, scan != nil else { return }
-        target = candidates.first.map { .entry($0.id) } ?? .newItem
+        // Only an item on the page's own site is chosen for the person. One that merely names the issuer is listed, not chosen.
+        let site = scan?.origin.flatMap { BrowserSite(url: $0) }?.key
+        if let first = candidates.first, let site, entryWebsites(first).contains(where: { BrowserSite(url: $0)?.key == site }) {
+            target = .entry(first.id)
+        } else {
+            target = .newItem
+        }
     }
 
-    /// A scan is waiting to be confirmed.
+    /// A scan is waiting to be confirmed. A failed save keeps it waiting, so Add can be pressed again.
     var isWaiting: Bool {
         expireIfNeeded()
-        return scan != nil && (phase == .choosing || phase == .confirmReplace)
+        return scan != nil && (phase == .choosing || phase == .confirmReplace || isFailed)
     }
 
     /// Items on the page's site, then items naming the issuer. Empty while locked.

@@ -257,6 +257,29 @@ final class OTPScanSessionTests: XCTestCase {
         XCTAssertEqual(session.editing?.id, other.id)
     }
 
+    func testAnItemThatOnlyNamesTheIssuerIsListedNotChosen() async throws {
+        let session = await unlockedSession([item("Dropbox", user: "ada", url: "https://www.dropbox.com")])
+        let model = model(session)
+        let box = "otpauth://totp/Box:ada?secret=JBSWY3DPEHPK3PXP&issuer=Box"
+        model.receive(try scanned(box), origin: "https://evil.example", browser: .chrome)
+        XCTAssertEqual(model.candidates.map(\.title), ["Dropbox"])
+        XCTAssertEqual(model.target, .newItem)
+    }
+
+    func testASavedEditorKeepsACodeScannedIntoThatItemMeanwhile() async throws {
+        let session = await unlockedSession([item("Demo", user: "ada", url: "https://example.com")])
+        let demoItem = try XCTUnwrap(session.entries.first { $0.title == "Demo" })
+        session.edit(demoItem.id)
+        let model = model(session)
+        model.receive(try scanned(), origin: "https://example.com", browser: .chrome)
+        model.add()
+        XCTAssertEqual(model.phase, .added(demoItem.id))
+        var open = try XCTUnwrap(session.editing)
+        open.notes = "edited"
+        session.saveEditing(open)
+        XCTAssertEqual(try savedOTP(session, title: "Demo"), normalized)
+    }
+
     func testABridgeScanReachesTheModelAndAddLetsThatPageFillTheCode() async throws {
         let session = await unlockedSession([item("Demo", user: "ada", url: "https://example.com")])
         let bridge = BrowserBridge(session: session)

@@ -132,6 +132,18 @@ describe('scanActiveTab', () => {
     expect(log).toEqual(['capture', `scan ${DEMO} https://example.com/`]);
   });
 
+  it('ignores the picture when the visible tab is no longer the page that was asked about', async () => {
+    for (const next of [{ id: 8, windowId: 2, url: 'https://example.com/' }, { id: 7, windowId: 2, url: 'https://evil.example/' }]) {
+      let calls = 0;
+      const { deps: d, log } = deps({
+        pictures: { 'data:image/png;base64,shot': [DEMO] },
+        activeTab: async () => (calls++ === 0 ? { id: 7, windowId: 2, url: 'https://example.com/settings' } : next),
+      });
+      expect(await scanActiveTab(d)).toEqual({ kind: 'none' });
+      expect(log).toEqual(['capture']);
+    }
+  });
+
   it('says so when nothing is found, even when the browser refuses the picture', async () => {
     const { deps: d, log } = deps({ pictures: {}, captureVisibleTab: async () => Promise.reject(new Error('not allowed')) });
     expect(await scanActiveTab(d)).toEqual({ kind: 'none' });

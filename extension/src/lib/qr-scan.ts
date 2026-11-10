@@ -164,7 +164,10 @@ export async function scanActiveTab(deps: ScanDeps): Promise<ScanOutcome> {
   const pagePictures = Array.isArray(images) ? images.filter((i): i is string => typeof i === 'string' && i.startsWith('data:image/')) : [];
   let found = best(await payloadsOf(pagePictures.slice(0, MAX_PAGE_IMAGES), deps.decode));
   if (found?.kind !== 'totp') {
-    const shot = await deps.captureVisibleTab(tab.windowId).catch(() => undefined);
+    let shot = await deps.captureVisibleTab(tab.windowId).catch(() => undefined);
+    // The picture is of whatever tab showed at that moment: use it only if it is still the page that was asked about.
+    const now = await deps.activeTab().catch(() => undefined);
+    if (now?.id !== tab.id || !now?.url || originOf(now.url) !== origin) shot = undefined;
     const fromShot = shot ? best(await payloadsOf([shot], deps.decode)) : undefined;
     if (fromShot && (!found || fromShot.kind === 'totp')) found = fromShot;
   }

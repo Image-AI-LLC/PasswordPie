@@ -693,7 +693,8 @@ editor. Most people gave up and used their phone.
 1. Click the PasswordPie button in the toolbar and **Scan QR code on this page**.
 2. PasswordPie opens an **Add Two-Step Code** window over the browser: the site and account the QR code names, and the
    item to add it to, already chosen. The best guess is the item for this site whose username is that account; other
-   items for the site are listed under it. You can search for any other item, or choose **New Item**.
+   items for the site are listed under it. An item on another site that only names the issuer is listed, not chosen. You
+   can search for any other item, or choose **New Item**.
 3. Press **Add**. The window shows the current code, with **Copy**. If the page has a field for the code, the extension
    fills it, as it does after a sign-in. Press the site's Verify button yourself.
 

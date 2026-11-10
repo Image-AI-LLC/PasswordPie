@@ -982,6 +982,7 @@ final class VaultSession: ObservableObject {
     func saveEditing(_ entry: VaultEntry) {
         var entry = entry
         carryPasswordBookkeeping(into: &entry)
+        carryScannedCode(into: &entry)
         let isDraft = storedEntry(entry.id) == nil
         if storeEntry(entry) {
             editing = nil
@@ -1018,6 +1019,13 @@ final class VaultSession: ObservableObject {
             publishCatalog()
         }
         return false
+    }
+
+    /// A scanned code may have been added to this item while the editor was open. Keep it unless the editor changed the field.
+    private func carryScannedCode(into entry: inout VaultEntry) {
+        guard let original = editingOriginal, original.id == entry.id, let stored = storedEntry(entry.id), stored.otp != original.otp else { return }
+        let untouched = entry.otp == original.otp || entry.otp == editorOTPValue(original.otp, title: entry.title, username: entry.username)
+        if untouched { entry.otp = stored.otp }
     }
 
     /// The editor holds a copy from when it opened. A Chrome update or a Restore may have landed since.
