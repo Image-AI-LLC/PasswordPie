@@ -38,7 +38,8 @@ protocol MenuListDelegate: AnyObject {
     func menuListPointerExited(_ list: MenuListView)
 }
 
-/// A flat list of menu rows drawn by hand: rows are 21 pt, separators 11 pt, group headers 16 pt, and the selection is a flat full-width fill.
+/// A flat list of menu rows drawn by hand: rows are 21 pt (42 pt with a second line), separators 11 pt, group headers 16 pt,
+/// and the selection is a flat full-width fill.
 final class MenuListView: NSView {
     weak var delegate: MenuListDelegate?
     private(set) var rows: [MenuRow] = []
@@ -97,11 +98,17 @@ final class MenuListView: NSView {
 
     var contentHeight: CGFloat { max(offsets.last ?? 0, MenuMetrics.minimumListHeight) }
 
+    /// A row with a second line (only the empty database's actions have one). Height, width and drawing all use this.
+    static func isTwoLine(_ row: MenuRow) -> Bool {
+        !row.detail.isEmpty && row.kind != .separator && row.kind != .header
+    }
+
     static func height(of row: MenuRow) -> CGFloat {
+        if isTwoLine(row) { return MenuMetrics.actionRowHeight }
         switch row.kind {
         case .separator: return MenuMetrics.separatorHeight
         case .header: return MenuMetrics.headerHeight
-        default: return row.detail.isEmpty ? MenuMetrics.itemHeight : MenuMetrics.actionRowHeight
+        default: return MenuMetrics.itemHeight
         }
     }
 
@@ -135,7 +142,7 @@ final class MenuListView: NSView {
             case .separator, .header: continue
             default: break
             }
-            if !row.detail.isEmpty {
+            if isTwoLine(row) {
                 let text = max(textWidth(row.title, MenuMetrics.actionTitleFont), textWidth(row.detail, MenuMetrics.detailFont))
                 widest = max(widest, MenuMetrics.actionTextX + ceil(text) + MenuMetrics.actionTrailing)
                 continue
@@ -292,6 +299,7 @@ final class MenuListView: NSView {
     }
 
     private func draw(row: MenuRow, in rect: NSRect, selected: Bool) {
+        if Self.isTwoLine(row) { return drawActionRow(row, in: rect, selected: selected) }
         switch row.kind {
         case .separator:
             menuInk(0.25).setFill()
@@ -303,8 +311,6 @@ final class MenuListView: NSView {
         case .showMore:
             if selected { fillSelection(rect) }
             drawText(row.title, in: rect, x: 42, color: selected ? MenuPalette.selectionInk : MenuPalette.tertiaryText, width: rect.width - 52)
-        case .action where !row.detail.isEmpty:
-            drawActionRow(row, in: rect, selected: selected)
         case .entry, .submenu, .generator, .action:
             drawItem(row, in: rect, selected: selected)
         }
