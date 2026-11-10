@@ -136,7 +136,10 @@ export class FillController {
         // The app may have started after the last sign-in or renewal: hand it the pass now.
         void this.relay?.sync();
       },
-      onPoke: () => this.report('poke'),
+      onPoke: () => {
+        this.report('poke');
+        this.relay?.catchUp();
+      },
     });
   }
 
@@ -284,6 +287,8 @@ export class FillController {
     );
     if (this.codeWaits.get(tabId) === wait) this.dropCodeWait(tabId);
     if (answer.kind === 'code' && answer.origin === wait.origin) {
+      // Premium is here now (the app's own, or this account's): an older "not filled" note is no longer true.
+      this.codeSkipped = undefined;
       await this.tabs.sendToFrame(tabId, frameId, { type: 'code', origin: wait.origin, code: answer.code }).catch(() => undefined);
     } else if (answer.kind === 'no-premium') {
       this.codeSkipped = { site: new URL(wait.origin).host, at: this.timers.now() };

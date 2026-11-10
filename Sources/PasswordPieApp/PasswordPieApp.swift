@@ -795,7 +795,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "chromeConnected": bridge?.chromeConnected ?? false,
             "safariEnabled": bridge?.safariEnabled ?? false,
             "canFill": BridgeBrowser.allCases.filter { bridge?.canFill(in: $0) == true }.map(\.rawValue),
-            "extensionBanner": panelController.shownBanner?.title ?? NSNull()
+            "extensionBanner": panelController.shownBanner?.title ?? NSNull(),
+            "hasPremium": session.premium.hasPremium,
+            "premiumMessage": session.premium.activity.message ?? NSNull(),
+            "paywallWindow": paywallWindow?.isVisible == true ? paywallWindow?.windowNumber ?? NSNull() : NSNull()
         ]
     }
     #endif

@@ -99,6 +99,23 @@ describe('PassRelay', () => {
     expect(premiumRequests().at(-1)).toEqual({ type: 'premium', drop: 'no-premium' });
   });
 
+  it('says unreachable when taking the pass back finds no app', async () => {
+    await signedIn();
+    await relay.sync();
+    await store.clear();
+    channel.answer = () => undefined;
+    expect(await relay.sync()).toBe('unreachable');
+  });
+
+  it('stops taking it back from an app that does not know the message: it never held one', async () => {
+    await signedIn();
+    await relay.sync();
+    await store.clear();
+    channel.answer = () => ({ type: 'error', id: 1, code: 'bad-request' });
+    expect(await relay.sync()).toBe('none');
+    expect(kv.data.has(RELAYED_KEY)).toBe(false);
+  });
+
   it('keeps trying to take it back until the app answers', async () => {
     await signedIn();
     await relay.sync();
@@ -115,6 +132,13 @@ describe('PassRelay', () => {
   it('says the app is unreachable when nothing answers, and does not count the pass as delivered', async () => {
     await signedIn();
     channel.answer = () => undefined;
+    expect(await relay.sync()).toBe('unreachable');
+    expect(kv.data.has(RELAYED_KEY)).toBe(false);
+  });
+
+  it('says unreachable when the Chrome host answers that the app is not running', async () => {
+    await signedIn();
+    channel.answer = () => ({ type: 'error', id: 1, code: 'app-unavailable' });
     expect(await relay.sync()).toBe('unreachable');
     expect(kv.data.has(RELAYED_KEY)).toBe(false);
   });
@@ -188,6 +212,23 @@ describe('FillController and the relay', () => {
   });
 
   /** The App Store build's Safari extension has no account, so it has no relay and sends nothing. */
+  /** The host keeps Chrome's port open while the app is not running, so the app starting is a poke, not a new connect. */
+  it('hands the pass over on a poke when the app could not be reached before, and only then', async () => {
+    await signedIn();
+    channel.answer = () => ({ type: 'error', id: 1, code: 'app-unavailable' });
+    const controller = new FillController({ channel, tabs, relay });
+    controller.start();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(premiumRequests()).toHaveLength(1);
+    channel.answer = newApp;
+    channel.events?.onPoke();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(premiumRequests()).toHaveLength(2);
+    channel.events?.onPoke();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(premiumRequests()).toHaveLength(2);
+  });
+
   it('sends no premium request without a relay, as in the App Store build', async () => {
     await signedIn();
     const controller = new FillController({ channel, tabs });

@@ -122,7 +122,9 @@ receives the result.
 
 1. On passwordpie.com, signed in, open Settings > Premium and press **Activate**.
 2. Your browser asks to open PasswordPie. Allow it.
-3. The Premium window opens and says "Premium is on through November 9, 2027." The codes are unlocked.
+3. The Premium window opens and says Premium is on through November 9, 2027. The codes are unlocked. (The App Store app
+   says "Premium is on through November 9, 2027."; the downloaded app shows that date in its status and confirms "The
+   activation link worked.")
 
 The app checks the signature on what it received, without going online. Activation lasts a year, or until your Premium
 ends if that is sooner, for every plan, lifetime included. Press the button again to renew it; you never need to wait for

@@ -181,7 +181,7 @@ final class DirectPremiumStoreTests: XCTestCase {
         XCTAssertTrue(store.activate(link))
         XCTAssertTrue(store.hasPremium)
         XCTAssertEqual(store.activity, .activated(until: later(365)))
-        XCTAssertEqual(store.activity.message(dateText: { _ in "D" }), "Premium is on through D.")
+        XCTAssertEqual(store.activity.message, "The activation link worked.")
         XCTAssertEqual(secrets.values[.activation], ActivationLink.token(in: link))
     }
 
@@ -227,6 +227,16 @@ final class DirectPremiumStoreTests: XCTestCase {
         store.reevaluate()
         XCTAssertEqual(store.lapse, .activationRanOut(later(10)))
         XCTAssertNil(secrets.values[.activation])
+    }
+
+    /// "The activation link worked." beside "Premium is off" would contradict itself.
+    func testAnActivationRunningOutForgetsTheLinksMessage() {
+        store.start()
+        store.activate(PassKey.activationLink(expires: later(1)))
+        XCTAssertEqual(store.activity, .activated(until: later(1)))
+        clock = later(2)
+        store.reevaluate()
+        XCTAssertEqual(store.activity, .idle)
     }
 
     func testTheWindowALinkOpensKeepsTheLinksMessageUntilItIsOldNews() {

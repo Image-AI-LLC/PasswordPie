@@ -53,7 +53,8 @@ passwordpie.com runs Better Auth with the `bearer` plugin. The extension never u
 
 The app has no sign-in, so the extension gives it the pass the site issued (`PassRelay`, `extension/src/lib/pass-relay.ts`).
 Every sign-in, sign-out, renewal and 401 lands in `browser.storage.local`; the background watches those keys and tells the
-app each time, and also when its connection to the app comes up (the app may have started later). The message is
+app each time, and also when its connection to the app comes up and, if its last try found no app, on the app's next
+poke (the app may have started later; Chrome's host keeps the port open meanwhile). The message is
 `premium` in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
 
 | In the extension | Sent to the app |
@@ -64,7 +65,8 @@ app each time, and also when its connection to the app comes up (the app may hav
 | Signed in, no answer from the site yet; or never had Premium | nothing |
 
 `local:app-has-pass` remembers that the app took a pass from this browser, so taking it back reaches the app even if it
-was not running at the sign-out: the next connection sends it. Requests run one at a time, so a sign-out never overtakes
+was not running at the sign-out: the next connection or poke sends it. An app that answers without knowing the message
+never held a pass from here, so that also clears it. Requests run one at a time, so a sign-out never overtakes
 the pass before it. The App Store build of the Safari extension has no account and no relay, and sends nothing.
 
 The popup asks the background whether the app took the pass. With Premium and the app holding it, the popup says nothing

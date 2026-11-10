@@ -3,7 +3,7 @@
 // keychain. Not in the App Store build, whose extension has no account.
 import { ENTITLEMENT_KEY, SESSION_TOKEN_KEY, type Entitlement, type KeyValue } from './account';
 import type { NativeChannel } from './native-channel';
-import { isRecord } from './protocol';
+import { APP_UNAVAILABLE, isRecord } from './protocol';
 
 /** Set while the app holds a pass from this browser, so taking it back reaches the app even after a restart. */
 export const RELAYED_KEY = 'app-has-pass';
@@ -28,16 +28,34 @@ export function relayKeysChanged(changes: Record<string, unknown>, area: string)
   return area === 'local' && (SESSION_TOKEN_KEY in changes || ENTITLEMENT_KEY in changes);
 }
 
+/** An answer from the app itself: not silence, and not the Chrome host saying the app is not running. */
+function fromApp(answer: unknown): answer is Record<string, unknown> {
+  return isRecord(answer) && !(answer.type === 'error' && answer.code === APP_UNAVAILABLE);
+}
+
 export class PassRelay {
   private queue: Promise<AppPremium> = Promise.resolve('none');
+  /** What the last sync found. */
+  private last: AppPremium | undefined;
 
   constructor(private readonly deps: { channel: NativeChannel; account: RelayAccount; kv: KeyValue }) {}
 
   /** Tells the app what this browser has now. One at a time, in order, so a sign-out never overtakes the pass before it. */
   sync(): Promise<AppPremium> {
-    const run = () => this.syncNow();
+    const run = async () => {
+      this.last = await this.syncNow();
+      return this.last;
+    };
     this.queue = this.queue.then(run, run);
     return this.queue;
+  }
+
+  /**
+   * The app poked: try again if the last try found no app. Chrome's host keeps the port open while PasswordPie is not
+   * running, so the app starting shows up as its poke, not as a new connection.
+   */
+  catchUp(): void {
+    if (this.last === 'unreachable') void this.sync();
   }
 
   private async syncNow(): Promise<AppPremium> {
@@ -46,7 +64,7 @@ export class PassRelay {
     const entitlement = session ? await account.entitlement() : undefined;
     if (session && entitlement?.premium && entitlement.token) {
       const answer = await channel.request({ type: 'premium', pass: entitlement.token });
-      if (!isRecord(answer)) return 'unreachable';
+      if (!fromApp(answer)) return 'unreachable';
       if (answer.type !== 'premium' || answer.accepted !== true) return 'refused';
       await kv.set(RELAYED_KEY, true);
       return 'delivered';
@@ -55,7 +73,9 @@ export class PassRelay {
     const drop = !session ? 'signed-out' : entitlement && !entitlement.premium ? 'no-premium' : undefined;
     if (drop && (await kv.get(RELAYED_KEY)) === true) {
       const answer = await channel.request({ type: 'premium', drop });
-      if (isRecord(answer) && answer.type === 'premium') await kv.remove(RELAYED_KEY);
+      // Kept for later only when no app answered. An app that does not know the message never held a pass from here.
+      if (!fromApp(answer)) return 'unreachable';
+      await kv.remove(RELAYED_KEY);
     }
     return 'none';
   }

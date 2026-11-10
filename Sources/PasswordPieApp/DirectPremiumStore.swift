@@ -14,16 +14,15 @@ enum DirectPremiumActivity: Equatable {
         return false
     }
 
-    func message(dateText: (Date) -> String = { $0.formatted(date: .long, time: .omitted) }) -> String? {
+    var message: String? {
         switch self {
         case .idle: return nil
-        case .activated(let until): return "Premium is on through \(dateText(until))."
+        // The status line above already says until when; this only confirms the link.
+        case .activated: return "The activation link worked."
         case .activationRefused(expired: true): return "This activation link has run out. Press Activate on passwordpie.com for a new one."
         case .activationRefused(expired: false): return "This activation link is not valid. Press Activate on passwordpie.com for a new one."
         }
     }
-
-    var message: String? { message() }
 }
 
 /// Who has Premium in the direct channel: a pass the browser extension handed over, or an activation link from the
@@ -134,6 +133,8 @@ final class DirectPremiumStore: ObservableObject {
             if expiry.removed.contains(.activation) { vault.forgetIfExpired(now: now()) }
             premium = next
             if let ended = expiry.lapse { lapse = ended }
+            // A link's "worked" beside an activation that has since run out would contradict the status.
+            if expiry.removed.contains(.activation), case .activated = activity { activity = .idle }
         }
         scheduleExpiry()
     }

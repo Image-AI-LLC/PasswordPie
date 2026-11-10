@@ -75,8 +75,9 @@ The same `tab` report keeps the app's "browser → current URL" cache fresh, for
 No AppleScript is used, so there is no Automation prompt.
 
 Premium follows the same rule: the app never asks the extension for it. The extension sends `premium` when something
-changed on its side (sign-in, renewal, sign-out, 401) and each time its connection comes up, so an app started later
-catches up at once. For Safari, "comes up" is the background starting; a pass renewed while the app was not running
+changed on its side (sign-in, renewal, sign-out, 401), each time its connection comes up, and on a poke when its last try
+found no app. Chrome's host keeps the port open while PasswordPie is not running, so the app starting later shows up as
+the poke it sends when the host reaches it, and the pass follows at once. For Safari, "comes up" is the background starting; a pass renewed while the app was not running
 reaches it at the next storage change or background start, and a pass already held lasts up to 7 days meanwhile.
 
 ## Messages

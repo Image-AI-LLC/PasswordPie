@@ -453,6 +453,19 @@ describe('FillController two-step codes', () => {
     expect(controller.popupStatus()).toEqual({ codeSkippedOn: 'example.com' });
   });
 
+  it('forgets the skipped code once a code fills, so the popup does not say it was not filled', async () => {
+    answer({ type: 'code', id: 2, premium: false });
+    await filled();
+    codeField();
+    await settle(0);
+    expect(controller.popupStatus()).toEqual({ codeSkippedOn: 'example.com' });
+    answer({ type: 'code', id: 2, otp: { origin: ORIGIN, code: '123456', expiresIn: 20 } });
+    await filled();
+    codeField();
+    await settle(0);
+    expect(controller.popupStatus()).toEqual({});
+  });
+
   it('the App Store build hint has no upgrade link', async () => {
     make();
     answer({ type: 'code', id: 2, premium: false });
