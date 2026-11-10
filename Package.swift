@@ -120,6 +120,8 @@ let package = Package(
         .testTarget(
             name: "PasswordPieCoreTests",
             dependencies: ["PasswordPieCore"],
+            // KeePassXC databases and key files, read by path (`#filePath`).
+            exclude: ["Fixtures"],
             swiftSettings: [.swiftLanguageMode(.v5)] + channelSettings
         ),
         .testTarget(

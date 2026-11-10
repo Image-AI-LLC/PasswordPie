@@ -219,7 +219,8 @@ final class LockScreenTests: XCTestCase {
                 let state = LockScreenPresentation(
                     databaseName: "A very long example database filename.kdbx", creating: creating,
                     message: options ? String(repeating: "Something went wrong. ", count: 12) : "",
-                    showsKeyFile: options, keyFileName: "a-very-long-key-file-name-that-must-truncate.key",
+                    // A new .kdbx can take a key file too, so the create form has the row.
+                    showsKeyFile: options || creating, keyFileName: "a-very-long-key-file-name-that-must-truncate.key",
                     touchIDAvailable: options)
                 let height = LockScreenContent.fittedHeight(state)
                 let content = makeContent(state, fields: fields)

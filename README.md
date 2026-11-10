@@ -19,6 +19,7 @@ Requires macOS 14 or later on an Apple Silicon Mac. The DMG and the app are sign
 - Two-step codes (TOTP), a password generator, Large Type, and a pinned window that stays above other apps
 - Scan a site's two-step QR code from the browser extension or a screenshot, read on your Mac
 - Touch ID unlock, auto-lock, and a clipboard that clears itself
+- An optional key file that stays on this Mac, so a database copied from your cloud folder cannot be opened with the password alone
 - Imports KeePass 1, 1Password, Bitwarden, Proton Pass and CSV exports
 
 More on [passwordpie.com](https://passwordpie.com/). Support: [support@passwordpie.com](mailto:support@passwordpie.com).

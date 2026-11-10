@@ -319,8 +319,95 @@ struct PreferencesView: View {
                     .help(session.locked ? "Unlock this database with its master password first." : "Save the current master password for Touch ID")
                 }
             }
+            Divider()
+            keyFile
+            Divider()
+            masterPassword
         }
         .controlSize(.regular)
+    }
+
+    /// Key file actions for the open database. See "A key file that stays on this Mac" in docs/UX.md.
+    private var keyFile: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Key file").fontWeight(.medium)
+                    Text(keyFileDescription)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                if session.databaseUsesKeyFile && !session.locked {
+                    Label("On", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                }
+            }
+            HStack(spacing: 8) {
+                Button("Add Key File…") { recorder.stop(); session.addKeyFile() }
+                    .help("Make a new key file and lock the database with it and the master password")
+                Button("Use Existing Key File…") { recorder.stop(); session.useExistingKeyFile() }
+                    .help("Lock the database with a file you already have and the master password")
+                Spacer(minLength: 0)
+            }
+            .disabled(!session.canChangeKeys)
+            if (session.databaseUsesKeyFile && !session.locked) || session.keyFileRemembered {
+                HStack(spacing: 8) {
+                    if session.databaseUsesKeyFile && !session.locked {
+                        Button("Remove Key File…") { recorder.stop(); session.removeKeyFile() }
+                            .help("Go back to the master password alone")
+                            .disabled(!session.canChangeKeys)
+                    }
+                    Spacer(minLength: 0)
+                    if session.keyFileRemembered {
+                        Button("Forget Key File") { recorder.stop(); session.forgetKeyFile() }
+                            .help("This Mac stops keeping the key file. The database still needs it.")
+                    }
+                }
+            }
+            if !session.keyFileStatus.isEmpty {
+                Text(session.keyFileStatus)
+                    .font(.system(size: 11))
+                    .foregroundStyle(session.keyFileStatusIsError ? Palette.error(dark: colorScheme == .dark) : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("keyfile-status")
+            }
+        }
+    }
+
+    private var keyFileDescription: String {
+        if !VaultFormat.writesKDBX(session.databaseURL) {
+            return "Only a KeePass .kdbx database can have a key file."
+        }
+        if session.locked {
+            return "Unlock the database to add, change or remove its key file."
+        }
+        guard session.databaseUsesKeyFile else {
+            return "A second key that stays on this Mac. A copy of the database that leaks from a cloud folder cannot be opened with the master password alone."
+        }
+        let name = session.keyFileName.isEmpty ? "its key file" : session.keyFileName
+        if session.keyFileRemembered {
+            return "This database needs \(name) and the master password. This Mac keeps the key file in its keychain, so unlocking needs only the password or Touch ID."
+        }
+        return "This database needs \(name) and the master password. This Mac does not keep the key file: the lock screen asks for it."
+    }
+
+    private var masterPassword: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Master password").fontWeight(.medium)
+                Text(session.databaseUsesKeyFile && !session.locked
+                     ? "Changing it keeps the key file."
+                     : "Changes the password for this database.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            Button("Change Master Password…") { recorder.stop(); session.changeMasterPassword() }
+                .disabled(!session.canChangeKeys)
+                .help(session.locked ? "Unlock this database first." : "Change the master password")
+        }
     }
 
     private var importPasswords: some View {

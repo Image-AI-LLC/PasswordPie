@@ -9,6 +9,8 @@ private struct ChromeWrite: Sendable {
     var url: URL
     var vault: Vault
     var password: String
+    /// The key file the database opened with. Every write keeps it.
+    var keyFile: Data?
     var baseline: Data
     var revision: Int
     /// Entries whose saved password this write changes.
@@ -16,8 +18,8 @@ private struct ChromeWrite: Sendable {
 
     func perform() throws -> Vault {
         var result = vault
-        let data = try KDBX.save(vault: &result, password: password)
-        try VaultFile.replace(url, with: data, password: password, expecting: result, baseline: baseline)
+        let data = try KDBX.save(vault: &result, password: password, keyFile: keyFile)
+        try VaultFile.replace(url, with: data, password: password, keyFile: keyFile, expecting: result, baseline: baseline)
         result.noteFileContents(data)
         return result
     }
@@ -174,7 +176,7 @@ extension VaultSession {
         var vault = openedFiles[index].vault
         guard change(&vault.entries[slot]) else { return false }
         onActivity?()
-        let write = ChromeWrite(path: path, url: openedFiles[index].url, vault: vault, password: openedFiles[index].password, baseline: baseline, revision: openedFiles[index].revision, updated: [])
+        let write = ChromeWrite(path: path, url: openedFiles[index].url, vault: vault, password: openedFiles[index].password, keyFile: openedFiles[index].keyFile, baseline: baseline, revision: openedFiles[index].revision, updated: [])
         guard let written = try? write.perform() else { return false }
         adopt(written, at: index)
         return true
@@ -238,7 +240,7 @@ extension VaultSession {
             guard let path = listPaths[change.entryID], let slot = listSlots[change.entryID], let origin = listOrigins[change.entryID],
                   let file = openedFiles.first(where: { $0.url.path == path }), let baseline = file.vault.fileBaseline,
                   file.vault.entries.indices.contains(slot), file.vault.entries[slot].id == origin else { continue }
-            var write = staged[path] ?? ChromeWrite(path: path, url: file.url, vault: file.vault, password: file.password, baseline: baseline, revision: file.revision, updated: [])
+            var write = staged[path] ?? ChromeWrite(path: path, url: file.url, vault: file.vault, password: file.password, keyFile: file.keyFile, baseline: baseline, revision: file.revision, updated: [])
             if staged[path] == nil { order.append(path) }
             ChromeUpdates.apply(change, to: &write.vault.entries[slot], kind: kind, now: now)
             if change.replacement != nil, kind != .declined { write.updated.insert(change.entryID) }

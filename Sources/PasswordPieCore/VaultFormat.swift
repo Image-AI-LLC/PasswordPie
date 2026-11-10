@@ -42,7 +42,7 @@ public enum VaultFormat {
         return directory.appendingPathComponent("\(stem) PasswordPie \(UUID().uuidString).kdbx")
     }
 
-    public static func load(url: URL, password: String, keyFile: Data? = nil) throws -> Vault {
+    public static func load(url: URL, password: String, keyFile: Data?) throws -> Vault {
         if isDirectory(url) {
             return try loadOpVault(directory: url, password: password)
         }
@@ -50,10 +50,10 @@ public enum VaultFormat {
         return try load(data: data, password: password, keyFile: keyFile, fileName: url.lastPathComponent)
     }
 
-    public static func load(data: Data, password: String, keyFile: Data? = nil, fileName: String = "") throws -> Vault {
+    public static func load(data: Data, password: String, keyFile: Data?, fileName: String = "") throws -> Vault {
         switch sniff(data, fileName: fileName) {
         case .kdbx:
-            return try KDBX.loadRecovering(data: data, password: password)
+            return try KDBX.loadRecovering(data: data, password: password, keyFile: keyFile)
         case .keepass1:
             return try loadKeePass1(data, password: password, keyFile: keyFile)
         case .pux:
@@ -67,6 +67,14 @@ public enum VaultFormat {
         case .opVault:
             throw VaultOpenError.invalid("An OPVault is a folder. Choose the .opvault directory.")
         }
+    }
+
+    static func load(url: URL, password: String) throws -> Vault {
+        try load(url: url, password: password, keyFile: nil)
+    }
+
+    static func load(data: Data, password: String, fileName: String = "") throws -> Vault {
+        try load(data: data, password: password, keyFile: nil, fileName: fileName)
     }
 
     private static func sniff(_ data: Data, fileName: String) -> VaultFormatKind {

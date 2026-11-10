@@ -6,23 +6,38 @@ import Security
 
 public enum KDBX {
     /// Strict: a document the XML parser refuses is an error. A save's read-back uses this.
-    public static func load(data: Data, password: String) throws -> Vault {
-        try load(data: data, password: password, repairing: false)
+    /// `keyFile` is the key file's contents, or nil for a password-only database.
+    public static func load(data: Data, password: String, keyFile: Data?) throws -> Vault {
+        try load(data: data, password: password, keyFile: keyFile, repairing: false)
     }
 
     /// Opens a file the old writer damaged by repairing its XML in memory. `Vault.recovery` says what changed.
-    public static func loadRecovering(data: Data, password: String) throws -> Vault {
-        try load(data: data, password: password, repairing: true)
+    public static func loadRecovering(data: Data, password: String, keyFile: Data?) throws -> Vault {
+        try load(data: data, password: password, keyFile: keyFile, repairing: true)
     }
 
-    private static func load(data: Data, password: String, repairing: Bool) throws -> Vault {
+    static func load(data: Data, password: String) throws -> Vault {
+        try load(data: data, password: password, keyFile: nil)
+    }
+
+    static func loadRecovering(data: Data, password: String) throws -> Vault {
+        try loadRecovering(data: data, password: password, keyFile: nil)
+    }
+
+    private static func load(data: Data, password: String, keyFile: Data?, repairing: Bool) throws -> Vault {
         let parsed = try parseOuter(data)
-        let composite = compositeKey(password)
-        let transformed = try derive(composite, kdf: parsed.kdf, salt: parsed.kdfSalt)
-        let hmacBase = sha512(parsed.masterSeed + transformed + Data([0x01]))
-        let headerHMACKey = blockKey(index: UInt64.max, base: hmacBase)
-        let actualHMAC = Data(HMAC<SHA256>.authenticationCode(for: parsed.header, using: SymmetricKey(data: headerHMACKey)))
-        guard actualHMAC == parsed.headerHMAC else { throw KDBXError.wrongPassword }
+        var unlocked: (transformed: Data, hmacBase: Data)?
+        for composite in try compositeCandidates(password: password, keyFile: keyFile) {
+            let transformed = try derive(composite, kdf: parsed.kdf, salt: parsed.kdfSalt)
+            let hmacBase = sha512(parsed.masterSeed + transformed + Data([0x01]))
+            let headerHMACKey = blockKey(index: UInt64.max, base: hmacBase)
+            let actualHMAC = Data(HMAC<SHA256>.authenticationCode(for: parsed.header, using: SymmetricKey(data: headerHMACKey)))
+            if actualHMAC == parsed.headerHMAC {
+                unlocked = (transformed, hmacBase)
+                break
+            }
+        }
+        guard let (transformed, hmacBase) = unlocked else { throw KDBXError.wrongPassword }
         let cipherText = try readHMACBlocks(parsed.body, hmacBase: hmacBase)
         let plain = try aesCBCDecrypt(cipherText, key: sha256(parsed.masterSeed + transformed), iv: parsed.iv)
         let inner = parsed.compressed ? try gzipDecompress(plain) : plain
@@ -56,12 +71,17 @@ public enum KDBX {
         return vault
     }
 
-    public static func save(vault: inout Vault, password: String) throws -> Data {
+    public static func save(vault: inout Vault, password: String, keyFile: Data?) throws -> Data {
         normalizeForXML(&vault)
+        let composite = try compositeKey(password: password, keyFile: keyFile)
         if vault.preserve == nil {
-            return try saveGenerated(vault: &vault, password: password)
+            return try saveGenerated(vault: &vault, composite: composite)
         }
-        return try savePreserved(vault: &vault, password: password)
+        return try savePreserved(vault: &vault, composite: composite)
+    }
+
+    static func save(vault: inout Vault, password: String) throws -> Data {
+        try save(vault: &vault, password: password, keyFile: nil)
     }
 
     /// Builds a database whose protected values are still plaintext in `xml`, then saves it.
@@ -71,6 +91,7 @@ public enum KDBX {
         binaries: [Data] = [],
         extraPieces: [InnerPiece] = [],
         password: String,
+        keyFile: Data? = nil,
         kdf: KDFParameters = .fastTest,
         version: UInt32 = 0x00040001,
         compressed: Bool = true,
@@ -102,11 +123,11 @@ public enum KDBX {
             kdfSaltRange: saltRange
         )
         var vault = preserve.makeVault(kdf: kdf)
-        return try save(vault: &vault, password: password)
+        return try save(vault: &vault, password: password, keyFile: keyFile)
     }
 
     /// Packs XML bytes exactly as given, so a test can hold a file the old writer produced.
-    static func testingDatabase(rawXML: Data, streamKey: Data, password: String) throws -> Data {
+    static func testingDatabase(rawXML: Data, streamKey: Data, password: String, keyFile: Data? = nil) throws -> Data {
         let masterSeed = random(32)
         let iv = random(16)
         let kdf = KDFParameters.fastTest
@@ -123,7 +144,7 @@ public enum KDBX {
             version: 0x00040000,
             fields: fields,
             masterSeed: masterSeed,
-            transformed: try derive(compositeKey(password), kdf: kdfParameters.kind, salt: salt),
+            transformed: try derive(compositeKey(password: password, keyFile: keyFile), kdf: kdfParameters.kind, salt: salt),
             iv: iv,
             compressed: true,
             xml: rawXML,
@@ -170,11 +191,10 @@ private func normalizedFields(_ fields: [VaultField]) -> [VaultField] {
     return result
 }
 
-private func saveGenerated(vault: inout Vault, password: String) throws -> Data {
+private func saveGenerated(vault: inout Vault, composite: Data) throws -> Data {
     let masterSeed = random(32)
     let iv = random(16)
     let protectedKey = random(64)
-    let composite = compositeKey(password)
     let (kdfParameters, kdfSalt) = try writeKDF(vault.kdf)
     let transformed = try derive(composite, kdf: kdfParameters.kind, salt: kdfSalt)
     let kdfBlob = kdfParametersBlob(kdfParameters, salt: kdfSalt)
@@ -217,7 +237,7 @@ private func saveGenerated(vault: inout Vault, password: String) throws -> Data 
     return output
 }
 
-private func savePreserved(vault: inout Vault, password: String) throws -> Data {
+private func savePreserved(vault: inout Vault, composite: Data) throws -> Data {
     guard let source = vault.preserve else { throw KDBXError.crypto("The database document is missing.") }
     // Edit a copy. A throw, or a file write that fails after this returns, leaves the open document unchanged.
     let preserve = try source.isolatedCopy()
@@ -248,7 +268,6 @@ private func savePreserved(vault: inout Vault, password: String) throws -> Data 
     }
     guard let kdfBlob else { throw KDBXError.crypto("The KDF parameters are missing.") }
     let parsed = try parseKDF(kdfBlob)
-    let composite = compositeKey(password)
     let transformed = try derive(composite, kdf: parsed.kind, salt: parsed.salt)
     let xml = try preserve.encryptedXML(streamKey: streamKey)
     // Same parser the next unlock uses. A document that fails here is not packed or written.
@@ -583,8 +602,22 @@ func argon2(
     return output
 }
 
-private func compositeKey(_ password: String) -> Data {
-    sha256(sha256(Data(password.utf8)))
+/// KeePass's composite key: SHA-256 over each key's 32 bytes. The password's is SHA-256(password); a key file's comes
+/// from `KeyFile.key`. An empty password with a key file is no password at all, as in KeePassXC. An empty password
+/// without a key file stays SHA-256(SHA-256("")), which is what this app always wrote.
+func compositeKey(password: String, keyFile: Data?) throws -> Data {
+    guard let keyFile else { return sha256(sha256(Data(password.utf8))) }
+    let fileKey = try KeyFile.key(from: keyFile)
+    if password.isEmpty { return sha256(fileKey) }
+    return sha256(sha256(Data(password.utf8)) + fileKey)
+}
+
+/// What to try when opening. KeePassXC retries an empty password field once as an empty password, because some
+/// databases were made with one and a key file.
+private func compositeCandidates(password: String, keyFile: Data?) throws -> [Data] {
+    let first = try compositeKey(password: password, keyFile: keyFile)
+    guard password.isEmpty, let keyFile else { return [first] }
+    return [first, sha256(sha256(Data()) + (try KeyFile.key(from: keyFile)))]
 }
 
 private func readHMACBlocks(_ data: Data, hmacBase: Data) throws -> Data {

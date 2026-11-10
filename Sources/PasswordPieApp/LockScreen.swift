@@ -64,6 +64,8 @@ struct LockScreenActions {
     var create: () -> Void
     var keyFile: () -> Void
     var edit: () -> Void
+    /// The × beside a chosen or remembered key file: Forget Key File.
+    var forgetKeyFile: () -> Void = {}
 }
 
 enum LockFieldFocus: Equatable {
@@ -91,7 +93,8 @@ struct DoorsView: View {
                 unlock: session.unlock, touchID: session.unlockWithTouchID,
                 open: session.chooseDatabase, create: session.newDatabase,
                 keyFile: session.chooseKeyFile,
-                edit: { if !session.message.isEmpty { session.message = "" } }))
+                edit: { if !session.message.isEmpty { session.message = "" } },
+                forgetKeyFile: { session.forgetKeyFile() }))
             .scaleEffect(lock.open ? 0.97 : 1)
             .opacity(lock.open ? 0 : 1)
             // The lock scene covers the menu quickly; the unlock fade is slower.
@@ -255,20 +258,7 @@ struct LockScreenContent: View {
                     .padding(.top, 4)
                 }
                 if presentation.showsKeyFile {
-                    Button(action: actions.keyFile) {
-                        Label(presentation.keyFileName.isEmpty ? "Choose Key File…" : presentation.keyFileName,
-                              systemImage: "key")
-                            .font(.system(size: 11))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 22)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(secondary)
-                    .help(presentation.keyFileName.isEmpty ? "Choose a key file" : presentation.keyFileName)
-                    .accessibilityIdentifier("lock.keyFile")
-                    .padding(.top, 4)
+                    keyFileRow
                 }
                 HStack(spacing: 12) {
                     Button("Open Database…", action: actions.open)
@@ -287,6 +277,42 @@ struct LockScreenContent: View {
             .disabled(busy)
         }
         .animation(.easeInOut(duration: 0.2), value: busy)
+    }
+
+    /// The key file's name, or a button to choose one. A name has a × that forgets it on this Mac.
+    private var keyFileRow: some View {
+        let name = presentation.keyFileName
+        let title = name.isEmpty ? (presentation.creating ? "Add Key File…" : "Choose Key File…") : name
+        return HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            Button(action: actions.keyFile) {
+                Label(title, systemImage: "key")
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(name.isEmpty ? (presentation.creating ? "Add a key file to the new database" : "Choose this database's key file") : name)
+            .accessibilityIdentifier("lock.keyFile")
+            if !name.isEmpty {
+                Button(action: actions.forgetKeyFile) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .frame(width: 18, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Forget Key File")
+                .accessibilityLabel("Forget Key File")
+                .accessibilityIdentifier("lock.forgetKeyFile")
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 
     private var buttonTitle: String {

@@ -15,22 +15,94 @@ public enum VaultFile {
         url.appendingPathExtension("snapshot")
     }
 
-    public static func replace(_ url: URL, with data: Data, password: String, expecting vault: Vault) throws {
-        try replace(url, with: data, password: password, expecting: vault, beforeReplace: {})
+    /// `keyFile` is the key file's contents, or nil. The new bytes must open with exactly this password and key file.
+    public static func replace(_ url: URL, with data: Data, password: String, keyFile: Data?, expecting vault: Vault) throws {
+        try replace(url, with: data, password: password, keyFile: keyFile, expecting: vault, beforeReplace: {})
     }
 
     /// For a write nobody asked for at that moment: nothing happens unless the file still holds `baseline`, the bytes this
     /// session last read or wrote. The previous file is kept as the snapshot only once that holds.
-    public static func replace(_ url: URL, with data: Data, password: String, expecting vault: Vault, baseline: Data) throws {
-        try replace(url, with: data, password: password, expecting: vault, baseline: baseline, keepingSnapshot: true, beforeReplace: {})
+    public static func replace(_ url: URL, with data: Data, password: String, keyFile: Data?, expecting vault: Vault, baseline: Data) throws {
+        try replace(url, with: data, password: password, keyFile: keyFile, expecting: vault, baseline: baseline, keepingSnapshot: true, beforeReplace: {})
+    }
+
+    static func replace(_ url: URL, with data: Data, password: String, expecting vault: Vault) throws {
+        try replace(url, with: data, password: password, keyFile: nil, expecting: vault)
+    }
+
+    static func replace(_ url: URL, with data: Data, password: String, expecting vault: Vault, baseline: Data) throws {
+        try replace(url, with: data, password: password, keyFile: nil, expecting: vault, baseline: baseline)
+    }
+
+    /// Changes a database's keys: a new password, a key file added, replaced or removed. The file is written with the new
+    /// keys, opened with them, and only then swapped in, and only while it still holds `baseline`. A failure leaves the file
+    /// as it was. Afterwards the snapshot beside it is replaced by the new bytes too: it held the same accounts under the
+    /// old keys, and a copy in the same (often synced) folder that opens with the password alone would undo a new key file.
+    /// Returns the bytes written; `vault` is updated to match them.
+    @discardableResult
+    public static func rekey(_ url: URL, vault: inout Vault, password: String, keyFile: Data?, baseline: Data) throws -> Rekeyed {
+        try rekey(url, vault: &vault, password: password, keyFile: keyFile, baseline: baseline, beforeReplace: {})
+    }
+
+    @discardableResult
+    static func rekey(
+        _ url: URL,
+        vault: inout Vault,
+        password: String,
+        keyFile: Data?,
+        baseline: Data,
+        beforeReplace: () throws -> Void
+    ) throws -> Rekeyed {
+        guard writesKDBXFile(url) else { throw VaultWriteError("Only a KeePass .kdbx database can change its keys.") }
+        var updated = vault
+        let data = try KDBX.save(vault: &updated, password: password, keyFile: keyFile)
+        try replace(url, with: data, password: password, keyFile: keyFile, expecting: updated, baseline: baseline,
+                    keepingSnapshot: true, beforeReplace: beforeReplace)
+        updated.noteFileContents(data)
+        vault = updated
+        do {
+            try refreshSnapshot(of: url, with: data)
+            return Rekeyed(data: data, snapshotRefreshed: true)
+        } catch {
+            return Rekeyed(data: data, snapshotRefreshed: false)
+        }
+    }
+
+    /// What a key change wrote. `snapshotRefreshed` is false when the `.snapshot` beside the database still holds the
+    /// old keys; the database itself was changed either way.
+    public struct Rekeyed: Equatable, Sendable {
+        public let data: Data
+        public let snapshotRefreshed: Bool
+    }
+
+    private static func writesKDBXFile(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == "kdbx"
+    }
+
+    /// Writes the snapshot through a staging file, so a failure leaves the previous snapshot whole.
+    private static func refreshSnapshot(of url: URL, with data: Data) throws {
+        let snapshot = snapshotURL(for: url)
+        let staging = snapshot.appendingPathExtension("incoming")
+        try data.write(to: staging, options: .atomic)
+        try restrict(staging)
+        if FileManager.default.fileExists(atPath: snapshot.path) {
+            _ = try FileManager.default.replaceItemAt(snapshot, withItemAt: staging)
+        } else {
+            try FileManager.default.moveItem(at: staging, to: snapshot)
+        }
+        try restrict(snapshot)
     }
 
     /// Opens any vault. A `.kdbx` file with damaged XML opens from repaired text and is then rewritten, with the exact
     /// bytes that were decoded kept in a backup no later save touches. The rewrite happens only if the file still
     /// holds those bytes, so a newer version that sync delivered meanwhile stays. `.snapshot` is left as it was: it may
     /// be the last copy from before the damage. Any other file name is a copy the person opened, and is never rewritten.
-    public static func openRecovering(url: URL, password: String, keyFile: Data? = nil) throws -> Vault {
+    public static func openRecovering(url: URL, password: String, keyFile: Data?) throws -> Vault {
         try openRecovering(url: url, password: password, keyFile: keyFile, beforeReplace: {})
+    }
+
+    static func openRecovering(url: URL, password: String) throws -> Vault {
+        try openRecovering(url: url, password: password, keyFile: nil)
     }
 
     static func openRecovering(
@@ -56,8 +128,8 @@ public enum VaultFile {
             let backup = try keepDamagedCopy(decoded, of: url)
             var healed = vault
             healed.recovery = nil
-            let data = try KDBX.save(vault: &healed, password: password)
-            try replace(url, with: data, password: password, expecting: healed, baseline: decoded, beforeReplace: beforeReplace)
+            let data = try KDBX.save(vault: &healed, password: password, keyFile: keyFile)
+            try replace(url, with: data, password: password, keyFile: keyFile, expecting: healed, baseline: decoded, beforeReplace: beforeReplace)
             vault = healed
             vault.noteFileContents(data)
             vault.recoveryNotice = "Repaired \(name). The damaged file was kept as \(backup.lastPathComponent).\n\n\(recovery.summary)"
@@ -72,6 +144,7 @@ public enum VaultFile {
         _ url: URL,
         with data: Data,
         password: String,
+        keyFile: Data? = nil,
         expecting expected: Vault,
         baseline: Data? = nil,
         keepingSnapshot: Bool = false,
@@ -104,7 +177,7 @@ public enum VaultFile {
         try restrict(temp)
         let loaded: Vault
         do {
-            loaded = try KDBX.load(data: Data(contentsOf: temp), password: password)
+            loaded = try KDBX.load(data: Data(contentsOf: temp), password: password, keyFile: keyFile)
         } catch {
             throw refused(error, existed: exists)
         }
