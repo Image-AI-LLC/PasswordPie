@@ -6,6 +6,7 @@ import type { Entitlement, EntitlementResult, RedeemResult } from '../lib/accoun
 import type { AccountUser, SignInResult } from '../lib/auth';
 import type { AppPremium } from '../lib/pass-relay';
 import type { PopupStatus } from '../lib/protocol';
+import { SCAN_MESSAGES, type ScanOutcome } from '../lib/scan-outcome';
 
 export interface PopupApi {
   /** False in the App Store build: no upgrade link and no key field. */
@@ -17,6 +18,8 @@ export interface PopupApi {
   /** The shortcut Chrome actually gave `open-panel`, such as "⌥⇧P"; "" when it gave none (the key was taken). */
   panelShortcut(): Promise<string>;
   status(): Promise<PopupStatus>;
+  /** "Scan QR code on this page": the background reads the tab's two-step QR code and hands it to the app. */
+  scanPage(): Promise<ScanOutcome>;
   /** Hands the app the account's pass now, and says whether the app on this Mac has it. */
   appPremium(): Promise<AppPremium>;
   user(): Promise<AccountUser | null>;
@@ -259,6 +262,30 @@ function Account({ api, user }: { api: PopupApi; user: AccountUser }) {
   );
 }
 
+/** One button and the line it leaves. Runs only on a click. */
+function ScanQr({ api }: { api: PopupApi }) {
+  const scan = useMutation({ mutationFn: () => api.scanPage() });
+  const outcome = scan.data;
+  const named = outcome?.kind === 'sent' ? [outcome.issuer, outcome.account].filter(Boolean).join(' · ') : '';
+  return (
+    <div className="flex flex-col gap-1">
+      <Button onClick={() => scan.mutate()} disabled={scan.isPending}>
+        {scan.isPending ? 'Scanning…' : 'Scan QR code on this page'}
+      </Button>
+      {outcome && (
+        <p
+          role="status"
+          data-testid="scan-result"
+          className={`text-center text-[12px] ${outcome.kind === 'sent' ? 'text-pp-text-secondary' : 'text-pp-error'}`}
+        >
+          {named ? `${named}. ` : ''}
+          {SCAN_MESSAGES[outcome.kind]}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function PopupView({ api }: { api: PopupApi }) {
   const user = useQuery({ queryKey: ['user'], queryFn: () => api.user(), retry: false, enabled: api.accountEnabled });
   const status = useQuery({ queryKey: ['status'], queryFn: () => api.status() });
@@ -277,6 +304,7 @@ export function PopupView({ api }: { api: PopupApi }) {
           {shortcut.data ? `or press ${shortcut.data} in the browser` : 'or press the PasswordPie shortcut, ⌘\\ by default'}
         </p>
       </div>
+      <ScanQr api={api} />
       {status.data?.codeSkippedOn && (
         <p className="rounded-md bg-pp-field px-3 py-2 text-[12px] text-pp-text-secondary" role="status">
           The two-step code on {status.data.codeSkippedOn} was not filled: it needs Premium.

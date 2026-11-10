@@ -13,7 +13,7 @@ App Store builds do not contain direct-only code.
 | Two-step codes (Premium) | a pass from the PasswordPie browser extension (signed in to an account with Premium), or an activation from passwordpie.com. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
 | Two-step codes in the browser (Premium) | the app has Premium, or the extension's passwordpie.com token checks ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
 | Network from the app | **none** of its own (see "Network" below) | **none**: no `URLSession`, no `network.client` entitlement |
-| Extension popup | account, Upgrade (pricing page) and "Have a key?"; it hands the account's pass to the app | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): Open PasswordPie only. No account, no Upgrade, no key field, no request to the site |
+| Extension popup | Open PasswordPie, Scan QR code on this page, account, Upgrade (pricing page) and "Have a key?"; it hands the account's pass to the app | Safari build with `WXT_PP_STORE=mas` (`make mas-dev`): Open PasswordPie and Scan QR code on this page only. No account, no Upgrade, no key field, no request to the site |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:

@@ -69,7 +69,7 @@ export type ContentMessage =
   | { type: 'code-field' };
 
 /** popup → background */
-export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' } | { type: 'app-premium' };
+export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' } | { type: 'app-premium' } | { type: 'scan-page' };
 
 /** The background's answer to `popup-status`. */
 export interface PopupStatus {
@@ -107,6 +107,21 @@ export function fillOfTabAnswer(value: unknown): TabFill | undefined {
       ? Math.min(expiresIn * 1000, FILL_LIFETIME_MS)
       : FILL_LIFETIME_MS;
   return { origin, username, password, lifetimeMs, otp: otp === true };
+}
+
+/** A `tab` answer's `expectCode`: a code was just added from a scan for this origin; watch its frames for the field. */
+export interface ExpectCode {
+  origin: string;
+  lifetimeMs: number;
+}
+
+export function expectCodeOfTabAnswer(value: unknown): ExpectCode | undefined {
+  if (!isRecord(value) || value.type !== 'tab' || !isRecord(value.expectCode)) return undefined;
+  const { origin, expiresIn } = value.expectCode;
+  if (typeof origin !== 'string') return undefined;
+  const lifetimeMs =
+    typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn > 0 ? Math.min(expiresIn * 1000, CODE_LIFETIME_MS) : CODE_LIFETIME_MS;
+  return { origin, lifetimeMs };
 }
 
 export type CodeAnswer = { kind: 'code'; origin: string; code: string } | { kind: 'no-premium' } | { kind: 'none' };
@@ -152,6 +167,7 @@ export function parsePopupMessage(value: unknown): PopupMessage | undefined {
   if (value.type === 'open-panel') return { type: 'open-panel' };
   if (value.type === 'popup-status') return { type: 'popup-status' };
   if (value.type === 'app-premium') return { type: 'app-premium' };
+  if (value.type === 'scan-page') return { type: 'scan-page' };
   return undefined;
 }
 

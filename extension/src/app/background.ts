@@ -4,9 +4,11 @@ import { AccountStore, refreshEntitlement } from '@/lib/account';
 import { storageKV } from '@/lib/browser-kv';
 import { SITE_URL, UPGRADE_URL } from '@/lib/config';
 import { FillController, type TabsAdapter } from '@/lib/controller';
-import { ChromeNativeChannel, SafariNativeChannel, type NativeChannel, type PortLike } from '@/lib/native-channel';
+import { ChromeNativeChannel, SafariNativeChannel, SHOW_TIMEOUT_MS, type NativeChannel, type PortLike } from '@/lib/native-channel';
 import { PassRelay, relayKeysChanged } from '@/lib/pass-relay';
 import { NATIVE_APP, originOf, parsePopupMessage } from '@/lib/protocol';
+import { type QrImagesMessage } from '@/lib/qr-page';
+import { decodeQrDataUrl, scanActiveTab, type ScanDeps } from '@/lib/qr-scan';
 import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
 const RECONNECT_ALARM = 'passwordpie-reconnect';
@@ -57,6 +59,34 @@ const tabs: TabsAdapter = {
   },
 };
 
+/** The browser side of "Scan QR code on this page". Pictures stay in memory; the link goes only to the app. */
+function scanDeps(channel: NativeChannel): ScanDeps {
+  return {
+    async activeTab() {
+      const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+      return tab;
+    },
+    pageImages(tabId) {
+      const ask: QrImagesMessage = { type: 'qr-images' };
+      return browser.tabs.sendMessage(tabId, ask, { frameId: 0 });
+    },
+    async captureVisibleTab(windowId) {
+      // Safari may not allow it; the page's own pictures were tried first.
+      return windowId === undefined
+        ? await browser.tabs.captureVisibleTab({ format: 'png' })
+        : await browser.tabs.captureVisibleTab(windowId, { format: 'png' });
+    },
+    decode: decodeQrDataUrl,
+    sendScan(otpauth, url) {
+      return channel.request({ type: 'scan', otpauth, url });
+    },
+    async startApp() {
+      const answer: unknown = await channel.request({ type: 'show' }, SHOW_TIMEOUT_MS);
+      return typeof answer === 'object' && answer !== null && 'type' in answer && answer.type === 'show';
+    },
+  };
+}
+
 export default defineBackground(() => {
   const channel = makeChannel();
   // Spelled out so Vite folds it: the App Store build has no account and sends the site nothing (docs/ACCOUNTS.md).
@@ -87,6 +117,9 @@ export default defineBackground(() => {
       sendResponse(true);
     } else if (popup?.type === 'popup-status') {
       sendResponse(controller.popupStatus());
+    } else if (popup?.type === 'scan-page') {
+      scanActiveTab(scanDeps(channel)).then(sendResponse, () => sendResponse({ kind: 'none' }));
+      return true; // answers later
     } else if (popup?.type === 'app-premium') {
       controller.appPremium().then(sendResponse, () => sendResponse('none'));
       return true; // answers later

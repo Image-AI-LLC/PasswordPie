@@ -409,6 +409,27 @@ describe('FillController two-step codes', () => {
     expect(tabs.frameMessages[0]?.msg).toEqual({ type: 'watch-code', origin: ORIGIN, waitMs: 30_000 });
   });
 
+  it('watches for the code field of a code just added from a scan, with no fill', async () => {
+    channel.answer = (msg) => {
+      if (msg.type === 'tab') return { type: 'tab', id: 1, expectCode: { origin: ORIGIN, expiresIn: 25 } };
+      if (msg.type === 'code') return { type: 'code', id: 2, otp: { origin: ORIGIN, code: '654321', expiresIn: 20 } };
+      return { type: 'hello', id: 1, version: 1, locked: false };
+    };
+    await filled();
+    expect(tabs.fills).toEqual([]);
+    expect(tabs.frameMessages[0]?.msg).toEqual({ type: 'watch-code', origin: ORIGIN, waitMs: 25_000 });
+    codeField();
+    await settle(0);
+    expect(tabs.frameMessages.at(-1)).toEqual({ tabId: 1, frameId: 0, msg: { type: 'code', origin: ORIGIN, code: '654321' } });
+  });
+
+  it('ignores a scan announcement for another origin than the reported tab', async () => {
+    channel.answer = (msg) =>
+      msg.type === 'tab' ? { type: 'tab', id: 1, expectCode: { origin: 'https://evil.test', expiresIn: 25 } } : { type: 'hello', id: 1 };
+    await filled();
+    expect(watches()).toEqual([]);
+  });
+
   it('does not watch for an account without a code', async () => {
     answerWithFill();
     await filled();

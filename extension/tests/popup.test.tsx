@@ -60,6 +60,10 @@ function api(overrides: Partial<PopupApi> = {}): PopupApi {
       return { ok: true, entitlement };
     },
     openUrl: (url) => void log.push(`open ${url}`),
+    scanPage: async () => {
+      log.push('scan-page');
+      return { kind: 'sent', issuer: 'Demo', account: 'ada' };
+    },
     ...overrides,
   };
 }
@@ -124,6 +128,28 @@ describe('Popup', () => {
     await render(api());
     await click('Open PasswordPie');
     expect(log).toContain('open-panel');
+  });
+
+  it('scans the page only when the button is clicked, and says what happened', async () => {
+    await render(api());
+    expect(log).not.toContain('scan-page');
+    expect(container.querySelector('[data-testid="scan-result"]')).toBeNull();
+    await click('Scan QR code on this page');
+    expect(log).toContain('scan-page');
+    expect(container.querySelector('[data-testid="scan-result"]')?.textContent).toBe(
+      'Demo · ada. Sent to PasswordPie. Choose the item there and press Add.',
+    );
+  });
+
+  it('says why a scan found nothing to send', async () => {
+    await render(api({ scanPage: async () => ({ kind: 'hotp' }) }));
+    await click('Scan QR code on this page');
+    expect(container.querySelector('[data-testid="scan-result"]')?.textContent).toContain('counter-based (HOTP)');
+  });
+
+  it('the App Store build scans too', async () => {
+    await render(api({ accountEnabled: false, sellsPremium: false }));
+    expect(hasButton('Scan QR code on this page')).toBe(true);
   });
 
   it('names the shortcut Chrome gave, and the app shortcut when it gave none', async () => {

@@ -17,6 +17,7 @@ Requires macOS 14 or later on an Apple Silicon Mac. The DMG and the app are sign
 - Press `⌘\` from any app, type a few letters, and copy: `⌃⌘C` username, `⇧⌘C` password, `⌥⌘C` one-time code
 - Reads and writes standard KeePass KDBX 4 files, wherever you keep them. No account, no built-in sync
 - Two-step codes (TOTP), a password generator, Large Type, and a pinned window that stays above other apps
+- Scan a site's two-step QR code from the browser extension or a screenshot, read on your Mac
 - Touch ID unlock, auto-lock, and a clipboard that clears itself
 - Imports KeePass 1, 1Password, Bitwarden, Proton Pass and CSV exports
 
@@ -44,4 +45,4 @@ We are not accepting outside pull requests for now. Bug reports and ideas are we
 
 ## Credits
 
-Site popularity in search, and the list of sites whose icons are bundled, come from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The bundled site icons in `Assets/SiteIcons` are the trademarks of their sites' owners, shown only to identify the site an account belongs to; where each came from is listed in [`Assets/SiteIcons/SOURCES.md`](Assets/SiteIcons/SOURCES.md). Argon2 is used under CC0 1.0 / Apache 2.0.
+Site popularity in search, and the list of sites whose icons are bundled, come from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The bundled site icons in `Assets/SiteIcons` are the trademarks of their sites' owners, shown only to identify the site an account belongs to; where each came from is listed in [`Assets/SiteIcons/SOURCES.md`](Assets/SiteIcons/SOURCES.md). Argon2 is used under CC0 1.0 / Apache 2.0. The browser extension bundles [jsQR](https://github.com/cozmo/jsQR) under the Apache License 2.0 (notice in `extension/public/THIRD_PARTY_NOTICES.txt`).

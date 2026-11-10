@@ -149,7 +149,7 @@ struct EditorView: View {
                     HStack(spacing: 8) {
                         OneTimeCodeView(access: access)
                         if access == .locked {
-                            Button("Upgrade") { session.requestPremium() }.controlSize(.small)
+                            SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
                         }
                     }
                     .accessibilityElement(children: .combine)

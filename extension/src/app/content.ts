@@ -3,6 +3,7 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { CodeFiller } from '@/lib/code-filler';
 import { PageFiller, sameOriginWithTop } from '@/lib/page-filler';
 import { parseFillMessage, parseFrameMessage, type ContentMessage } from '@/lib/protocol';
+import { isQrImagesMessage, pageQrImages } from '@/lib/qr-page';
 import { pageIconLinks, parseIconLinksMessage } from '@/lib/site-icon';
 
 function send(msg: ContentMessage): void {
@@ -30,6 +31,13 @@ export default defineContentScript({
     });
 
     browser.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse: (answer: unknown) => void) => {
+      // Only the background sends runtime messages here; a web page cannot. The top frame alone answers, and only when
+      // the person clicked Scan in the popup.
+      if (isQrImagesMessage(raw)) {
+        if (window.top !== window) return false;
+        pageQrImages(document, window).then(sendResponse, () => sendResponse([]));
+        return true; // answers later
+      }
       const iconAsk = parseIconLinksMessage(raw);
       if (iconAsk) {
         // Only the top frame, and only while it is still on the page the app asked about.

@@ -15,7 +15,9 @@ export type Request =
   | { type: 'code'; url: string; entitlement?: string }
   /** Hands the app this browser's pass, or takes it back (docs/BROWSER_EXTENSION.md, "`premium`"). */
   | { type: 'premium'; pass: string }
-  | { type: 'premium'; drop: 'signed-out' | 'no-premium' };
+  | { type: 'premium'; drop: 'signed-out' | 'no-premium' }
+  /** A two-step QR code the user scanned on the page, with the page's origin (docs/BROWSER_EXTENSION.md, "`scan`"). */
+  | { type: 'scan'; otpauth: string; url: string };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */

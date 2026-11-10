@@ -135,9 +135,9 @@ struct OTPScanConfirmView: View {
                 OneTimeCodeView(access: access)
                 Spacer()
                 if access.isAvailable {
-                    Button("Copy") { session.copy(.oneTimePassword, of: id) }
+                    SplitActionButton(title: "Copy", prominence: .quiet, items: []) { session.copy(.oneTimePassword, of: id) }
                 } else if access == .locked {
-                    Button("Upgrade") { session.requestPremium() }
+                    SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
                 }
             }
             .padding(10)
@@ -149,11 +149,11 @@ struct OTPScanConfirmView: View {
         }
         HStack {
             Spacer()
+            // Not styled primary: the code row holds the surface's one main action (Copy, or Upgrade).
             Button("Done") {
                 model.cancel()
                 close()
             }
-            .buttonStyle(BrandPrimaryButtonStyle())
             .keyboardShortcut(.defaultAction)
         }
     }
