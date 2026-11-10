@@ -339,7 +339,9 @@ final class VaultSession: ObservableObject {
     func unlock() {
         let password = passwordDraft
         // A new database always gets a master password, with or without a key file.
-        let keyOnly = !creating && keyFileForUnlock != nil
+        // No password: only a key file chosen on the lock screen for this attempt. A remembered one never opens a
+        // database by itself, or a database whose password was removed elsewhere would open with nothing typed.
+        let keyOnly = !creating && keyFileForUnlock != nil && !keyFileRemembered
         guard !password.isEmpty || keyOnly else {
             message = "Enter the master password."
             return

@@ -271,7 +271,8 @@ extension VaultSession {
             }
             let keyFile = self.openedFiles.first { $0.url.path == self.databaseURL.path }?.keyFile
             self.rekey(password: change.new, keyFile: keyFile, keyFileName: keyFile == nil ? nil : self.keyFileName,
-                       keepOnThisMac: self.keyFileRemembered,
+                       // Kept as it was, except that a database gaining its first password now keeps its key like any other.
+                       keepOnThisMac: self.keyFileRemembered || self.masterPassword.isEmpty,
                        done: keyFile == nil ? "The master password was changed." : "The master password was changed. The key file stays the same.")
         }
     }
@@ -305,7 +306,8 @@ extension VaultSession {
 
     /// Writes the current database with new keys. `VaultFile.rekey` opens the new file with them before it replaces
     /// anything, and refuses if the file changed on disk since this session read it.
-    /// `keepOnThisMac` is false when the person had forgotten the key file: a password change must not remember it again.
+    /// `keepOnThisMac` is false when this Mac does not keep the key file (Forget Key File): a password change must not
+    /// remember it again.
     private func rekey(password: String, keyFile: Data?, keyFileName name: String?, keepOnThisMac: Bool = true, done: String) {
         let path = databaseURL.path
         guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }

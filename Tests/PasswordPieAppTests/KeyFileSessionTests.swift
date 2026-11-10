@@ -198,6 +198,64 @@ final class KeyFileSessionTests: XCTestCase {
         XCTAssertFalse(makeSession().keyFileRemembered)
     }
 
+    func testAKeyFileOnlyDatabaseNeedsItsKeyFileAgainAfterLock() async throws {
+        let session = try await keyOnlySession()
+        session.lock()
+        XCTAssertEqual(session.keyFileName, "")
+        session.passwordDraft = ""
+        session.unlock()
+        XCTAssertTrue(session.locked)
+        XCTAssertEqual(session.message, "Enter the master password.")
+    }
+
+    func testARememberedKeyFileNeverOpensADatabaseWithAnEmptyPassword() async throws {
+        let key = try KeyFile.generate()
+        var vault = Vault(entries: [], kdf: .fastTest)
+        try KDBX.save(vault: &vault, password: "", keyFile: key).write(to: database)
+        // Remembered while the database still had a password; the password was later removed elsewhere.
+        keychain.items[database.path] = RememberedKeyFile(name: "old.keyx", data: key).encoded
+        let session = makeSession()
+        XCTAssertTrue(session.keyFileRemembered)
+        session.passwordDraft = ""
+        session.unlock()
+        XCTAssertTrue(session.locked)
+        XCTAssertEqual(session.message, "Enter the master password.")
+    }
+
+    func testRemovingTheKeyFileOfADatabaseWithNoPasswordIsRefused() async throws {
+        let session = try await keyOnlySession()
+        let original = try Data(contentsOf: database)
+        prompts.choices = [0]
+        session.removeKeyFile()
+        XCTAssertTrue(session.keyFileStatusIsError)
+        XCTAssertEqual(try Data(contentsOf: database), original)
+    }
+
+    func testAPasswordChangeAfterForgetKeyFileDoesNotRememberItAgain() async throws {
+        let session = try await createdSession()
+        let keyURL = keys.appendingPathComponent("test.keyx")
+        prompts.choices = [0]
+        prompts.saveLocations = [keyURL]
+        session.addKeyFile()
+        XCTAssertTrue(session.forgetKeyFile())
+        prompts.passwordChange = MasterPasswordChange(current: "pw", new: "new pw", repeated: "new pw")
+        session.changeMasterPassword()
+        XCTAssertFalse(session.keyFileStatusIsError, session.keyFileStatus)
+        XCTAssertNil(keychain.items[database.path])
+        try assertOpens(password: "new pw", keyFile: try Data(contentsOf: keyURL))
+    }
+
+    func testAFirstPasswordOnAKeyFileOnlyDatabaseKeepsTheKeyOnThisMac() async throws {
+        let session = try await keyOnlySession()
+        prompts.passwordChange = MasterPasswordChange(current: "", new: "pw", repeated: "pw")
+        session.changeMasterPassword()
+        XCTAssertFalse(session.keyFileStatusIsError, session.keyFileStatus)
+        XCTAssertNotNil(keychain.items[database.path])
+        session.lock()
+        try await unlock(session, password: "pw")
+        XCTAssertFalse(session.locked, session.message)
+    }
+
     func testAWrongPasswordWithAKeyFileNamesBoth() async throws {
         let session = try await createdSession()
         prompts.choices = [0]
@@ -351,6 +409,21 @@ final class KeyFileSessionTests: XCTestCase {
         try KDBX.save(vault: &vault, password: "pw", keyFile: nil).write(to: database)
         let session = makeSession()
         try await unlock(session, password: "pw")
+        XCTAssertFalse(session.locked, session.message)
+        return session
+    }
+
+    /// A database with a key file and no password, opened with the file chosen on the lock screen.
+    private func keyOnlySession() async throws -> VaultSession {
+        let key = try KeyFile.generate()
+        let keyURL = keys.appendingPathComponent("only.keyx")
+        try key.write(to: keyURL)
+        var vault = Vault(entries: [], kdf: .fastTest)
+        try KDBX.save(vault: &vault, password: "", keyFile: key).write(to: database)
+        let session = makeSession()
+        prompts.existingFiles = [keyURL]
+        session.chooseKeyFile()
+        try await unlock(session, password: "")
         XCTAssertFalse(session.locked, session.message)
         return session
     }
