@@ -62,13 +62,14 @@ extension VaultSession {
     /// Fills the lock screen's key file for `databaseURL`: what was chosen for it, or what this Mac remembers.
     func syncKeyFileDraft() {
         let path = databaseURL.path
-        if keyFileOwner != path {
+        // A key kept for an earlier database at this path never goes into the New Database form.
+        if keyFileOwner != path || (creating && keyFileRemembered) {
             keyFileData = nil
             keyFileName = ""
             keyFileRemembered = false
             keyFileOwner = path
         }
-        guard keyFileData == nil, Self.takesKeyFile(databaseURL), let remembered = rememberedKeyFile(for: path) else { return }
+        guard keyFileData == nil, !creating, Self.takesKeyFile(databaseURL), let remembered = rememberedKeyFile(for: path) else { return }
         keyFileData = remembered.data
         keyFileName = remembered.name
         keyFileRemembered = true

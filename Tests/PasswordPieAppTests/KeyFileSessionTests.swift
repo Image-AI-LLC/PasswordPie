@@ -126,6 +126,41 @@ final class KeyFileSessionTests: XCTestCase {
         XCTAssertEqual(session.message, "Enter the master password.")
     }
 
+    func testAStaleRememberedKeyNeverGoesIntoANewDatabase() throws {
+        keychain.items[database.path] = RememberedKeyFile(name: "old.keyx", data: try KeyFile.generate()).encoded
+        let session = makeSession()
+        XCTAssertTrue(session.creating)
+        XCTAssertNil(session.keyFileForUnlock)
+        XCTAssertFalse(session.keyFileRemembered)
+        session.passwordDraft = "pw"
+        session.confirmDraft = "pw"
+        session.unlock()
+        XCTAssertFalse(session.locked)
+        try assertOpens(password: "pw", keyFile: nil)
+        XCTAssertNil(keychain.items[database.path])
+        session.lock()
+        XCTAssertNil(session.keyFileForUnlock)
+    }
+
+    func testADatabaseDeletedWhileUnlockedLeavesNoKeyInTheNewOne() async throws {
+        let session = try await createdSession()
+        let keyURL = keys.appendingPathComponent("test.keyx")
+        prompts.choices = [0]
+        prompts.saveLocations = [keyURL]
+        session.addKeyFile()
+        XCTAssertTrue(session.keyFileRemembered)
+        try FileManager.default.removeItem(at: database)
+        session.lock()
+        XCTAssertTrue(session.creating)
+        XCTAssertNil(session.keyFileForUnlock)
+        session.passwordDraft = "pw"
+        session.confirmDraft = "pw"
+        session.unlock()
+        XCTAssertFalse(session.locked)
+        try assertOpens(password: "pw", keyFile: nil)
+        XCTAssertNil(keychain.items[database.path])
+    }
+
     // MARK: Add, remember, forget
 
     func testAddKeyFileThenUnlockWithThePasswordAlone() async throws {

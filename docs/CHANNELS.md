@@ -95,7 +95,7 @@ the place chosen in a save panel (Add Key File…). Both are user-selected files
 file's **contents** in the login keychain (generic password, service `com.oldcai.passwordpie.keyfile`, account = the
 database path, the same legacy keychain as the Touch ID secret, which works in the sandbox). Later unlocks read the
 keychain, never the original path, so neither channel needs a security-scoped bookmark to the key file. Forget Key File
-deletes the item; Remove Key File deletes it too. The Touch ID secret (`com.oldcai.passwordpie`) holds only the master
+deletes the item; Remove Key File deletes it too, and so does removing the database from the list in Preferences. The Touch ID secret (`com.oldcai.passwordpie`) holds only the master
 password; a KeePass 1 key file that older builds put inside it is still read, and removed on Forget Key File.
 
 ## Open items before an App Store submission

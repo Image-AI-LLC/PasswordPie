@@ -359,9 +359,14 @@ final class VaultSession: ObservableObject {
             confirmDraft = ""
             message = ""
             save()
-            if let key = keyFileForUnlock, openedFiles.contains(where: { $0.url.path == databaseURL.path }) {
-                rememberKeyFile(key)
-                databaseUsesKeyFile = true
+            if openedFiles.contains(where: { $0.url.path == databaseURL.path }) {
+                if let key = keyFileForUnlock {
+                    rememberKeyFile(key)
+                    databaseUsesKeyFile = true
+                } else {
+                    // A stale key kept for an earlier database at this path would refuse the new password.
+                    _ = forgetKeyFile()
+                }
             }
             loadRememberedDatabases()
             didUnlock(withMasterPassword: true)
@@ -771,6 +776,12 @@ final class VaultSession: ObservableObject {
         let status = secretStore.delete(account: resolved)
         guard !TouchIDEnrollment.keepsPersistedFlag(deleteStatus: status) else {
             reportKeychainCleanupFailure(status, path: resolved)
+            return
+        }
+        // The key file kept for this database goes with it, so no copy of the key outlives the list entry.
+        let keyStatus = keyFileMemory.delete(account: resolved)
+        guard keyStatus == errSecSuccess else {
+            reportKeychainCleanupFailure(keyStatus, path: resolved)
             return
         }
         guard next.current != databaseURL.path else {

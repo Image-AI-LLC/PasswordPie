@@ -816,7 +816,8 @@ hex file, and any other file, whose contents become the key.
 ### Privacy
 
 The key file never leaves this Mac. PasswordPie keeps a copy of its contents in the login keychain, next to the
-Touch ID secret, so the App Store version needs no access to the place you saved it.
+Touch ID secret, so the App Store version needs no access to the place you saved it. Removing the database from the
+list in Preferences forgets it too; the file you saved stays where it is.
 
 ### Demo script
 
