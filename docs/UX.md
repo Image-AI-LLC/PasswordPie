@@ -752,3 +752,79 @@ Use a database with an item "Demo" (website `http://localhost:8787`, username `a
 4. In PasswordPie, open a new item's editor. Press ⌃⇧⌘4 over the QR code, then click the QR button in the One-time password
    row: the link fills in and the code shows. Save.
 5. Copy some text and click the QR button: "Copy a screenshot of the QR code first, or an otpauth:// link."
+
+## A key file that stays on this Mac
+
+**In one line:** give a database a second key, a small file that stays on your Mac. A copy of the database that leaks
+from a cloud folder cannot be opened with the master password alone, and every day you still unlock with just the
+password or Touch ID.
+
+### The problem
+
+A KeePass database is one file, usually in a cloud folder so it reaches every device. If that folder leaks and the
+master password is weak or reused, everything in it is readable, two-step secrets included. Encrypting the two-step
+field separately would not help: the same password would open it. What helps is a second key the thief does not have,
+the way 1Password's Secret Key stays on your devices. KeePass has one already, the key file, and KeePassXC, KeePassium
+and Strongbox all understand it. PasswordPie could only use one for old KeePass 1 imports.
+
+### What happens now
+
+**Preferences > Database > Key file**, for the database that is open:
+
+- **Add Key File…** makes a new key file: 32 random bytes in the KeePass XML 2.0 format that KeePassXC writes. You
+  choose where to save it. PasswordPie reads the saved file back and checks it, then saves the database again,
+  locked with the password and the key file. Saving it in the database's own folder asks again, because that folder is
+  usually the one that syncs.
+- **Use Existing Key File…** uses a file you already have, such as one from KeePassXC.
+- **Remove Key File…** goes back to the password alone.
+- **Forget Key File** forgets it on this Mac only. The database still needs it; the next unlock asks for the file.
+
+Each change asks first, with the same warning: *Without this key file, the database cannot be opened, and PasswordPie
+cannot recover it. Keep a backup somewhere else: not in the database's folder, and not in the same cloud storage.*
+
+The database is written to a new file first. PasswordPie opens that file with the new keys, and only then replaces the
+database. If anything fails, the database is left as it was and still opens with the old keys. The copy PasswordPie
+keeps beside the database (`.snapshot`) is replaced too, so no file in that folder opens with the password alone.
+Older copies elsewhere, such as your cloud's version history or a Time Machine backup, still open with the old keys.
+
+**Unlocking.** The first time a database opens with a key file, PasswordPie keeps the key file in this Mac's login
+keychain, for that database only. From then on the lock screen shows the file's name under the password field, and you
+type the password or use Touch ID as before. The × next to the name forgets it, like Forget Key File. Choosing the
+file again on the lock screen keeps it again after the next unlock.
+
+**A new database** can have a key file from the start: Add Key File… on the New Database screen, under the two
+password fields, makes a new one or uses an existing one.
+
+**Change Master Password…** sits below it: the current password, then the new one twice. The key file stays as it
+is.
+
+A wrong password with a key file says "Incorrect password or key file." A damaged key file (a KeePass XML file whose
+checksum does not match) says so, instead of blaming the password.
+
+A database another app gave a key file (KeePassXC, KeePassium, Strongbox) opens the same way: choose the key file on
+the lock screen once. PasswordPie reads every KeePass key file format: XML 1.0 and 2.0, a 32-byte file, a 64-character
+hex file, and any other file, whose contents become the key.
+
+### When it does not apply
+
+- Imported files (CSV, 1Password, Bitwarden, Proton Pass) have no key file. A KeePass 1 database with a key file keeps
+  it: the `.kdbx` written from it uses the same password and key file.
+- Changing keys needs a `.kdbx` that PasswordPie can write, opened and unlocked.
+- No hardware keys (YubiKey) and no challenge-response.
+- Databases you already have are never given a key file or changed by themselves.
+
+### Privacy
+
+The key file never leaves this Mac. PasswordPie keeps a copy of its contents in the login keychain, next to the
+Touch ID secret, so the App Store version needs no access to the place you saved it.
+
+### Demo script
+
+1. Open a database and choose Preferences > Database > Add Key File…. Read the warning, choose Continue, and save the
+   key file to Documents.
+2. Lock with ⌘L. Open the menu: the lock screen shows the key file's name. Type the master password: it unlocks.
+3. Copy the `.kdbx` to another folder and open that copy in KeePassXC with the password only: it refuses. Add the key
+   file: it opens.
+4. On PasswordPie's lock screen, click × next to the key file's name. Type the password: the window shakes, "Incorrect
+   password." The password alone no longer opens it.
+5. Choose Key File…, pick the file in Documents, and unlock. The name is back for the next time.
