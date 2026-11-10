@@ -373,18 +373,19 @@ final class MenuListView: NSView {
         )
     }
 
+    private static let lineMetrics = NSLayoutManager()
+
     /// One line of text at x 50 whose baseline sits at `baseline`. The line fragment puts the baseline at the layout
     /// manager's offset (14 for 14 pt), not at the font's ascender (13.5).
     private func drawLine(_ text: String, baseline: CGFloat, width: CGFloat, font: NSFont, color: NSColor) {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byTruncatingTail
         let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: style]
-        let layout = NSLayoutManager()
         let target = NSRect(
             x: MenuMetrics.actionTextX,
-            y: baseline - layout.defaultBaselineOffset(for: font),
+            y: baseline - Self.lineMetrics.defaultBaselineOffset(for: font),
             width: max(width, 0),
-            height: layout.defaultLineHeight(for: font)
+            height: Self.lineMetrics.defaultLineHeight(for: font)
         )
         (text as NSString).draw(with: target, options: [.usesLineFragmentOrigin], attributes: attributes)
     }
