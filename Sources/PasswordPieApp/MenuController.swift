@@ -14,6 +14,8 @@ protocol MenuHost: AnyObject {
     /// The root list needs `width` x `height` (list only, no header).
     func menuRootNeedsLayout(contentWidth: CGFloat, contentHeight: CGFloat)
     func menuHide()
+    /// An action row ran. The host hides the panel if the action leaves it.
+    func menuPerform(_ action: MenuAction)
 }
 
 /// A child window that never takes key status, so the search field in the root panel keeps the keyboard.
@@ -71,8 +73,11 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     private var popover: NSPopover?
     private var details: DetailsModel?
     private var detailsLevel: MenuLevel?
+    private var detailsIndex: Int?
     private var popoverShownThisSession = false
     private var pendingOpen: DispatchWorkItem?
+    /// The row `pendingOpen` will open.
+    private var pendingOpenRow: (level: ObjectIdentifier, index: Int)?
     private var pendingSelect: DispatchWorkItem?
     private var widest: CGFloat = MenuGeometry.rootWidth
     private var lastPointerScreen: NSPoint?
@@ -344,6 +349,9 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         case .entry(let id):
             blink(level, index) { [weak self] in self?.performAction(for: id) }
             return true
+        case .action(let action):
+            blink(level, index) { [weak self] in self?.host?.menuPerform(action) }
+            return true
         default:
             return false
         }
@@ -498,6 +506,7 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     private func cancelPending() {
         pendingOpen?.cancel()
         pendingOpen = nil
+        pendingOpenRow = nil
         pendingSelect?.cancel()
         pendingSelect = nil
     }
@@ -527,6 +536,7 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         self.popover = popover
         details = model
         detailsLevel = level
+        detailsIndex = index
         popover.show(relativeTo: level.list.rect(of: index), of: level.list, preferredEdge: .maxX)
         // Behind the content, inside the popover's frame view, so the arrow takes the same fill.
         if let frameView = controller.view.window?.contentView?.superview {
@@ -542,6 +552,7 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         popover = nil
         details = nil
         detailsLevel = nil
+        detailsIndex = nil
     }
 
     /// The window of the popover, so the panel does not hide when it becomes key.
@@ -554,7 +565,13 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         guard let level = levels.first(where: { $0.list === list }), let position = levelIndex(level) else { return }
         guard let index else { return }
         if level.list.selectedIndex == index {
-            // Same row: keep any pending open, but a deeper level means the pointer returned to its parent row.
+            // Back on the selected row: a selection change still waiting for the aim delay is no longer wanted.
+            pendingSelect?.cancel()
+            pendingSelect = nil
+            // The keyboard or a fresh showing may have selected it without opening it. What is open stays open, and a
+            // pending open keeps its timer; otherwise the row opens after the usual hover delay.
+            if isOpen(level, position: position, index: index) || opensSoon(level, index) { return }
+            hoverSelect(level, index)
             return
         }
         // NSMenu-style aim: heading for the open child delays the change of selection.
@@ -570,6 +587,17 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         }
         pendingSelect?.cancel()
         hoverSelect(level, index)
+    }
+
+    /// The row's submenu, generator or details are on screen.
+    private func isOpen(_ level: MenuLevel, position: Int, index: Int) -> Bool {
+        if levels.count > position + 1, levels[position + 1].parentIndex == index { return true }
+        return popoverIsOpen && detailsLevel === level && detailsIndex == index
+    }
+
+    private func opensSoon(_ level: MenuLevel, _ index: Int) -> Bool {
+        guard let pendingOpen, !pendingOpen.isCancelled, let row = pendingOpenRow else { return false }
+        return row.level == ObjectIdentifier(level) && row.index == index
     }
 
     private func isAimingAtChild(of level: MenuLevel, position: Int) -> Bool {
@@ -599,7 +627,10 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
         default: return
         }
         let item = DispatchWorkItem { [weak self, weak level] in
-            guard let self, let level, level.list.selectedIndex == index, level.rows.indices.contains(index) else { return }
+            guard let self else { return }
+            self.pendingOpen = nil
+            self.pendingOpenRow = nil
+            guard let level, level.list.selectedIndex == index, level.rows.indices.contains(index) else { return }
             switch level.rows[index].kind {
             case .submenu: self.open(level, index, selectFirst: false)
             case .generator: self.open(level, index, selectFirst: false)
@@ -608,6 +639,7 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
             }
         }
         pendingOpen = item
+        pendingOpenRow = (ObjectIdentifier(level), index)
         if delay == 0 { item.perform() } else { DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item) }
     }
 

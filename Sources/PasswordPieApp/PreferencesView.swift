@@ -2,14 +2,46 @@ import AppKit
 import PasswordPieCore
 import SwiftUI
 
+/// A section other parts of the app open Preferences at.
+enum PreferencesSection: Hashable {
+    case importPasswords
+    #if PP_DIRECT
+    case chrome
+    #endif
+}
+
+/// Where Preferences should scroll next. Set it, and the open (or opening) window scrolls there once.
+@MainActor
+final class PreferencesNavigator: ObservableObject {
+    @Published var target: PreferencesSection?
+}
+
 struct PreferencesView: View {
     @ObservedObject var session: VaultSession
+    @ObservedObject var navigator: PreferencesNavigator
     @StateObject private var recorder = ShortcutRecorder()
     @Environment(\.colorScheme) private var colorScheme
 
     private var cardColor: Color { Palette.card(dark: colorScheme == .dark) }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            scrollingContent
+                .onAppear {
+                    // A new window lays out first; scrolling before that lands nowhere.
+                    DispatchQueue.main.async { scroll(proxy) }
+                }
+                .onChange(of: navigator.target) { _, _ in scroll(proxy) }
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let target = navigator.target else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .top) }
+        navigator.target = nil
+    }
+
+    private var scrollingContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
@@ -23,8 +55,10 @@ struct PreferencesView: View {
                 section("Everyday") { everyday }
                 section("Database") { database }
                 section("Import passwords") { importPasswords }
+                    .id(PreferencesSection.importPasswords)
                 #if PP_DIRECT
                 section("Chrome") { chromeSync }
+                    .id(PreferencesSection.chrome)
                 #endif
             }
             .padding(24)

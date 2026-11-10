@@ -941,6 +941,26 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     func menuHide() { hide() }
 
+    /// The empty database's rows. Sync Chrome only opens its section: switching it on asks macOS for the Chrome key,
+    /// which the user has not asked for yet.
+    func menuPerform(_ action: MenuAction) {
+        switch action {
+        case .importPasswords: showPreferences(at: .importPasswords)
+        case .syncChrome:
+            #if PP_DIRECT
+            showPreferences(at: .chrome)
+            #else
+            showPreferences(at: nil)
+            #endif
+        case .newItem: newItem()
+        }
+    }
+
+    private func showPreferences(at section: PreferencesSection?) {
+        hide(refocusPrevious: false)
+        AppDelegate.shared?.showPreferences(at: section)
+    }
+
     private func popUp(_ menu: NSMenu, from view: NSView) {
         self.menu.root.list.selectedIndex = nil
         self.menu.closeAll()

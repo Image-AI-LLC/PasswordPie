@@ -1,10 +1,38 @@
 import Foundation
 
+/// The build's release channel (docs/CHANNELS.md). Code that differs by channel takes it as a value, so tests can check
+/// both channels from one build.
+public enum AppChannel: Equatable, Sendable {
+    /// The download from passwordpie.com: it can read Chrome's saved passwords.
+    case direct
+    /// The Mac App Store app: no Chrome reader.
+    case appStore
+
+    public static let current: AppChannel = {
+        #if PP_DIRECT
+        return .direct
+        #else
+        return .appStore
+        #endif
+    }()
+}
+
+/// What an action row does. The app decides how; the menu only says which.
+public enum MenuAction: Equatable, Sendable {
+    /// Preferences, at "Import passwords".
+    case importPasswords
+    /// Preferences, at "Chrome". Direct channel only.
+    case syncChrome
+    /// The item editor with a new item, as the gear's New Item.
+    case newItem
+}
+
 /// One row of the menu. Submenus carry their rows so a menu can be built and tested without any UI.
 public struct MenuRow: Equatable, Sendable {
     /// What the app draws in front of rows that are not entries or categories.
     public enum Icon: Equatable, Sendable {
         case favorites, generator, folders, folder, tags, tag
+        case importPasswords, syncChrome, newItem
     }
 
     public enum Kind: Equatable, Sendable {
@@ -16,6 +44,8 @@ public struct MenuRow: Equatable, Sendable {
         /// "Show N more …": selecting it replaces the row with `children` in place.
         case showMore
         case disabled
+        /// Runs `MenuAction` on Return or click. No submenu.
+        case action(MenuAction)
     }
 
     public var kind: Kind
@@ -79,9 +109,11 @@ public enum MenuBuilder {
     public static func topLevel(
         entries: [VaultEntry],
         sources: [UUID: String] = [:],
-        categoryLimit: Int = MenuBuilder.categoryLimit
+        categoryLimit: Int = MenuBuilder.categoryLimit,
+        channel: AppChannel = .current
     ) -> [MenuRow] {
         let visible = entries.filter { !$0.trashed }
+        guard !visible.isEmpty else { return emptyDatabase(channel: channel) }
         var rows: [MenuRow] = []
 
         let favorites = visible.filter(\.favorite)
@@ -119,6 +151,22 @@ public enum MenuBuilder {
             if rows.last?.kind != .separator { rows.append(.separator) }
             rows += tail
         }
+        return rows
+    }
+
+    /// Nothing to list yet: the generator, then where entries come from. Each row goes away with the first entry.
+    static func emptyDatabase(channel: AppChannel) -> [MenuRow] {
+        var rows: [MenuRow] = [
+            MenuRow(kind: .generator, title: "Password Generator", icon: .generator),
+            .separator,
+            MenuRow(kind: .disabled, title: "No items yet"),
+            MenuRow(kind: .action(.importPasswords), title: "Import Passwords…", icon: .importPasswords)
+        ]
+        // The App Store app has no Chrome reader.
+        if channel == .direct {
+            rows.append(MenuRow(kind: .action(.syncChrome), title: "Sync Chrome Passwords…", icon: .syncChrome))
+        }
+        rows.append(MenuRow(kind: .action(.newItem), title: "New Item…", icon: .newItem))
         return rows
     }
 
