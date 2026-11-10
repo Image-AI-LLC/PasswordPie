@@ -124,6 +124,21 @@ public enum EntitlementToken {
         return .success(Entitlement(subject: claims["sub"] as? String, plan: claims["plan"] as? String, expiresAt: expiresAt))
     }
 
+    /// The `exp` a token claims, unchecked. Only to choose the words; it grants nothing.
+    public static func expiry(of jwt: String) -> Date? {
+        let parts = jwt.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, let body = Data(base64URL: parts[1]),
+              let claims = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let exp = seconds(claims["exp"]) else { return nil }
+        return Date(timeIntervalSince1970: exp)
+    }
+
+    /// True when the token has run out but would have checked a moment before. Only to choose the words; it grants nothing.
+    public static func isExpiredButOtherwiseGood(_ jwt: String, now: Date, verify: (String, Date) -> Entitlement?) -> Bool {
+        guard let expiry = expiry(of: jwt), expiry <= now else { return false }
+        return verify(jwt, expiry.addingTimeInterval(-1)) != nil
+    }
+
     /// A NumericDate: seconds since 1970, a JSON number and not a boolean.
     private static func seconds(_ value: Any?) -> TimeInterval? {
         guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }

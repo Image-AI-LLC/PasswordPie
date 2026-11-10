@@ -102,13 +102,12 @@ final class AppStorePremiumStore: ObservableObject {
     var presentPaywall: (() -> Void)?
 
     private let backend: PremiumBackend
-    private let secrets: AccountSecretStore
-    private let verify: (String, Date) -> Entitlement?
+    /// The activation from the website, kept and checked as the direct app keeps it.
+    private let vault: ActivationVault
     private let now: () -> Date
     private let firstCheckTimeout: TimeInterval
     private var refreshGeneration = 0
     private var started = false
-    private var loaded = false
     private var updatesTask: Task<Void, Never>?
     private var firstCheckTask: Task<Void, Never>?
     private var firstCheckTimeoutTask: Task<Void, Never>?
@@ -121,14 +120,13 @@ final class AppStorePremiumStore: ObservableObject {
 
     init(
         backend: PremiumBackend,
-        secrets: AccountSecretStore,
-        verify: @escaping (String, Date) -> Entitlement?,
+        secrets: SecretStore,
+        verify: @escaping TokenCheck,
         now: @escaping () -> Date = Date.init,
         firstCheckTimeout: TimeInterval = 3
     ) {
         self.backend = backend
-        self.secrets = secrets
-        self.verify = verify
+        vault = ActivationVault(secrets: secrets, verify: verify)
         self.now = now
         self.firstCheckTimeout = firstCheckTimeout
     }
@@ -190,14 +188,8 @@ final class AppStorePremiumStore: ObservableObject {
 
     /// The token from the last activation link. It counts only if it still checks.
     private func restoreSavedActivation() {
-        guard !loaded else { return }
-        loaded = true
-        guard let token = secrets.read(.activation) else { return }
-        if let entitlement = verify(token, now()) {
-            activation = entitlement
-        } else {
-            secrets.delete(.activation)
-        }
+        vault.restore(now: now())
+        if activation != vault.current { activation = vault.current }
     }
 
     /// Reads the store again. `force` is here to match the direct channel; the store is on this Mac, so it costs nothing.
@@ -218,10 +210,7 @@ final class AppStorePremiumStore: ObservableObject {
     }
 
     private func settle() {
-        if let activation, activation.expiresAt <= now() {
-            self.activation = nil
-            secrets.delete(.activation)
-        }
+        if vault.forgetIfExpired(now: now()) != nil { activation = nil }
         if hasPremium, case .pending = activity { activity = .idle }
         scheduleRenewal()
         guard storeStatus != .checking else { return }
@@ -268,20 +257,15 @@ final class AppStorePremiumStore: ObservableObject {
     /// scheme, so nothing here trusts the link: only a token that checks changes anything, and the longest-lasting wins.
     @discardableResult
     func activate(_ url: URL) -> Bool {
-        guard ActivationLink.matches(url) else { return false }
-        restoreSavedActivation()
-        guard let token = ActivationLink.token(in: url), let entitlement = verify(token, now()) else {
+        guard let outcome = vault.open(url, now: now()) else { return false }
+        switch outcome {
+        case .refused:
             say(.activationFailed)
-            return true
+        case .activated(let until):
+            if activation != vault.current { activation = vault.current }
+            say(.activated(until: until))
+            settle()
         }
-        if let activation, activation.expiresAt >= entitlement.expiresAt {
-            say(.activated(until: activation.expiresAt))
-            return true
-        }
-        activation = entitlement
-        secrets.write(token, for: .activation)
-        say(.activated(until: entitlement.expiresAt))
-        settle()
         return true
     }
 

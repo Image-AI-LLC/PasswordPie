@@ -31,6 +31,10 @@ function api(overrides: Partial<PopupApi> = {}): PopupApi {
     openPanel: async () => void log.push('open-panel'),
     panelShortcut: async () => '⌥⇧P',
     status: async () => ({}),
+    appPremium: async () => {
+      log.push('app-premium');
+      return 'delivered';
+    },
     user: async () => user,
     cachedEntitlement: async () => entitlement,
     refreshEntitlement: async () => {
@@ -156,6 +160,44 @@ describe('Popup', () => {
     expect(container.querySelector('[data-testid="plan"]')?.textContent).toBe('Premium · Lifetime');
     expect(hasButton('Upgrade')).toBe(false);
     expect(hasButton('Redeem')).toBe(false);
+  });
+
+  it('says nothing more about the Mac app when it has Premium from here', async () => {
+    user = { email: 'ada@example.com' };
+    entitlement = PREMIUM;
+    await render(api());
+    expect(log).toContain('app-premium');
+    expect(container.querySelector('[data-testid="app-premium"]')).toBeNull();
+  });
+
+  it('does not claim the Mac app has Premium when the app is not reachable', async () => {
+    user = { email: 'ada@example.com' };
+    entitlement = PREMIUM;
+    await render(api({ appPremium: async () => 'unreachable' }));
+    const line = container.querySelector('[data-testid="app-premium"]');
+    expect(line?.textContent).toBe('Open PasswordPie on this Mac to bring Premium to it.');
+    expect(container.querySelectorAll('[data-testid="app-premium"]')).toHaveLength(1);
+  });
+
+  it('asks an app that did not take it to be updated', async () => {
+    user = { email: 'ada@example.com' };
+    entitlement = PREMIUM;
+    await render(api({ appPremium: async () => 'refused' }));
+    expect(container.querySelector('[data-testid="app-premium"]')?.textContent).toBe('Update PasswordPie on this Mac to bring Premium to it.');
+  });
+
+  it('shows no line when the app understood and did not take the pass', async () => {
+    user = { email: 'ada@example.com' };
+    entitlement = PREMIUM;
+    await render(api({ appPremium: async () => 'invalid' }));
+    expect(container.querySelector('[data-testid="app-premium"]')).toBeNull();
+  });
+
+  it('a free account asks the app nothing', async () => {
+    user = { email: 'ada@example.com' };
+    await render(api({ appPremium: async () => 'unreachable' }));
+    expect(log).not.toContain('app-premium');
+    expect(container.querySelector('[data-testid="app-premium"]')).toBeNull();
   });
 
   it('a free account sees Upgrade, which opens the pricing page, and a key field', async () => {

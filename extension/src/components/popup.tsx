@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient
 import { useState, type ReactNode } from 'react';
 import type { Entitlement, EntitlementResult, RedeemResult } from '../lib/account';
 import type { AccountUser, SignInResult } from '../lib/auth';
+import type { AppPremium } from '../lib/pass-relay';
 import type { PopupStatus } from '../lib/protocol';
 
 export interface PopupApi {
@@ -16,6 +17,8 @@ export interface PopupApi {
   /** The shortcut Chrome actually gave `open-panel`, such as "⌥⇧P"; "" when it gave none (the key was taken). */
   panelShortcut(): Promise<string>;
   status(): Promise<PopupStatus>;
+  /** Hands the app the account's pass now, and says whether the app on this Mac has it. */
+  appPremium(): Promise<AppPremium>;
   user(): Promise<AccountUser | null>;
   /** What was kept from the last answer, shown at once. */
   cachedEntitlement(): Promise<Entitlement | null>;
@@ -42,6 +45,12 @@ const REDEEM_MESSAGES: Record<string, string> = {
 };
 
 const PLAN_NAMES: Record<string, string> = { lifetime: 'Lifetime', yearly: 'Yearly', key: 'Key' };
+
+/** The one line about the Mac app, only when it does not have Premium from here. Nothing when it does. */
+const APP_LINES: Record<string, string> = {
+  unreachable: 'Open PasswordPie on this Mac to bring Premium to it.',
+  refused: 'Update PasswordPie on this Mac to bring Premium to it.',
+};
 
 export function planLine(entitlement: Entitlement | null | undefined): string {
   if (!entitlement?.premium) return 'Free';
@@ -209,6 +218,8 @@ function Account({ api, user }: { api: PopupApi; user: AccountUser }) {
   const cached = useQuery({ queryKey: ['cached-entitlement'], queryFn: () => api.cachedEntitlement() });
   const current = entitlement.data ?? cached.data;
   const premium = current?.premium === true;
+  // Asked again whenever the pass changes. Until the app answers, the popup claims nothing about it.
+  const app = useQuery({ queryKey: ['app-premium', current?.token ?? null], queryFn: () => api.appPremium(), enabled: premium });
   const signOut = useMutation({
     mutationFn: () => api.signOut(),
     onSuccess: () => client.invalidateQueries(),
@@ -230,6 +241,11 @@ function Account({ api, user }: { api: PopupApi; user: AccountUser }) {
         <p className="mt-1 text-[13px] text-pp-text-secondary">
           {premium ? 'Two-step codes fill in the browser after the password.' : 'Two-step codes in the browser need Premium.'}
         </p>
+        {premium && APP_LINES[app.data ?? ''] && (
+          <p className="mt-1 text-[12px] text-pp-text-tertiary" data-testid="app-premium">
+            {APP_LINES[app.data ?? '']}
+          </p>
+        )}
         {!premium && api.sellsPremium && api.upgradeUrl && (
           <div className="mt-2">
             <Button kind="primary" onClick={() => api.upgradeUrl && api.openUrl(api.upgradeUrl)}>

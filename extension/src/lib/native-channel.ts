@@ -12,7 +12,10 @@ export type Request =
   | { type: 'show' }
   | { type: 'icon'; origin: string; png: string }
   /** `entitlement` is the passwordpie.com token, or absent; the app decides (docs/ACCOUNTS.md). */
-  | { type: 'code'; url: string; entitlement?: string };
+  | { type: 'code'; url: string; entitlement?: string }
+  /** Hands the app this browser's pass, or takes it back (docs/BROWSER_EXTENSION.md, "`premium`"). */
+  | { type: 'premium'; pass: string }
+  | { type: 'premium'; drop: 'signed-out' | 'no-premium' };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */

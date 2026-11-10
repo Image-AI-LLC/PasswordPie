@@ -21,6 +21,10 @@ const api: PopupApi = {
     const commands = await browser.commands?.getAll().catch(() => []);
     return commands?.find((c) => c.name === 'open-panel')?.shortcut ?? '';
   },
+  async appPremium() {
+    const answer: unknown = await browser.runtime.sendMessage({ type: 'app-premium' }).catch(() => undefined);
+    return answer === 'delivered' || answer === 'unreachable' || answer === 'refused' || answer === 'invalid' ? answer : 'none';
+  },
   async status() {
     const answer: unknown = await browser.runtime.sendMessage({ type: 'popup-status' }).catch(() => undefined);
     return (answer ?? {}) as PopupStatus;

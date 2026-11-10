@@ -6,6 +6,8 @@ export const PROTOCOL_VERSION = 1;
 export const NATIVE_APP = 'com.oldcai.passwordpie';
 /** Where the toolbar button goes when PasswordPie is not installed or cannot be started. */
 export const WEBSITE_URL = 'https://passwordpie.com/';
+/** The host's error when it cannot reach PasswordPie: the app is not running. */
+export const APP_UNAVAILABLE = 'app-unavailable';
 /** The host's error for a `show` when PasswordPie runs but did not answer. */
 export const APP_NOT_RESPONDING = 'app-not-responding';
 /** The longest the background keeps a fill: the app's pending fill lasts 30 s from the pick. */
@@ -67,7 +69,7 @@ export type ContentMessage =
   | { type: 'code-field' };
 
 /** popup → background */
-export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' };
+export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' } | { type: 'app-premium' };
 
 /** The background's answer to `popup-status`. */
 export interface PopupStatus {
@@ -149,6 +151,7 @@ export function parsePopupMessage(value: unknown): PopupMessage | undefined {
   if (!isRecord(value)) return undefined;
   if (value.type === 'open-panel') return { type: 'open-panel' };
   if (value.type === 'popup-status') return { type: 'popup-status' };
+  if (value.type === 'app-premium') return { type: 'app-premium' };
   return undefined;
 }
 

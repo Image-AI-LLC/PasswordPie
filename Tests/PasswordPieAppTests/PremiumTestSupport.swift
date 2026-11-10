@@ -175,105 +175,24 @@ enum PassKey {
 }
 
 @MainActor
-final class FakeAccountSecrets: AccountSecretStore {
-    var values: [AccountSecret: String] = [:]
+final class FakeSecrets: SecretStore {
+    var values: [PremiumSecret: String] = [:]
     private(set) var reads = 0
 
-    func read(_ secret: AccountSecret) -> String? {
+    func read(_ secret: PremiumSecret) -> String? {
         reads += 1
         return values[secret]
     }
 
-    func write(_ value: String, for secret: AccountSecret) { values[secret] = value }
-    func delete(_ secret: AccountSecret) { values[secret] = nil }
+    func write(_ value: String, for secret: PremiumSecret) { values[secret] = value }
+    func delete(_ secret: PremiumSecret) { values[secret] = nil }
 }
 
 #if PP_DIRECT
-extension PassKey {
-    static func premium(plan: String = "lifetime", passExpires: Date = PremiumFixtures.now.addingTimeInterval(7 * 86400), until: Date? = nil) -> AccountReply {
-        .ok(AccountEntitlementResponse(premium: true, plan: plan, expiresAt: until, token: pass(plan: plan, expires: passExpires)))
-    }
-
-    static let free = AccountReply.ok(AccountEntitlementResponse(premium: false, plan: nil, expiresAt: nil, token: nil))
-}
-
-/// passwordpie.com, scripted.
-@MainActor
-final class FakeAccountClient: AccountClient {
-    var entitlementReply: AccountReply = PassKey.free
-    var exchangeToken: String? = "session-from-code"
-    var emailReply: String? = "ada@example.com"
-    /// Holds `entitlement` open, as a site that has not answered yet.
-    var holdsAnswers = false
-    var answerGate: CheckedContinuation<Void, Never>?
-    private(set) var entitlementCalls: [String] = []
-    private(set) var exchanged: [String] = []
-    private(set) var signedOut: [String] = []
-
-    func exchange(code: String) async -> String? {
-        exchanged.append(code)
-        return exchangeToken
-    }
-
-    func email(session: String) async -> String? { emailReply }
-
-    func entitlement(session: String) async -> AccountReply {
-        entitlementCalls.append(session)
-        if holdsAnswers { await withCheckedContinuation { answerGate = $0 } }
-        return entitlementReply
-    }
-
-    func signOut(session: String) async { signedOut.append(session) }
-
-    func answer() {
-        holdsAnswers = false
-        answerGate?.resume()
-        answerGate = nil
-    }
-}
-
-/// The sign-in sheet, scripted. By default the site sends back a one-time code for the state it was given.
-@MainActor
-final class FakeSignIn: AccountSignInDriver {
-    enum Script {
-        case code
-        case token(String)
-        case wrongState
-        case cancel
-        case fail
-    }
-
-    var script = Script.code
-    private(set) var opened: [URL] = []
-
-    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
-        opened.append(url)
-        let state = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "state" }?.value ?? ""
-        switch script {
-        case .code: return URL(string: "passwordpie://auth?code=one-time&state=\(state)")!
-        case .token(let token): return URL(string: "passwordpie://auth?token=\(token)&state=\(state)")!
-        case .wrongState: return URL(string: "passwordpie://auth?code=one-time&state=someone-else")!
-        case .cancel: throw AccountSignInCancelled()
-        case .fail: throw URLError(.cannotConnectToHost)
-        }
-    }
-}
-
-@MainActor
-struct FakeAccount {
-    let client = FakeAccountClient()
-    let secrets = FakeAccountSecrets()
-    let signIn = FakeSignIn()
-
-    var services: AccountServices {
-        AccountServices(site: .production, client: client, secrets: secrets, signIn: signIn, verify: PassKey.verify)
-    }
-
-    /// Signed in already, as after an earlier launch.
-    func signedIn(_ session: String = "session-1") -> FakeAccount {
-        secrets.values[.session] = session
-        secrets.values[.email] = "ada@example.com"
-        return self
+extension DirectPremiumStore {
+    /// A direct store over `secrets` that trusts only `PassKey`.
+    static func testing(secrets: FakeSecrets, now: @escaping () -> Date = { PremiumFixtures.now }, freeCodes: Bool = false) -> DirectPremiumStore {
+        DirectPremiumStore(secrets: secrets, verifyPass: PassKey.verify, verifyActivation: PassKey.verifyActivation, now: now, freeCodes: freeCodes)
     }
 }
 #endif

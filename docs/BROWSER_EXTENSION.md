@@ -4,8 +4,9 @@ The PasswordPie extension fills the account chosen in the PasswordPie panel into
 does all the choosing and matching; the extension only reports the active tab, finds the sign-in form and fills it.
 What the user sees is in "Fill in the browser" in [UX.md](UX.md).
 
-Filling the username and password is free. Filling the two-step code (TOTP) is Premium, and needs a PasswordPie account
-or Premium in the app: see [ACCOUNTS.md](ACCOUNTS.md). Not yet: an icon or menu inside page fields, saving new passwords,
+Filling the username and password is free. Filling the two-step code (TOTP) is Premium: the extension signed in to a
+PasswordPie account with Premium, or Premium in the app. The extension also hands that Premium to the direct app, which has
+no sign-in of its own: see [ACCOUNTS.md](ACCOUNTS.md). Not yet: an icon or menu inside page fields, saving new passwords,
 Firefox.
 
 ## Pieces
@@ -73,6 +74,12 @@ So credentials only ever travel as the answer to a request the extension made:
 The same `tab` report keeps the app's "browser → current URL" cache fresh, for the "this site" list at the top of the panel.
 No AppleScript is used, so there is no Automation prompt.
 
+Premium follows the same rule: the app never asks the extension for it. The extension sends `premium` when something
+changed on its side (sign-in, renewal, sign-out, 401), each time its connection comes up, and on a poke when its last try
+found no app. Chrome's host keeps the port open while PasswordPie is not running, so the app starting later shows up as
+the poke it sends when the host reaches it, and the pass follows at once. For Safari, "comes up" is the background starting; a pass renewed while the app was not running
+reaches it at the next storage change or background start, and a pass already held lasts up to 7 days meanwhile.
+
 ## Messages
 
 Every request has `type` and an `id` (an integer the extension picks). Every answer echoes `id`. Pushes have no `id`.
@@ -109,7 +116,7 @@ browser and the page's site for 30 seconds, and the extension watches that tab's
 Sent when a frame of the fill's origin shows an empty code field, at most once per fill. `url` is that frame's origin,
 written as in `tab`. The app answers a code only when the vault is unlocked, the pending code is for this browser and
 the URL's site (same rules as a fill: eTLD+1, no downgrade), it is less than 30 s old, the account still has that website
-and a code, and Premium holds: the app's own account has it, or `entitlement` checks (ACCOUNTS.md, "Who decides").
+and a code, and Premium holds: this Mac has it, or `entitlement` checks (ACCOUNTS.md, "Who decides").
 `expiresIn` is the seconds left in the code's time step. The pending code is used up by the answer either way.
 `premium: false` means everything matched but there is no Premium: no code was computed. An empty answer means nothing
 was waiting. The token is not logged, kept or passed on by the app, the host or the appex.
@@ -120,6 +127,31 @@ was waiting. The token is not logged, kept or passed on by the app, the host or 
 unlocked, when the tab's site (eTLD+1) has an account whose website host has no icon yet (none bundled, none cached), and
 at most once per site every 10 minutes (`SiteIconLedger`). On any other site the answer has no `wantIcon`, so the
 extension learns nothing new about the vault and sends nothing more.
+
+### `premium`
+
+    → {"type":"premium","id":6,"pass":"<JWT from passwordpie.com, aud passwordpie-app>"}
+    ← {"type":"premium","id":6,"accepted":true}
+    ← {"type":"premium","id":6,"accepted":false}
+    → {"type":"premium","id":7,"drop":"signed-out" | "no-premium"}
+    ← {"type":"premium","id":7}
+
+The direct app has no sign-in, so the extension hands it the pass it got from passwordpie.com, and takes it back when it
+signs out, gets a 401 (`signed-out`) or the site answers `premium: false` (`no-premium`). Exactly one of `pass` (not
+empty) and `drop` is present, or the answer is `bad-request`. When it is sent is in ACCOUNTS.md, "Handing Premium to the
+app".
+
+- The app checks the pass with `EntitlementToken.verifyTrusted` and the pass audience, and keeps it in its keychain under
+  the browser the peer check named (`pass.chrome`, `pass.safari`). `accepted: false`: it did not check, and nothing
+  stored changed. Taking it back deletes only that browser's pass; another browser's pass or an activation still counts.
+- Taken while the vault is locked too: Premium has nothing to do with the database.
+- The answer never carries the pass. The app, the host and the appex never log it.
+- Any process that reaches the bridge could send one, so it grants nothing but Premium, and only when passwordpie.com
+  signed it.
+- **The App Store app** answers `{"type":"error","id":6,"code":"bad-request"}` and keeps nothing; its Safari extension
+  has no account and never sends it.
+- **An app from before this message** answers the same error. The connection stays up and the extension treats it as
+  "not taken"; codes still fill through the `code` request's token. The released v0.1.0 has no bridge at all.
 
 ### `icon`
 
@@ -191,7 +223,7 @@ Ask now: send a `tab` report for the active tab.
 
     ← {"type":"error","id":2,"code":"app-unavailable"}
 
-Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request`, `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `version`. The extension treats any error as "no fill".
+Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request` (also any message the app does not know, such as `premium` in the App Store app), `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `version`. The extension treats any error as "no fill", and an error to `premium` as "not taken".
 
 ## When a fill is allowed
 
@@ -225,8 +257,10 @@ Premium: a small note in the page's corner for 8 seconds, in a closed shadow roo
 frames whose origin equals `origin`; the content script checks `location.origin` again and that it is the top frame or
 same-origin with it. The background accepts a `code-field` only from a frame of the waiting origin.
 
-Popup → background: `{"type":"open-panel"}` (send `show`) and `{"type":"popup-status"}` (answers the site whose code was
-skipped for lack of Premium in the last 10 minutes, kept in memory only). Accepted only from extension pages, which have no
+Popup → background: `{"type":"open-panel"}` (send `show`), `{"type":"popup-status"}` (answers the site whose code was
+skipped for lack of Premium in the last 10 minutes, kept in memory only) and `{"type":"app-premium"}` (send `premium` now
+and answer `delivered`, `unreachable`, `refused` (an app from before the message), `invalid` (the app did not accept
+the pass, for example it ran out; the popup shows no line) or `none`). Accepted only from extension pages, which have no
 tab.
 
 ### Two-step codes
@@ -241,7 +275,8 @@ an account with a code, on that origin, for 30 seconds.
 ## Secrets
 
 - Two-step codes and entitlement tokens are never logged; codes are never written to `storage`. The token is kept in
-  `browser.storage.local`, which the site issued it for; it unlocks nothing but the app's check.
+  `browser.storage.local`, which the site issued it for, and handed to the direct app, which keeps it in its keychain. It
+  unlocks nothing but Premium.
 - Credentials exist only in memory: in the app, in the answer frame, in the relay's buffer, in the extension's service
   worker and content script, and then in the page's fields. They are never logged, never written to `storage`, and never
   written to disk by the app. The host and appex log only sizes and error codes.
@@ -335,5 +370,9 @@ needs Accessibility to be granted already and never asks for it.
   and the popup.
 - `swift test --filter 'Entitlement|BridgeCode|BrowserCodeAccess'`: the token check (good, wrong key, changed claims or
   header, expired, wrong `aud` or `iss`, not Premium) and the `code` request rules.
+- `swift test --filter 'DirectPremium|BridgePremium|BridgePassRelay'`: the `premium` request, what the direct app keeps,
+  and that the App Store app ignores it (`PP_MAS=1 swift test --scratch-path .build-mas` runs that side).
+- `cd extension && pnpm test tests/pass-relay.test.ts`: when the extension sends `premium`, taking it back, and the App
+  Store build sending nothing.
 - On a Mac: `make install`, load `extension/.output/chrome-mv3` unpacked in Chrome, enable the extension in Safari. See the
   demo script in UX.md.

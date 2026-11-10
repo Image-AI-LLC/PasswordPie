@@ -1,0 +1,62 @@
+import Foundation
+import Security
+
+/// What is kept for Premium, all in the keychain under one service. None of it is ever logged.
+enum PremiumSecret: String, CaseIterable {
+    /// Direct channel: the pass the Chrome extension handed over. Unlocks only while its signature checks and it has not run out.
+    case chromePass = "pass.chrome"
+    /// Direct channel: the pass the Safari extension handed over.
+    case safariPass = "pass.safari"
+    /// Direct channel: the pass an earlier build kept after signing in inside the app. Read, never written.
+    case appSignInPass = "pass"
+    /// The token from the last activation link, in both channels. Unlocks only while its signature checks and it has not run out.
+    case activation
+    /// An earlier direct build's sign-in session and email. Deleted at launch, never read.
+    case legacySession = "session"
+    case legacyEmail = "email"
+}
+
+@MainActor
+protocol SecretStore: AnyObject {
+    func read(_ secret: PremiumSecret) -> String?
+    func write(_ value: String, for secret: PremiumSecret)
+    func delete(_ secret: PremiumSecret)
+}
+
+/// The legacy login keychain: it works inside the App Store sandbox without a provisioning profile (docs/CHANNELS.md).
+@MainActor
+final class KeychainSecrets: SecretStore {
+    private let service: String
+
+    init(service: String) {
+        self.service = service
+    }
+
+    private func query(_ secret: PremiumSecret) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: secret.rawValue]
+    }
+
+    func read(_ secret: PremiumSecret) -> String? {
+        var query = query(secret)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func write(_ value: String, for secret: PremiumSecret) {
+        let data = Data(value.utf8)
+        let status = SecItemUpdate(query(secret) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        guard status == errSecItemNotFound else { return }
+        var add = query(secret)
+        add[kSecAttrLabel as String] = "PasswordPie Premium"
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(add as CFDictionary, nil)
+    }
+
+    func delete(_ secret: PremiumSecret) {
+        SecItemDelete(query(secret) as CFDictionary)
+    }
+}

@@ -1,8 +1,9 @@
 # Accounts and Premium in the browser
 
-How a PasswordPie account unlocks Premium in the browser extension, and how the app checks it before a two-step code
-leaves the Mac. This is the direct channel and the Chrome Web Store extension: the App Store app and its Safari extension
-have no account (2026-11-09, [CHANNELS.md](CHANNELS.md)). What the user sees is in
+How a PasswordPie account unlocks Premium in the browser extension, how the extension hands it to the app, and how the
+app checks it before a two-step code leaves the Mac. This is the direct channel and the Chrome Web Store extension. Neither
+app has an account (2026-11-10, [CHANNELS.md](CHANNELS.md)): people sign in only in the extension and on passwordpie.com.
+The App Store app and its Safari extension have no account at all. What the user sees is in
 "Premium in the browser" in [UX.md](UX.md); the messages are in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
 
 ## What is free and what is Premium
@@ -14,9 +15,9 @@ have no account (2026-11-09, [CHANNELS.md](CHANNELS.md)). What the user sees is 
 | The toolbar button and its popup | |
 
 One PasswordPie account holds one Premium entitlement, and passwordpie.com is the only judge of it. It comes from
-Stripe on passwordpie.com (US$29 once, or US$10 a year, the App Store prices) or from a redeemed key. The extension and
-the direct app read the same account. Signing in inside the app and its token are in "Premium" in
-[CHANNELS.md](CHANNELS.md); this document is the browser side.
+Stripe on passwordpie.com (US$29 once, or US$10 a year, the App Store prices) or from a redeemed key. The extension reads
+the account and hands its pass to the direct app ("Handing Premium to the app" below); the app's rules are "Who has
+Premium: the direct channel" in [CHANNELS.md](CHANNELS.md).
 
 ## Who decides
 
@@ -25,9 +26,10 @@ to the browser, and the extension only carries proof:
 
 A code goes to the browser, in the direct channel, when either holds (`browserCodeAllowed` in `PremiumChannel.swift`):
 
-1. The account signed in inside the app has Premium (`appAccountHasPremium()`).
+1. This Mac has Premium (`appHasPremium()`): a pass an extension handed over, or an activation, that still checks.
 2. The `code` request carries an entitlement token whose Ed25519 signature checks against a public key built into the
-   app, with the right `iss`, `aud` and an `exp` in the future (`EntitlementToken`).
+   app, with the right `iss`, `aud` and an `exp` in the future (`EntitlementToken`). An app from before the `premium`
+   request, or an extension from before it, still fills codes this way.
 
 Nothing else counts, and not the direct channel's free-codes switch (`directChannelCodesAreFree`). In the App Store
 channel a code goes to Safari when the app has Premium, and the extension carries no proof.
@@ -46,6 +48,31 @@ passwordpie.com runs Better Auth with the `bearer` plugin. The extension never u
   `identity.getAuthToken`, so Safari signs in with email only.
 - **Sign out:** `authClient.signOut()`, then the session token and the entitlement token are removed, even offline.
 - A 401 from any call drops the stored tokens: the session is gone.
+
+## Handing Premium to the app
+
+The app has no sign-in, so the extension gives it the pass the site issued (`PassRelay`, `extension/src/lib/pass-relay.ts`).
+Every sign-in, sign-out, renewal and 401 lands in `browser.storage.local`; the background watches those keys and tells the
+app each time, and also when its connection to the app comes up and, if its last try found no app, on the app's next
+poke (the app may have started later; Chrome's host keeps the port open meanwhile). The message is
+`premium` in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
+
+| In the extension | Sent to the app |
+|---|---|
+| Signed in, the site says Premium with a token | `{"type":"premium","pass":"<token>"}` |
+| Signed out, or a 401 | `{"type":"premium","drop":"signed-out"}`, if the app took a pass from here |
+| The site says `premium: false` | `{"type":"premium","drop":"no-premium"}`, if the app took a pass from here |
+| Signed in, no answer from the site yet; or never had Premium | nothing |
+
+`local:app-has-pass` remembers that the app took a pass from this browser, so taking it back reaches the app even if it
+was not running at the sign-out: the next connection or poke sends it. An app that answers without knowing the message
+never held a pass from here, so that also clears it. Requests run one at a time, so a sign-out never overtakes
+the pass before it. The App Store build of the Safari extension has no account and no relay, and sends nothing.
+
+The popup asks the background whether the app took the pass. With Premium and the app holding it, the popup says nothing
+more. If the app did not answer, or answered without knowing the message (an older app), the popup says so in one
+line. If the app understood and did not take the pass (it did not check, for example it ran out), the popup shows no line.
+It never claims the Mac app has Premium.
 
 ## Entitlement API (passwordpie.com)
 
@@ -72,7 +99,7 @@ A compact JWS (JWT), signed with Ed25519 (`alg: EdDSA`, RFC 8037):
 - Issued only while the account has Premium. `exp` is the earlier of now + 7 days and the end of the entitlement, so a
   refund or a lapsed year stops working within a week at most even if the extension never asks again.
 - The private key is a Cloudflare secret of passwordpie.com only. The public key (32 bytes) is
-  `EntitlementToken.publicKey` in `PasswordPieCore`, shared with the app's own account sign-in.
+  `EntitlementToken.publicKey` in `PasswordPieCore`. The same key signs activations (`aud: passwordpie-activation`).
 
 The app accepts a token only when all of these hold (`EntitlementToken.verify`, tested in `EntitlementTests`):
 
@@ -107,8 +134,9 @@ The full messages are in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md), "`code`".
    decides"). Then it computes the current code and answers it with the seconds left in its 30-second step, and drops the
    pending code. Without Premium it answers `"premium": false` and the extension shows a quiet upgrade hint.
 
-Codes and tokens are never logged and never written to disk, in the app, the host, the appex or the extension. The
-token is kept in extension storage because the site issued it for that purpose; it unlocks nothing but this check.
+Codes and tokens are never logged and never written to disk, in the app, the host, the appex or the extension, except
+that the extension keeps the token in its storage and the direct app keeps a handed-over pass in its keychain, both
+because the site issued it for that purpose. It unlocks nothing but Premium.
 
 ## Keys to redeem
 

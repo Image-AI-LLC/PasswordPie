@@ -18,6 +18,18 @@
   <string>0.1.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <!-- passwordpie://activate links from passwordpie.com, in both channels (docs/CHANNELS.md, "Premium"). -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.oldcai.passwordpie.activate</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>passwordpie</string>
+      </array>
+    </dict>
+  </array>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>

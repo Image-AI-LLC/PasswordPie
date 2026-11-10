@@ -19,6 +19,7 @@ import {
   type TabReason,
 } from './protocol';
 import { systemTimers, type TimerHandle, type Timers } from './timers';
+import type { AppPremium, PassRelay } from './pass-relay';
 import { wantsIcon } from './site-icon';
 
 export const REPORT_DEBOUNCE_MS = 100;
@@ -93,16 +94,31 @@ export class FillController {
   private readonly codeWaits = new Map<number, CodeWait>();
   private readonly account: AccountSource | undefined;
   private readonly upgradeUrl: string | undefined;
+  private readonly relay: PassRelay | undefined;
   private codeSkipped: { site: string; at: number } | undefined;
   private reportTimer: TimerHandle | undefined;
   private pendingReason: TabReason = 'startup';
 
-  constructor(deps: { channel: NativeChannel; tabs: TabsAdapter; timers?: Timers; account?: AccountSource; upgradeUrl?: string }) {
+  constructor(deps: {
+    channel: NativeChannel;
+    tabs: TabsAdapter;
+    timers?: Timers;
+    account?: AccountSource;
+    upgradeUrl?: string;
+    /** Hands the account's pass to the app. None in the App Store build, which has no account. */
+    relay?: PassRelay;
+  }) {
     this.channel = deps.channel;
     this.tabs = deps.tabs;
     this.timers = deps.timers ?? systemTimers;
     this.account = deps.account;
     this.upgradeUrl = deps.upgradeUrl;
+    this.relay = deps.relay;
+  }
+
+  /** Hands the app the pass now and says whether it has it, for the popup's one line. */
+  appPremium(): Promise<AppPremium> {
+    return this.relay ? this.relay.sync() : Promise.resolve('none');
   }
 
   /** What the popup shows besides the account. */
@@ -117,8 +133,13 @@ export class FillController {
       onConnect: () => {
         void this.channel.request({ type: 'hello', version: PROTOCOL_VERSION, extension: EXTENSION_VERSION });
         this.report('startup');
+        // The app may have started after the last sign-in or renewal: hand it the pass now.
+        void this.relay?.sync();
       },
-      onPoke: () => this.report('poke'),
+      onPoke: () => {
+        this.report('poke');
+        this.relay?.catchUp();
+      },
     });
   }
 
@@ -266,6 +287,8 @@ export class FillController {
     );
     if (this.codeWaits.get(tabId) === wait) this.dropCodeWait(tabId);
     if (answer.kind === 'code' && answer.origin === wait.origin) {
+      // Premium is here now (the app's own, or this account's): an older "not filled" note is no longer true.
+      this.codeSkipped = undefined;
       await this.tabs.sendToFrame(tabId, frameId, { type: 'code', origin: wait.origin, code: answer.code }).catch(() => undefined);
     } else if (answer.kind === 'no-premium') {
       this.codeSkipped = { site: new URL(wait.origin).host, at: this.timers.now() };
