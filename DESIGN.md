@@ -75,6 +75,7 @@ typography:
   code-lg: { family: 'SF Mono', size: 17, weight: 500 }
   title: { family: 'SF Pro', size: 16, weight: 600 }
   menu-item: { family: 'SF Pro', size: 14, weight: 400 }
+  menu-action-title: { family: 'SF Pro', size: 14, weight: 500 }
   code-md: { family: 'SF Mono', size: 14, weight: 400 }
   body: { family: 'SF Pro', size: 13, weight: 400 }
   body-code: { family: 'SF Mono', size: 13, weight: 400 }
@@ -92,6 +93,7 @@ rounded:
   large-type: 14
   large-type-stripe: 8
   item-icon: 3.5
+  action-tile: 7
 
 spacing:
   panel-width: 300
@@ -99,6 +101,8 @@ spacing:
   header-height: 45
   logo-size: 32
   row-height: 21
+  action-row-height: 42
+  action-tile: 28
   separator-height: 11
   group-header-height: 16
   details-width: 400
@@ -140,11 +144,11 @@ All values are sRGB.
 |---|---|---|---|
 | `brand-accent` | `#EE8C32` | same | Pie mark, primary action, toggles and control tint. Not for text. |
 | `on-accent` | `#302315` | same | Label on the primary action. |
-| `selection` / `on-selection` | `#EE8C32` / `#302315` | same | Selected row, and its text, icon, arrow and favorite badge. White fails contrast on this orange. |
+| `selection` / `on-selection` | `#EE8C32` / `#302315` | same | Selected row, and its text, icon, arrow and favorite badge (an action row's line at 85 %). White fails contrast on this orange. |
 | `surface` | `#FFF6E7` | `#28231F` | Lock screen, panel, submenus, details, generator, Preferences, About, editor, pinned windows. |
 | `field-surface` | `#FFFFFF` | `#37302A` | Inputs, cards, generator well. |
 | `text` | `#302A24` | `#FFF6E7` | Headings, row titles, search text. |
-| `text-secondary` | `#70604F` | `#D4C4B2` | Placeholder, gear, " — username", guidance, group headers. |
+| `text-secondary` | `#70604F` | `#D4C4B2` | Placeholder, gear, " — username", guidance, group headers, the line under an action row's title. |
 | `text-tertiary` | `#8F7F6E` | `#A39585` | "Show N more" rows. |
 | `text-disabled` | `#8F7F6E` | `#8F8172` | "No items found". |
 | `border` | `#C8BBAA` | `#776858` | Quiet outlines on the lock screen. |
@@ -175,9 +179,14 @@ Rows that open a submenu show a 13 pt SF Symbol; on a selected row it uses
 `on-selection`. Tints are in the front matter: `favorite` for `star.fill`,
 `tint-folder` for `folder.fill`, `tint-tag` for `tag.fill`, `tint-note` for
 `note.text`, `tint-identity` for `person.crop.rectangle.fill`, and `tint-neutral` for
-`lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`. The empty database's action rows use
-`tint-neutral` too: `square.and.arrow.down.fill` (Import Passwords…), `arrow.triangle.2.circlepath` (Sync Chrome
-Passwords…) and `plus.square.fill` (New Item…).
+`lock.square.fill`, `creditcard.fill`, `doc.fill` and `key.fill`.
+
+The empty database's action rows put a 14 pt medium symbol, centred at its own size, on a 28 × 28 pt tile, radius 7:
+`square.and.arrow.down` (Import Passwords…), `arrow.triangle.2.circlepath` (Sync Chrome Passwords…) and `plus` (New
+Item…). They are single-layer outlines: a filled square on the tile would read as a second tile. The
+tile is `brand-accent` at 20 % in both appearances (on the dark surface it stands out more than on cream, 1.4:1
+against 1.2:1, so it needs no dark value of its own) with an `accent-text` symbol; on a selected row it is
+`on-selection` at 14 % with an `on-selection` symbol. It is the only filled icon background in the menu.
 
 Entry rows show the site icon: bundled for the top 100 sites, otherwise the one the
 browser extension handed over (see "Site icons without telling anyone" in
@@ -215,20 +224,22 @@ app. Size is the hierarchy.
 | `code-lg` | SF Mono | 17 | 500 | Live one-time code |
 | `title` | SF Pro | 16 | 600 | Details title |
 | `menu-item` | SF Pro | 14 | 400 | Menu rows, " — username" |
+| `menu-action-title` | SF Pro | 14 | 500 | Title of an empty database's action row |
 | `code-md` | SF Mono | 14 | 400 | Generated password |
 | `body` | SF Pro | 13 | 400 | Details values, masked dots, editor and Preferences text |
 | `body-code` | SF Mono | 13 | 400 | Revealed secrets |
 | `control` | SF Pro | 12 | 400 | Generator labels and controls |
-| `caption` | SF Pro | 11 | 400 | Lock-screen guidance, search group headers (upper case) |
+| `caption` | SF Pro | 11 | 400 | Lock-screen guidance, group headers (upper case), the line under an action row's title |
 | `label` | SF Pro | 10 | 400 | Details field labels, lock-screen errors |
 | `tile-letter` | SF Pro | 9.5 | 600 | Letter on a 16 pt tile |
 
 - Secrets (revealed passwords, one-time codes, generated strings) are SF Mono. Masked
   secrets are bullets in `body`.
 - Built-in details labels are lower case ("username", "one-time password"); menu labels
-  are title case. Search group headers are the only upper-case text.
+  are title case. Group headers are the only upper-case text. The line under an action row's
+  title is a sentence fragment in sentence case, with no full stop.
 - Readable copy is at least 10 pt. The 9.5 pt tile letter is an icon label.
-- SF Symbols are 13 pt in rows, 8 pt for the favorite badge, 13 pt (edit, pin) and 15 pt
+- SF Symbols are 13 pt in rows, 14 pt on an action row's tile, 8 pt for the favorite badge, 13 pt (edit, pin) and 15 pt
   (star) in details, and 16 pt for the gear. The submenu arrow is a drawn 8.5 × 10 pt
   triangle.
 
@@ -255,8 +266,11 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   30 × 30 pt at the right edge minus 34. Below it the menu list, at least 24 pt tall.
 - **Menu rows**: item 21 pt, separator 11 pt, group header 16 pt. Icon 16 pt at x 16, title
   at x 38, arrow slot 16 pt, 26 pt from the right edge. Group header text at x 6; "Show N
-  more" at x 42.
-- **Width**: the widest row, at least 300 pt, at most a quarter of the screen. It never
+  more" at x 42. An empty database's action rows are 42 pt: tile at x 12, centred; title
+  and the line under it at x 50, baselines 18.5 pt and 34 pt below the row top; 12 pt
+  clear on the right; no arrow.
+- **Width**: the widest row, at least 300 pt, at most a quarter of the screen. An action row
+  counts the wider of its title and its line. It never
   shrinks while the panel is open.
 - **Height**: header + rows, inside the visible frame inset 8 pt on the left, right and
   bottom. Longer lists scroll; hovering within 30 pt of the top or bottom auto-scrolls.
@@ -319,13 +333,16 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   with the same delays. A row whose submenu, generator or details are open stays as it is. A panel that appears
   under a resting pointer opens nothing until the pointer moves.
 - **Empty database** — when the open databases hold no visible entries (the Recycle Bin does not count), the
-  menu is: Password Generator (first, selected), a separator, "No items yet" as a disabled row, then three
-  action rows. "Import Passwords…" opens Preferences at Import passwords. "Sync Chrome Passwords…" (direct
-  channel only; the App Store app has no Chrome reader) opens Preferences at Chrome, and does not switch sync
-  on: that asks macOS for the Chrome key, which the user has not asked for yet. "New Item…" opens the editor,
-  as the gear's New Item. Action rows are selectable, run on Return or click with the usual flash, have no
-  arrow, and hide the panel. They all go with the first entry. Searching an empty database still shows "No
-  items found", and the browser's site section stays above everything.
+  menu is: a "Get Started" group header, the action rows, a separator, then Password Generator as a normal row,
+  last. "Import Passwords…" (From a Chrome or Apple Passwords export) opens Preferences at Import passwords. "Sync
+  Chrome Passwords…" (Search what Chrome saved on this Mac; direct channel only, the App Store app has no Chrome
+  reader) opens Preferences at Chrome, and does not switch sync on: that asks macOS for the Chrome key, which the user
+  has not asked for yet. "New Item…" (A login, password or secure note) opens the editor, as the gear's New Item.
+  The first action is selected on open. Action rows are selectable, run on Return or click with the usual flash, hide
+  the panel, have no arrow, and open nothing on hover. Selected, the row takes the `selection` fill with
+  `on-selection` title, symbol and tile (14 %) and its line at 85 % (78 % falls to 4.1:1). VoiceOver reads the title, then the line. The
+  group and the rows go with the first entry, and the generator returns to its usual place. Searching an empty
+  database still shows "No items found", and the browser's site section stays above everything.
 - **Details popover** — header, then one field per value: username, password (+ strength and previous passwords), website,
   one-time password, custom fields, notes, tags. Pin opens that account in its own utility window and
   hides the menu.

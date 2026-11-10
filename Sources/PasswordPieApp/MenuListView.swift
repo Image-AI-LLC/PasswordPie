@@ -13,6 +13,17 @@ enum MenuMetrics {
     static let autoScrollZone: CGFloat = 30
     static let font = NSFont.menuFont(ofSize: 14)
     static let headerFont = NSFont.menuFont(ofSize: 11)
+    /// An empty database's action rows: a tile, a medium title and a line under it.
+    static let actionRowHeight: CGFloat = 42
+    static let actionTileX: CGFloat = 12
+    static let actionTileSize: CGFloat = 28
+    static let actionTileRadius: CGFloat = 7
+    static let actionTextX: CGFloat = 50
+    static let actionTrailing: CGFloat = 12
+    static let actionTitleBaseline: CGFloat = 18.5
+    static let actionDetailBaseline: CGFloat = 34
+    static let actionTitleFont = NSFont.systemFont(ofSize: 14, weight: .medium)
+    static let detailFont = NSFont.menuFont(ofSize: 11)
 }
 
 /// Warm brown lines and fills on a light menu, cream on a dark one.
@@ -27,14 +38,21 @@ protocol MenuListDelegate: AnyObject {
     func menuListPointerExited(_ list: MenuListView)
 }
 
-/// A flat list of menu rows drawn by hand: rows are 21 pt, separators 11 pt, group headers 16 pt, and the selection is a flat full-width fill.
+/// A flat list of menu rows drawn by hand: rows are 21 pt (42 pt with a second line), separators 11 pt, group headers 16 pt,
+/// and the selection is a flat full-width fill.
 final class MenuListView: NSView {
     weak var delegate: MenuListDelegate?
     private(set) var rows: [MenuRow] = []
     private var offsets: [CGFloat] = [0]
     var selectedIndex: Int? {
-        didSet { if oldValue != selectedIndex { needsDisplay = true } }
+        didSet {
+            guard oldValue != selectedIndex else { return }
+            needsDisplay = true
+            updateAccessibilitySelection()
+        }
     }
+    /// One element per row that has text, built when VoiceOver first asks after `setRows`.
+    private var accessibilityRows: [(index: Int, element: NSAccessibilityElement)]?
     private var tracking: NSTrackingArea?
     private var scrollTimer: Timer?
     private var scrollStep: CGFloat = 4
@@ -49,6 +67,7 @@ final class MenuListView: NSView {
         rows = newRows
         offsets = [0]
         for row in rows { offsets.append(offsets.last! + Self.height(of: row)) }
+        accessibilityRows = nil
         selectedIndex = nil
         setFrameSize(NSSize(width: frame.width, height: contentHeight))
         enclosingScrollView?.contentView.scroll(to: .zero)
@@ -79,7 +98,13 @@ final class MenuListView: NSView {
 
     var contentHeight: CGFloat { max(offsets.last ?? 0, MenuMetrics.minimumListHeight) }
 
+    /// A row with a second line (only the empty database's actions have one). Height, width and drawing all use this.
+    static func isTwoLine(_ row: MenuRow) -> Bool {
+        !row.detail.isEmpty && row.kind != .separator && row.kind != .header
+    }
+
     static func height(of row: MenuRow) -> CGFloat {
+        if isTwoLine(row) { return MenuMetrics.actionRowHeight }
         switch row.kind {
         case .separator: return MenuMetrics.separatorHeight
         case .header: return MenuMetrics.headerHeight
@@ -108,13 +133,19 @@ final class MenuListView: NSView {
 
     // MARK: Width
 
-    /// Item width = ceil(title + 20) + icon 16 + 22 + username + 28 for the arrow.
+    /// Item width = ceil(title + 20) + icon 16 + 22 + username + 28 for the arrow. A two-line row: text at x 50, the
+    /// wider of its title and its line, and 12 clear on the right.
     static func preferredWidth(of rows: [MenuRow]) -> CGFloat {
         var widest: CGFloat = 0
         for row in rows {
             switch row.kind {
             case .separator, .header: continue
             default: break
+            }
+            if isTwoLine(row) {
+                let text = max(textWidth(row.title, MenuMetrics.actionTitleFont), textWidth(row.detail, MenuMetrics.detailFont))
+                widest = max(widest, MenuMetrics.actionTextX + ceil(text) + MenuMetrics.actionTrailing)
+                continue
             }
             var width = ceil(textWidth(row.title, MenuMetrics.font) + 20) + 16 + 22
             if !row.username.isEmpty { width += ceil(textWidth(" — " + row.username, MenuMetrics.font)) }
@@ -126,6 +157,44 @@ final class MenuListView: NSView {
 
     static func textWidth(_ text: String, _ font: NSFont) -> CGFloat {
         (text as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    // MARK: Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .menu }
+
+    override func accessibilityChildren() -> [Any]? {
+        if accessibilityRows == nil {
+            accessibilityRows = rows.indices.compactMap { index in
+                let row = rows[index]
+                guard row.kind != .separator else { return nil }
+                let element = NSAccessibilityElement()
+                element.setAccessibilityParent(self)
+                element.setAccessibilityRole(row.isSelectable ? .menuItem : .staticText)
+                element.setAccessibilityLabel(Self.accessibilityLabel(of: row))
+                element.setAccessibilityFrameInParentSpace(rect(of: index))
+                element.setAccessibilityEnabled(row.isSelectable)
+                element.setAccessibilitySelected(index == selectedIndex)
+                return (index, element)
+            }
+        }
+        return accessibilityRows?.map(\.element)
+    }
+
+    override func accessibilitySelectedChildren() -> [Any]? {
+        accessibilityRows?.filter { $0.index == selectedIndex }.map(\.element)
+    }
+
+    /// The title, then " — username" as drawn, then a two-line row's second line.
+    static func accessibilityLabel(of row: MenuRow) -> String {
+        [row.title, row.username, row.detail].filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    private func updateAccessibilitySelection() {
+        guard let accessibilityRows else { return }
+        for (index, element) in accessibilityRows { element.setAccessibilitySelected(index == selectedIndex) }
+        NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
     }
 
     // MARK: Tracking
@@ -230,6 +299,7 @@ final class MenuListView: NSView {
     }
 
     private func draw(row: MenuRow, in rect: NSRect, selected: Bool) {
+        if Self.isTwoLine(row) { return drawActionRow(row, in: rect, selected: selected) }
         switch row.kind {
         case .separator:
             menuInk(0.25).setFill()
@@ -284,6 +354,46 @@ final class MenuListView: NSView {
             )
         }
         if hasArrow { drawArrow(in: rect, selected: selected) }
+    }
+
+    /// Tile, medium title and the line under it (DESIGN.md, "Empty database").
+    private func drawActionRow(_ row: MenuRow, in rect: NSRect, selected: Bool) {
+        if selected { fillSelection(rect) }
+        let size = MenuMetrics.actionTileSize
+        let tile = NSRect(x: MenuMetrics.actionTileX, y: rect.midY - size / 2, width: size, height: size)
+        (selected ? MenuPalette.selectedActionTile : MenuPalette.actionTile).setFill()
+        NSBezierPath(roundedRect: tile, xRadius: MenuMetrics.actionTileRadius, yRadius: MenuMetrics.actionTileRadius).fill()
+        if let symbol = MenuIcons.actionSymbol(for: row, selected: selected) {
+            // At its own 14 pt size, centred: scaling would make the glyphs differ in weight.
+            let glyph = NSRect(x: tile.midX - symbol.size.width / 2, y: tile.midY - symbol.size.height / 2, width: symbol.size.width, height: symbol.size.height)
+            symbol.draw(in: glyph, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
+        let width = rect.width - MenuMetrics.actionTextX - MenuMetrics.actionTrailing
+        drawLine(
+            row.title, baseline: rect.minY + MenuMetrics.actionTitleBaseline, width: width,
+            font: MenuMetrics.actionTitleFont, color: selected ? MenuPalette.selectionInk : MenuPalette.text
+        )
+        drawLine(
+            row.detail, baseline: rect.minY + MenuMetrics.actionDetailBaseline, width: width,
+            font: MenuMetrics.detailFont, color: selected ? MenuPalette.selectedActionDetail : MenuPalette.secondaryText
+        )
+    }
+
+    private static let lineMetrics = NSLayoutManager()
+
+    /// One line of text at x 50 whose baseline sits at `baseline`. The line fragment puts the baseline at the layout
+    /// manager's offset (14 for 14 pt), not at the font's ascender (13.5).
+    private func drawLine(_ text: String, baseline: CGFloat, width: CGFloat, font: NSFont, color: NSColor) {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingTail
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: style]
+        let target = NSRect(
+            x: MenuMetrics.actionTextX,
+            y: baseline - Self.lineMetrics.defaultBaselineOffset(for: font),
+            width: max(width, 0),
+            height: Self.lineMetrics.defaultLineHeight(for: font)
+        )
+        (text as NSString).draw(with: target, options: [.usesLineFragmentOrigin], attributes: attributes)
     }
 
     /// A favorite keeps its star where it has always been. See `iconMark`.
@@ -371,6 +481,22 @@ enum MenuIcons {
         case .password: return ("key.fill", MenuPalette.neutralIcon)
         case .document: return ("doc.fill", MenuPalette.neutralIcon)
         }
+    }
+
+    /// The symbol on an action row's tile: 14 pt, `accent-text`, or `on-selection` on a selected row.
+    static func actionSymbol(for row: MenuRow, selected: Bool) -> NSImage? {
+        // Single-layer outline glyphs: a filled square inside the tile would read as a second tile.
+        let name: String
+        switch row.icon {
+        case .importPasswords: name = "square.and.arrow.down"
+        case .syncChrome: name = "arrow.triangle.2.circlepath"
+        case .newItem: name = "plus"
+        default: return nil
+        }
+        let color = selected ? MenuPalette.selectionInk : MenuPalette.actionSymbol
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        return NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config)
     }
 
     static func symbol(_ name: String, color: NSColor, size: CGFloat = 13) -> NSImage? {

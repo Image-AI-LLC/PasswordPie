@@ -601,39 +601,50 @@ the same way: the bridge checks signatures); only those trust the test key.
 
 ## A new database says what to do next
 
-**In one line:** open PasswordPie on a new, empty database and the menu tells you there is nothing in it yet, and
-offers the three ways to fill it.
+**In one line:** open PasswordPie on a new, empty database and the menu leads with a "Get Started" group: the ways to
+fill it, each with one line on what it does.
 
 ### The problem
 
 A first-time user with an empty database saw one row, Password Generator, already highlighted. Resting the pointer on
 it did nothing, because the row was selected before the pointer got there and hover only reacted to a change of row.
-There was nothing else in the menu and no hint of where passwords come from.
+There was nothing else in the menu and no hint of where passwords come from. A first fix added the three actions as
+plain menu rows under a greyed-out "No items yet", after the generator; they read like any other menu command, and
+said nothing about what they lead to.
 
 ### What happens now
 
 The menu of an empty database (nothing outside the Recycle Bin) is:
 
-- **Password Generator**, first and selected. Resting the pointer on it opens the generator after 0.2 s, like any
+- A **GET STARTED** group header, in place of "No items yet".
+- Two-line rows, each with an orange icon tile, a title and one line under it:
+  - **Import Passwords…** — "From a Chrome or Apple Passwords export". Opens Preferences at Import passwords, which
+    takes those two exports in both builds.
+  - **Sync Chrome Passwords…** — "Search what Chrome saved on this Mac". Opens Preferences at Chrome. Only in the
+    download from passwordpie.com; the App Store app cannot read Chrome. It does not turn sync on by itself: that asks
+    macOS for the Chrome key, and you should see why first. With sync on, Chrome's passwords show up in search next to
+    your own, read from Chrome's files on this Mac, and Chrome is never changed.
+  - **New Item…** — "A login, password or secure note". Opens the editor, as New Item in the gear menu. The editor has
+    no card or identity fields, so the line names only what it can make.
+- A separator, then **Password Generator**, last. Resting the pointer on it opens the generator after 0.2 s, like any
   submenu.
-- **No items yet**, greyed out.
-- **Import Passwords…** opens Preferences at Import passwords: Chrome and Apple Passwords exports.
-- **Sync Chrome Passwords…** opens Preferences at Chrome. Only in the download from passwordpie.com; the App Store app
-  cannot read Chrome. It does not turn sync on by itself: that asks macOS for the Chrome key, and you should see why
-  first.
-- **New Item…** opens the editor, as New Item in the gear menu.
 
-Return or a click runs a row. The rows go away with the first item. Searching an empty database still says "No items
-found".
+Import Passwords… is selected when the menu opens. The arrow keys move through the actions and the generator; Return or
+a click runs a row and hides the menu. The pointer on an action row only selects it. VoiceOver reads a row's title, then
+its line.
+
+The group goes away with the first item, and the menu is the usual one, with the generator back near the top. When the
+browser is on a site with saved accounts, those come first and hold the first selection, as always. Searching an empty
+database still says "No items found".
 
 Hover works the same for any row that is selected but not open: the first row of a full menu (Favorites, or the site
 the browser is on) opens when the pointer moves onto it, and an account the arrow keys moved to shows its details.
 
 ### Demo script
 
-1. Choose New Database… in the gear menu and create one. The menu shows Password Generator, "No items yet" and the
-   three actions.
+1. Choose New Database… in the gear menu and create one. The menu shows "Get Started", Import Passwords… highlighted,
+   the other actions, and Password Generator at the bottom.
 2. Move the pointer onto Password Generator: the generator opens.
 3. Choose Import Passwords…: Preferences opens at Import passwords. Close it.
-4. Open the menu, choose New Item…, and save an item. Open the menu again: the actions are gone, and the item's
+4. Open the menu, choose New Item…, and save an item. Open the menu again: the group is gone, and the item's
    category is there.

@@ -137,31 +137,52 @@ final class TopLevelMenuTests: XCTestCase {
         rows.map { $0.kind == .separator ? "-" : $0.title }
     }
 
-    func testEmptyDatabaseShowsWhatToDoNext() {
+    func testEmptyDatabaseIsAGetStartedGroupWithTheGeneratorLast() {
         let rows = MenuBuilder.topLevel(entries: [], channel: .direct)
-        XCTAssertEqual(titles(rows), ["Password Generator", "-", "No items yet", "Import Passwords…", "Sync Chrome Passwords…", "New Item…"])
+        XCTAssertEqual(titles(rows), ["Get Started", "Import Passwords…", "Sync Chrome Passwords…", "New Item…", "-", "Password Generator"])
         XCTAssertEqual(rows.map(\.kind), [
-            .generator, .separator, .disabled, .action(.importPasswords), .action(.syncChrome), .action(.newItem)
+            .header, .action(.importPasswords), .action(.syncChrome), .action(.newItem), .separator, .generator
         ])
-        XCTAssertFalse(rows[2].isSelectable, "the hint is not a row you can pick")
-        for row in rows.suffix(3) {
+        XCTAssertEqual(rows.map(\.detail), [
+            "", "From a Chrome or Apple Passwords export", "Search what Chrome saved on this Mac", "A login, password or secure note", "", ""
+        ])
+        XCTAssertFalse(rows[0].isSelectable, "the group header is not a row you can pick")
+        XCTAssertNil(rows[0].category, "the header is not a category's search group")
+        XCTAssertEqual(rows.firstIndex { $0.isSelectable }, 1, "Import Passwords… is the first row you can pick")
+        for row in rows[1...3] {
             XCTAssertTrue(row.isSelectable, row.title)
             XCTAssertFalse(row.opensSubmenu, row.title)
             XCTAssertNotNil(row.icon, row.title)
         }
+        XCTAssertFalse(rows.contains { $0.title == "No items yet" })
     }
 
     func testTheAppStoreAppHasNoChromeRow() {
         let rows = MenuBuilder.topLevel(entries: [], channel: .appStore)
-        XCTAssertEqual(titles(rows), ["Password Generator", "-", "No items yet", "Import Passwords…", "New Item…"])
+        XCTAssertEqual(titles(rows), ["Get Started", "Import Passwords…", "New Item…", "-", "Password Generator"])
+        XCTAssertEqual(rows.map(\.detail), ["", "From a Chrome or Apple Passwords export", "A login, password or secure note", "", ""])
     }
 
-    func testOneEntryRemovesTheEmptyRows() {
+    func testOnlyTrashedEntriesStillCountAsEmpty() {
+        var trashed = entry("Old", user: "u", password: "p")
+        trashed.trashed = true
+        XCTAssertEqual(MenuBuilder.topLevel(entries: [trashed], channel: .direct), MenuBuilder.topLevel(entries: [], channel: .direct))
+    }
+
+    func testOneEntryRemovesTheGroup() {
         for channel in [AppChannel.direct, .appStore] {
             let rows = MenuBuilder.topLevel(entries: [entry("GitHub", user: "u", password: "p")], channel: channel)
             XCTAssertEqual(titles(rows), ["Password Generator", "-", "Logins"])
             XCTAssertFalse(rows.contains { if case .action = $0.kind { return true } else { return false } })
+            XCTAssertFalse(rows.contains { $0.kind == .header })
         }
+    }
+
+    func testOrdinaryRowsHaveNoSecondLine() {
+        let items = [entry("Fav", user: "u", password: "p", tags: "Favorite"), entry("Note", notes: "n", tags: "shop")]
+        func all(_ rows: [MenuRow]) -> [MenuRow] { rows.flatMap { [$0] + all($0.children) } }
+        XCTAssertTrue(all(MenuBuilder.topLevel(entries: items)).allSatisfy { $0.detail.isEmpty })
+        XCTAssertTrue(MenuBuilder.searchResults(entries: items, query: "o", scope: .major).allSatisfy { $0.detail.isEmpty })
     }
 
     func testTopLevelOrderHasNoItems() {
