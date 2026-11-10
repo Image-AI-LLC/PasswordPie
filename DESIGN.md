@@ -387,11 +387,12 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Add Two-Step Code window** — 380 pt, `window-surface`, 16 pt padding, floating level so it stays over the browser.
   Choosing: a 22 pt `qrcode` symbol in `brand-accent`, the issuer in `body` semibold, the account in `body`, "Scanned on
   host" in `caption` `text-secondary`; "Add to" in `caption` semibold `text-secondary`; then a 220 pt list of radio rows
-  (title, and username · "has a code" in `caption` `text-secondary`), the page's site first, a rounded search field, the
-  search results, and New Item with the title it will get. Cancel and Add (`BrandPrimaryButtonStyle`, default). Add on an
+  (title, and username · "has a code" in `caption` `text-secondary`), the page's site first, a plain search field with an ink 20 % radius 5
+  hairline (no system focus ring), the search results, and New Item with the title it will get. Cancel and Add (`BrandPrimaryButtonStyle`, default). Add on an
   item with a code asks "Replace the existing code?" (Replace is destructive). Added: "Added to <title>", the **One-time
-  code** on an ink 5 % radius 8 well with a quiet Copy (or the locked row with a primary Upgrade), a `caption` line, Done.
-  Expired: one `body` line and Close. Locking closes it.
+  code** on an ink 5 % radius 8 well with a quiet Copy and a primary Done; locked, the row's Upgrade is primary and Done a
+  plain system button. Expired: one `body` line and a primary Close. Never the system's blue default button. Locking
+  closes it.
 - **Premium window** — both channels. 40 pt pie, `title`, one line of `body` `text-secondary`. App Store channel: no
   sign-in block and no account line; the status line, the plan cards, Restore Purchases and Manage Subscription.
   Direct channel: the status block, then, without Premium, the direct offer and Open Account Settings; with an

@@ -795,6 +795,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let title = env["PASSWORDPIE_PIN"], let id = session.allEntries.first(where: { $0.title == title })?.id {
             session.pinEntry(id)
         }
+        // `new` opens a new item's editor; anything else, the editor of the item with that title.
+        if let title = env["PASSWORDPIE_EDIT"] {
+            if title == "new" {
+                session.newEntry()
+            } else if let id = session.allEntries.first(where: { $0.title == title })?.id {
+                session.edit(id)
+            }
+        }
         if env["PASSWORDPIE_REVIEW"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showChromeBatchReview() }
         }
@@ -850,6 +858,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "reviewWindow": chromeReviewWindow?.windowNumber ?? NSNull(),
             "preferencesWindow": preferencesWindow?.isVisible == true ? preferencesWindow?.windowNumber ?? NSNull() : NSNull(),
             "editorWindow": editorWindow?.isVisible == true ? editorWindow?.windowNumber ?? NSNull() : NSNull(),
+            "scanWindow": scanWindow?.isVisible == true ? scanWindow?.windowNumber ?? NSNull() : NSNull(),
+            "scanPhase": otpScan.map { String(describing: $0.phase) } ?? NSNull(),
             "chromeSync": session.chromeSyncEnabled,
             "chromeStatus": session.chromeStatus,
             "chromeBadges": session.chromeBadgeIDs.count,

@@ -144,16 +144,7 @@ struct EditorView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let draft = otpDraft {
-                let access = session.oneTimeCodeAccess(for: draft)
-                if access != .noCode {
-                    HStack(spacing: 8) {
-                        OneTimeCodeView(access: access)
-                        if access == .locked {
-                            SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                }
+                OneTimeCodePreview(session: session, premium: session.premium, draft: draft)
             }
         }
         .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
@@ -250,7 +241,11 @@ struct OTPInputField: NSViewRepresentable {
         let field = NSTextField(string: text)
         field.placeholderString = placeholder
         field.delegate = context.coordinator
-        field.bezelStyle = .roundedBezel
+        // Drawn like the form's other fields: no bezel, no background, text at the right.
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.alignment = .right
         field.lineBreakMode = .byTruncatingMiddle
         field.cell?.isScrollable = true
         field.setAccessibilityLabel("One-time password")
@@ -296,6 +291,26 @@ struct OTPInputField: NSViewRepresentable {
         func remove() {
             if let monitor { NSEvent.removeMonitor(monitor) }
             monitor = nil
+        }
+    }
+}
+
+/// The code the editor's field would give, under it. Observes Premium, so it unlocks the moment Premium arrives.
+private struct OneTimeCodePreview: View {
+    @ObservedObject var session: VaultSession
+    @ObservedObject var premium: PremiumStore
+    var draft: VaultEntry
+
+    var body: some View {
+        let access = session.oneTimeCodeAccess(for: draft)
+        if access != .noCode {
+            HStack(spacing: 8) {
+                OneTimeCodeView(access: access)
+                if access == .locked {
+                    SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
+                }
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 }

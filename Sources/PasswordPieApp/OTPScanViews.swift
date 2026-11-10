@@ -26,6 +26,7 @@ struct OTPScanConfirmView: View {
         .padding(16)
         .frame(width: 380)
         .background(Palette.windowSurface(dark: colorScheme == .dark))
+        .tint(Palette.brandAccent)
         .alert("Replace the existing code?", isPresented: replaceBinding) {
             Button("Replace", role: .destructive) { model.add() }
             Button("Cancel", role: .cancel) { model.keepChoosing() }
@@ -67,8 +68,13 @@ struct OTPScanConfirmView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(model.candidates) { entry in row(entry) }
+                // Plain, with the editor's Notes hairline: the system field's focus ring is the user's accent, usually blue.
                 TextField("Search other items", text: $model.query)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.primary.opacity(0.2)))
                     .padding(.vertical, 6)
                 ForEach(model.searchResults) { entry in row(entry) }
                 targetRow(.newItem, title: "New Item", detail: "\u{201C}\(model.newItemTitle)\u{201D}", systemImage: "plus.circle")
@@ -149,13 +155,20 @@ struct OTPScanConfirmView: View {
         }
         HStack {
             Spacer()
-            // Not styled primary: the code row holds the surface's one main action (Copy, or Upgrade).
-            Button("Done") {
-                model.cancel()
-                close()
+            // The surface has one main action: Done, unless the locked row's Upgrade is it. Never the system's blue default.
+            if let entry, session.oneTimeCodeAccess(for: entry) == .locked {
+                Button("Done") { finish() }
+            } else {
+                Button("Done") { finish() }
+                    .buttonStyle(BrandPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
             }
-            .keyboardShortcut(.defaultAction)
         }
+    }
+
+    private func finish() {
+        model.cancel()
+        close()
     }
 
     // MARK: Expired
@@ -165,11 +178,9 @@ struct OTPScanConfirmView: View {
         Text(OTPScanModel.expiredText).font(.system(size: 13))
         HStack {
             Spacer()
-            Button("Close") {
-                model.cancel()
-                close()
-            }
-            .keyboardShortcut(.defaultAction)
+            Button("Close") { finish() }
+                .buttonStyle(BrandPrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
         }
     }
 }
