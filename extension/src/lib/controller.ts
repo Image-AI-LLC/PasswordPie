@@ -6,6 +6,7 @@ import {
   APP_NOT_RESPONDING,
   CODE_LIFETIME_MS,
   codeOfAnswer,
+  expectCodeOfTabAnswer,
   fillOfTabAnswer,
   originOf,
   parseContentMessage,
@@ -223,6 +224,13 @@ export class FillController {
     const answer = await this.channel.request({ type: 'tab', url, reason });
     if (wantsIcon(answer) && tabId !== undefined) void this.sendIcon(tabId, tab?.favIconUrl, url);
     const fill = fillOfTabAnswer(answer);
+    // A code just added from a scan of this page: watch for its field, as after a fill. Nothing secret in it.
+    const expected = expectCodeOfTabAnswer(answer);
+    if (!fill && expected && tabId !== undefined && url !== '' && expected.origin === originOf(url)) {
+      this.expectCode(tabId, expected.origin, expected.lifetimeMs);
+      await this.watchCode(tabId);
+      return;
+    }
     // The fill is for the tab this report named, and only for the origin of the URL reported.
     if (!fill || tabId === undefined || url === '' || fill.origin !== originOf(url)) return;
     this.keep(tabId, fill);
@@ -232,10 +240,10 @@ export class FillController {
     await this.watchCode(tabId);
   }
 
-  private expectCode(tabId: number, origin: string): void {
+  private expectCode(tabId: number, origin: string, lifetimeMs = CODE_LIFETIME_MS): void {
     this.dropCodeWait(tabId);
-    const expiry = this.timers.setTimeout(() => this.dropCodeWait(tabId), CODE_LIFETIME_MS);
-    this.codeWaits.set(tabId, { origin, expiresAt: this.timers.now() + CODE_LIFETIME_MS, expiry, asking: false });
+    const expiry = this.timers.setTimeout(() => this.dropCodeWait(tabId), lifetimeMs);
+    this.codeWaits.set(tabId, { origin, expiresAt: this.timers.now() + lifetimeMs, expiry, asking: false });
   }
 
   private dropCodeWait(tabId: number): void {

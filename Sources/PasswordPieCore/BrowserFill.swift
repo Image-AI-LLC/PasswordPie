@@ -112,8 +112,11 @@ public struct PendingCode: Equatable, Sendable {
     public let browser: BridgeBrowser
     /// The page that took the fill. A code goes only to a page of the same site.
     public let site: BrowserSite
-    /// When the fill was taken.
+    /// When the fill was taken, or when a scanned code was added.
     public let created: Date
+    /// A code just added from a scan: the next `tab` report of its site says to watch for the code field, since no fill
+    /// started that watch. Said once.
+    var announce = false
 }
 
 /// At most one pending fill. It is used once, by the first matching tab report, and dropped after 30 seconds.
@@ -141,6 +144,19 @@ public struct PendingFillStore: Sendable {
     /// The pick filled; `code` is its account's code to wait for, or nil when it has none.
     mutating func expectCode(_ code: PendingCode?) {
         self.code = code
+    }
+
+    /// The pending code to announce in a `tab` answer, once, if `browser` reports a page of its site in time.
+    mutating func takeAnnouncement(browser: BridgeBrowser, page: BrowserSite, now: Date) -> PendingCode? {
+        guard let code, code.announce else { return nil }
+        let age = now.timeIntervalSince(code.created)
+        guard age <= Self.codeLifetime, age >= -1 else {
+            self.code = nil
+            return nil
+        }
+        guard code.browser == browser, code.site.allowsFill(on: page) else { return nil }
+        self.code?.announce = false
+        return code
     }
 
     /// The pending code, if `browser` asks from a page of its site. Taking it deletes it. An expired one is deleted unused.
@@ -183,6 +199,8 @@ public struct BridgeRequest: Decodable, Sendable {
     public var pass: String?
     /// `premium` only: the extension takes back the pass it delivered, and why (`PassDropReason`).
     public var drop: String?
+    /// `scan` only: the text of the QR code the user scanned on the page. Never logged or kept by the bridge.
+    public var otpauth: String?
 
     /// What a `premium` request asks, or nil when it is malformed: exactly one of a non-empty `pass` or a known `drop`.
     public var passRelay: PassRelay? {
@@ -212,6 +230,14 @@ public struct BridgeCode: Codable, Equatable, Sendable {
     public var expiresIn: Int
 }
 
+/// A `tab` answer's word that a code was just added for this site from a scan: watch the page for its code field.
+/// Carries no code and no secret; the code still comes only from a `code` request.
+public struct BridgeExpectCode: Codable, Equatable, Sendable {
+    public var origin: String
+    /// Whole seconds left of the pending code's 30.
+    public var expiresIn: Int
+}
+
 /// A message to the extension. Fields that are nil are left out.
 public struct BridgeResponse: Encodable, Equatable, Sendable {
     public static let protocolVersion = 1
@@ -231,6 +257,8 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     public var wantIcon: Bool?
     /// `premium` answers to a pass: whether the app kept it. Never the pass itself.
     public var accepted: Bool?
+    /// `tab` answers: a code was added from a scan for this site; watch for its field (docs/BROWSER_EXTENSION.md, "`scan`").
+    public var expectCode: BridgeExpectCode?
 
     public static let poke = BridgeResponse(type: "poke")
 
@@ -239,7 +267,7 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, id, version, locked, fill, otp, premium, code, wantIcon, accepted
+        case type, id, version, locked, fill, otp, premium, code, wantIcon, accepted, expectCode
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -254,6 +282,7 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
         try container.encodeIfPresent(code, forKey: .code)
         try container.encodeIfPresent(wantIcon, forKey: .wantIcon)
         try container.encodeIfPresent(accepted, forKey: .accepted)
+        try container.encodeIfPresent(expectCode, forKey: .expectCode)
     }
 }
 
@@ -262,6 +291,9 @@ public struct BridgeState: Sendable {
     public var pending = PendingFillStore()
     private var currentURLs: [BridgeBrowser: (url: String, at: Date)] = [:]
     private var lastReports: [BridgeBrowser: Date] = [:]
+
+    /// The longest QR code text a `scan` may carry. A real `otpauth://` link is a few hundred bytes.
+    public static let maxScanLength = 4096
 
     public init() {}
 
@@ -277,6 +309,16 @@ public struct BridgeState: Sendable {
         return current.url
     }
 
+    /// The person added a scanned code to `entryID` in the app. The extension that scanned it may fill that code into
+    /// the page, as after a fill: the next `tab` report of the site says to watch for the field, and the `code` request
+    /// that follows is answered as usual (Premium included). False when `pageURL` is not a web page.
+    @discardableResult
+    public mutating func expectCode(afterScanOf entryID: UUID, browser: BridgeBrowser, pageURL: String, now: Date) -> Bool {
+        guard let site = BrowserSite(url: pageURL) else { return false }
+        pending.expectCode(PendingCode(entryID: entryID, browser: browser, site: site, created: now, announce: true))
+        return true
+    }
+
     /// The browser's extension went away: forget what it said.
     public mutating func forget(_ browser: BridgeBrowser) {
         currentURLs[browser] = nil
@@ -286,7 +328,8 @@ public struct BridgeState: Sendable {
     /// Answers one request. `entry` looks up an account by id in the unlocked vault. `codeAllowed` is the Premium check
     /// for a two-step code, given the `code` request's entitlement token (docs/ACCOUNTS.md, "Who decides"). `premium` takes
     /// a `premium` request and says whether a pass was kept; nil in a build that takes no pass (the App Store app), which
-    /// then answers as an app that does not know the message.
+    /// then answers as an app that does not know the message. `scan` takes a checked QR code with the origin of the page
+    /// it was on (nil for none) and the browser; the answer never says what the app did with it.
     public mutating func handle(
         _ request: BridgeRequest,
         from browser: BridgeBrowser,
@@ -294,6 +337,7 @@ public struct BridgeState: Sendable {
         now: Date,
         codeAllowed: (String?) -> Bool = { _ in false },
         premium: ((PassRelay) -> Bool)? = nil,
+        scan: ((ScannedOTP, String?, BridgeBrowser) -> Void)? = nil,
         entry: (UUID) -> VaultEntry?
     ) -> BridgeResponse {
         if locked { pending.clear() }
@@ -312,7 +356,12 @@ public struct BridgeState: Sendable {
                   let fill = pending.take(browser: browser, pageURL: url, now: now),
                   let account = entry(fill.entryID),
                   entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) else {
-                return BridgeResponse(type: "tab", id: request.id)
+                var answer = BridgeResponse(type: "tab", id: request.id)
+                if !locked, let code = pending.takeAnnouncement(browser: browser, page: page, now: now) {
+                    let left = PendingFillStore.codeLifetime - now.timeIntervalSince(code.created)
+                    answer.expectCode = BridgeExpectCode(origin: page.origin, expiresIn: max(1, Int(left.rounded(.up))))
+                }
+                return answer
             }
             let left = PendingFillStore.lifetime - now.timeIntervalSince(fill.created)
             let hasCode = OneTimeCodes.hasCode(account)
@@ -348,6 +397,18 @@ public struct BridgeState: Sendable {
             let kept = premium(relay)
             guard case .pass = relay else { return BridgeResponse(type: "premium", id: request.id) }
             return BridgeResponse(type: "premium", id: request.id, accepted: kept)
+        case "scan":
+            // Said the same way whatever the vault holds, and whether it is locked: the extension learns nothing about it.
+            guard let scan, let raw = request.otpauth, !raw.isEmpty, raw.utf8.count <= Self.maxScanLength else {
+                return .error("bad-request", id: request.id)
+            }
+            switch OTPAuthImport.parse(raw) {
+            case .success(let scanned):
+                scan(scanned, request.url.flatMap { BrowserSite(url: $0) }?.origin, browser)
+                return BridgeResponse(type: "scan", id: request.id)
+            case .failure:
+                return .error("bad-otp", id: request.id)
+            }
         case "show":
             // The toolbar button. The app opens its panel; the answer only acknowledges it.
             return BridgeResponse(type: "show", id: request.id)

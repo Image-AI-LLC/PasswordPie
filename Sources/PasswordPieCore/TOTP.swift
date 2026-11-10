@@ -96,11 +96,13 @@ public enum TOTP {
 
     public static func parseOTPAuth(_ raw: String) -> OTPSettings? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Only time-based codes: an `hotp` link read as TOTP would make wrong codes.
         guard let components = URLComponents(string: trimmed),
-              components.scheme?.lowercased() == "otpauth" else {
+              components.scheme?.lowercased() == "otpauth",
+              components.host?.lowercased() == "totp" else {
             return nil
         }
-        let items = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name.lowercased(), $0.value ?? "") })
+        let items = firstValues(components.queryItems ?? [])
         guard let secretText = items["secret"], let secret = base32Decode(secretText) else {
             return nil
         }
@@ -108,6 +110,16 @@ public enum TOTP {
         let period = Int(items["period"] ?? "") ?? Int(items["step"] ?? "") ?? 30
         let algorithm = OTPAlgorithm(rawValue: (items["algorithm"] ?? "sha1").lowercased()) ?? .sha1
         return OTPSettings(secret: secret, digits: digits, period: max(period, 1), algorithm: algorithm)
+    }
+
+    /// Query parameters by lowercased name. A name given twice keeps its first value: the link may come from a web page,
+    /// and a repeated parameter must not stop the app.
+    static func firstValues(_ items: [URLQueryItem]) -> [String: String] {
+        var values: [String: String] = [:]
+        for item in items where values[item.name.lowercased()] == nil {
+            values[item.name.lowercased()] = item.value ?? ""
+        }
+        return values
     }
 
     public static func base32Encode(_ data: Data) -> String {

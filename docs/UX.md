@@ -583,7 +583,7 @@ at all: it fills codes whenever the app has Premium.
 
 | You are | The popup shows |
 |---|---|
-| Signed out | **Open PasswordPie**, then Sign In with email and password (and Continue with Google in Chrome), Create an account, Forgot password? |
+| Signed out | **Open PasswordPie**, Scan QR code on this page (see "Scan a two-step QR code"), then Sign In with email and password (and Continue with Google in Chrome), Create an account, Forgot password? |
 | Signed in, free | Your email and Sign Out; "Free · Two-step codes in the browser need Premium." with **Upgrade** (opens the pricing page) and a "Have a key?" field |
 | Signed in, Premium | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did, or when it understood and did not take the pass (for example, the browser's cached pass has run out). |
 
@@ -599,7 +599,7 @@ The username and password still fill. On the code page, a small note appears in 
 "PasswordPie Premium fills two-step codes for you. Upgrade". It takes no focus and fills nothing. The popup, for the next
 ten minutes, says "The two-step code on github.com was not filled: it needs Premium."
 
-In the Safari extension of the App Store version there is no sign-in, no Upgrade link and no key field, and the note has no link. Its popup only offers Open PasswordPie.
+In the Safari extension of the App Store version there is no sign-in, no Upgrade link and no key field, and the note has no link. Its popup only offers Open PasswordPie and Scan QR code on this page.
 
 ### Privacy
 
@@ -674,3 +674,81 @@ the browser is on) opens when the pointer moves onto it, and an account the arro
 3. Choose Import Passwords…: Preferences opens at Import passwords. Close it.
 4. Open the menu, choose New Item…, and save an item. Open the menu again: the group is gone, and the item's
    category is there.
+
+## Scan a two-step QR code
+
+**In one line:** when a website shows the QR code for two-step sign-in, PasswordPie reads it from the page or from a
+screenshot, so the code lands in the right item without typing a secret.
+
+### The problem
+
+Turning on two-step sign-in, a site shows a QR code and asks for the 6-digit code it makes. PasswordPie took only the
+secret as text: you had to find the site's "can't scan it?" link, copy a long Base32 string and paste it into the item
+editor. Most people gave up and used their phone.
+
+### What happens now
+
+**From the browser (with the extension).** On the page that shows the QR code:
+
+1. Click the PasswordPie button in the toolbar and **Scan QR code on this page**.
+2. PasswordPie opens an **Add Two-Step Code** window over the browser: the site and account the QR code names, and the
+   item to add it to, already chosen. The best guess is the item for this site whose username is that account; other
+   items for the site are listed under it. An item on another site that only names the issuer is listed, not chosen. You
+   can search for any other item, or choose **New Item**.
+3. Press **Add**. The window shows the current code, with **Copy**. If the page has a field for the code, the extension
+   fills it, as it does after a sign-in. Press the site's Verify button yourself.
+
+If PasswordPie is locked, it asks you to unlock first, then shows the window. Nothing is saved until you press Add.
+
+**From a screenshot or an image, in the item editor.** Press ⌃⇧⌘4 and drag over the QR code: macOS copies it to the
+clipboard. In the item's editor, click the QR button at the end of the **One-time password** row. The row fills in, and
+the current code shows under it. The button's menu also has **Choose Image…**. You can also drag an image (or its file)
+onto the row, or paste it into the field with ⌘V. A copied `otpauth://` link works the same way.
+
+Scanning and saving the secret is free. Seeing the code needs Premium: without it, the window and the editor show the
+code row locked, "Included with Premium", as an item's details do.
+
+### Replacing a code
+
+If the item already has a two-step code, Add asks **Replace the existing code?** first. Replace keeps the old one in the
+item's history in the database file, where KeePassXC and other KeePass apps show it, so a slip can be undone.
+
+### What it will not do
+
+- Scan anything you did not ask it to. The extension looks at the page only when you click Scan in its popup; a page
+  cannot ask for it, and nothing scans by itself.
+- Send the picture or the secret anywhere. The QR code is read on your Mac (the app uses macOS's own Vision) and inside the
+  browser extension. The secret goes only from the extension to PasswordPie on this Mac. Nothing is stored in the browser
+  or logged.
+- Tell the page or the extension what is in your database. The extension hands the QR code over and learns only that
+  PasswordPie got it.
+- Keep a scan you did not confirm: it is dropped after 2 minutes, when you press Cancel, or when you scan another one.
+- Record the screen or use the camera. On a page whose QR code the extension cannot read directly, it takes one picture of
+  the visible tab, as a screenshot would, and only after you clicked Scan.
+- Counter-based (HOTP) codes, Steam codes, and Google Authenticator's "Transfer accounts" export. Each gets a plain message.
+
+### When something goes wrong
+
+| What happened | What you see |
+|---|---|
+| No QR code on the page or in the image | "No QR code found." |
+| The clipboard has no image and no `otpauth://` link | "Copy a screenshot of the QR code first, or an otpauth:// link." |
+| A QR code that is not for two-step sign-in | "This QR code is not a two-step code. Two-step QR codes start with otpauth://." |
+| A counter-based code | "This is a counter-based (HOTP) code. PasswordPie makes time-based codes only." |
+| Google Authenticator's export | "This is a Google Authenticator export. Scan the QR code the website shows instead." |
+| A damaged secret, or unusual settings | One line saying which: the secret, the number of digits (6 to 8), the time step, or the algorithm (SHA1, SHA256, SHA512) |
+| Two minutes passed before Add | "This scan has expired. Scan the QR code again." |
+| PasswordPie is not running | The extension starts it, as Open PasswordPie does |
+
+### Demo script
+
+Use a database with an item "Demo" (website `http://localhost:8787`, username `ada`), and a page showing the QR code for
+`otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`.
+
+1. Open the page in Chrome. Click the toolbar button, then Scan QR code on this page. The Add Two-Step Code window shows
+   Demo and ada, with the Demo item chosen. Press Add: the code shows, counting down. Copy it.
+2. Scan again and press Add: "Replace the existing code?" Press Replace.
+3. Lock PasswordPie with ⌘L and scan again: the unlock screen opens first, then the window.
+4. In PasswordPie, open a new item's editor. Press ⌃⇧⌘4 over the QR code, then click the QR button in the One-time password
+   row: the link fills in and the code shows. Save.
+5. Copy some text and click the QR button: "Copy a screenshot of the QR code first, or an otpauth:// link."

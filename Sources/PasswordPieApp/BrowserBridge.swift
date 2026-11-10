@@ -116,6 +116,8 @@ final class BrowserBridge: ObservableObject {
     var onShowPanel: (() -> Void)?
     /// The tab a browser is on changed, so the site list may change.
     var onPageChanged: (() -> Void)?
+    /// The person scanned a two-step QR code in the extension's popup: the checked code, the page's origin, the browser.
+    var onScan: ((ScannedOTP, String?, BridgeBrowser) -> Void)?
     var now: () -> Date = Date.init
 
     init(session: VaultSession) {
@@ -206,14 +208,22 @@ final class BrowserBridge: ObservableObject {
             if request.type == "icon" { return try? JSONEncoder().encode(answerIcon(frame, from: browser)) }
             let before = state.currentURL(for: browser, now: now())
             let now = now()
+            var scanned: (ScannedOTP, String?, BridgeBrowser)?
             response = state.handle(
                 request,
                 from: browser,
                 locked: session.locked,
                 now: now,
                 codeAllowed: { token in browserCodeAllowed(entitlement: token, now: now) },
-                premium: PremiumChannel.passRelay(from: browser)
+                premium: PremiumChannel.passRelay(from: browser),
+                scan: { scanned = ($0, $1, $2) }
             ) { [session] id in session.entry(id) }
+            if let scanned {
+                // After the answer is on its way, as for `show`. The answer says the same whatever happens next.
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated { self?.onScan?(scanned.0, scanned.1, scanned.2) }
+                }
+            }
             if state.currentURL(for: browser, now: now) != before { onPageChanged?() }
             if response.type == "tab", wantsIcon(request, from: browser) { response.wantIcon = true }
             if response.type == "show" {
@@ -244,6 +254,15 @@ final class BrowserBridge: ObservableObject {
             return .error("bad-icon", id: request.id)
         }
         return .iconStored(id: request.id)
+    }
+
+    /// A scanned code was saved in `entryID`. When that item may fill the page it was scanned on, the extension is told to
+    /// watch that page for its code field, and the code is answered as after a fill (`browserCodeAllowed` still decides).
+    func expectScannedCode(entryID: UUID, browser: BridgeBrowser, origin: String) {
+        guard let entry = session.entry(entryID), let page = BrowserSite(url: origin),
+              entryWebsites(entry).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
+              state.expectCode(afterScanOf: entryID, browser: browser, pageURL: origin, now: now()) else { return }
+        poke(browser)
     }
 
     /// Asks the extension to report its tab now. Carries nothing.

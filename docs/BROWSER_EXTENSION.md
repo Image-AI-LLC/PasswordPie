@@ -153,6 +153,36 @@ app".
 - **An app from before this message** answers the same error. The connection stays up and the extension treats it as
   "not taken"; codes still fill through the `code` request's token. The released v0.1.0 has no bridge at all.
 
+### `scan`
+
+    → {"type":"scan","id":8,"otpauth":"otpauth://totp/Demo:ada?secret=…&issuer=Demo","url":"https://example.com/"}
+    ← {"type":"scan","id":8}
+    ← {"type":"error","id":8,"code":"bad-otp"}
+
+The user clicked **Scan QR code on this page** in the popup, and the extension read a two-step QR code there (see "Scanning
+a QR code" below). `otpauth` is the QR code's text, at most 4,096 bytes; `url` is the tab's origin, written as in `tab`
+(a non-web page or none means no site). The app checks the link with `OTPAuthImport.parse` (TOTP only; secret, digits
+6–8, period above 0, SHA1/SHA256/SHA512) and answers:
+
+- `scan`: it took it. The same answer whether the vault is locked or not, whether any item matches, and whatever the person
+  does next. The extension learns nothing about the database from it, and nothing more is sent back later except the
+  `expectCode` below.
+- `bad-otp`: the link did not check. Nothing is kept.
+- `bad-request`: no `otpauth`, one too long, or an app from before this message.
+
+The app then keeps that one scan in memory for 2 minutes (a newer one replaces it), opens the unlock screen if it is
+locked, and shows the Add Two-Step Code window. It writes the database only when the person presses Add there. The
+secret is never logged, and the scan never reaches disk except as the item's `otp` field after Add.
+
+After Add, if the item has a website on the scanned page's site (same rules as a fill), the app keeps a **pending code** for
+that browser and site, for 30 seconds, and pokes. The next `tab` report from that site gets:
+
+    ← {"type":"tab","id":9,"expectCode":{"origin":"https://example.com","expiresIn":28}}
+
+once. It carries no code. The extension watches that tab's frames of `origin` for a code field, exactly as after a fill
+with `otp: true`, and the `code` request that follows is answered under the same rules (Premium included: without it the
+answer is `premium: false` and the page gets the note).
+
 ### `icon`
 
     → {"type":"icon","id":5,"origin":"https://news.ycombinator.com","png":"iVBORw0KGgo…"}
@@ -223,7 +253,7 @@ Ask now: send a `tab` report for the active tab.
 
     ← {"type":"error","id":2,"code":"app-unavailable"}
 
-Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request` (also any message the app does not know, such as `premium` in the App Store app), `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `version`. The extension treats any error as "no fill", and an error to `premium` as "not taken".
+Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request` (also any message the app does not know, such as `premium` in the App Store app), `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `bad-otp` (`scan` only: the QR code's link did not check), `version`. The extension treats any error as "no fill", and an error to `premium` as "not taken".
 
 ## When a fill is allowed
 
@@ -257,11 +287,34 @@ Premium: a small note in the page's corner for 8 seconds, in a closed shadow roo
 frames whose origin equals `origin`; the content script checks `location.origin` again and that it is the top frame or
 same-origin with it. The background accepts a `code-field` only from a frame of the waiting origin.
 
-Popup → background: `{"type":"open-panel"}` (send `show`), `{"type":"popup-status"}` (answers the site whose code was
+Popup → background: `{"type":"scan-page"}` (scan the active tab, see below; answers what happened, never the link),
+`{"type":"open-panel"}` (send `show`), `{"type":"popup-status"}` (answers the site whose code was
 skipped for lack of Premium in the last 10 minutes, kept in memory only) and `{"type":"app-premium"}` (send `premium` now
 and answer `delivered`, `unreachable`, `refused` (an app from before the message), `invalid` (the app did not accept
 the pass, for example it ran out; the popup shows no line) or `none`). Accepted only from extension pages, which have no
 tab.
+
+### Scanning a QR code
+
+Only a click on **Scan QR code on this page** in the popup starts it; nothing scans by itself, and a web page cannot ask
+for it (content scripts take runtime messages from the extension only, and none listens to the page).
+
+1. The background asks the active tab's top frame (`{"type":"qr-images"}`, frame 0). Its content script
+   (`extension/src/lib/qr-page.ts`) takes up to 8 `<img>` (including `data:` URLs), `<canvas>` and `<svg>` elements that
+   are at least 48 px, about square and at least half in the viewport, draws each into a canvas (at most 2,048 px a side)
+   and answers PNG data URLs. A picture from another site that the page did not allow cannot be read this way and is
+   skipped.
+2. The background decodes them (`extension/src/lib/qr-scan.ts`): with the browser's `BarcodeDetector` when it has one, else
+   the bundled jsQR (Apache-2.0, `extension/public/THIRD_PARTY_NOTICES.txt`). No remote code; the data URLs are never fetched.
+3. If none of them is a two-step link, it takes one `tabs.captureVisibleTab` picture of the visible tab and decodes that.
+   This needs no new permission: `<all_urls>` already covers it. If the browser refuses (Safari may; untested there), only
+   step 1 counts.
+4. The first `otpauth://totp` link goes to the app as `scan`. An `hotp` link, a Google Authenticator export or any other
+   QR code is reported in the popup and sends nothing. With no app answering, the background sends `show` once (which starts
+   an installed app) and tries again.
+
+The pictures and the link live only in the service worker's memory for that click: nothing is written to `storage`,
+logged, or sent anywhere but the native app.
 
 ### Two-step codes
 
@@ -274,7 +327,7 @@ an account with a code, on that origin, for 30 seconds.
 
 ## Secrets
 
-- Two-step codes and entitlement tokens are never logged; codes are never written to `storage`. The token is kept in
+- Two-step codes, scanned QR codes and entitlement tokens are never logged; codes and scans are never written to `storage`. The token is kept in
   `browser.storage.local`, which the site issued it for, and handed to the direct app, which keeps it in its keychain. It
   unlocks nothing but Premium.
 - Credentials exist only in memory: in the app, in the answer frame, in the relay's buffer, in the extension's service
@@ -374,5 +427,10 @@ needs Accessibility to be granted already and never asks for it.
   and that the App Store app ignores it (`PP_MAS=1 swift test --scratch-path .build-mas` runs that side).
 - `cd extension && pnpm test tests/pass-relay.test.ts`: when the extension sends `premium`, taking it back, and the App
   Store build sending nothing.
+- `swift test --filter 'OTPAuthParsing|OTPScanMatch|QRCodeReader|BridgeScan|OTPScanSession'`: the link checks, which items
+  come first, reading a QR code generated in the test with Vision, the `scan` request and `expectCode`, the old code kept
+  in the item's history, and the confirmation (locked, replace, expiry, a newer scan).
+- `cd extension && pnpm test tests/qr-scan.test.ts`: which page pictures are read, decoding a generated QR code with jsQR,
+  the screenshot fallback, what is sent and what is not.
 - On a Mac: `make install`, load `extension/.output/chrome-mv3` unpacked in Chrome, enable the extension in Safari. See the
   demo script in UX.md.

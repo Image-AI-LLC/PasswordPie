@@ -90,7 +90,7 @@ One alarm a minute checks the native messaging connection to the PasswordPie app
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
+Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. When the user clicks "Scan QR code on this page" in the popup, the content script of the top frame reads the pictures on screen that could be a QR code and, if none can be read, the background takes one picture of the visible tab (tabs.captureVisibleTab); the two-step QR code is decoded inside the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
 ```
 
 ### Remote code
@@ -99,7 +99,7 @@ Sign-in pages can be on any website, and the user decides which ones by the acco
 No, I am not using remote code.
 ```
 
-All JavaScript is bundled in the package. The extension loads no scripts, WebAssembly or code strings from anywhere.
+All JavaScript is bundled in the package, including the jsQR decoder. The extension loads no scripts, WebAssembly or code strings from anywhere.
 
 ### Data usage
 
@@ -108,7 +108,8 @@ Collected (handled only on the user's Mac, never sent to the developer or a serv
 - **Authentication information:** the username and password the user picks in the PasswordPie app, put into the page.
 - **Web history:** the origin of the active tab, sent to the PasswordPie app on the same Mac to list that site's accounts.
 - **Website content:** the site's icon, sent to the PasswordPie app on the same Mac when it has an account for that
-  site but no icon for it.
+  site but no icon for it; and, only when the user clicks Scan, the two-step QR code shown on the page, decoded in the
+  extension and sent as an otpauth:// link to the PasswordPie app on the same Mac. The pictures are not kept.
 
 All three certifications are ticked: not sold or transferred to third parties outside the approved use cases, not used
 for purposes unrelated to the single purpose, not used to determine creditworthiness or for lending.

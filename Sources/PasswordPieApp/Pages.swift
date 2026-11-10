@@ -1,13 +1,17 @@
 import AppKit
 import PasswordPieCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: Editor (detached window)
 
 struct EditorView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var session: VaultSession
     @State private var showPassword = false
     @State private var otpInput = ""
+    /// Why the last scan did not give a code, under the one-time password row.
+    @State private var otpScanError = ""
     @State private var tagsInput = ""
     @State private var keepSeparate = false
     @State private var confirmSplit = false
@@ -29,7 +33,7 @@ struct EditorView: View {
                     Button("Generate") { session.editing?.password = PasswordGenerator.generate(CharacterRecipe()) }
                 }
                 TextField("Website", text: binding(\.url))
-                TextField("One-time password", text: $otpInput, prompt: Text("Base32 secret or otpauth:// URL"))
+                oneTimePasswordRow
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Notes").font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: binding(\.notes))
@@ -107,6 +111,94 @@ struct EditorView: View {
         }
     }
 
+    // MARK: One-time password
+
+    /// The field, its QR button, what went wrong with the last scan, and the current code once there is one.
+    private var oneTimePasswordRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            LabeledContent("One-time password") {
+                HStack(spacing: 6) {
+                    OTPInputField(text: $otpInput, placeholder: "Base32 secret or otpauth:// URL") { pasteboard in
+                        guard OTPInputScanner.holdsOnlyAnImage(pasteboard) else { return false }
+                        apply(OTPInputScanner.scan(pasteboard: pasteboard))
+                        return true
+                    }
+                    Menu {
+                        Button("Scan Clipboard") { apply(OTPInputScanner.scan(pasteboard: .general)) }
+                        Button("Choose Image…") { chooseQRImage() }
+                    } label: {
+                        Image(systemName: "qrcode.viewfinder")
+                    } primaryAction: {
+                        apply(OTPInputScanner.scan(pasteboard: .general))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Scan a QR code from the clipboard. Take a screenshot of it with ⌃⇧⌘4 first.")
+                    .accessibilityLabel("Scan QR Code")
+                }
+            }
+            if !otpScanError.isEmpty {
+                Text(otpScanError)
+                    .font(.caption)
+                    .foregroundStyle(Palette.error(dark: colorScheme == .dark))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let draft = otpDraft {
+                OneTimeCodePreview(session: session, premium: session.premium, draft: draft)
+            }
+        }
+        .onDrop(of: [.fileURL, .image], isTargeted: nil) { providers in
+            readDrop(providers)
+            return true
+        }
+        .onChange(of: otpInput) { _, _ in otpScanError = "" }
+    }
+
+    /// The item as it would be saved with what the field holds now, for the code preview.
+    private var otpDraft: VaultEntry? {
+        guard var entry = session.editing else { return nil }
+        entry.otp = editorOTPValue(otpInput, title: entry.title, username: entry.username)
+        return entry
+    }
+
+    /// A scan fills the field, and an empty title or username from the QR code. A failure says why under the row.
+    private func apply(_ outcome: OTPScanOutcome) {
+        switch outcome {
+        case .scanned(let scan):
+            otpInput = scan.uri
+            if session.editing?.title.isEmpty == true, !scan.issuer.isEmpty { session.editing?.title = scan.issuer }
+            if session.editing?.username.isEmpty == true, !scan.account.isEmpty { session.editing?.username = scan.account }
+            // After `otpInput` changed, which clears the message.
+            DispatchQueue.main.async { otpScanError = "" }
+        case .failed(let text):
+            DispatchQueue.main.async { otpScanError = text }
+        }
+    }
+
+    private func chooseQRImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a picture of the QR code"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        apply(OTPInputScanner.scan(fileURL: url))
+    }
+
+    /// An image file from Finder, or an image dragged from another app.
+    private func readDrop(_ providers: [NSItemProvider]) {
+        guard let provider = providers.first else { return }
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                DispatchQueue.main.async { apply(url.map(OTPInputScanner.scan(fileURL:)) ?? .failed(OTPInputScanner.unreadableImage)) }
+            }
+        } else if provider.canLoadObject(ofClass: NSImage.self) {
+            _ = provider.loadObject(ofClass: NSImage.self) { image, _ in
+                let image = image as? NSImage
+                DispatchQueue.main.async { apply(image.map(OTPInputScanner.scan(image:)) ?? .failed(OTPInputScanner.unreadableImage)) }
+            }
+        }
+    }
+
     private func binding(_ keyPath: WritableKeyPath<VaultEntry, String>) -> Binding<String> {
         Binding(
             get: { session.editing?[keyPath: keyPath] ?? "" },
@@ -121,14 +213,7 @@ struct EditorView: View {
     /// A bare Base32 secret becomes an otpauth URL, the form KeePassXC stores in the `otp` field.
     private func commit() {
         guard var entry = session.editing else { return }
-        let trimmed = otpInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            entry.otp = ""
-        } else if trimmed.lowercased().hasPrefix("otpauth://") {
-            entry.otp = trimmed
-        } else {
-            entry.otp = TOTP.otpAuthURL(secretBase32: trimmed, title: entry.title, username: entry.username)
-        }
+        entry.otp = editorOTPValue(otpInput, title: entry.title, username: entry.username)
         let favorite = entry.favorite
         var tags = tagsInput.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         tags.removeAll { $0.caseInsensitiveCompare("Favorite") == .orderedSame }
@@ -143,4 +228,89 @@ struct EditorView: View {
 func mergedExtraFieldText(_ field: VaultField) -> String {
     guard field.protected else { return field.value }
     return String(repeating: "•", count: min(max(field.value.count, 8), 16))
+}
+
+/// The one-time password field. A text field cannot paste a picture, so ⌘V with only an image on the clipboard goes to
+/// `pasteImage` instead, while this field is being edited. True from it means the paste was handled.
+struct OTPInputField: NSViewRepresentable {
+    @Binding var text: String
+    var placeholder: String
+    var pasteImage: (NSPasteboard) -> Bool
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField(string: text)
+        field.placeholderString = placeholder
+        field.delegate = context.coordinator
+        // Drawn like the form's other fields: no bezel, no background, text at the right.
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.alignment = .right
+        field.lineBreakMode = .byTruncatingMiddle
+        field.cell?.isScrollable = true
+        field.setAccessibilityLabel("One-time password")
+        context.coordinator.field = field
+        context.coordinator.install()
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        if field.stringValue != text { field.stringValue = text }
+    }
+
+    static func dismantleNSView(_ field: NSTextField, coordinator: Coordinator) {
+        coordinator.remove()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: OTPInputField
+        weak var field: NSTextField?
+        private var monitor: Any?
+
+        init(_ parent: OTPInputField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field else { return }
+            parent.text = field.stringValue
+        }
+
+        func install() {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let field = self.field, field.currentEditor() != nil, event.window === field.window,
+                      event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                      event.charactersIgnoringModifiers?.lowercased() == "v" else { return event }
+                return self.parent.pasteImage(.general) ? nil : event
+            }
+        }
+
+        func remove() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+    }
+}
+
+/// The code the editor's field would give, under it. Observes Premium, so it unlocks the moment Premium arrives.
+private struct OneTimeCodePreview: View {
+    @ObservedObject var session: VaultSession
+    @ObservedObject var premium: PremiumStore
+    var draft: VaultEntry
+
+    var body: some View {
+        let access = session.oneTimeCodeAccess(for: draft)
+        if access != .noCode {
+            HStack(spacing: 8) {
+                OneTimeCodeView(access: access)
+                if access == .locked {
+                    SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
 }

@@ -4,6 +4,7 @@ import { Popup, type PopupApi } from '@/components/popup';
 import { STORE_BUILD, UPGRADE_URL } from '@/lib/config';
 import { livePopupAccount, noPopupAccount } from '@/lib/popup-account';
 import type { PopupStatus } from '@/lib/protocol';
+import { parseScanOutcome } from '@/lib/scan-outcome';
 import './style.css';
 
 // Spelled out so Vite folds it: the App Store build has no code that signs in or asks the site anything.
@@ -24,6 +25,9 @@ const api: PopupApi = {
   async appPremium() {
     const answer: unknown = await browser.runtime.sendMessage({ type: 'app-premium' }).catch(() => undefined);
     return answer === 'delivered' || answer === 'unreachable' || answer === 'refused' || answer === 'invalid' ? answer : 'none';
+  },
+  async scanPage() {
+    return parseScanOutcome(await browser.runtime.sendMessage({ type: 'scan-page' }).catch(() => undefined));
   },
   async status() {
     const answer: unknown = await browser.runtime.sendMessage({ type: 'popup-status' }).catch(() => undefined);

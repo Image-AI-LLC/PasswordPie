@@ -981,8 +981,26 @@ final class VaultSession: ObservableObject {
 
     func saveEditing(_ entry: VaultEntry) {
         var entry = entry
-        if entry.title.isEmpty { entry.title = "Untitled" }
         carryPasswordBookkeeping(into: &entry)
+        carryScannedCode(into: &entry)
+        let isDraft = storedEntry(entry.id) == nil
+        if storeEntry(entry) {
+            editing = nil
+            keepChromeLastUsed(entry.id)
+        } else if !isDraft {
+            #if !PP_DIRECT
+            editing = nil
+            #endif
+            // Direct channel: `persist` undid the failed write, and the editor stays open with what was typed.
+        }
+    }
+
+    /// Writes one item, new or changed, to its database file. Leaves the editor alone, so a scanned code can be added while
+    /// another item is open in it. False when the file could not be written.
+    @discardableResult
+    func storeEntry(_ entry: VaultEntry) -> Bool {
+        var entry = entry
+        if entry.title.isEmpty { entry.title = "Untitled" }
         let path = listPaths[entry.id] ?? databaseURL.path
         // A new item, or a Chrome draft that may reuse the row of its trashed copy. A failed write has nothing else holding it,
         // so it comes back out of the database and the editor stays open with what the user typed.
@@ -993,20 +1011,21 @@ final class VaultSession: ObservableObject {
         } else {
             appendStored(entry, to: path)
         }
-        if persist(path: path) {
-            editing = nil
-            keepChromeLastUsed(entry.id)
-        } else if isDraft {
+        if persist(path: path) { return true }
+        if isDraft {
             if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
                 openedFiles[index].vault.entries = before
             }
             publishCatalog()
-        } else {
-            #if !PP_DIRECT
-            editing = nil
-            #endif
-            // Direct channel: `persist` undid the failed write, and the editor stays open with what was typed.
         }
+        return false
+    }
+
+    /// A scanned code may have been added to this item while the editor was open. Keep it unless the editor changed the field.
+    private func carryScannedCode(into entry: inout VaultEntry) {
+        guard let original = editingOriginal, original.id == entry.id, let stored = storedEntry(entry.id), stored.otp != original.otp else { return }
+        let untouched = entry.otp == original.otp || entry.otp == editorOTPValue(original.otp, title: entry.title, username: entry.username)
+        if untouched { entry.otp = stored.otp }
     }
 
     /// The editor holds a copy from when it opened. A Chrome update or a Restore may have landed since.
