@@ -36,18 +36,53 @@ channel a code goes to Safari when the app has Premium, and the extension carrie
 
 ## Signing in (extension)
 
-passwordpie.com runs Better Auth with the `bearer` plugin. The extension never uses cookies (`credentials: "omit"`):
+The extension has no sign-in form. People sign in on passwordpie.com, which has email, Google and whatever comes later,
+and finishes a new account's email verification; the site then hands the extension a session of its own. The popup's
+**Sign in on passwordpie.com** only opens `${SITE_URL}/extension/connect`. passwordpie.com runs Better Auth with the
+`bearer` plugin, and the extension never sends cookies (`credentials: "omit"`): every call carries
+`Authorization: Bearer <token>`, kept in `browser.storage.local` (`local:session-token`).
 
-- **Email and password:** `authClient.signIn.email` → the session token comes back in the `set-auth-token` header and
-  is kept in `browser.storage.local` (`local:session-token`). Every call sends `Authorization: Bearer <token>`.
-- **Google (Chrome only):** mkext's flow. `chrome.identity.getAuthToken({interactive: true})` gives a Google *access*
-  token (that API never returns an ID token); `POST /api/auth/extension/google` with `{"accessToken": "…"}` returns
-  `{"token": "<session token>"}`. The site checks the access token with Google's tokeninfo/userinfo endpoint and that its
-  `aud` is the extension's OAuth client. The
-  button only shows when the build has a Google OAuth client ID (`WXT_GOOGLE_CLIENT_ID`). Safari has no
-  `identity.getAuthToken`, so Safari signs in with email only.
-- **Sign out:** `authClient.signOut()`, then the session token and the entitlement token are removed, even offline.
-- A 401 from any call drops the stored tokens: the session is gone.
+The connect page, `/extension/connect` (with a language prefix too, such as `/zh/extension/connect`):
+
+- Signed out: it goes to `/sign-in?callbackUrl=/extension/connect`. Email, Google and sign-up with email verification
+  all come back to it.
+- Signed in: it talks to the extension's content script with `window.postMessage`. Every message is a plain object and
+  every `targetOrigin` is `window.location.origin`:
+
+      page → ext  { source: 'passwordpie-site', type: 'hello' }                  after mount, again every 250 ms until ready or 3 s
+      ext → page  { source: 'passwordpie-extension', type: 'ready' }             once when the content script starts there, then once per hello
+      page → ext  { source: 'passwordpie-site', type: 'session', token }         once, after the first ready; token from POST /api/auth/extension/session
+      ext → page  { source: 'passwordpie-extension', type: 'connected', email }  or  { source: 'passwordpie-extension', type: 'failed' }
+
+- `POST /api/auth/extension/session` takes only a same-origin request with the site's cookie session (401 otherwise),
+  creates a **new** Better Auth session for that user and returns `{"token": "…"}`, usable as `Authorization: Bearer`
+  (`GET /api/auth/get-session` and `GET /api/premium/entitlement` answer 200 with it). `Cache-Control: no-store`, rate
+  limited. The page asks for it only after a `ready`, so nothing is issued in a browser without the extension. It is not
+  the cookie session, so signing out of the extension leaves the website signed in, and the other way round.
+- The page shows: connecting; connected ("PasswordPie in this browser is signed in as {email}. You can close this
+  tab."); no `ready` within 3 s (not installed, or too old: a link to the Chrome Web Store item and Try again); failed.
+
+The extension's side (`extension/src/lib/site-connect.ts`, `site-session.ts`):
+
+- The content script listens only in the top frame, only when `location.origin` is the build's site (`SITE_URL`), and
+  acts only while the path, after an optional language prefix, is `/extension/connect`. The path is read for each
+  message rather than once, because the site's sign-in may come back to the connect page by in-page navigation after
+  the script started on `/sign-in`. It takes only messages with `event.source === window` and
+  `event.origin === SITE_URL`, and hands one `session` at a time to the background.
+- The background takes the token only from its own content script in the top frame of that page (`sender.id`,
+  `frameId`, `url`). It asks `GET /api/auth/get-session` with it first: an unknown token, or no answer, keeps nothing and
+  answers `failed`. A good one is kept with its user, replacing any other account (whose entitlement is dropped and whose pass
+  the app gives back before the new account is kept, and whose session is ended on the site without waiting), and the entitlement is refreshed, which hands Premium to the app
+  through `PassRelay`. Then it answers `connected` with the email, even if only the entitlement could not be read; a 401 there means the
+  site ended the session in between, and the answer is `failed`. Each step is bounded (6 s for the token check, 2 s
+  for the app, 4 s for the entitlement), so the answer goes out within about 12 s: the page gives up 15 s after `ready`.
+- **Sign out:** `POST /api/auth/sign-out` with the bearer token (given up after 5 s), then the session token, user and
+  entitlement are removed, even offline. Only this browser's session ends; the website stays signed in.
+- A 401 from any call drops the stored tokens: the session is gone. A 403, a 200 that is not JSON (a challenge or
+  captive-portal page) or no answer within 10 s is not a sign-out: the popup keeps the last user it saw.
+- Safari: the content script runs on passwordpie.com only once the user lets the extension access that site.
+
+There is no `identity` permission and no `oauth2` key: Google sign-in is the site's.
 
 ## Handing Premium to the app
 
@@ -154,7 +189,8 @@ it. Buying there is the app's In-App Purchase.
 
 ## Testing without the site
 
-`extension/dev/mock-site.mjs` serves the API above on `http://localhost:8787`, signs tokens with the test key, accepts
-any email with the password `password`, redeems `PPIE-TEST-TEST-TEST` once (`PPIE-USED-USED-USED` answers `used`), and
+`extension/dev/mock-site.mjs` serves the API above on `http://localhost:8787`, signs tokens with the test key, signs in
+any email with the password `password` on its own `/sign-in` page, serves `/extension/connect` and
+`POST /api/auth/extension/session` as described in "Signing in (extension)", redeems `PPIE-TEST-TEST-TEST` once (`PPIE-USED-USED-USED` answers `used`), and
 serves a two-step sign-in page at `/demo/login` (username and password, then a six-box code page). Build the extension
 against it with `WXT_PP_SITE_URL=http://localhost:8787 pnpm build:chrome`.

@@ -19,28 +19,23 @@ export function extensionManifest({
   browser,
   storePackage,
   account = true,
-  googleClientId = process.env.WXT_GOOGLE_CLIENT_ID ?? '',
 }: {
   browser: ConfigEnv['browser'];
   storePackage: boolean;
   /** False for the App Store build (WXT_PP_STORE=mas): no account, so no `storage` permission. */
   account?: boolean;
-  /** Google sign-in (mkext's identity.getAuthToken flow): Chromium only, and only when the build has a client ID. */
-  googleClientId?: string;
 }): UserManifest {
-  const google = browser === 'chrome' && googleClientId !== '';
   return {
     name: 'PasswordPie',
     description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
-    version: '0.1.0',
+    version: '0.2.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
-    // `storage` keeps the passwordpie.com sign-in and entitlement token (docs/ACCOUNTS.md); the App Store build has no
-    // account and does not ask for it.
+    // `storage` keeps the passwordpie.com session and entitlement token (docs/ACCOUNTS.md); the App Store build has no
+    // account and does not ask for it. Signing in happens on the site, so there is no `identity` and no `oauth2`.
     permissions: [
       ...(browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms']),
       ...(account ? ['storage'] : []),
-      ...(google ? ['identity'] : []),
     ],
     host_permissions: ['<all_urls>'],
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
@@ -48,7 +43,6 @@ export function extensionManifest({
     commands: {
       [OPEN_PANEL_COMMAND]: { suggested_key: { default: 'Alt+Shift+P' }, description: 'Open the PasswordPie panel' },
     },
-    ...(google ? { oauth2: { client_id: googleClientId, scopes: ['openid', 'email', 'profile'] } } : {}),
     ...(browser === 'chrome' && !storePackage ? { key: CHROME_KEY } : {}),
   };
 }

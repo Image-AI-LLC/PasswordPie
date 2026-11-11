@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import type { Entitlement, EntitlementResult, RedeemResult } from '../lib/account';
-import type { AccountUser, SignInResult } from '../lib/auth';
+import type { AccountUser } from '../lib/auth';
 import type { AppPremium } from '../lib/pass-relay';
 import type { PopupStatus } from '../lib/protocol';
 import { SCAN_MESSAGES, type ScanOutcome } from '../lib/scan-outcome';
@@ -13,7 +13,6 @@ export interface PopupApi {
   sellsPremium: boolean;
   /** False in the App Store build, which has no account at all: no sign-in, and nothing asks passwordpie.com. */
   accountEnabled: boolean;
-  googleAvailable: boolean;
   openPanel(): Promise<void>;
   /** The shortcut Chrome actually gave `open-panel`, such as "⌥⇧P"; "" when it gave none (the key was taken). */
   panelShortcut(): Promise<string>;
@@ -26,15 +25,14 @@ export interface PopupApi {
   /** What was kept from the last answer, shown at once. */
   cachedEntitlement(): Promise<Entitlement | null>;
   refreshEntitlement(): Promise<EntitlementResult>;
-  signIn(email: string, password: string): Promise<SignInResult>;
-  signUp(name: string, email: string, password: string): Promise<SignInResult>;
-  signInWithGoogle(): Promise<SignInResult>;
   signOut(): Promise<void>;
   redeem(code: string): Promise<RedeemResult>;
   openUrl(url: string): void;
   upgradeUrl?: string;
-  signUpUrl: string;
-  forgotPasswordUrl: string;
+  /** The site's connect page: signing in happens there, not in the popup (docs/UX.md, "Signing in"). */
+  signInUrl: string;
+  /** The host of that site, for the button: "passwordpie.com". */
+  siteName: string;
 }
 
 const REDEEM_MESSAGES: Record<string, string> = {
@@ -103,68 +101,19 @@ function Field(props: { label: string; type?: string; value: string; onChange: (
   );
 }
 
+/** Signed out: one line and one button to the site. Signing in, signing up and Google all happen there. */
 function SignIn({ api }: { api: PopupApi }) {
-  const client = useQueryClient();
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const done = async (result: SignInResult) => {
-    if (result.ok) {
-      await api.refreshEntitlement();
-      await client.invalidateQueries();
-    }
-    return result;
-  };
-  const submit = useMutation({
-    mutationFn: async () => done(mode === 'sign-in' ? await api.signIn(email, password) : await api.signUp(name, email, password)),
-  });
-  const google = useMutation({ mutationFn: async () => done(await api.signInWithGoogle()) });
-  const error = [submit.data, google.data].find((r) => r && !r.ok) as { ok: false; message: string } | undefined;
-  const onSubmit = (e: { preventDefault(): void }) => {
-    e.preventDefault();
-    submit.mutate();
-  };
   return (
-    <form className="flex flex-col gap-2" onSubmit={onSubmit} aria-label={mode === 'sign-in' ? 'Sign in' : 'Create account'}>
+    <div className="flex flex-col gap-2">
       <p className="text-[13px] text-pp-text-secondary">
         Sign in with your PasswordPie account to fill two-step codes in the browser with Premium.
       </p>
-      {mode === 'sign-up' && <Field label="Name" value={name} onChange={setName} autoComplete="name" />}
-      <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="username" />
-      <Field
-        label="Password"
-        type="password"
-        value={password}
-        onChange={setPassword}
-        autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-      />
-      {error && (
-        <p role="alert" className="text-[12px] text-pp-error">
-          {error.message}
-        </p>
-      )}
-      <div className="flex items-center gap-2">
-        <Button kind="primary" type="submit" disabled={submit.isPending || !email || !password}>
-          {mode === 'sign-in' ? 'Sign In' : 'Create Account'}
+      <div>
+        <Button kind="primary" onClick={() => api.openUrl(api.signInUrl)}>
+          Sign in on {api.siteName}
         </Button>
-        {api.googleAvailable && (
-          <Button onClick={() => google.mutate()} disabled={google.isPending}>
-            Continue with Google
-          </Button>
-        )}
       </div>
-      <div className="flex gap-3">
-        <Button kind="link" onClick={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}>
-          {mode === 'sign-in' ? 'Create an account' : 'I have an account'}
-        </Button>
-        {mode === 'sign-in' && (
-          <Button kind="link" onClick={() => api.openUrl(api.forgotPasswordUrl)}>
-            Forgot password?
-          </Button>
-        )}
-      </div>
-    </form>
+    </div>
   );
 }
 

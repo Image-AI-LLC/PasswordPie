@@ -24,10 +24,9 @@ function api(overrides: Partial<PopupApi> = {}): PopupApi {
   return {
     sellsPremium: true,
     accountEnabled: true,
-    googleAvailable: false,
     upgradeUrl: 'https://passwordpie.com/pricing',
-    signUpUrl: 'https://passwordpie.com/sign-up',
-    forgotPasswordUrl: 'https://passwordpie.com/forgot-password',
+    signInUrl: 'https://passwordpie.com/extension/connect',
+    siteName: 'passwordpie.com',
     openPanel: async () => void log.push('open-panel'),
     panelShortcut: async () => '⌥⇧P',
     status: async () => ({}),
@@ -41,14 +40,6 @@ function api(overrides: Partial<PopupApi> = {}): PopupApi {
       log.push('refresh');
       return { ok: true, entitlement };
     },
-    signIn: async (email, password) => {
-      log.push(`sign-in ${email} ${password}`);
-      if (password !== 'password') return { ok: false, message: 'The email or password is not right.' };
-      user = { email };
-      return { ok: true };
-    },
-    signUp: async () => ({ ok: true }),
-    signInWithGoogle: async () => ({ ok: true }),
     signOut: async () => {
       log.push('sign-out');
       user = null;
@@ -87,6 +78,10 @@ function button(name: string): HTMLButtonElement {
 
 function hasButton(name: string): boolean {
   return Array.from(container.querySelectorAll('button')).some((b) => b.textContent === name);
+}
+
+function hasField(): boolean {
+  return container.querySelector('input') !== null;
 }
 
 async function type(label: string, value: string): Promise<void> {
@@ -160,22 +155,26 @@ describe('Popup', () => {
     expect(container.textContent).toContain('⌘\\ by default');
   });
 
-  it('signs in with email and password, then shows the plan', async () => {
+  it('signed out, says why to sign in and offers one button to the site, with no field to type in', async () => {
     await render(api());
-    await type('Email', 'ada@example.com');
-    await type('Password', 'password');
-    await click('Sign In');
-    expect(log).toContain('sign-in ada@example.com password');
-    expect(container.textContent).toContain('ada@example.com');
-    expect(container.querySelector('[data-testid="plan"]')?.textContent).toBe('Free');
+    const account = container.querySelector('[aria-label="Account"]');
+    expect(account?.textContent).toContain('Sign in with your PasswordPie account to fill two-step codes in the browser with Premium.');
+    expect(hasButton('Sign in on passwordpie.com')).toBe(true);
+    expect(hasField()).toBe(false);
+    expect(account?.querySelectorAll('button')).toHaveLength(1);
+    expect(container.textContent).not.toMatch(/Password\b|Create an account|Forgot password|Google/);
   });
 
-  it('says why a sign-in failed', async () => {
+  it('signing in opens the connect page on the site', async () => {
     await render(api());
-    await type('Email', 'ada@example.com');
-    await type('Password', 'wrong');
-    await click('Sign In');
-    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The email or password is not right.');
+    await click('Sign in on passwordpie.com');
+    expect(log).toEqual(['open https://passwordpie.com/extension/connect']);
+  });
+
+  it('names the site the build signs in on', async () => {
+    await render(api({ signInUrl: 'http://localhost:8787/extension/connect', siteName: 'localhost:8787' }));
+    await click('Sign in on localhost:8787');
+    expect(log).toContain('open http://localhost:8787/extension/connect');
   });
 
   it('refreshes the entitlement each time it opens', async () => {
@@ -264,7 +263,7 @@ describe('Popup', () => {
     const refresh = vi.fn();
     await render(api({ accountEnabled: false, sellsPremium: false, upgradeUrl: undefined, user: userCalls, refreshEntitlement: refresh }));
     expect(container.querySelector('[aria-label="Account"]')).toBeNull();
-    expect(container.textContent).not.toMatch(/Sign In|Create an account|passwordpie\.com/);
+    expect(container.textContent).not.toMatch(/Sign [Ii]n|Create an account|passwordpie\.com/);
     expect(hasButton('Open PasswordPie')).toBe(true);
     expect(userCalls).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
@@ -280,15 +279,7 @@ describe('Popup', () => {
     await render(api());
     await click('Sign Out');
     expect(log).toContain('sign-out');
-    expect(hasButton('Sign In')).toBe(true);
-  });
-
-  it('shows Google only when it is available', async () => {
-    await render(api());
-    expect(hasButton('Continue with Google')).toBe(false);
-    await act(async () => root?.unmount());
-    await render(api({ googleAvailable: true }));
-    expect(hasButton('Continue with Google')).toBe(true);
+    expect(hasButton('Sign in on passwordpie.com')).toBe(true);
   });
 });
 

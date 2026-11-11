@@ -44,9 +44,13 @@ BUILT TO FILL THE RIGHT PAGE
 • It never fills a frame from another site, a plain http page with an account saved for https, or anything while PasswordPie is locked.
 • Each pick fills once, and is dropped if no matching page shows up within 30 seconds.
 
+PREMIUM: TWO-STEP CODES
+• With PasswordPie Premium, the two-step code fills itself on the next page after the password.
+• Sign in on passwordpie.com from the extension's toolbar popup. The site hands this browser its own session, so signing out of one leaves the other signed in.
+
 PRIVATE BY DESIGN
-• Your passwords stay in your KeePass file on your Mac.
-• The extension talks only to the PasswordPie app on the same Mac, through Chrome's native messaging. Nothing is sent to us or to any server.
+• Your passwords stay in your KeePass file on your Mac. They go only to the PasswordPie app on the same Mac, through Chrome's native messaging, and never to us or to any server.
+• Signed in, the extension asks passwordpie.com who you are and whether your account has Premium, and nothing else. It never sends your passwords, codes, pages or history there.
 • It tells the app only the site of the active tab (such as https://example.com), never the page's full address, its contents or your history.
 • When PasswordPie has an account for that site but no icon for it, the extension sends the app the site's icon, which it fetches without cookies from the address the page gives for it.
 • No analytics, no tracking, no remote code.
@@ -75,6 +79,12 @@ Fill the username and password that the user picks in the PasswordPie app for Ma
 The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and receives the username and password the user picked in the app, and with Premium the two-step code. When the user is signed in to a PasswordPie account with Premium, it hands the app the signed Premium token from passwordpie.com, because the app has no sign-in of its own, and takes it back when the user signs out. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. It is not used for anything else.
 ```
 
+**storage**
+
+```text
+Keeps the user's passwordpie.com sign-in (a session token the site issued after the user signed in on passwordpie.com), the account's email, and its Premium status with the signed Premium token, in chrome.storage.local, so the user stays signed in and the PasswordPie app can be given Premium. Sign Out removes all of it. One more true/false flag records that the PasswordPie app holds a Premium token from this browser, so the extension can take it back from the app after a sign-out even if the app was not running at the time; it is removed once the app gives the token back. Nothing else is stored: no passwords, two-step codes, page contents or browsing history.
+```
+
 **webNavigation**
 
 ```text
@@ -90,7 +100,7 @@ One alarm a minute checks the native messaging connection to the PasswordPie app
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. When the user clicks "Scan QR code on this page" in the popup, the content script of the top frame reads the pictures on screen that could be a QR code and, if none can be read, the background takes one picture of the visible tab (tabs.captureVisibleTab); the two-step QR code is decoded inside the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
+Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. On passwordpie.com's /extension/connect page only, in the top frame, the content script listens for the page's message that hands over the session after the user signed in there, and passes it to the background. When the user clicks "Scan QR code on this page" in the popup, the content script of the top frame reads the pictures on screen that could be a QR code and, if none can be read, the background takes one picture of the visible tab (tabs.captureVisibleTab); the two-step QR code is decoded inside the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
 ```
 
 ### Remote code
@@ -103,13 +113,24 @@ All JavaScript is bundled in the package, including the jsQR decoder. The extens
 
 ### Data usage
 
-Collected (handled only on the user's Mac, never sent to the developer or a server):
+Collected and handled only on the user's Mac, never sent to the developer or a server:
 
 - **Authentication information:** the username and password the user picks in the PasswordPie app, put into the page.
 - **Web history:** the origin of the active tab, sent to the PasswordPie app on the same Mac to list that site's accounts.
 - **Website content:** the site's icon, sent to the PasswordPie app on the same Mac when it has an account for that
   site but no icon for it; and, only when the user clicks Scan, the two-step QR code shown on the page, decoded in the
   extension and sent as an otpauth:// link to the PasswordPie app on the same Mac. The pictures are not kept.
+
+Collected and sent to passwordpie.com (the developer's site), only when the user signs in there:
+
+- **Authentication information:** the session token passwordpie.com issued after the user signed in on its
+  /extension/connect page, sent back to passwordpie.com as `Authorization: Bearer` to read the account and its Premium,
+  to redeem a key, and to sign out.
+- **Personally identifiable information:** the account's email address, which passwordpie.com returns and the popup
+  shows.
+
+The extension has no `identity` permission and no Google sign-in of its own; signing in, with email or Google, happens
+on passwordpie.com.
 
 All three certifications are ticked: not sold or transferred to third parties outside the approved use cases, not used
 for purposes unrelated to the single purpose, not used to determine creditworthiness or for lending.

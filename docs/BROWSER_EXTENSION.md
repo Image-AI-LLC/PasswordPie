@@ -13,7 +13,7 @@ Firefox.
 
 | Piece | Where | Channel |
 |---|---|---|
-| Extension (WXT + TypeScript, laid out like [mkext](https://mkext.dev): a React + Tailwind + TanStack Query popup, Better Auth bearer sign-in; the content script has no framework) | `extension/` | Chrome build and Safari build from one source |
+| Extension (WXT + TypeScript, laid out like [mkext](https://mkext.dev): a React + Tailwind + TanStack Query popup, a Better Auth bearer session that passwordpie.com hands over after you sign in there; the content script has no framework) | `extension/` | Chrome build and Safari build from one source |
 | Safari Web Extension app extension | `PasswordPie.app/Contents/PlugIns/PasswordPieSafari.appex`, target `PasswordPieSafari` | both |
 | Chrome native messaging host | `PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost`, target `PasswordPieBrowserHost` | direct only |
 | Host manifest `com.oldcai.passwordpie.json` | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
@@ -86,7 +86,7 @@ Every request has `type` and an `id` (an integer the extension picks). Every ans
 
 ### `hello`
 
-    → {"type":"hello","id":1,"version":1,"extension":"0.1.0"}
+    → {"type":"hello","id":1,"version":1,"extension":"0.2.0"}
     ← {"type":"hello","id":1,"version":1,"locked":false}
 
 Sent when the extension starts and when its port (re)connects. It makes the browser count as connected.
@@ -325,6 +325,15 @@ only when no username or password field is on the page, a lone numeric field of 
 sign-in fields, hidden, disabled or read-only fields, or a field the user already typed in. It only runs after a fill of
 an account with a code, on that origin, for 30 seconds.
 
+## Signing in on passwordpie.com
+
+The popup has no sign-in form: **Sign in on passwordpie.com** opens the site's `/extension/connect`, and after the
+person signs in there the page hands the content script a bearer session over `window.postMessage`. The content
+script listens only in the top frame of that page on the build's site, takes only that window's own messages from that
+origin, and the background keeps the token only after `get-session` confirms it. The App Store build has none of this
+code and sends the site nothing (`extension/tests/store-build.test.ts` checks the bundle). The messages and rules are in
+[ACCOUNTS.md](ACCOUNTS.md), "Signing in (extension)".
+
 ## Secrets
 
 - Two-step codes, scanned QR codes and entitlement tokens are never logged; codes and scans are never written to `storage`. The token is kept in
@@ -420,7 +429,9 @@ needs Accessibility to be granted already and never asks for it.
 - `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures
   (autocomplete hints, forms with no attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin
   refusal), code fields (one field, split boxes, decoys), the code flow in the background, the account and redeem calls,
-  and the popup.
+  the popup, signing in on the site (`site-connect.test.ts`: which page and frame listen, which messages count;
+  `site-session.test.ts`: the token check before it is kept), and the App Store bundle having none of it
+  (`store-build.test.ts`).
 - `swift test --filter 'Entitlement|BridgeCode|BrowserCodeAccess'`: the token check (good, wrong key, changed claims or
   header, expired, wrong `aud` or `iss`, not Premium) and the `code` request rules.
 - `swift test --filter 'DirectPremium|BridgePremium|BridgePassRelay'`: the `premium` request, what the direct app keeps,
