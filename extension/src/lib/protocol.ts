@@ -1,7 +1,7 @@
 // Message shapes shared by the background, the content script and the native side.
 // The native protocol is in docs/BROWSER_EXTENSION.md, "Messages".
 
-export const EXTENSION_VERSION = '0.1.0';
+export const EXTENSION_VERSION = '0.2.0'; // manifest.ts version (tests/manifest.test.ts)
 export const PROTOCOL_VERSION = 1;
 export const NATIVE_APP = 'com.oldcai.passwordpie';
 /** Where the toolbar button goes when PasswordPie is not installed or cannot be started. */

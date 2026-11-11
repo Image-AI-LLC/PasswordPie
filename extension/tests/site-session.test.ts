@@ -115,6 +115,27 @@ describe('acceptSiteSession', () => {
     expect(kv.data.has(ENTITLEMENT_KEY)).toBe(false);
   });
 
+  it('lets the app give back the other account\'s pass before the new account is kept', async () => {
+    await store.setSessionToken('old');
+    await store.setUser({ email: 'old@example.com' });
+    await store.setEntitlement({ premium: true, plan: 'lifetime', expiresAt: null, token: 'old-pass', checkedAt: 1 });
+    const { fetcher } = site({ 'tok-2': 'ada@example.com' });
+    const seen: Array<string | undefined> = [];
+    await acceptSiteSession('tok-2', store, fetcher, SITE, { accountChanged: async () => void seen.push(await store.sessionToken()) });
+    // The relay ran while nothing was signed in, so it took the old pass back.
+    expect(seen).toEqual([undefined]);
+    expect(await store.sessionToken()).toBe('tok-2');
+  });
+
+  it('does not take the pass back when the same account connects again', async () => {
+    await store.setSessionToken('old');
+    await store.setUser({ email: 'ada@example.com' });
+    const { fetcher } = site({ 'tok-2': 'ada@example.com' });
+    let changed = 0;
+    await acceptSiteSession('tok-2', store, fetcher, SITE, { accountChanged: async () => void (changed += 1) });
+    expect(changed).toBe(0);
+  });
+
   it('ends the session it replaces on the site, without waiting for it', async () => {
     await store.setSessionToken('old');
     await store.setUser({ email: 'ada@example.com' });

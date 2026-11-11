@@ -177,13 +177,32 @@ describe('startSiteConnect', () => {
     expect(delivered).toEqual(['tok-1', 'tok-3']);
   });
 
-  it('does not listen on another page of the site', () => {
+  it('answers nothing and takes no session on another page of the site', async () => {
     for (const url of [`${SITE}/`, `${SITE}/sign-in`, `${SITE}/account`, `${SITE}/extension/connect/other`]) {
       const win = new FakeWindow(url);
-      expect(startSiteConnect(win, SITE, deliver), url).toBe(false);
-      expect(win.listening).toBe(false);
-      expect(win.posted).toEqual([]);
+      startSiteConnect(win, SITE, deliver);
+      win.receive({ source: SITE_SOURCE, type: 'hello' });
+      win.receive({ source: SITE_SOURCE, type: 'session', token: 'tok-1' });
+      await flush();
+      expect(win.posted, url).toEqual([]);
+      expect(delivered, url).toEqual([]);
     }
+  });
+
+  it('starts answering once the site moves to the connect page without a reload, and stops when it leaves', async () => {
+    // The site's sign-in comes back to the connect page by in-page navigation, so the script started on /sign-in.
+    const win = new FakeWindow(`${SITE}/sign-in`);
+    startSiteConnect(win, SITE, deliver);
+    win.location.pathname = '/extension/connect';
+    win.receive({ source: SITE_SOURCE, type: 'hello' });
+    win.receive({ source: SITE_SOURCE, type: 'session', token: 'tok-1' });
+    await flush();
+    expect(win.sent('ready')).toHaveLength(1);
+    expect(delivered).toEqual(['tok-1']);
+    win.location.pathname = '/account';
+    win.receive({ source: SITE_SOURCE, type: 'session', token: 'tok-2' });
+    await flush();
+    expect(delivered).toEqual(['tok-1']);
   });
 
   it('listens on the connect page with a language prefix', () => {

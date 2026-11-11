@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHROME_KEY, extensionManifest } from '../manifest';
+import { EXTENSION_VERSION } from '../src/lib/protocol';
 
 describe('extensionManifest', () => {
   it('pins the unpacked Chrome ID with the public key in every build but the store package', () => {
@@ -59,6 +60,7 @@ describe('extensionManifest', () => {
     const { version } = extensionManifest({ browser: 'chrome', storePackage: true });
     expect(version).toBe('0.2.0');
     expect(JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8')).version).toBe(version);
+    expect(EXTENSION_VERSION, 'the version the native hello reports').toBe(version);
   });
 
   it('declares the panel shortcut the popup also offers', () => {

@@ -31,13 +31,28 @@ export function fromConnectPage(sender: SenderLike, extensionId: string, siteUrl
  * waiting), then the entitlement is refreshed. Connected even when only the entitlement could not be read: the popup
  * and the daily alarm ask again.
  */
-export async function acceptSiteSession(token: string, store: AccountStore, fetcher: typeof fetch, siteUrl: string): Promise<ConnectResult> {
+export async function acceptSiteSession(
+  token: string,
+  store: AccountStore,
+  fetcher: typeof fetch,
+  siteUrl: string,
+  hooks: {
+    /**
+     * Runs while nothing is kept, when another account is replaced: the background syncs `PassRelay` here, so the app
+     * gives back that account's pass even if the new account's entitlement then cannot be read.
+     */
+    accountChanged?: () => Promise<unknown>;
+  } = {},
+): Promise<ConnectResult> {
   const answer = await sessionUser(fetcher, siteUrl, token);
   if (answer.kind !== 'user') return { ok: false };
   const kept = answer.renewedToken ?? token;
 
   const [previousToken, previousUser] = await Promise.all([store.sessionToken(), store.user()]);
-  if (previousUser?.email !== answer.user.email) await store.clear();
+  if (previousUser?.email !== answer.user.email) {
+    await store.clear();
+    if (previousToken) await hooks.accountChanged?.().catch(() => undefined);
+  }
   await store.setSessionToken(kept);
   await store.setUser(answer.user);
   if (previousToken && previousToken !== kept) void endSession(fetcher, siteUrl, previousToken);

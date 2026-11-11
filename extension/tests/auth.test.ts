@@ -43,14 +43,27 @@ describe('sessionUser', () => {
   });
 
   it('reads null, a 401 and a user without an email as no session', async () => {
-    for (const response of [json(null), json({ message: 'no' }, 401), json({ session: {}, user: { name: 'A' } })]) {
+    for (const response of [json(null), json({ message: 'no' }, 401), json({ session: {}, user: { name: 'A' } }), json({})]) {
       expect(await sessionUser(fetching(() => response.clone()).fetcher, SITE, 'tok')).toEqual({ kind: 'none' });
     }
   });
 
-  it('reads a network failure or a 500 as unknown', async () => {
+  it('reads a network failure, a 500, a 403 or a 200 that is not JSON as unknown, not as signed out', async () => {
     expect((await sessionUser(fetching(offline).fetcher, SITE, 'tok')).kind).toBe('error');
     expect((await sessionUser(fetching(() => json({}, 500)).fetcher, SITE, 'tok')).kind).toBe('error');
+    // A challenge or captive-portal page is not the site saying the session ended.
+    expect((await sessionUser(fetching(() => new Response('<html>Just a moment…</html>', { status: 403 })).fetcher, SITE, 'tok')).kind).toBe('error');
+    expect((await sessionUser(fetching(() => new Response('<html>Wi-Fi sign-in</html>', { status: 200 })).fetcher, SITE, 'tok')).kind).toBe('error');
+  });
+
+  it('gives up on a site that does not answer', async () => {
+    let signal: AbortSignal | undefined;
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal?.reason)));
+    }) as typeof fetch;
+    expect((await sessionUser(fetcher, SITE, 'tok', 20)).kind).toBe('error');
+    expect(signal?.aborted).toBe(true);
   });
 });
 

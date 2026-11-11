@@ -47,19 +47,22 @@ export interface ConnectWindow {
 }
 
 /**
- * Listens only in the top frame of the site's connect page, and only to that page's own window. Says `ready` at once
- * and to each `hello`; hands a `session` token to `deliver` (the background) and tells the page `connected` or
- * `failed`. Returns whether it listens.
+ * Listens only in the top frame of the site, only to that page's own window, and acts only while the page is the
+ * connect page. The path is read for each message, not once: the site's sign-in returns to the connect page by in-page
+ * navigation, after this script started on /sign-in. Says `ready` at once (on the connect page) and to each `hello`;
+ * hands a `session` token to `deliver` (the background) and tells the page `connected` or `failed`. Returns whether it
+ * listens.
  */
 export function startSiteConnect(win: ConnectWindow, siteUrl: string, deliver: (token: string) => Promise<ConnectResult>): boolean {
   if (win.top !== win) return false;
-  if (win.location.origin !== siteUrl || !isConnectPath(win.location.pathname)) return false;
+  if (!siteUrl || win.location.origin !== siteUrl) return false;
+  const onConnectPage = () => isConnectPath(win.location.pathname);
 
   const post = (message: Record<string, unknown>) => win.postMessage({ source: EXTENSION_SOURCE, ...message }, siteUrl);
   let busy = false;
 
   win.addEventListener('message', (event) => {
-    if (event.source !== win || event.origin !== siteUrl) return;
+    if (event.source !== win || event.origin !== siteUrl || !onConnectPage()) return;
     const data = event.data;
     if (typeof data !== 'object' || data === null) return;
     const { source, type, token } = data as Record<string, unknown>;
@@ -77,6 +80,6 @@ export function startSiteConnect(win: ConnectWindow, siteUrl: string, deliver: (
     }
   });
 
-  post({ type: 'ready' });
+  if (onConnectPage()) post({ type: 'ready' });
   return true;
 }

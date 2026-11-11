@@ -82,7 +82,7 @@ The extension's only channel to the PasswordPie app on the same Mac, through the
 **storage**
 
 ```text
-Keeps the user's passwordpie.com sign-in (a session token the site issued after the user signed in on passwordpie.com), the account's email, and its Premium status with the signed Premium token, in chrome.storage.local, so the user stays signed in and the PasswordPie app can be given Premium. Sign Out removes all of it. Nothing else is stored: no passwords, two-step codes, page contents or browsing history.
+Keeps the user's passwordpie.com sign-in (a session token the site issued after the user signed in on passwordpie.com), the account's email, and its Premium status with the signed Premium token, in chrome.storage.local, so the user stays signed in and the PasswordPie app can be given Premium. Sign Out removes all of it. One more true/false flag records that the PasswordPie app holds a Premium token from this browser, so the extension can take it back from the app after a sign-out even if the app was not running at the time; it is removed once the app gives the token back. Nothing else is stored: no passwords, two-step codes, page contents or browsing history.
 ```
 
 **webNavigation**

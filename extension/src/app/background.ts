@@ -120,7 +120,11 @@ export default defineBackground(() => {
           sendResponse({ ok: false });
           return false;
         }
-        acceptSiteSession(session.token, account, fetch, SITE_URL).then(sendResponse, () => sendResponse({ ok: false }));
+        const accountChanged = relay ? () => relay.sync() : undefined;
+        acceptSiteSession(session.token, account, fetch, SITE_URL, accountChanged ? { accountChanged } : {}).then(
+          sendResponse,
+          () => sendResponse({ ok: false }),
+        );
         return true; // answers later
       }
     }

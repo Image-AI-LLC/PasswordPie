@@ -21,24 +21,31 @@ function userOf(body: unknown): AccountUser | undefined {
 }
 
 /**
- * `GET /api/auth/get-session` with this token. Better Auth answers 200 with `null` for an unknown session, and a 401 is
- * no session too; anything else that is not a user is "unknown", not a sign-out. A renewed token in `set-auth-token`
- * is passed back.
+ * `GET /api/auth/get-session` with this token. Better Auth answers 200 with JSON `null` for an unknown session, and a
+ * 401 is no session too. Anything else that is not a user, such as a 403 challenge page, a 200 that is not JSON (a
+ * captive portal) or no answer within `timeoutMs`, is "unknown", not a sign-out. A renewed token in `set-auth-token` is
+ * passed back.
  */
 export async function sessionUser(
   fetcher: typeof fetch,
   siteUrl: string,
   token: string,
+  timeoutMs = 10_000,
 ): Promise<SessionAnswer & { renewedToken?: string }> {
   let response: Response;
+  let body: unknown;
   try {
-    response = await fetcher(`${siteUrl}/api/auth/get-session`, { headers: bearer(token), credentials: 'omit' });
+    response = await fetcher(`${siteUrl}/api/auth/get-session`, {
+      headers: bearer(token),
+      credentials: 'omit',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (response.status === 401) return { kind: 'none' };
+    if (!response.ok) return { kind: 'error', message: `passwordpie.com answered ${response.status}` };
+    body = await response.json();
   } catch (cause) {
     return { kind: 'error', message: cause instanceof Error ? cause.message : 'passwordpie.com did not answer' };
   }
-  if (response.status === 401 || response.status === 403) return { kind: 'none' };
-  if (!response.ok) return { kind: 'error', message: `passwordpie.com answered ${response.status}` };
-  const body: unknown = await response.json().catch(() => undefined);
   const user = userOf(body);
   if (!user) return { kind: 'none' };
   const renewed = response.headers.get('set-auth-token');

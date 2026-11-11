@@ -64,17 +64,20 @@ The connect page, `/extension/connect` (with a language prefix too, such as `/zh
 
 The extension's side (`extension/src/lib/site-connect.ts`, `site-session.ts`):
 
-- The content script listens only in the top frame, only when `location.origin` is the build's site (`SITE_URL`) and
-  the path, after an optional language prefix, is `/extension/connect`. It takes only messages with
-  `event.source === window` and `event.origin === SITE_URL`, and hands one `session` at a time to the background.
+- The content script listens only in the top frame, only when `location.origin` is the build's site (`SITE_URL`), and
+  acts only while the path, after an optional language prefix, is `/extension/connect`. The path is read for each
+  message rather than once, because the site's sign-in may come back to the connect page by in-page navigation after
+  the script started on `/sign-in`. It takes only messages with `event.source === window` and
+  `event.origin === SITE_URL`, and hands one `session` at a time to the background.
 - The background takes the token only from its own content script in the top frame of that page (`sender.id`,
   `frameId`, `url`). It asks `GET /api/auth/get-session` with it first: an unknown token, or no answer, keeps nothing and
-  answers `failed`. A good one is kept with its user, replacing any other account (whose entitlement is dropped, and
-  whose session is ended on the site without waiting), and the entitlement is refreshed, which hands Premium to the app
+  answers `failed`. A good one is kept with its user, replacing any other account (whose entitlement is dropped and whose pass
+  the app gives back before the new account is kept, and whose session is ended on the site without waiting), and the entitlement is refreshed, which hands Premium to the app
   through `PassRelay`. Then it answers `connected` with the email, even if only the entitlement could not be read.
 - **Sign out:** `POST /api/auth/sign-out` with the bearer token (given up after 5 s), then the session token, user and
   entitlement are removed, even offline. Only this browser's session ends; the website stays signed in.
-- A 401 from any call drops the stored tokens: the session is gone.
+- A 401 from any call drops the stored tokens: the session is gone. A 403, a 200 that is not JSON (a challenge or
+  captive-portal page) or no answer within 10 s is not a sign-out: the popup keeps the last user it saw.
 - Safari: the content script runs on passwordpie.com only once the user lets the extension access that site.
 
 There is no `identity` permission and no `oauth2` key: Google sign-in is the site's.
