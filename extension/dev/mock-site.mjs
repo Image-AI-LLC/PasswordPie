@@ -2,7 +2,10 @@
 // A stand-in for passwordpie.com, for development and the demo (docs/ACCOUNTS.md, "Testing without the site").
 // Node only, no dependencies:  node dev/mock-site.mjs   (PORT=8787 by default)
 //
-// - Better Auth bearer endpoints: any email with the password "password" signs in. Google accepts any access token.
+// - Signing in on the site, as on passwordpie.com (docs/ACCOUNTS.md, "Signing in (extension)"): /sign-in takes any email
+//   with the password "password" and keeps a cookie session; /extension/connect (also /zh/extension/connect) hands the
+//   extension a new bearer session over window.postMessage; POST /api/auth/extension/session issues it (same origin and
+//   the cookie only). GET /api/auth/get-session and POST /api/auth/sign-out take the bearer token.
 // - GET /api/premium/entitlement and POST /api/premium/redeem, tokens signed with the TEST key in test-key.json.
 //   PPIE-TEST-TEST-TEST works once per run; PPIE-USED-USED-USED answers "used"; PPIE-OLD2-OLD2-OLD2 answers "expired".
 // - /demo/login: a two-step sign-in. Username and password, then a page with six code boxes. The demo account's
@@ -19,8 +22,12 @@ const KEY_ALPHABET = /^PPIE-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDE
 
 /** email → { id, email, name, premium: null | { plan, expiresAt } } */
 const users = new Map();
-/** session token → email */
+/** bearer session token → email */
 const sessions = new Map();
+/** cookie session id → email: the website's own sign-in, never sent to the extension */
+const siteSessions = new Map();
+const SITE_COOKIE = 'pp_mock_site';
+const sessionTries = [];
 const usedKeys = new Set(['PPIE-USED-USED-USED']);
 const redeemTries = [];
 
@@ -67,14 +74,16 @@ function totp(secret, at = Date.now()) {
 
 function send(res, status, body, headers = {}) {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
-  res.writeHead(status, {
+  const all = {
     'Content-Type': typeof body === 'string' ? 'text/html; charset=utf-8' : 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Expose-Headers': 'set-auth-token',
     ...headers,
-  });
+  };
+  // An `undefined` header (NO_CORS) is left out.
+  res.writeHead(status, Object.fromEntries(Object.entries(all).filter(([, value]) => value !== undefined)));
   res.end(text);
 }
 
@@ -97,16 +106,92 @@ function signedIn(req) {
   return email ? users.get(email) : undefined;
 }
 
-function startSession(res, account) {
-  const token = randomBytes(24).toString('base64url');
-  sessions.set(token, account.email);
-  send(res, 200, { token, user: { id: account.id, email: account.email, name: account.name } }, { 'set-auth-token': token });
+function cookie(req, name) {
+  for (const part of (req.headers.cookie ?? '').split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return rest.join('=');
+  }
+  return undefined;
 }
+
+function siteUser(req) {
+  const email = siteSessions.get(cookie(req, SITE_COOKIE) ?? '');
+  return email ? users.get(email) : undefined;
+}
+
+const siteOrigin = (req) => `http://${req.headers.host ?? `localhost:${PORT}`}`;
+
+/** The session endpoint is same-origin only: no CORS headers at all. */
+const NO_CORS = {
+  'Access-Control-Allow-Origin': undefined,
+  'Access-Control-Allow-Headers': undefined,
+  'Access-Control-Allow-Methods': undefined,
+  'Access-Control-Expose-Headers': undefined,
+};
+
+/** Only a path on this site: no other host, no `//evil`. */
+function safeCallback(value) {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/';
+}
+
+const CONNECT_PATH = /^\/(?:[a-z]{2}(?:-[A-Za-z]{2,4})?\/)?extension\/connect\/?$/;
 
 const page = (title, content) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font:15px -apple-system,sans-serif;max-width:360px;margin:60px auto;color:#302A24;background:#FFF6E7}
 input{font-size:15px;padding:6px;margin:4px 0}.boxes input{width:28px;text-align:center}button{font-size:15px;padding:6px 14px}</style>
 </head><body>${content}</body></html>`;
+
+const escapeHtml = (text) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const signInPage = (callbackUrl, failed) => page('Sign in (mock passwordpie.com)', `<h1>Sign in</h1>
+<p>Mock passwordpie.com. Any email, password <code>password</code>.</p>
+${failed ? '<p role="alert" style="color:#B3261E">The email or password is not right.</p>' : ''}
+<form method="post" action="/sign-in">
+  <input type="hidden" name="callbackUrl" value="${escapeHtml(callbackUrl)}">
+  <label>Email<br><input name="email" type="email" autocomplete="username" value="ada@example.com"></label><br>
+  <label>Password<br><input name="password" type="password" autocomplete="current-password"></label><br>
+  <button>Sign In</button>
+</form>`);
+
+// The site's side of the connect protocol, as passwordpie.com does it (docs/ACCOUNTS.md, "Signing in (extension)").
+const CONNECT = (email) => page('Connect the extension (mock passwordpie.com)', `<h1>PasswordPie in this browser</h1>
+<p>Signed in to the site as ${escapeHtml(email)}.</p>
+<p id="status" role="status">Connecting…</p>
+<p id="missing" hidden><a href="https://chromewebstore.google.com/detail/passwordpie/ebgkjnfglbkeckkknmeakpkbdpjndjhk">Get PasswordPie for Chrome</a>
+ <button id="retry" type="button">Try again</button></p>
+<script>
+const ORIGIN = location.origin;
+const status = document.getElementById('status');
+const missing = document.getElementById('missing');
+let ready = false, timer, giveUp;
+const hello = () => window.postMessage({ source: 'passwordpie-site', type: 'hello' }, ORIGIN);
+function show(text, offerStore) { status.textContent = text; missing.hidden = !offerStore; }
+function start() {
+  ready = false;
+  show('Connecting…', false);
+  hello();
+  timer = setInterval(hello, 250);
+  giveUp = setTimeout(() => { clearInterval(timer); if (!ready) show('PasswordPie is not installed in this browser, or it is too old.', true); }, 3000);
+}
+window.addEventListener('message', async (event) => {
+  if (event.source !== window || event.origin !== ORIGIN) return;
+  const data = event.data;
+  if (!data || data.source !== 'passwordpie-extension') return;
+  if (data.type === 'ready' && !ready) {
+    ready = true; clearInterval(timer); clearTimeout(giveUp);
+    const response = await fetch('/api/auth/extension/session', { method: 'POST', credentials: 'same-origin' });
+    const body = response.ok ? await response.json() : null;
+    if (!body || !body.token) return show('PasswordPie in this browser could not be signed in. Try again.', false);
+    window.postMessage({ source: 'passwordpie-site', type: 'session', token: body.token }, ORIGIN);
+  } else if (data.type === 'connected') {
+    show('PasswordPie in this browser is signed in as ' + data.email + '. You can close this tab.', false);
+  } else if (data.type === 'failed') {
+    show('PasswordPie in this browser could not be signed in. Try again.', false);
+  }
+});
+document.getElementById('retry').addEventListener('click', start);
+start();
+</script>`);
 
 const LOGIN = page('Demo sign-in', `<h1>Demo sign-in</h1>
 <form method="post" action="/demo/login">
@@ -125,25 +210,38 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   const route = `${req.method} ${url.pathname}`;
   if (req.method === 'OPTIONS') return send(res, 204, '');
+  if (req.method === 'GET' && CONNECT_PATH.test(url.pathname)) {
+    const account = siteUser(req);
+    if (!account) return send(res, 302, '', { Location: `/sign-in?callbackUrl=${encodeURIComponent(url.pathname)}` });
+    return send(res, 200, CONNECT(account.email), { 'Cache-Control': 'no-store' });
+  }
   switch (route) {
-    case 'POST /api/auth/sign-in/email': {
-      const { email, password } = await body(req);
-      if (typeof email !== 'string' || password !== 'password') {
-        return send(res, 401, { code: 'INVALID_EMAIL_OR_PASSWORD', message: 'Invalid email or password' });
-      }
-      return startSession(res, user(email.toLowerCase()));
+    case 'GET /sign-in':
+      return send(res, 200, signInPage(safeCallback(url.searchParams.get('callbackUrl')), false));
+    case 'POST /sign-in': {
+      const { email, password, callbackUrl } = await body(req);
+      const next = safeCallback(callbackUrl);
+      if (typeof email !== 'string' || !email.includes('@') || password !== 'password') return send(res, 401, signInPage(next, true));
+      const id = randomBytes(24).toString('base64url');
+      siteSessions.set(id, user(email.trim().toLowerCase()).email);
+      return send(res, 303, '', { Location: next, 'Set-Cookie': `${SITE_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax` });
     }
-    case 'POST /api/auth/sign-up/email': {
-      const { email, name } = await body(req);
-      if (typeof email !== 'string') return send(res, 400, { message: 'Email is required' });
-      return startSession(res, user(email.toLowerCase(), name));
+    case 'POST /sign-out': {
+      const id = cookie(req, SITE_COOKIE);
+      if (id) siteSessions.delete(id);
+      return send(res, 303, '', { Location: '/', 'Set-Cookie': `${SITE_COOKIE}=; Path=/; Max-Age=0` });
     }
-    case 'POST /api/auth/extension/google': {
-      const { accessToken } = await body(req);
-      if (typeof accessToken !== 'string' || !accessToken) return send(res, 400, { error: 'invalid' });
+    case 'POST /api/auth/extension/session': {
+      // Same origin only, and only with the website's cookie session. A new session, so either side can sign out alone.
+      const sameOrigin = req.headers.origin === siteOrigin(req) || req.headers['sec-fetch-site'] === 'same-origin';
+      const account = siteUser(req);
+      if (!sameOrigin || !account) return send(res, 401, { error: 'unauthorized' }, { 'Cache-Control': 'no-store', ...NO_CORS });
+      const now = Date.now();
+      while (sessionTries.length && now - sessionTries[0] > 60_000) sessionTries.shift();
+      if (sessionTries.push(now) > 20) return send(res, 429, { error: 'rate-limited' }, { 'Cache-Control': 'no-store', ...NO_CORS });
       const token = randomBytes(24).toString('base64url');
-      sessions.set(token, user('google.user@example.com', 'Google User').email);
-      return send(res, 200, { token });
+      sessions.set(token, account.email);
+      return send(res, 200, { token }, { 'Cache-Control': 'no-store', ...NO_CORS });
     }
     case 'GET /api/auth/get-session': {
       const account = signedIn(req);

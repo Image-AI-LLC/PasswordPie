@@ -9,6 +9,8 @@ import { PassRelay, relayKeysChanged } from '@/lib/pass-relay';
 import { NATIVE_APP, originOf, parsePopupMessage } from '@/lib/protocol';
 import { type QrImagesMessage } from '@/lib/qr-page';
 import { decodeQrDataUrl, scanActiveTab, type ScanDeps } from '@/lib/qr-scan';
+import { parseSiteSessionMessage } from '@/lib/site-connect';
+import { acceptSiteSession, fromConnectPage } from '@/lib/site-session';
 import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
 const RECONNECT_ALARM = 'passwordpie-reconnect';
@@ -109,6 +111,19 @@ export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId) => controller.tabRemoved(tabId));
   browser.windows.onFocusChanged.addListener((windowId) => controller.windowFocusChanged(windowId));
   browser.runtime.onMessage.addListener((msg: unknown, sender, sendResponse: (answer: unknown) => void) => {
+    // The site's connect page handing over a session (signing in on passwordpie.com). Spelled out so Vite folds it:
+    // not in the App Store build.
+    if (import.meta.env.WXT_PP_STORE !== 'mas' && account) {
+      const session = parseSiteSessionMessage(msg);
+      if (session) {
+        if (!fromConnectPage(sender, browser.runtime.id, SITE_URL)) {
+          sendResponse({ ok: false });
+          return false;
+        }
+        acceptSiteSession(session.token, account, fetch, SITE_URL).then(sendResponse, () => sendResponse({ ok: false }));
+        return true; // answers later
+      }
+    }
     // Only the extension's own pages (the popup) may ask for these; a content script's sender URL is the web page's.
     const fromExtensionPage = sender.id === browser.runtime.id && (sender.url ?? '').startsWith(browser.runtime.getURL('/'));
     const popup = fromExtensionPage ? parsePopupMessage(msg) : undefined;

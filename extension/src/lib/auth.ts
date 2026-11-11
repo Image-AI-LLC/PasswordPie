@@ -1,141 +1,90 @@
-// Signing in to passwordpie.com from the popup, the mkext way: Better Auth with the bearer plugin, never cookies. The
-// session token comes back in `set-auth-token` and is kept by `AccountStore`. Google uses `identity.getAuthToken` and the
-// site's `POST /api/auth/extension/google` (docs/ACCOUNTS.md, "Signing in").
-// Adapted from mkext's src/lib/auth.ts and src/lib/oauth.ts (https://github.com/MkThingsHQ/mkext, Apache-2.0).
-import { createAuthClient } from 'better-auth/client';
+// The passwordpie.com session, as a Better Auth bearer token and never cookies (`credentials: 'omit'`). Signing in
+// happens on the site, which hands the token over (site-connect.ts); this only asks who it belongs to and ends it
+// (docs/ACCOUNTS.md, "Signing in (extension)").
 import type { AccountStore, AccountUser } from './account';
 
 export type { AccountUser };
 
-export type SignInResult = { ok: true } | { ok: false; message: string };
+export type SessionAnswer = { kind: 'user'; user: AccountUser } | { kind: 'none' } | { kind: 'error'; message: string };
 
-export function makeAuthClient(store: AccountStore, siteUrl: string) {
-  return createAuthClient({
-    baseURL: siteUrl,
-    fetchOptions: {
-      credentials: 'omit',
-      auth: { type: 'Bearer', token: async () => (await store.sessionToken()) ?? '' },
-      onSuccess: async (ctx) => {
-        const token = ctx.response.headers.get('set-auth-token');
-        if (token) await store.setSessionToken(token);
-      },
-    },
-  });
+function bearer(token: string): Headers {
+  return new Headers({ Authorization: `Bearer ${token}`, Accept: 'application/json' });
 }
 
-export type AuthClient = ReturnType<typeof makeAuthClient>;
+function userOf(body: unknown): AccountUser | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  const user = (body as Record<string, unknown>).user;
+  if (typeof user !== 'object' || user === null) return undefined;
+  const { email, name } = user as Record<string, unknown>;
+  if (typeof email !== 'string' || !email) return undefined;
+  return { email, ...(typeof name === 'string' && name ? { name } : {}) };
+}
 
-function message(error: { message?: string; status?: number } | null | undefined, fallback: string): string {
-  if (!error) return fallback;
-  if (error.status === 401 || error.status === 403) return 'The email or password is not right.';
-  if (error.status === 429) return 'Too many tries. Wait a minute and try again.';
-  return error.message || fallback;
+/**
+ * `GET /api/auth/get-session` with this token. Better Auth answers 200 with `null` for an unknown session, and a 401 is
+ * no session too; anything else that is not a user is "unknown", not a sign-out. A renewed token in `set-auth-token`
+ * is passed back.
+ */
+export async function sessionUser(
+  fetcher: typeof fetch,
+  siteUrl: string,
+  token: string,
+): Promise<SessionAnswer & { renewedToken?: string }> {
+  let response: Response;
+  try {
+    response = await fetcher(`${siteUrl}/api/auth/get-session`, { headers: bearer(token), credentials: 'omit' });
+  } catch (cause) {
+    return { kind: 'error', message: cause instanceof Error ? cause.message : 'passwordpie.com did not answer' };
+  }
+  if (response.status === 401 || response.status === 403) return { kind: 'none' };
+  if (!response.ok) return { kind: 'error', message: `passwordpie.com answered ${response.status}` };
+  const body: unknown = await response.json().catch(() => undefined);
+  const user = userOf(body);
+  if (!user) return { kind: 'none' };
+  const renewed = response.headers.get('set-auth-token');
+  return { kind: 'user', user, ...(renewed && renewed !== token ? { renewedToken: renewed } : {}) };
 }
 
 /** The signed-in user, or null. A network failure is not a sign-out: it returns the last user seen (throws if none). */
-export async function currentUser(client: AuthClient, store: AccountStore): Promise<AccountUser | null> {
-  if (!(await store.sessionToken())) return null;
-  let result: Awaited<ReturnType<AuthClient['getSession']>>;
-  try {
-    result = await client.getSession();
-  } catch (cause) {
-    return (await store.user()) ?? fail(cause instanceof Error ? cause.message : undefined);
+export async function currentUser(store: AccountStore, fetcher: typeof fetch, siteUrl: string): Promise<AccountUser | null> {
+  const token = await store.sessionToken();
+  if (!token) return null;
+  const answer = await sessionUser(fetcher, siteUrl, token);
+  if (answer.kind === 'error') {
+    const saved = await store.user();
+    if (saved) return saved;
+    throw new Error(answer.message);
   }
-  const { data, error } = result;
-  if (error) {
-    if (error.status === 401 || error.status === 403) {
-      await store.clear();
-      return null;
-    }
-    return (await store.user()) ?? fail(error.message);
-  }
-  const user = data?.user;
-  if (!user) {
+  if (answer.kind === 'none') {
     await store.clear();
     return null;
   }
-  const known: AccountUser = { email: user.email, ...(user.name ? { name: user.name } : {}) };
-  await store.setUser(known);
-  return known;
+  if (answer.renewedToken) await store.setSessionToken(answer.renewedToken);
+  await store.setUser(answer.user);
+  return answer.user;
 }
 
-function fail(message: string | undefined): never {
-  throw new Error(message || 'passwordpie.com did not answer');
-}
-
-export async function signInWithEmail(client: AuthClient, email: string, password: string): Promise<SignInResult> {
-  try {
-    const { error } = await client.signIn.email({ email, password });
-    return error ? { ok: false, message: message(error, 'Could not sign in.') } : { ok: true };
-  } catch {
-    return { ok: false, message: 'Could not reach passwordpie.com.' };
-  }
-}
-
-export async function signUpWithEmail(client: AuthClient, name: string, email: string, password: string): Promise<SignInResult> {
-  try {
-    const { error } = await client.signUp.email({ name, email, password });
-    return error ? { ok: false, message: message(error, 'Could not create the account.') } : { ok: true };
-  } catch {
-    return { ok: false, message: 'Could not reach passwordpie.com.' };
-  }
-}
-
-/** Signs out on the site if it answers within 5 s, and locally in any case. */
-export async function signOut(client: AuthClient, store: AccountStore): Promise<void> {
+/** `POST /api/auth/sign-out` for this token, giving up after `timeoutMs`. Never throws. */
+export async function endSession(fetcher: typeof fetch, siteUrl: string, token: string, timeoutMs = 5_000): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const headers = bearer(token);
+  headers.set('Content-Type', 'application/json');
   try {
-    await Promise.race([client.signOut().catch(() => null), new Promise((resolve) => (timer = setTimeout(resolve, 5_000)))]);
+    await Promise.race([
+      fetcher(`${siteUrl}/api/auth/sign-out`, { method: 'POST', headers, body: '{}', credentials: 'omit' }).catch(() => undefined),
+      new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs))),
+    ]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** Signs out on the site if it answers within 5 s, and locally in any case. Only this browser: the site stays signed in. */
+export async function signOut(store: AccountStore, fetcher: typeof fetch, siteUrl: string): Promise<void> {
+  const token = await store.sessionToken();
+  try {
+    if (token) await endSession(fetcher, siteUrl, token);
+  } finally {
     await store.clear();
   }
-}
-
-/** The part of `browser.identity` Google sign-in uses (Chromium only). */
-export interface IdentityLike {
-  getAuthToken?: (details: { interactive: boolean }) => Promise<string | { token?: string } | undefined>;
-  removeCachedAuthToken?: (details: { token: string }) => Promise<void>;
-}
-
-export function googleAvailable(identity: IdentityLike | undefined, clientId: string): boolean {
-  return Boolean(clientId) && typeof identity?.getAuthToken === 'function';
-}
-
-export async function signInWithGoogle(
-  identity: IdentityLike | undefined,
-  store: AccountStore,
-  fetcher: typeof fetch,
-  siteUrl: string,
-): Promise<SignInResult> {
-  if (typeof identity?.getAuthToken !== 'function') return { ok: false, message: 'Google sign-in is not available here.' };
-  let accessToken: string | undefined;
-  try {
-    const result = await identity.getAuthToken({ interactive: true });
-    accessToken = typeof result === 'string' ? result : result?.token;
-  } catch (cause) {
-    const text = cause instanceof Error ? cause.message : '';
-    return { ok: false, message: /did not approve|cancel|closed/i.test(text) ? 'Google sign-in was cancelled.' : 'Google sign-in failed.' };
-  }
-  if (!accessToken) return { ok: false, message: 'Google sign-in was cancelled.' };
-  let token: unknown;
-  try {
-    const response = await fetcher(`${siteUrl}/api/auth/extension/google`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accessToken }),
-      credentials: 'omit',
-    });
-    const body: unknown = await response.json().catch(() => null);
-    token = response.ok && typeof body === 'object' && body !== null ? (body as Record<string, unknown>).token : undefined;
-  } catch {
-    return { ok: false, message: 'Could not reach passwordpie.com.' };
-  }
-  if (typeof token !== 'string' || !token) {
-    // A rejected Google token stays cached per profile; drop it so the next try gets a fresh one.
-    await identity.removeCachedAuthToken?.({ token: accessToken }).catch(() => undefined);
-    return { ok: false, message: 'passwordpie.com did not accept this Google account.' };
-  }
-  await store.setSessionToken(token);
-  return { ok: true };
 }

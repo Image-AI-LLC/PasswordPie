@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHROME_KEY, extensionManifest } from '../manifest';
 
@@ -13,7 +15,7 @@ describe('extensionManifest', () => {
 
   it('asks Chrome for no tabs permission: <all_urls> already exposes the active tab URL', () => {
     for (const storePackage of [false, true]) {
-      expect(extensionManifest({ browser: 'chrome', storePackage, googleClientId: '' }).permissions).toEqual([
+      expect(extensionManifest({ browser: 'chrome', storePackage }).permissions).toEqual([
         'nativeMessaging',
         'webNavigation',
         'alarms',
@@ -41,15 +43,22 @@ describe('extensionManifest', () => {
     ]);
   });
 
-  it('asks for identity and declares OAuth only for Chrome with a Google client ID', () => {
-    const googleClientId = 'client.apps.googleusercontent.com';
-    const chrome = extensionManifest({ browser: 'chrome', storePackage: true, googleClientId });
-    expect(chrome.permissions).toContain('identity');
-    expect(chrome.oauth2).toEqual({ client_id: googleClientId, scopes: ['openid', 'email', 'profile'] });
-    const safari = extensionManifest({ browser: 'safari', storePackage: false, googleClientId });
-    expect(safari.permissions).not.toContain('identity');
-    expect(safari).not.toHaveProperty('oauth2');
-    expect(extensionManifest({ browser: 'chrome', storePackage: false, googleClientId: '' })).not.toHaveProperty('oauth2');
+  it('has no Google sign-in: no identity permission and no oauth2, in any build', () => {
+    for (const browser of ['chrome', 'safari'] as const) {
+      for (const storePackage of [false, true]) {
+        for (const account of [false, true]) {
+          const manifest = extensionManifest({ browser, storePackage, account });
+          expect(manifest.permissions).not.toContain('identity');
+          expect(manifest).not.toHaveProperty('oauth2');
+        }
+      }
+    }
+  });
+
+  it('is 0.2.0: the store needs a version above the 0.1.0 it has, and the package agrees', () => {
+    const { version } = extensionManifest({ browser: 'chrome', storePackage: true });
+    expect(version).toBe('0.2.0');
+    expect(JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8')).version).toBe(version);
   });
 
   it('declares the panel shortcut the popup also offers', () => {
