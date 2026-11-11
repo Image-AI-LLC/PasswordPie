@@ -25,7 +25,7 @@ Build settings (environment variables at build time):
 | Variable | Default | |
 |---|---|---|
 | `WXT_PP_SITE_URL` | `https://passwordpie.com` | The site for sign-in and Premium. `http://localhost:8787` for the mock. |
-| `WXT_PP_STORE` | unset | `mas`: the Safari build inside the App Store app, with no account, no site address, no upgrade link, no key field and no `storage` permission (`make mas-dev`). |
+| `WXT_PP_STORE` | unset | `mas`: the Safari build inside the App Store app, with no account, no request to the site, no upgrade link, no key field and no `storage` permission (`make mas-dev`). |
 
 ## Testing against the mock site
 

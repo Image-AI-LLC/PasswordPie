@@ -1,6 +1,6 @@
 // @vitest-environment node
 // The App Store build (WXT_PP_STORE=mas) has no account: nothing in it may listen for the site's sign-in or know the site
-// it would talk to (docs/ACCOUNTS.md, "App Store rules"). Checked on the real bundle, built next to a normal one as the
+// it would talk to (docs/ACCOUNTS.md, "App Store rules"). The one address it keeps is the download page. Checked on the real bundle, built next to a normal one as the
 // control, both into a temporary folder so `.output` is left alone.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
@@ -54,8 +54,14 @@ describe('the App Store Safari build', () => {
     for (const marker of SIGN_IN_MARKERS) expect(direct, marker).toContain(marker);
   });
 
-  it('has no connect listener, no site address and no request to the site', () => {
+  it('has no connect listener, no address of the site the build talks to, and no request to the site', () => {
     for (const marker of SIGN_IN_MARKERS) expect(mas, marker).not.toContain(marker);
+  });
+
+  it('keeps one passwordpie.com address: the download page the toolbar opens when the app cannot be started', () => {
+    // WEBSITE_URL in protocol.ts. It is opened in a tab, never fetched. Any other address of the site turns this red.
+    const addresses = new Set(mas.match(/https?:\/\/[\w.-]*passwordpie\.com[\w./?=&%-]*/g));
+    expect([...addresses]).toEqual(['https://passwordpie.com/']);
   });
 
   it('asks for no storage permission', () => {

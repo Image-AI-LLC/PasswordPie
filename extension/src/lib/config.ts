@@ -1,6 +1,7 @@
 // Build-time settings. `WXT_PP_SITE_URL` points the build at another site (the mock in extension/dev), and
 // `WXT_PP_STORE=mas` makes the Safari build that ships inside the App Store app.
-// Read as `import.meta.env.X` so Vite inlines them and the App Store build carries no site address or upgrade link at all.
+// Read as `import.meta.env.X` so Vite inlines them and the App Store build carries no address to ask and no upgrade link.
+// (The one passwordpie.com link left there is `WEBSITE_URL` in protocol.ts, the download page; tests/store-build.test.ts.)
 
 /** passwordpie.com, or the site this build was made for. No trailing slash. Empty in the App Store build, which asks the site nothing. */
 export const SITE_URL =
