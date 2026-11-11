@@ -440,12 +440,14 @@ With the PasswordPie extension in Chrome or Safari:
 
 Typing in the search box works as always: the first letter replaces the site group with search results.
 
-Clicking the PasswordPie button in the browser's toolbar opens a small popup. Its first line is a large
-**Open PasswordPie** button, there whether or not you are signed in: it does the same as `⌘\`, the panel opens over the
-browser with the site's accounts at the top, and the popup closes. ⌥⇧P in the browser does the same without the popup
-(Chrome lets you change it under `chrome://extensions/shortcuts`). If PasswordPie is installed but not running, the button
-starts it and then opens the panel. If it is not installed, it opens passwordpie.com in a new tab, to download it. Below
-it is your PasswordPie account: see "Premium in the browser".
+Clicking the PasswordPie button in the browser's toolbar does the same as `⌘\`: the panel opens over the browser with
+the site's accounts at the top. That is all it does once there is nothing left to set up, which is when your account has
+Premium (and always in the App Store version, which has no account). Until then the click opens a small popup, whose
+first line is a large **Open PasswordPie** button that does the same and closes the popup; below it is your PasswordPie
+account. See "The toolbar button" under "Premium in the browser". ⌥⇧P in the browser opens the panel without the popup
+in every case (Chrome lets you change it under `chrome://extensions/shortcuts`). If PasswordPie is installed but not
+running, the button starts it and then opens the panel. If it is not installed, it opens passwordpie.com in a new tab,
+to download it.
 
 | What you press on an account | The site in the browser is the account's site | It is another site |
 |---|---|---|
@@ -579,13 +581,42 @@ key, and the extension needs you signed in to that account. Signed in, it also b
 so the codes in the app unlock too. In the App Store version the Safari extension has no account
 at all: it fills codes whenever the app has Premium.
 
+### The toolbar button
+
+The popup is there to set the extension up: to sign in, and to get Premium. Once your account has Premium there is
+nothing left in it to do, so the button skips it.
+
+| You are | A click on the toolbar button |
+|---|---|
+| Signed out | Opens the popup |
+| Signed in, free | Opens the popup |
+| Signed in, Premium | Opens PasswordPie, as `⌘\` does. No popup. |
+| In the App Store version (no account) | Opens PasswordPie. No popup. |
+
+Right-click the button for the rest. These three lines are above the browser's own (Pin, Manage Extension…):
+
+| Line | What it does |
+|---|---|
+| **Scan QR code on this page** | Reads the two-step QR code the page shows. See "Scan a two-step QR code". |
+| **Open passwordpie.com** | Opens the website in a new tab. |
+| **Account…** | Opens the popup, whoever you are: your email, your plan and Sign Out. Not in the App Store version. |
+
+The same scan is in the page's own right-click menu, as **Scan QR code with PasswordPie**, so you can right-click the QR
+code itself.
+
+When it does not apply:
+
+- Premium that has run out, or a sign-out, brings the popup back on the next click.
+- A browser that cannot add lines to the button's menu keeps the popup for everyone, so Scan is never out of reach.
+- Each click on the button also asks passwordpie.com for your Premium, as opening the popup does.
+
 ### The popup
 
 | You are | The popup shows |
 |---|---|
 | Signed out | **Open PasswordPie**, Scan QR code on this page (see "Scan a two-step QR code"), then one line, "Sign in with your PasswordPie account to fill two-step codes in the browser with Premium.", and **Sign in on passwordpie.com**. There is no email or password field in the popup. |
 | Signed in, free | Your email and Sign Out; "Free · Two-step codes in the browser need Premium." with **Upgrade** (opens the pricing page) and a "Have a key?" field |
-| Signed in, Premium | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did, or when it understood and did not take the pass (for example, the browser's cached pass has run out). |
+| Signed in, Premium (from **Account…**) | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did, or when it understood and did not take the pass (for example, the browser's cached pass has run out). |
 
 ### Signing in
 
@@ -603,7 +634,8 @@ The browser and the site keep separate sessions: Sign Out in the popup does not 
 signing out of the website does not sign out the extension. Connecting a different account replaces the one the
 extension had. In Safari, the extension needs access to passwordpie.com (Safari asks for it per site) to hear the page.
 
-The popup asks passwordpie.com for your Premium every time it opens, and the extension asks once a day. Offline, it keeps
+The popup asks passwordpie.com for your Premium every time it opens, a click on the toolbar button that opens
+PasswordPie asks too, and the extension asks once a day. Offline, it keeps
 what it knew; a session that ended signs you out.
 
 A key looks like `PPIE-XXXX-XXXX-XXXX`. Lowercase and missing dashes are fine. A wrong key says it is not valid, a used
@@ -615,7 +647,7 @@ The username and password still fill. On the code page, a small note appears in 
 "PasswordPie Premium fills two-step codes for you. Upgrade". It takes no focus and fills nothing. The popup, for the next
 ten minutes, says "The two-step code on github.com was not filled: it needs Premium."
 
-In the Safari extension of the App Store version there is no sign-in, no Upgrade link and no key field, and the note has no link. Its popup only offers Open PasswordPie and Scan QR code on this page.
+In the Safari extension of the App Store version there is no sign-in, no Upgrade link and no key field, and the note has no link. Its toolbar button opens PasswordPie directly, and its popup, where the browser still shows one, only offers Open PasswordPie and Scan QR code on this page.
 
 ### Privacy
 
@@ -632,15 +664,18 @@ and a database item "Demo" with website `http://localhost:8787`, username `ada`,
 `otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`. Build with `make install` (or a debug build in a bundle signed
 the same way: the bridge checks signatures); only those trust the test key.
 
-1. Click the toolbar button: the popup shows Open PasswordPie and Sign in on passwordpie.com. Click it: the mock's
+1. Click the toolbar button: the popup shows Open PasswordPie and Sign in on passwordpie.com. Click that: the mock's
    sign-in page opens. Sign in as `ada@example.com` / `password`: the connect page says the browser is signed in as
    ada@example.com. Open the popup again: "Free".
 2. Open `http://localhost:8787/demo/login`, press `⌘\`, Return on Demo, then Sign In. The code page shows six empty
    boxes and the note in the corner. The popup says the code on localhost:8787 was not filled.
-3. In the popup, redeem `PPIE-TEST-TEST-TEST`: "Premium · Key".
-4. Repeat 2: the six boxes fill. Press Verify: "Signed in".
-5. Redeem `PPIE-USED-USED-USED`: "That key was already used."
-6. Sign Out, repeat 2: no code, and the note again. In PasswordPie, the item's code row is locked again too.
+3. In the popup, redeem `PPIE-USED-USED-USED`: "That key was already used." Then `PPIE-TEST-TEST-TEST`: "Premium · Key".
+4. Click the toolbar button again: no popup, the PasswordPie panel opens over the browser.
+5. Repeat 2: the six boxes fill. Press Verify: "Signed in".
+6. Right-click the toolbar button: Scan QR code on this page, Open passwordpie.com, Account…. Choose Account…: the popup
+   shows ada@example.com and "Premium · Key". Sign Out.
+7. Click the toolbar button: the popup is back. Repeat 2: no code, and the note again. In PasswordPie, the item's code row
+   is locked again too.
 
 ## A new database says what to do next
 
@@ -707,7 +742,9 @@ editor. Most people gave up and used their phone.
 
 **From the browser (with the extension).** On the page that shows the QR code:
 
-1. Click the PasswordPie button in the toolbar and **Scan QR code on this page**.
+1. Right-click the QR code (or anywhere on the page) and choose **Scan QR code with PasswordPie**. Or right-click the
+   PasswordPie button in the toolbar and choose **Scan QR code on this page**. The popup, when the button opens one, has
+   the same button.
 2. PasswordPie opens an **Add Two-Step Code** window over the browser: the site and account the QR code names, and the
    item to add it to, already chosen. The best guess is the item for this site whose username is that account; other
    items for the site are listed under it. An item on another site that only names the issuer is listed, not chosen. You
@@ -716,6 +753,10 @@ editor. Most people gave up and used their phone.
    fills it, as it does after a sign-in. Press the site's Verify button yourself.
 
 If PasswordPie is locked, it asks you to unlock first, then shows the window. Nothing is saved until you press Add.
+
+A scan from a menu that finds nothing to hand over says why in a small note in the corner of the page, for 8 seconds,
+like the note about Premium. The popup says it in a line under its button. When the page cannot show a note (a browser
+page, such as Settings), the toolbar button carries a "!" for a few seconds and its tooltip says why.
 
 **From a screenshot or an image, in the item editor.** Press ⌃⇧⌘4 and drag over the QR code: macOS copies it to the
 clipboard. In the item's editor, click the QR button at the end of the **One-time password** row. The row fills in, and
@@ -732,8 +773,8 @@ item's history in the database file, where KeePassXC and other KeePass apps show
 
 ### What it will not do
 
-- Scan anything you did not ask it to. The extension looks at the page only when you click Scan in its popup; a page
-  cannot ask for it, and nothing scans by itself.
+- Scan anything you did not ask it to. The extension looks at the page only when you choose Scan, in a right-click menu
+  or in its popup; a page cannot ask for it, and nothing scans by itself.
 - Send the picture or the secret anywhere. The QR code is read on your Mac (the app uses macOS's own Vision) and inside the
   browser extension. The secret goes only from the extension to PasswordPie on this Mac. Nothing is stored in the browser
   or logged.
@@ -741,7 +782,7 @@ item's history in the database file, where KeePassXC and other KeePass apps show
   PasswordPie got it.
 - Keep a scan you did not confirm: it is dropped after 2 minutes, when you press Cancel, or when you scan another one.
 - Record the screen or use the camera. On a page whose QR code the extension cannot read directly, it takes one picture of
-  the visible tab, as a screenshot would, and only after you clicked Scan.
+  the visible tab, as a screenshot would, and only after you chose Scan.
 - Counter-based (HOTP) codes, Steam codes, and Google Authenticator's "Transfer accounts" export. Each gets a plain message.
 
 ### When something goes wrong
@@ -762,8 +803,10 @@ item's history in the database file, where KeePassXC and other KeePass apps show
 Use a database with an item "Demo" (website `http://localhost:8787`, username `ada`), and a page showing the QR code for
 `otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`.
 
-1. Open the page in Chrome. Click the toolbar button, then Scan QR code on this page. The Add Two-Step Code window shows
-   Demo and ada, with the Demo item chosen. Press Add: the code shows, counting down. Copy it.
+1. Open the page in Chrome. Right-click the QR code and choose Scan QR code with PasswordPie. The Add Two-Step Code
+   window shows Demo and ada, with the Demo item chosen. Press Add: the code shows, counting down. Copy it.
+   Right-click a page without a QR code and choose the same: the note in the corner says "No QR code found on this page."
+   Right-click the toolbar button and choose Scan QR code on this page: the same window.
 2. Scan again and press Add: "Replace the existing code?" Press Replace.
 3. Lock PasswordPie with ⌘L and scan again: the unlock screen opens first, then the window.
 4. In PasswordPie, open a new item's editor. Press ⌃⇧⌘4 over the QR code, then click the QR button in the One-time password
