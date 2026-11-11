@@ -66,17 +66,19 @@ Use a database with two accounts on one site, so the video shows that the right 
 
 ## Premium: two-step codes
 
-**In one line:** PasswordPie is free to install and free to use. Only two-step codes need Premium, and Premium belongs
-to your PasswordPie account, so it follows you to every Mac and into the browser extension.
+**In one line:** PasswordPie is free to install and free to use. Only two-step codes need Premium. You get it where you
+got the app, in the App Store or on passwordpie.com, and nothing ever asks you to sign in: not the app, and not the
+browser extension.
 
 ### The problem
 
 A password manager that also makes your two-step codes saves a trip to your phone at every sign-in. That is the one
 thing worth paying for. Everything else, including storing the secret itself, stays yours for free.
 
-Premium used to live in two places that knew nothing of each other: Apple's purchase history in the App Store app, and
-nothing at all in the downloaded app. A purchase on one Mac did nothing in the browser, and the downloaded app could not
-tell who had paid.
+For a while the browser extension had an account of its own: you signed in to it, and it carried Premium to the app.
+That put a sign-in between a click on the toolbar button and your passwords. The extension is a bridge between the
+browser and the app, and nothing more. Whether you have Premium is the app's business alone: it knows, it shows Upgrade
+on the code's row when you do not, and it sends you to the right place to buy.
 
 ### What happens now
 
@@ -89,8 +91,9 @@ Where Premium comes from depends on where the app came from.
 
 | | App Store app | Downloaded app |
 |---|---|---|
-| Premium comes from | A purchase on your Apple Account, or activation from passwordpie.com | The PasswordPie browser extension, signed in to an account with Premium, or activation from passwordpie.com |
-| Signing in inside the app | Never. There is no account in this version. | Never. You sign in to the browser extension or to passwordpie.com. |
+| Premium comes from | A purchase on your Apple Account, or activation from passwordpie.com | Activation from passwordpie.com, where you buy it |
+| Upgrade, on a code's row, opens | The plans, bought through Apple | The Premium window, whose **Get Premium** opens passwordpie.com |
+| Signing in | Never. There is no account in this version. | Only on passwordpie.com, to buy and to press Activate. Never in the app or the browser extension. |
 | What the app sends over the network | Nothing | Nothing |
 
 | Plan | What you pay |
@@ -100,7 +103,8 @@ Where Premium comes from depends on where the app came from.
 
 The downloaded app needs Premium for codes. This replaces the decision of 2026-11-05 that its codes were free for everyone
 (see "Premium" in [CHANNELS.md](CHANNELS.md) for the switch that brings that back). Neither app has a sign-in: the
-downloaded one gave it up on 2026-11-10, so the two differ only in how Premium is bought.
+downloaded one gave it up on 2026-11-10, and the browser extension gave up its own on 2026-11-11, so the two differ only
+in how Premium is bought.
 
 ### The App Store app: no account
 
@@ -137,30 +141,24 @@ downloaded app says which: "This activation link has run out." or "This activati
 
 ### The downloaded app
 
-The downloaded app has no sign-in either. Premium reaches it two ways, and either is enough:
+The downloaded app has no sign-in either, and it cannot sell through Apple. Premium is bought on passwordpie.com and
+reaches this Mac by activation, the same one as above:
 
-1. **From the browser extension.** Sign in to the PasswordPie extension in Chrome or Safari with an account that has
-   Premium. The codes in the app unlock by themselves; there is nothing to do in the app. The extension keeps it up to
-   date: it asks passwordpie.com each time its popup opens and once a day, and passes the answer on.
-2. **Activate on passwordpie.com**, as in the App Store app. It lasts a year and needs no browser extension.
+1. On a locked code's row, press **Upgrade**. The Premium window opens. **Get Premium** opens passwordpie.com to buy,
+   once or yearly; **Redeem a Key** opens passwordpie.com/redeem.
+2. After the payment or the key, the page shows **Activate**. Press it and allow the browser to open PasswordPie.
+3. The Premium window says Premium is on, and until when. The codes are unlocked, in the app and in the browser.
 
-Sign out of the extension and the codes in the app lock again, unless an activation, or the extension in your other
-browser, still brings Premium.
+It lasts a year and needs no browser extension. To renew it, or to bring Premium to another Mac, press Activate in your
+account settings on passwordpie.com.
 
-The Premium window says where Premium came from and what to do next:
+The Premium window says what this Mac has and what to do next:
 
 | What this Mac has | The Premium window says |
 |---|---|
-| Nothing | "Free", what Premium gives, **Get Premium** and **Redeem a Key**, then "Already have Premium? Sign in to the PasswordPie extension in your browser, and Premium reaches this Mac by itself. Or press Activate in your account settings on passwordpie.com." and **Open Account Settings** |
-| Premium from the extension | "Premium is on. The PasswordPie extension in your browser keeps it up to date." No end date: the extension renews it. |
-| An activation only | "Premium is on. Activated through November 9, 2027. To renew it, press Activate in your account settings on passwordpie.com again, at any time." and **Open Account Settings**. In its last 30 days, also: "Premium on this Mac ends on November 9, 2027. Renew it before then to keep your two-step codes." |
-| You signed out of the extension | "Premium is off. You signed out of the PasswordPie extension in your browser. Sign in there again, or activate this Mac on passwordpie.com." and the choices of "Nothing" |
-| The extension's account no longer has Premium | "Premium is off. The account in your PasswordPie browser extension no longer has Premium." and the choices of "Nothing" |
-| No browser renewed it for a week | "Premium is off. Your PasswordPie browser extension has not renewed Premium for a week. Open the browser it is signed in to, and Premium comes back by itself." and the choices of "Nothing" |
+| Nothing | "Free", what Premium gives, **Get Premium** and **Redeem a Key**, then "Already have Premium? Press Activate in your account settings on passwordpie.com." and **Open Account Settings** |
+| An activation | "Premium is on. Activated through November 9, 2027. To renew it, press Activate in your account settings on passwordpie.com again, at any time." and **Open Account Settings**. In its last 30 days, also: "Premium on this Mac ends on November 9, 2027. Renew it before then to keep your two-step codes." |
 | The activation ran out | "Premium is off. The activation from passwordpie.com ended on November 9, 2027. Press Activate in your account settings to renew it." and the choices of "Nothing" |
-
-The downloaded app cannot sell through Apple. Get Premium opens passwordpie.com to buy, and Redeem a Key opens
-passwordpie.com/redeem. Bought or redeemed there, Premium arrives as soon as the extension's popup opens, or with Activate.
 
 ### What the shortcuts do
 
@@ -177,7 +175,7 @@ Fill never types a code, on either version.
 
 ### Your data stays yours
 
-Going free, signing out, or letting a subscription end never touches your database. The secret stays in the KeePass
+Going free or letting a subscription end never touches your database. The secret stays in the KeePass
 file exactly as it was, and saving keeps it. Import brings codes in too. You can still add or change a secret in the
 item editor, and other KeePass apps can still read it. Get Premium again and the codes come back.
 
@@ -186,27 +184,19 @@ item editor, and other KeePass apps can still read it. Get Premium again and the
 **App Store app.** Nothing here needs a connection. Apple's record of a purchase is on this Mac, and an activation is
 checked by its signature.
 
-**Downloaded app.** The app never goes online either. What the extension passes on is signed by passwordpie.com and lasts
-up to 7 days; the app checks the signature itself, so it cannot be made up, and it keeps working with no connection until
-it runs out. The extension renews it whenever the browser is running and online. An activation lasts its year offline.
-
-| What happened in the downloaded app | What you see |
-|---|---|
-| Offline, Premium from the extension still good | Codes work. Nothing to see. |
-| The browser not opened, or offline, for a week | Codes lock. "Your PasswordPie browser extension has not renewed Premium for a week. Open the browser it is signed in to, and Premium comes back by itself." |
-| The site signed the extension out (password changed, session removed) | Codes lock. "You signed out of the PasswordPie extension in your browser. Sign in there again, or activate this Mac on passwordpie.com." |
+**Downloaded app.** The app never goes online either. An activation is signed by passwordpie.com; the app checks the
+signature itself, so it cannot be made up, and it lasts its year with no connection at all.
 
 ### When Premium ends
 
 - **Yearly runs out or is cancelled.** Codes lock when the paid year ends.
 - **Apple refunds a purchase.** The App Store app locks the codes as soon as Apple tells this Mac.
-- **An activation runs out.** Codes lock on that date in the App Store app, unless a purchase is also there.
-- **A refund on passwordpie.com.** The extension learns it at its next check and takes Premium back from the downloaded
-  app; with the browser closed, the app locks within 7 days at the latest. An activation already in either app cannot be
-  taken back, because the app never talks to the site; it stops counting on the date it shows.
+- **An activation runs out.** Codes lock on that date, unless a purchase through Apple is also there.
+- **A refund on passwordpie.com.** An activation already in either app cannot be taken back, because the app never talks
+  to the site; it stops counting on the date it shows, and the site gives no new one.
 
-The app keeps no Premium flag of its own. What can unlock codes is Apple's verified purchase, or a signed pass or
-activation, and only while its signature checks and it has not run out.
+The app keeps no Premium flag of its own. What can unlock codes is Apple's verified purchase, or a signed activation,
+and only while its signature checks and it has not run out.
 
 ### Preferences
 
@@ -228,7 +218,6 @@ Manage Subscription. If you hold both plans, it reminds you that the yearly one 
 | An activation link is damaged or out of date (App Store app) | "This activation link is not valid or has run out." |
 | An activation link has run out (downloaded app) | "This activation link has run out. Press Activate on passwordpie.com for a new one." |
 | An activation link is damaged, or is not an activation (downloaded app) | "This activation link is not valid. Press Activate on passwordpie.com for a new one." |
-| PasswordPie on this Mac is not running when you sign in to the extension | The extension's popup says "Open PasswordPie on this Mac to bring Premium to it." Opening it is enough. |
 
 ### Demo script
 
@@ -243,15 +232,13 @@ Use a database with one login that has a two-step code. For the App Store app, a
 6. Activation from the website: on a Mac with no purchase, press Activate on passwordpie.com and allow the browser to open
    PasswordPie. The window says Premium is on, and the codes unlock.
 
-For the downloaded app, with the extension built against the mock site (see "Premium in the browser"):
+For the downloaded app (`make install`, or a debug build in a bundle signed the same way: only those trust the test key):
 
-1. With the extension signed out, press ⌥⌘C on the login: the Premium window opens with Get Premium, Redeem a Key and
-   Open Account Settings. No sign-in anywhere.
-2. Sign in to the extension as `ada@example.com` / `password` and redeem `PPIE-TEST-TEST-TEST` in its popup. Without
-   touching PasswordPie, press ⌥⌘C: the code copies. The Premium window says the extension keeps it up to date.
-3. Sign out in the extension. ⌥⌘C opens the Premium window again: "You signed out of the PasswordPie extension…".
-4. Open an activation link (`node Scripts/mint-activation-link.mjs`): the window says Premium is on through a date a year
-   away. Quit the browser and PasswordPie, open PasswordPie again: still on.
+1. Press ⌥⌘C on the login: the Premium window opens with Get Premium, Redeem a Key and Open Account Settings. No sign-in
+   anywhere.
+2. Open an activation link (`node Scripts/mint-activation-link.mjs`): the window says Premium is on through a date a year
+   away. Press ⌥⌘C: the code copies.
+3. Quit the browser and PasswordPie, open PasswordPie again: still on.
 
 ## The newest password wins
 
@@ -441,13 +428,10 @@ With the PasswordPie extension in Chrome or Safari:
 Typing in the search box works as always: the first letter replaces the site group with search results.
 
 Clicking the PasswordPie button in the browser's toolbar does the same as `⌘\`: the panel opens over the browser with
-the site's accounts at the top. That is all it does once there is nothing left to set up, which is when your account has
-Premium (and always in the App Store version, which has no account). Until then the click opens a small popup, whose
-first line is a large **Open PasswordPie** button that does the same and closes the popup; below it is your PasswordPie
-account. See "The toolbar button" under "Premium in the browser". ⌥⇧P in the browser opens the panel without the popup
-in every case (Chrome lets you change it under `chrome://extensions/shortcuts`). If PasswordPie is installed but not
-running, the button starts it and then opens the panel. If it is not installed, it opens passwordpie.com in a new tab,
-to download it.
+the site's accounts at the top. There is no popup in between, and nothing to sign in to. ⌥⇧P in the browser does the same
+(Chrome lets you change it under `chrome://extensions/shortcuts`). If PasswordPie is installed but not running, the button
+starts it and then opens the panel. If it is not installed, it opens passwordpie.com in a new tab, to download it.
+Right-click the button for **Scan QR code on this page** (see "Scan a two-step QR code") and **Open passwordpie.com**.
 
 | What you press on an account | The site in the browser is the account's site | It is another site |
 |---|---|---|
@@ -576,106 +560,50 @@ again, find the item and copy its code.
 The code also fills when it is on the same page as the password. It fills once per Return; if the site rejects it, copy
 a fresh one from the panel.
 
-In the downloaded app, Premium belongs to your PasswordPie account, bought on passwordpie.com (once or yearly) or from a
-key, and the extension needs you signed in to that account. Signed in, it also brings Premium to PasswordPie on this Mac,
-so the codes in the app unlock too. In the App Store version the Safari extension has no account
-at all: it fills codes whenever the app has Premium.
+The extension has no account and no sign-in. It asks PasswordPie on this Mac for the code, and the app answers when it
+has Premium: a purchase in the App Store version, an activation in the downloaded one (see "Premium: two-step codes").
 
 ### The toolbar button
 
-The popup is there to set the extension up: to sign in, and to get Premium. Once your account has Premium there is
-nothing left in it to do, so the button skips it.
+A click on the toolbar button opens PasswordPie, as `⌘\` does. It never opens a popup: the extension has nothing of its
+own to show.
 
-| You are | A click on the toolbar button |
-|---|---|
-| Signed out | Opens the popup |
-| Signed in, free | Opens the popup |
-| Signed in, Premium | Opens PasswordPie, as `⌘\` does. No popup. |
-| In the App Store version (no account) | Opens PasswordPie. No popup. |
-
-Right-click the button for the rest. These three lines are above the browser's own (Pin, Manage Extension…):
+Right-click the button for the rest. These two lines are above the browser's own (Pin, Manage Extension…):
 
 | Line | What it does |
 |---|---|
 | **Scan QR code on this page** | Reads the two-step QR code the page shows. See "Scan a two-step QR code". |
 | **Open passwordpie.com** | Opens the website in a new tab. |
-| **Account…** | Opens the popup, whoever you are: your email, your plan and Sign Out. Not in the App Store version. |
 
 The same scan is in the page's own right-click menu, as **Scan QR code with PasswordPie**, so you can right-click the QR
 code itself.
 
-When it does not apply:
-
-- Premium that has run out, or a sign-out, brings the popup back on the next click.
-- A browser that cannot add lines to the button's menu keeps the popup for everyone, so Scan is never out of reach.
-- Each click on the button also asks passwordpie.com for your Premium, as opening the popup does.
-
-### The popup
-
-| You are | The popup shows |
-|---|---|
-| Signed out | **Open PasswordPie**, Scan QR code on this page (see "Scan a two-step QR code"), then one line, "Sign in with your PasswordPie account to fill two-step codes in the browser with Premium.", and **Sign in on passwordpie.com**. There is no email or password field in the popup. |
-| Signed in, free | Your email and Sign Out; "Free · Two-step codes in the browser need Premium." with **Upgrade** (opens the pricing page) and a "Have a key?" field |
-| Signed in, Premium (from **Account…**) | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did, or when it understood and did not take the pass (for example, the browser's cached pass has run out). |
-
-### Signing in
-
-Sign in on passwordpie.com, not in the popup. **Sign in on passwordpie.com** opens passwordpie.com/extension/connect in a
-new tab:
-
-1. Not signed in to the site yet: it goes to the site's sign-in page, with email or Google (and a new account, after
-   its email is verified), and comes back to the connect page.
-2. Signed in: the page connects, and a moment later says "PasswordPie in this browser is signed in as
-   ada@example.com. You can close this tab." Open the popup again: it shows your email and your plan.
-3. No answer from the extension within 3 seconds (it is not installed, or too old): the page links to the Chrome Web
-   Store and offers Try again.
-
-The browser and the site keep separate sessions: Sign Out in the popup does not sign you out of the website, and
-signing out of the website does not sign out the extension. Connecting a different account replaces the one the
-extension had. In Safari, the extension needs access to passwordpie.com (Safari asks for it per site) to hear the page.
-
-The popup asks passwordpie.com for your Premium every time it opens, a click on the toolbar button that opens
-PasswordPie asks too, and the extension asks once a day. Offline, it keeps
-what it knew; a session that ended signs you out.
-
-A key looks like `PPIE-XXXX-XXXX-XXXX`. Lowercase and missing dashes are fine. A wrong key says it is not valid, a used
-one that it was already used, an old one that it has expired, and too many tries ask you to wait a minute.
-
 ### Without Premium
 
 The username and password still fill. On the code page, a small note appears in the corner for 8 seconds:
-"PasswordPie Premium fills two-step codes for you. Upgrade". It takes no focus and fills nothing. The popup, for the next
-ten minutes, says "The two-step code on github.com was not filled: it needs Premium."
-
-In the Safari extension of the App Store version there is no sign-in, no Upgrade link and no key field, and the note has no link. Its toolbar button opens PasswordPie directly, and its popup, where the browser still shows one, only offers Open PasswordPie and Scan QR code on this page.
+"PasswordPie Premium fills two-step codes for you. Upgrade". It takes no focus and fills nothing. **Upgrade** opens the
+Premium window of PasswordPie on this Mac, the one a locked code's row opens: the plans in the App Store version, Get
+Premium on passwordpie.com in the downloaded one. The extension itself links to no shop, and is the same in both.
 
 ### Privacy
 
 - The code is made on your Mac when the page asks for it, goes only to that page, and is never saved or logged.
-- Your Premium proof is a signed token from passwordpie.com. PasswordPie checks the signature itself, so a changed or
-  expired token gets no code.
-- The extension stores your sign-in and that token in the browser's extension storage, and hands the token to PasswordPie
-  on this Mac, which keeps it in your keychain. Sign Out removes both, and takes it back from the app.
+- The extension knows nothing about Premium. It asks for the code, and gets one or does not.
+- The extension stores nothing in the browser: no account, no session, no token.
 
 ### Demo script
 
-Use the mock site (`node extension/dev/mock-site.mjs`, then `WXT_PP_SITE_URL=http://localhost:8787 pnpm build:chrome`)
-and a database item "Demo" with website `http://localhost:8787`, username `ada`, any password, and two-step code
-`otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`. Build with `make install` (or a debug build in a bundle signed
-the same way: the bridge checks signatures); only those trust the test key.
+Use the demo pages (`node extension/dev/mock-site.mjs`, then `pnpm build:chrome`) and a database item "Demo" with website
+`http://localhost:8787`, username `ada`, any password, and two-step code
+`otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`. Build the app with `make install` (or a debug build in a
+bundle signed the same way: the bridge checks signatures); only those trust the test key.
 
-1. Click the toolbar button: the popup shows Open PasswordPie and Sign in on passwordpie.com. Click that: the mock's
-   sign-in page opens. Sign in as `ada@example.com` / `password`: the connect page says the browser is signed in as
-   ada@example.com. Open the popup again: "Free".
+1. Click the toolbar button: the PasswordPie panel opens over the browser. No popup.
 2. Open `http://localhost:8787/demo/login`, press `⌘\`, Return on Demo, then Sign In. The code page shows six empty
-   boxes and the note in the corner. The popup says the code on localhost:8787 was not filled.
-3. In the popup, redeem `PPIE-USED-USED-USED`: "That key was already used." Then `PPIE-TEST-TEST-TEST`: "Premium · Key".
-4. Click the toolbar button again: no popup, the PasswordPie panel opens over the browser.
-5. Repeat 2: the six boxes fill. Press Verify: "Signed in".
-6. Right-click the toolbar button: Scan QR code on this page, Open passwordpie.com, Account…. Choose Account…: the popup
-   shows ada@example.com and "Premium · Key". Sign Out.
-7. Click the toolbar button: the popup is back. Repeat 2: no code, and the note again. In PasswordPie, the item's code row
-   is locked again too.
+   boxes and the note in the corner. Click Upgrade in the note: the Premium window of PasswordPie opens.
+3. Open an activation link (`node Scripts/mint-activation-link.mjs`): the window says Premium is on.
+4. Repeat 2: the six boxes fill. Press Verify: "Signed in".
+5. Right-click the toolbar button: Scan QR code on this page and Open passwordpie.com.
 
 ## A new database says what to do next
 
@@ -743,8 +671,7 @@ editor. Most people gave up and used their phone.
 **From the browser (with the extension).** On the page that shows the QR code:
 
 1. Right-click the QR code (or anywhere on the page) and choose **Scan QR code with PasswordPie**. Or right-click the
-   PasswordPie button in the toolbar and choose **Scan QR code on this page**. The popup, when the button opens one, has
-   the same button.
+   PasswordPie button in the toolbar and choose **Scan QR code on this page**.
 2. PasswordPie opens an **Add Two-Step Code** window over the browser: the site and account the QR code names, and the
    item to add it to, already chosen. The best guess is the item for this site whose username is that account; other
    items for the site are listed under it. An item on another site that only names the issuer is listed, not chosen. You
@@ -754,9 +681,9 @@ editor. Most people gave up and used their phone.
 
 If PasswordPie is locked, it asks you to unlock first, then shows the window. Nothing is saved until you press Add.
 
-A scan from a menu that finds nothing to hand over says why in a small note in the corner of the page, for 8 seconds,
-like the note about Premium. The popup says it in a line under its button. When the page cannot show a note (a browser
-page, such as Settings), the toolbar button carries a "!" for a few seconds and its tooltip says why.
+A scan that finds nothing to hand over says why in a small note in the corner of the page, for 8 seconds, like the note
+about Premium. When the page cannot show a note (a browser page, such as Settings), the toolbar button carries a "!" for
+a few seconds and its tooltip says why.
 
 **From a screenshot or an image, in the item editor.** Press ⌃⇧⌘4 and drag over the QR code: macOS copies it to the
 clipboard. In the item's editor, click the QR button at the end of the **One-time password** row. The row fills in, and
@@ -773,8 +700,8 @@ item's history in the database file, where KeePassXC and other KeePass apps show
 
 ### What it will not do
 
-- Scan anything you did not ask it to. The extension looks at the page only when you choose Scan, in a right-click menu
-  or in its popup; a page cannot ask for it, and nothing scans by itself.
+- Scan anything you did not ask it to. The extension looks at the page only when you choose Scan in a right-click menu;
+  a page cannot ask for it, and nothing scans by itself.
 - Send the picture or the secret anywhere. The QR code is read on your Mac (the app uses macOS's own Vision) and inside the
   browser extension. The secret goes only from the extension to PasswordPie on this Mac. Nothing is stored in the browser
   or logged.
@@ -796,7 +723,7 @@ item's history in the database file, where KeePassXC and other KeePass apps show
 | Google Authenticator's export | "This is a Google Authenticator export. Scan the QR code the website shows instead." |
 | A damaged secret, or unusual settings | One line saying which: the secret, the number of digits (6 to 8), the time step, or the algorithm (SHA1, SHA256, SHA512) |
 | Two minutes passed before Add | "This scan has expired. Scan the QR code again." |
-| PasswordPie is not running | The extension starts it, as Open PasswordPie does |
+| PasswordPie is not running | The extension starts it, as a click on its toolbar button does |
 
 ### Demo script
 
