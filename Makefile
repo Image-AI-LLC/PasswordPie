@@ -34,9 +34,10 @@ build:
 extension:
 	cd extension && pnpm install --frozen-lockfile && pnpm build:chrome && pnpm build:safari
 
-# The Safari build inside the App Store app: no upgrade link and no key field (docs/ACCOUNTS.md, "App Store rules").
+# The Safari build inside the App Store app. The extension has no account and links to no shop, so it is the same build
+# as the direct channel's (docs/UX.md, "Premium in the browser").
 extension-mas:
-	cd extension && pnpm install --frozen-lockfile && WXT_PP_STORE=mas pnpm build:safari
+	cd extension && pnpm install --frozen-lockfile && pnpm build:safari
 
 # assemble_app <bin-path> <out-app> [with-chrome-host]: lay out the .app bundle. The Chrome host is direct channel only.
 define assemble_app

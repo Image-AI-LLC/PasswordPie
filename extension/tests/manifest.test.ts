@@ -16,13 +16,7 @@ describe('extensionManifest', () => {
 
   it('asks Chrome for no tabs permission: <all_urls> already exposes the active tab URL', () => {
     for (const storePackage of [false, true]) {
-      expect(extensionManifest({ browser: 'chrome', storePackage }).permissions).toEqual([
-        'nativeMessaging',
-        'webNavigation',
-        'alarms',
-        'contextMenus',
-        'storage',
-      ]);
+      expect(extensionManifest({ browser: 'chrome', storePackage }).permissions).toEqual(['nativeMessaging', 'webNavigation', 'alarms', 'contextMenus']);
     }
   });
 
@@ -33,29 +27,23 @@ describe('extensionManifest', () => {
       'webNavigation',
       'alarms',
       'contextMenus',
-      'storage',
     ]);
   });
 
-  it('asks for no storage permission in the App Store build, which has no account', () => {
-    expect(extensionManifest({ browser: 'safari', storePackage: false, account: false }).permissions).toEqual([
-      'nativeMessaging',
-      'tabs',
-      'webNavigation',
-      'alarms',
-      'contextMenus',
-    ]);
-  });
-
-  it('has no Google sign-in: no identity permission and no oauth2, in any build', () => {
+  it('has no account: no storage, no identity and no oauth2, in any build', () => {
     for (const browser of ['chrome', 'safari'] as const) {
       for (const storePackage of [false, true]) {
-        for (const account of [false, true]) {
-          const manifest = extensionManifest({ browser, storePackage, account });
-          expect(manifest.permissions).not.toContain('identity');
-          expect(manifest).not.toHaveProperty('oauth2');
-        }
+        const manifest = extensionManifest({ browser, storePackage });
+        expect(manifest.permissions).not.toContain('storage');
+        expect(manifest.permissions).not.toContain('identity');
+        expect(manifest).not.toHaveProperty('oauth2');
       }
+    }
+  });
+
+  it('has no popup: a click on the toolbar button opens PasswordPie', () => {
+    for (const browser of ['chrome', 'safari'] as const) {
+      expect(extensionManifest({ browser, storePackage: false }).action).not.toHaveProperty('default_popup');
     }
   });
 
@@ -66,7 +54,7 @@ describe('extensionManifest', () => {
     expect(EXTENSION_VERSION, 'the version the native hello reports').toBe(version);
   });
 
-  it('declares the panel shortcut the popup also offers', () => {
+  it('declares the panel shortcut', () => {
     expect(extensionManifest({ browser: 'chrome', storePackage: true }).commands).toHaveProperty('open-panel');
   });
 

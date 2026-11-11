@@ -3,8 +3,7 @@
   "compilerOptions": {
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "jsx": "react-jsx"
+    "noImplicitOverride": true
   },
   "include": ["src", "tests", "manifest.ts", "wxt.config.ts", "vitest.config.ts", ".wxt/wxt.d.ts"]
 }

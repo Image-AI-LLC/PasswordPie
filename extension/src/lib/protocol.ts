@@ -50,12 +50,10 @@ export interface CodeMessage {
   code: string;
 }
 
-/** background → content script: no Premium, so say so quietly next to the field. */
+/** background → content script: the app has no Premium, so say so quietly next to the field. */
 export interface CodeHintMessage {
   type: 'code-hint';
   origin: string;
-  /** Where "Upgrade" goes; none in the App Store build. */
-  upgradeUrl?: string;
 }
 
 export type FrameMessage = WatchCodeMessage | CodeMessage | CodeHintMessage;
@@ -66,16 +64,9 @@ export type ContentMessage =
   | { type: 'ready' }
   | { type: 'filled'; password: true }
   /** An empty code field appeared while the frame was watching. */
-  | { type: 'code-field' };
-
-/** popup → background */
-export type PopupMessage = { type: 'open-panel' } | { type: 'popup-status' } | { type: 'app-premium' } | { type: 'scan-page' };
-
-/** The background's answer to `popup-status`. */
-export interface PopupStatus {
-  /** The site whose code was not filled for lack of Premium, in the last few minutes. */
-  codeSkippedOn?: string;
-}
+  | { type: 'code-field' }
+  /** "Upgrade" was clicked in the note about Premium: the app opens its Premium window. */
+  | { type: 'upgrade' };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -144,30 +135,7 @@ export function parseFrameMessage(value: unknown): FrameMessage | undefined {
     return { type: 'watch-code', origin, waitMs: value.waitMs };
   }
   if (value.type === 'code' && typeof value.code === 'string') return { type: 'code', origin, code: value.code };
-  if (value.type === 'code-hint') {
-    const msg: CodeHintMessage = { type: 'code-hint', origin };
-    if (typeof value.upgradeUrl === 'string' && isUpgradeUrl(value.upgradeUrl)) msg.upgradeUrl = value.upgradeUrl;
-    return msg;
-  }
-  return undefined;
-}
-
-/** A link the page note may show: https, or this Mac's own mock site. */
-function isUpgradeUrl(url: string): boolean {
-  try {
-    const { protocol, hostname } = new URL(url);
-    return protocol === 'https:' || (protocol === 'http:' && (hostname === 'localhost' || hostname === '127.0.0.1'));
-  } catch {
-    return false;
-  }
-}
-
-export function parsePopupMessage(value: unknown): PopupMessage | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value.type === 'open-panel') return { type: 'open-panel' };
-  if (value.type === 'popup-status') return { type: 'popup-status' };
-  if (value.type === 'app-premium') return { type: 'app-premium' };
-  if (value.type === 'scan-page') return { type: 'scan-page' };
+  if (value.type === 'code-hint') return { type: 'code-hint', origin };
   return undefined;
 }
 
@@ -191,6 +159,7 @@ export function parseContentMessage(value: unknown): ContentMessage | undefined 
   if (value.type === 'ready') return { type: 'ready' };
   if (value.type === 'filled' && value.password === true) return { type: 'filled', password: true };
   if (value.type === 'code-field') return { type: 'code-field' };
+  if (value.type === 'upgrade') return { type: 'upgrade' };
   return undefined;
 }
 

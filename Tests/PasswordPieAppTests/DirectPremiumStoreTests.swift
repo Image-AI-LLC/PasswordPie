@@ -3,8 +3,8 @@ import XCTest
 @testable import PasswordPie
 
 #if PP_DIRECT
-/// The direct channel: Premium is a pass the browser extension handed over, or an activation link from the website.
-/// Nothing here signs in or talks to a site.
+/// The direct channel: Premium is an activation link from the website. Nothing here signs in or talks to a site, and
+/// nothing a browser extension sends counts.
 @MainActor
 final class DirectPremiumStoreTests: XCTestCase {
     private var clock = PremiumFixtures.now
@@ -47,158 +47,63 @@ final class DirectPremiumStoreTests: XCTestCase {
         XCTAssertNil(store.lapse)
     }
 
-    func testAKeptPassUnlocksAtLaunchWithNothingToWaitFor() {
-        secrets.values[.safariPass] = pass()
+    func testAKeptActivationUnlocksAtLaunchWithNothingToWaitFor() {
+        secrets.values[.activation] = ActivationLink.token(in: PassKey.activationLink(expires: later(200)))
         store.start()
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(store.status, .fromBrowser(activationUntil: nil))
-    }
-
-    /// A build that signed in inside the app left a session, an email and a pass. The pass counts until it ends; the rest
-    /// goes at the first launch.
-    func testTheOldSignInIsForgottenAndItsPassCountsUntilItEnds() {
-        secrets.values[.legacySession] = "session-1"
-        secrets.values[.legacyEmail] = "ada@example.com"
-        let old = pass(3)
-        secrets.values[.appSignInPass] = old
-        store.start()
-        XCTAssertNil(secrets.values[.legacySession])
-        XCTAssertNil(secrets.values[.legacyEmail])
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(secrets.values[.appSignInPass], old, "kept until it runs out")
-        clock = later(4)
-        store.reevaluate()
-        XCTAssertFalse(store.hasPremium)
-        XCTAssertNil(secrets.values[.appSignInPass])
-        XCTAssertEqual(store.lapse, .passRanOut)
-    }
-
-    func testAnExpiredPassAtLaunchIsDeletedAndExplained() {
-        secrets.values[.chromePass] = pass(-1)
-        store.start()
-        XCTAssertFalse(store.hasPremium)
-        XCTAssertNil(secrets.values[.chromePass])
-        XCTAssertEqual(store.lapse, .passRanOut)
-    }
-
-    func testAForgedTokenInTheKeychainIsThrownAwayWithNoStory() {
-        secrets.values[.chromePass] = PassKey.pass(expires: later(7), signer: .init())
-        secrets.values[.activation] = "forged.token.here"
-        store.start()
-        XCTAssertFalse(store.hasPremium)
-        XCTAssertEqual(secrets.values, [:])
-        XCTAssertNil(store.lapse)
-    }
-
-    // MARK: From the browser extension
-
-    func testAPassFromTheExtensionUnlocksAndIsKeptForThatBrowser() {
-        store.start()
-        let token = pass()
-        XCTAssertTrue(store.receive(.pass(token), from: .chrome))
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(secrets.values[.chromePass], token)
-        XCTAssertNil(secrets.values[.safariPass])
-    }
-
-    func testAPassThatDoesNotCheckChangesNothingStored() {
-        store.start()
-        store.receive(.pass(pass()), from: .chrome)
-        let kept = secrets.values
-        XCTAssertFalse(store.receive(.pass(PassKey.pass(expires: later(7), signer: .init())), from: .chrome))
-        XCTAssertFalse(store.receive(.pass(pass(-1)), from: .chrome))
-        XCTAssertFalse(store.receive(.pass(ActivationLink.token(in: PassKey.activationLink(expires: later(300)))!), from: .chrome))
-        XCTAssertEqual(secrets.values, kept)
-        XCTAssertTrue(store.hasPremium)
-    }
-
-    func testSigningOutInTheExtensionLocksAndSaysWhy() {
-        store.start()
-        store.receive(.pass(pass()), from: .chrome)
-        store.receive(.drop(.signedOut), from: .chrome)
-        XCTAssertFalse(store.hasPremium)
-        XCTAssertNil(secrets.values[.chromePass])
-        XCTAssertEqual(store.lapse, .signedOutInBrowser)
-    }
-
-    func testAnAccountWithoutPremiumSaysSo() {
-        store.start()
-        store.receive(.pass(pass()), from: .safari)
-        store.receive(.drop(.noPremium), from: .safari)
-        XCTAssertEqual(store.lapse, .browserAccountFree)
-    }
-
-    func testSigningOutInOneBrowserKeepsTheOtherBrowsersPass() {
-        store.start()
-        store.receive(.pass(pass()), from: .chrome)
-        store.receive(.pass(pass()), from: .safari)
-        store.receive(.drop(.signedOut), from: .chrome)
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertNotNil(secrets.values[.safariPass])
-        XCTAssertNil(store.lapse)
-    }
-
-    func testSigningOutKeepsAnActivation() {
-        store.start()
-        store.receive(.pass(pass()), from: .chrome)
-        store.activate(PassKey.activationLink(expires: later(200)))
-        store.receive(.drop(.signedOut), from: .chrome)
         XCTAssertTrue(store.hasPremium)
         XCTAssertEqual(store.status, .activation(until: later(200)))
     }
 
-    func testAPassArrivingClearsAnOldLapse() {
+    /// Earlier builds signed in inside the app, or took a week-long pass from the browser extension. None of it unlocks
+    /// anything now, and all of it goes at the first launch.
+    func testWhatEarlierBuildsKeptIsDeletedAndUnlocksNothing() {
+        secrets.values[.legacySession] = "session-1"
+        secrets.values[.legacyEmail] = "ada@example.com"
+        secrets.values[.legacyChromePass] = pass()
+        secrets.values[.legacySafariPass] = pass()
+        secrets.values[.legacyAppPass] = pass()
         store.start()
-        store.receive(.pass(pass()), from: .chrome)
-        store.receive(.drop(.signedOut), from: .chrome)
-        store.receive(.pass(pass()), from: .chrome)
+        XCTAssertFalse(store.hasPremium)
+        XCTAssertEqual(store.status, .none)
+        XCTAssertNil(store.lapse, "nothing of ours ran out: the window says Free and how to activate")
+        XCTAssertEqual(secrets.values, [:])
+    }
+
+    func testAnActivationBesideAnOldPassStays() {
+        let token = ActivationLink.token(in: PassKey.activationLink(expires: later(200)))
+        secrets.values[.activation] = token
+        secrets.values[.legacyChromePass] = pass()
+        store.start()
+        XCTAssertTrue(store.hasPremium)
+        XCTAssertEqual(secrets.values, [.activation: token!])
+    }
+
+    func testAnExpiredActivationAtLaunchIsDeletedAndExplained() {
+        secrets.values[.activation] = ActivationLink.token(in: PassKey.activationLink(expires: later(-1)))
+        store.start()
+        XCTAssertFalse(store.hasPremium)
+        XCTAssertEqual(store.lapse, .activationRanOut(later(-1)))
+        XCTAssertNil(secrets.values[.activation])
+    }
+
+    func testAForgedTokenInTheKeychainIsThrownAwayWithNoStory() {
+        secrets.values[.activation] = ActivationLink.token(in: PassKey.activationLink(expires: later(200), signer: .init()))
+        store.start()
+        XCTAssertFalse(store.hasPremium)
         XCTAssertNil(store.lapse)
+        XCTAssertNil(secrets.values[.activation])
     }
 
-    func testAPassLocksTheMomentItRunsOut() {
-        store.start()
-        store.receive(.pass(pass(1)), from: .chrome)
-        clock = later(1).addingTimeInterval(1)
-        XCTAssertFalse(store.hasPremium, "read at every use")
-    }
-
-    func testAPassArrivingSweepsAnotherBrowsersExpiredPass() {
-        store.start()
-        store.receive(.pass(pass(1)), from: .safari)
-        clock = later(1).addingTimeInterval(1)
-        store.receive(.pass(pass(7)), from: .chrome)
-        XCTAssertNil(secrets.values[.safariPass])
-        XCTAssertNotNil(secrets.values[.chromePass])
-    }
-
-    func testADropAfterThePassRanOutStillSaysItRanOut() {
-        store.start()
-        store.receive(.pass(pass(1)), from: .chrome)
-        clock = later(1).addingTimeInterval(1)
-        store.receive(.drop(.signedOut), from: .chrome)
-        XCTAssertEqual(store.lapse, .passRanOut)
-        store.reevaluate()
-        XCTAssertEqual(store.lapse, .passRanOut)
-    }
-
-    func testALaterSweepDoesNotOverwriteSignedOut() {
-        store.start()
-        store.receive(.pass(pass(7)), from: .chrome)
-        store.receive(.pass(pass(1)), from: .safari)
-        clock = later(1).addingTimeInterval(1)
-        store.receive(.drop(.signedOut), from: .chrome)
-        store.reevaluate()
-        XCTAssertEqual(store.lapse, .signedOutInBrowser)
-    }
-
-    func testTheStoreLooksAgainWhenThePassRunsOut() async {
+    /// With the real clock: nothing announces that an activation ran out, so the store looks again at that moment.
+    func testTheStoreLooksAgainWhenTheActivationRunsOut() async {
         let realStore = DirectPremiumStore.testing(secrets: secrets, now: Date.init)
         realStore.start()
-        realStore.receive(.pass(PassKey.pass(expires: Date().addingTimeInterval(1.2))), from: .chrome)
+        realStore.activate(PassKey.activationLink(expires: Date().addingTimeInterval(1.5)))
         XCTAssertTrue(realStore.hasPremium)
-        let lapsed = await waitUntil(timeout: 5) { realStore.lapse == .passRanOut }
+        let lapsed = await waitUntil(timeout: 5) { realStore.lapse != nil }
         XCTAssertTrue(lapsed)
-        XCTAssertNil(secrets.values[.chromePass])
+        XCTAssertFalse(realStore.hasPremium)
+        XCTAssertNil(secrets.values[.activation])
         realStore.stop()
     }
 
@@ -300,7 +205,7 @@ final class DirectPremiumStoreTests: XCTestCase {
         store.start()
         PremiumChannel.live = store
         XCTAssertFalse(appHasPremium())
-        store.receive(.pass(pass()), from: .chrome)
+        store.activate(PassKey.activationLink(expires: later(365)))
         XCTAssertTrue(appHasPremium())
         PremiumChannel.live = nil
     }
@@ -317,15 +222,6 @@ final class DirectPremiumStoreTests: XCTestCase {
         XCTAssertTrue(free.offersPremium)
         XCTAssertTrue(free.showsActivate)
         XCTAssertNil(free.warning)
-    }
-
-    func testAPassFromTheBrowserShowsNoEndDate() {
-        let fromBrowser = copy(.fromBrowser(activationUntil: nil))
-        XCTAssertEqual(fromBrowser.title, "Premium is on")
-        XCTAssertEqual(fromBrowser.detail, "The PasswordPie extension in your browser keeps it up to date.")
-        XCTAssertFalse(fromBrowser.offersPremium)
-        XCTAssertFalse(fromBrowser.showsActivate)
-        XCTAssertFalse(fromBrowser.detail.contains("D"), "the seven-day pass is not an end date")
     }
 
     func testAnActivationSaysUntilWhenAndHowToRenew() {
@@ -346,24 +242,35 @@ final class DirectPremiumStoreTests: XCTestCase {
         )
     }
 
-    func testEachLapseSaysWhatHappenedAndWhatToDo() {
-        XCTAssertTrue(copy(.none, .signedOutInBrowser).detail.hasPrefix("You signed out of the PasswordPie extension"))
-        XCTAssertTrue(copy(.none, .browserAccountFree).detail.contains("no longer has Premium"))
-        XCTAssertTrue(copy(.none, .passRanOut).detail.contains("has not renewed Premium for a week"))
-        XCTAssertTrue(copy(.none, .activationRanOut(later(-1))).detail.contains("ended on D"))
-        for lapse: PremiumLapse in [.signedOutInBrowser, .browserAccountFree, .passRanOut, .activationRanOut(later(-1))] {
-            let lapsed = copy(.none, lapse)
-            XCTAssertEqual(lapsed.title, "Premium is off")
-            XCTAssertTrue(lapsed.offersPremium)
-            XCTAssertTrue(lapsed.showsActivate)
+    func testAnActivationThatRanOutSaysWhenAndWhatToDo() {
+        let lapsed = copy(.none, .activationRanOut(later(-1)))
+        XCTAssertEqual(lapsed.title, "Premium is off")
+        XCTAssertTrue(lapsed.detail.contains("ended on D"))
+        XCTAssertTrue(lapsed.offersPremium)
+        XCTAssertTrue(lapsed.showsActivate)
+    }
+
+    /// The window never sends anyone to the browser extension: it has no account and brings no Premium.
+    func testNothingSendsYouToTheBrowserExtension() throws {
+        let source = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/PasswordPieApp/PremiumDirectViews.swift")
+        let text = try String(contentsOf: source, encoding: .utf8)
+        // What the person reads: the string literals, not the Swift around them.
+        let literals = try NSRegularExpression(pattern: "\"((?:[^\"\\\\]|\\\\.)*)\"")
+            .matches(in: text, range: NSRange(text.startIndex..., in: text))
+            .compactMap { Range($0.range(at: 1), in: text).map { String(text[$0]).lowercased() } }
+        XCTAssertTrue(literals.contains { $0.contains("press activate in your account settings on passwordpie.com") })
+        for literal in literals {
+            XCTAssertFalse(literal.contains("extension"), literal)
+            XCTAssertFalse(literal.contains("sign in"), literal)
         }
     }
 
     /// "Pass", "token" and "entitlement" are the code's words, not the user's.
     func testNoWordsOfTheCodeReachTheUser() {
         let states: [(DirectPremiumStatus, PremiumLapse?)] = [
-            (.none, nil), (.none, .signedOutInBrowser), (.none, .browserAccountFree), (.none, .passRanOut),
-            (.none, .activationRanOut(later(-1))), (.fromBrowser(activationUntil: later(9)), nil), (.activation(until: later(9)), nil),
+            (.none, nil), (.none, .activationRanOut(later(-1))), (.activation(until: later(9)), nil),
         ]
         var texts: [String] = []
         for (status, lapse) in states {
@@ -382,9 +289,9 @@ final class DirectPremiumStoreTests: XCTestCase {
 }
 #endif
 
-/// The bridge's `premium` request, through the app.
+/// What the browser extension can and cannot do about Premium, through the app. Compiled in both channels.
 @MainActor
-final class BridgePassRelayTests: XCTestCase {
+final class BridgePremiumTests: XCTestCase {
     private func sampleToken() throws -> String {
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -398,8 +305,9 @@ final class BridgePassRelayTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
-    #if PP_DIRECT
-    func testTheDirectAppKeepsAPassFromTheExtension() throws {
+    /// An extension from before 2026-11-11 hands over its pass. Neither app knows the message: nothing is kept and
+    /// nothing unlocks.
+    func testAPassFromTheExtensionIsIgnored() throws {
         let secrets = FakeSecrets()
         let store = PremiumChannel.makeStore(secrets: secrets)
         PremiumChannel.live = store
@@ -408,42 +316,29 @@ final class BridgePassRelayTests: XCTestCase {
         let session = VaultSession(premium: store, pasteboard: FakePasteboard())
         let bridge = BrowserBridge(session: session)
         defer { withExtendedLifetime(session) {} }
-        let token = try sampleToken()
-        let taken = try answer(bridge, #"{"type":"premium","id":1,"pass":"\#(token)"}"#)
-        XCTAssertEqual(taken["accepted"] as? Bool, true)
-        XCTAssertTrue(store.hasPremium)
-        XCTAssertEqual(secrets.values[.chromePass], token)
-        _ = try answer(bridge, #"{"type":"premium","id":2,"drop":"signed-out"}"#, from: .safari)
-        XCTAssertTrue(store.hasPremium, "Safari cannot take back what Chrome delivered")
-        _ = try answer(bridge, #"{"type":"premium","id":3,"drop":"signed-out"}"#)
+        for browser in [BridgeBrowser.chrome, .safari] {
+            let ignored = try answer(bridge, #"{"type":"premium","id":1,"pass":"\#(try sampleToken())"}"#, from: browser)
+            XCTAssertEqual(ignored["type"] as? String, "error")
+            XCTAssertEqual(ignored["code"] as? String, "bad-request")
+        }
         XCTAssertFalse(store.hasPremium)
-        XCTAssertEqual(store.lapse, .signedOutInBrowser)
+        XCTAssertFalse(appHasPremium())
+        XCTAssertEqual(secrets.values, [:])
+        store.stop()
     }
-    #else
-    /// The App Store app takes Premium only from StoreKit or an activation. A pass sent to it anyway gets the answer an app
-    /// that does not know the message gives, and nothing is kept.
-    func testTheAppStoreAppIgnoresARelayedPass() throws {
-        let secrets = FakeSecrets()
-        let store = PremiumChannel.makeStore(secrets: secrets)
-        PremiumChannel.live = store
-        defer { PremiumChannel.live = nil }
+
+    /// "Upgrade" in the page's note: the app opens its Premium window, after the answer is on its way.
+    func testUpgradeOpensThePremiumWindow() async throws {
+        let store = PremiumChannel.makeStore(secrets: FakeSecrets())
         let session = VaultSession(premium: store, pasteboard: FakePasteboard())
         let bridge = BrowserBridge(session: session)
         defer { withExtendedLifetime(session) {} }
-        let ignored = try answer(bridge, #"{"type":"premium","id":1,"pass":"\#(try sampleToken())"}"#, from: .safari)
-        XCTAssertEqual(ignored["type"] as? String, "error")
-        XCTAssertEqual(ignored["code"] as? String, "bad-request")
-        XCTAssertFalse(store.hasPremium)
-        XCTAssertEqual(secrets.values, [:])
-    }
-    #endif
-
-    /// Compiled in both channels: which channel takes a pass at all.
-    func testOnlyTheDirectChannelHasARelay() {
-        #if PP_DIRECT
-        XCTAssertNotNil(PremiumChannel.passRelay(from: .safari))
-        #else
-        XCTAssertNil(PremiumChannel.passRelay(from: .safari))
-        #endif
+        var opened = 0
+        bridge.onUpgrade = { opened += 1 }
+        let acknowledged = try answer(bridge, #"{"type":"upgrade","id":7}"#, from: .safari)
+        XCTAssertEqual(acknowledged["type"] as? String, "upgrade")
+        XCTAssertEqual(acknowledged["id"] as? Int, 7)
+        let shown = await waitUntil { opened == 1 }
+        XCTAssertTrue(shown)
     }
 }

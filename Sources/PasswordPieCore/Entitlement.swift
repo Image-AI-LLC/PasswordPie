@@ -33,12 +33,14 @@ public enum EntitlementError: Error, Equatable, Sendable {
     case notPremium
 }
 
-/// A compact JWS signed with Ed25519 (`alg: EdDSA`, RFC 8037), shared by the app's own account and the browser's.
+/// A compact JWS signed with Ed25519 (`alg: EdDSA`, RFC 8037): what passwordpie.com signs to say an account has Premium.
 public enum EntitlementToken {
     public static let issuer = "https://passwordpie.com"
+    /// The audience of the week-long passes the browser extension carried until 2026-11-11. Nothing in the app accepts it
+    /// any more; it is still what a token is checked against when no other audience is named.
     public static let audience = "passwordpie-app"
-    /// A long-lived token that activates the App Store app from passwordpie.com. A different audience on purpose: neither
-    /// kind of token can stand in for the other (docs/CHANNELS.md).
+    /// A long-lived token that activates either app from passwordpie.com, the only kind the apps accept. A different
+    /// audience on purpose: a token made for anything else cannot stand in for it (docs/CHANNELS.md).
     public static let activationAudience = "passwordpie-activation"
     /// The longest token accepted, in bytes. Real ones are a few hundred.
     public static let maxLength = 4096
@@ -67,16 +69,7 @@ public enum EntitlementToken {
         try? check(jwt, now: now, publicKey: publicKey, audience: audience).get()
     }
 
-    /// `verify` against every key in `trustedKeys`. What the bridge uses.
-    public static func verifyTrusted(_ jwt: String?, now: Date) -> Entitlement? {
-        guard let jwt else { return nil }
-        for key in trustedKeys {
-            if let entitlement = verify(jwt, now: now, publicKey: key) { return entitlement }
-        }
-        return nil
-    }
-
-    /// `verifyTrusted` for an activation link's token. What the App Store app uses.
+    /// `verify` for an activation link's token, against every key in `trustedKeys`. What both apps use.
     public static func verifyActivation(_ jwt: String, now: Date) -> Entitlement? {
         for key in trustedKeys {
             if let entitlement = verify(jwt, now: now, publicKey: key, audience: activationAudience) { return entitlement }

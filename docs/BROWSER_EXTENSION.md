@@ -4,16 +4,16 @@ The PasswordPie extension fills the account chosen in the PasswordPie panel into
 does all the choosing and matching; the extension only reports the active tab, finds the sign-in form and fills it.
 What the user sees is in "Fill in the browser" in [UX.md](UX.md).
 
-Filling the username and password is free. Filling the two-step code (TOTP) is Premium: the extension signed in to a
-PasswordPie account with Premium, or Premium in the app. The extension also hands that Premium to the direct app, which has
-no sign-in of its own: see [ACCOUNTS.md](ACCOUNTS.md). Not yet: an icon or menu inside page fields, saving new passwords,
+Filling the username and password is free. Filling the two-step code (TOTP) is Premium, and Premium is the app's alone:
+the extension has no account, signs in nowhere, asks passwordpie.com nothing and stores nothing
+([ACCOUNTS.md](ACCOUNTS.md)). Not yet: an icon or menu inside page fields, saving new passwords,
 Firefox.
 
 ## Pieces
 
 | Piece | Where | Channel |
 |---|---|---|
-| Extension (WXT + TypeScript, laid out like [mkext](https://mkext.dev): a React + Tailwind + TanStack Query popup, a Better Auth bearer session that passwordpie.com hands over after you sign in there; the content script has no framework) | `extension/` | Chrome build and Safari build from one source |
+| Extension (WXT + TypeScript: a background and a content script, no extension pages and no UI framework) | `extension/` | Chrome build and Safari build from one source, the same in both channels |
 | Safari Web Extension app extension | `PasswordPie.app/Contents/PlugIns/PasswordPieSafari.appex`, target `PasswordPieSafari` | both |
 | Chrome native messaging host | `PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost`, target `PasswordPieBrowserHost` | direct only |
 | Host manifest `com.oldcai.passwordpie.json` | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
@@ -74,11 +74,7 @@ So credentials only ever travel as the answer to a request the extension made:
 The same `tab` report keeps the app's "browser → current URL" cache fresh, for the "this site" list at the top of the panel.
 No AppleScript is used, so there is no Automation prompt.
 
-Premium follows the same rule: the app never asks the extension for it. The extension sends `premium` when something
-changed on its side (sign-in, renewal, sign-out, 401), each time its connection comes up, and on a poke when its last try
-found no app. Chrome's host keeps the port open while PasswordPie is not running, so the app starting later shows up as
-the poke it sends when the host reaches it, and the pass follows at once. For Safari, "comes up" is the background starting; a pass renewed while the app was not running
-reaches it at the next storage change or background start, and a pass already held lasts up to 7 days meanwhile.
+Premium is not part of any of this: the extension has none to report, and the app asks for none.
 
 ## Messages
 
@@ -108,7 +104,7 @@ browser and the page's site for 30 seconds, and the extension watches that tab's
 
 ### `code`
 
-    → {"type":"code","id":5,"url":"https://github.com/","entitlement":"<JWT from passwordpie.com, if signed in>"}
+    → {"type":"code","id":5,"url":"https://github.com/"}
     ← {"type":"code","id":5,"otp":{"origin":"https://github.com","code":"492039","expiresIn":17}}
     ← {"type":"code","id":5,"premium":false}
     ← {"type":"code","id":5}
@@ -116,10 +112,11 @@ browser and the page's site for 30 seconds, and the extension watches that tab's
 Sent when a frame of the fill's origin shows an empty code field, at most once per fill. `url` is that frame's origin,
 written as in `tab`. The app answers a code only when the vault is unlocked, the pending code is for this browser and
 the URL's site (same rules as a fill: eTLD+1, no downgrade), it is less than 30 s old, the account still has that website
-and a code, and Premium holds: this Mac has it, or `entitlement` checks (ACCOUNTS.md, "Who decides").
+and a code, and this Mac has Premium (ACCOUNTS.md, "Who decides"). The request carries nothing about Premium, and any
+other field in it is ignored.
 `expiresIn` is the seconds left in the code's time step. The pending code is used up by the answer either way.
-`premium: false` means everything matched but there is no Premium: no code was computed. An empty answer means nothing
-was waiting. The token is not logged, kept or passed on by the app, the host or the appex.
+`premium: false` means everything matched but there is no Premium: no code was computed, and the extension shows its
+note with Upgrade. An empty answer means nothing was waiting.
 
     ← {"type":"tab","id":2,"wantIcon":true}
 
@@ -128,30 +125,18 @@ unlocked, when the tab's site (eTLD+1) has an account whose website host has no 
 at most once per site every 10 minutes (`SiteIconLedger`). On any other site the answer has no `wantIcon`, so the
 extension learns nothing new about the vault and sends nothing more.
 
-### `premium`
+### `upgrade`
 
-    → {"type":"premium","id":6,"pass":"<JWT from passwordpie.com, aud passwordpie-app>"}
-    ← {"type":"premium","id":6,"accepted":true}
-    ← {"type":"premium","id":6,"accepted":false}
-    → {"type":"premium","id":7,"drop":"signed-out" | "no-premium"}
-    ← {"type":"premium","id":7}
+    → {"type":"upgrade","id":6}
+    ← {"type":"upgrade","id":6}
 
-The direct app has no sign-in, so the extension hands it the pass it got from passwordpie.com, and takes it back when it
-signs out, gets a 401 (`signed-out`) or the site answers `premium: false` (`no-premium`). Exactly one of `pass` (not
-empty) and `drop` is present, or the answer is `bad-request`. When it is sent is in ACCOUNTS.md, "Handing Premium to the
-app".
+**Upgrade** was clicked in the note the extension shows after `premium: false`. The app opens its Premium window, the one
+a locked code's row opens: the plans through Apple in the App Store channel, Get Premium on passwordpie.com in the direct
+channel. Carries nothing. The answer only acknowledges it, the same locked or not and whatever this Mac has. The
+extension sends it only for a click in the frame it sent the note to, within 10 seconds, once per note.
 
-- The app checks the pass with `EntitlementToken.verifyTrusted` and the pass audience, and keeps it in its keychain under
-  the browser the peer check named (`pass.chrome`, `pass.safari`). `accepted: false`: it did not check, and nothing
-  stored changed. Taking it back deletes only that browser's pass; another browser's pass or an activation still counts.
-- Taken while the vault is locked too: Premium has nothing to do with the database.
-- The answer never carries the pass. The app, the host and the appex never log it.
-- Any process that reaches the bridge could send one, so it grants nothing but Premium, and only when passwordpie.com
-  signed it.
-- **The App Store app** answers `{"type":"error","id":6,"code":"bad-request"}` and keeps nothing; its Safari extension
-  has no account and never sends it.
-- **An app from before this message** answers the same error. The connection stays up and the extension treats it as
-  "not taken"; codes still fill through the `code` request's token. The released v0.1.0 has no bridge at all.
+The extension has no message that hands the app a proof of Premium. An extension from before 2026-11-11 sends
+`{"type":"premium","pass":…}`; the app answers `{"type":"error","code":"bad-request"}`, keeps nothing and unlocks nothing.
 
 ### `scan`
 
@@ -159,7 +144,7 @@ app".
     ← {"type":"scan","id":8}
     ← {"type":"error","id":8,"code":"bad-otp"}
 
-The user clicked **Scan QR code on this page** in the popup, and the extension read a two-step QR code there (see "Scanning
+The user chose Scan in a right-click menu, and the extension read a two-step QR code on the page (see "Scanning
 a QR code" below). `otpauth` is the QR code's text, at most 4,096 bytes; `url` is the tab's origin, written as in `tab`
 (a non-web page or none means no site). The app checks the link with `OTPAuthImport.parse` (TOTP only; secret, digits
 6–8, period above 0, SHA1/SHA256/SHA512) and answers:
@@ -230,15 +215,10 @@ option could save them as KeePass custom icons so they sync between devices; it 
     → {"type":"show","id":3}
     ← {"type":"show","id":3}
 
-"Open PasswordPie" was clicked in the extension's popup, its shortcut (`open-panel`, ⌥⇧P by default) was pressed, or
-the toolbar button was clicked while it has no popup. The button has a popup only while there is something to set up:
-`extension/src/lib/toolbar.ts` calls `action.setPopup` with `""` once the kept account has a session and Premium that
-has not run out (and always in the App Store build), so the click arrives as `action.onClicked`; that click also asks
-the site for the entitlement, as opening the popup does. It sets the popup back on a sign-out or when Premium is gone,
-and on each start of the background. The popup stays when the browser refused the Scan line in the button's menu
-(`contextMenus`, context `action`): that menu is then the only other place to scan from. In the popup, the first and
-largest button, shown signed in or not, sends `show`. The app opens its panel over the browser as its shortcut does, locked or not; a request
-while the panel is open brings it forward. Carries nothing and returns nothing. The popup closes itself.
+The toolbar button was clicked, or its shortcut (`open-panel`, ⌥⇧P by default) was pressed. The button has no popup
+(the manifest's `action` has no `default_popup`), so a click arrives as `action.onClicked`. The app opens its panel over
+the browser as its own shortcut does, locked or not; a request while the panel is open brings it forward. Carries nothing
+and returns nothing.
 
 When the app did not get the request, the Chrome host and the Safari extension handler, both inside `PasswordPie.app`,
 look for it by bundle identifier (`AppLaunch`). Not running: they start that app and send the request again for up to
@@ -258,7 +238,7 @@ Ask now: send a `tab` report for the active tab.
 
     ← {"type":"error","id":2,"code":"app-unavailable"}
 
-Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request` (also any message the app does not know, such as `premium` in the App Store app), `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `bad-otp` (`scan` only: the QR code's link did not check), `version`. The extension treats any error as "no fill", and an error to `premium` as "not taken".
+Codes: `app-unavailable` (host could not reach the app), `app-not-responding` (`show` only: the app runs but did not answer), `bad-request` (also any message the app does not know, such as an older extension's `premium`), `bad-icon` (`icon` only: not asked for, or not an acceptable PNG), `bad-otp` (`scan` only: the QR code's link did not check), `version`. The extension treats any error as "no fill".
 
 ## When a fill is allowed
 
@@ -284,34 +264,32 @@ All in `PasswordPieCore`, with tests:
 
 Content script → background, never leaving the browser: `{"type":"ready"}` when a content script starts (a frame that
 loads after the answer still gets the fill, if its origin matches), `{"type":"focus"}` from a top frame that regains focus
-(report now), `{"type":"filled","password":true}` when a password filled late (drop the copy), and `{"type":"code-field"}`
-when an empty code field showed up while the frame was watching. Background → content script:
+(report now), `{"type":"filled","password":true}` when a password filled late (drop the copy), `{"type":"code-field"}`
+when an empty code field showed up while the frame was watching, and `{"type":"upgrade"}` when Upgrade was clicked in the
+note about Premium. Background → content script:
 `{"type":"fill","origin","username","password"}`, `{"type":"watch-code","origin","waitMs"}` (look for a code field until
-then; carries nothing secret), `{"type":"code","origin","code"}` and `{"type":"code-hint","origin","upgradeUrl"?}` (no
-Premium: a small note in the page's corner for 8 seconds, in a closed shadow root, taking no focus). All are sent only to
+then; carries nothing secret), `{"type":"code","origin","code"}` and `{"type":"code-hint","origin"}` (no
+Premium: a small note in the page's corner for 8 seconds, in a closed shadow root, taking no focus, with an Upgrade
+button that is not a link). All are sent only to
 frames whose origin equals `origin`; the content script checks `location.origin` again and that it is the top frame or
 same-origin with it. The background accepts a `code-field` only from a frame of the waiting origin.
 
-Popup → background: `{"type":"scan-page"}` (scan the active tab, see below; answers what happened, never the link),
-`{"type":"open-panel"}` (send `show`), `{"type":"popup-status"}` (answers the site whose code was
-skipped for lack of Premium in the last 10 minutes, kept in memory only) and `{"type":"app-premium"}` (send `premium` now
-and answer `delivered`, `unreachable`, `refused` (an app from before the message), `invalid` (the app did not accept
-the pass, for example it ran out; the popup shows no line) or `none`). Accepted only from extension pages, which have no
-tab.
+There is no extension page, so nothing else sends the background a message.
 
 ### Scanning a QR code
 
-Only the person starts it: **Scan QR code on this page** in the popup or in the toolbar button's right-click menu, or
-**Scan QR code with PasswordPie** in the page's right-click menu (`contextMenus`, contexts `page`, `frame` and `image`,
-on http(s) pages). Nothing scans by itself, and a web page cannot ask for it (content scripts take runtime messages from
-the extension only, and none listens to the page). All three run the same scan of the active tab.
+Only the person starts it: **Scan QR code on this page** in the toolbar button's right-click menu, or
+**Scan QR code with PasswordPie** in the page's right-click menu (`contextMenus`: context `action` for the button;
+contexts `page`, `frame` and `image` on http(s) pages). Nothing scans by itself, and a web page cannot ask for it
+(content scripts take runtime messages from the extension only, and none listens to the page). Both run the same scan of
+the active tab. `extension/src/lib/toolbar.ts` adds the lines again each time the background starts; a line the browser
+refuses is left out and the others stay.
 
-The popup shows what happened in a line. A scan from a menu that handed nothing to the app sends the top frame
-`{"type":"scan-note","kind":"none"}` (the outcome's name, never the link), and its content script shows that outcome's
-line in the corner for 8 seconds, as the Premium note. If no content script answers (a browser page), the button gets
-the badge "!" and the line as its title for 6 seconds. The button's menu also has **Open passwordpie.com** (a new tab,
-nothing fetched) and, outside the App Store build, **Account…**, which gives the button its popup for the moment
-`action.openPopup` runs, or opens the popup page in a tab where that fails.
+A scan that reached the app shows nothing in the browser: the app's Add Two-Step Code window is the answer. One that
+handed nothing over sends the top frame `{"type":"scan-note","kind":"none"}` (the outcome's name, never the link), and
+its content script shows that outcome's line in the corner for 8 seconds, as the Premium note. If no content script
+answers (a browser page), the button gets the badge "!" and the line as its title for 6 seconds. The button's menu also
+has **Open passwordpie.com** (a new tab, nothing fetched).
 
 1. The background asks the active tab's top frame (`{"type":"qr-images"}`, frame 0). Its content script
    (`extension/src/lib/qr-page.ts`) takes up to 8 `<img>` (including `data:` URLs), `<canvas>` and `<svg>` elements that
@@ -324,11 +302,11 @@ nothing fetched) and, outside the App Store build, **Account…**, which gives t
    This needs no new permission: `<all_urls>` already covers it. If the browser refuses (Safari may; untested there), only
    step 1 counts.
 4. The first `otpauth://totp` link goes to the app as `scan`. An `hotp` link, a Google Authenticator export or any other
-   QR code is reported in the popup and sends nothing. With no app answering, the background sends `show` once (which starts
+   QR code is reported in the note and sends nothing. With no app answering, the background sends `show` once (which starts
    an installed app) and tries again.
 
-The pictures and the link live only in the service worker's memory for that click: nothing is written to `storage`,
-logged, or sent anywhere but the native app.
+The pictures and the link live only in the service worker's memory for that click: nothing is stored, logged, or sent
+anywhere but the native app.
 
 ### Two-step codes
 
@@ -339,22 +317,12 @@ only when no username or password field is on the page, a lone numeric field of 
 sign-in fields, hidden, disabled or read-only fields, or a field the user already typed in. It only runs after a fill of
 an account with a code, on that origin, for 30 seconds.
 
-## Signing in on passwordpie.com
-
-The popup has no sign-in form: **Sign in on passwordpie.com** opens the site's `/extension/connect`, and after the
-person signs in there the page hands the content script a bearer session over `window.postMessage`. The content
-script listens only in the top frame of that page on the build's site, takes only that window's own messages from that
-origin, and the background keeps the token only after `get-session` confirms it. The App Store build has none of this
-code and sends the site nothing (`extension/tests/store-build.test.ts` checks the bundle). The messages and rules are in
-[ACCOUNTS.md](ACCOUNTS.md), "Signing in (extension)".
-
 ## Secrets
 
-- Two-step codes, scanned QR codes and entitlement tokens are never logged; codes and scans are never written to `storage`. The token is kept in
-  `browser.storage.local`, which the site issued it for, and handed to the direct app, which keeps it in its keychain. It
-  unlocks nothing but Premium.
+- Two-step codes and scanned QR codes are never logged and never stored. The extension has no `storage` permission and
+  keeps nothing between runs of its service worker: no account, no session, no token.
 - Credentials exist only in memory: in the app, in the answer frame, in the relay's buffer, in the extension's service
-  worker and content script, and then in the page's fields. They are never logged, never written to `storage`, and never
+  worker and content script, and then in the page's fields. They are never logged, never stored by the extension, and never
   written to disk by the app. The host and appex log only sizes and error codes.
 - Tab URLs are used for matching, the "this site" list and `wantIcon` only: held in memory, never logged, never saved.
   A cached icon is the only trace of a visit on disk, and only for a site the vault already has an account on.
@@ -442,16 +410,13 @@ needs Accessibility to be granted already and never asks for it.
   framing, the "this site" list, site icon lookup order, when `wantIcon` is set, and which `icon` requests are refused.
 - `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures
   (autocomplete hints, forms with no attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin
-  refusal), code fields (one field, split boxes, decoys), the code flow in the background, the account and redeem calls,
-  the popup, signing in on the site (`site-connect.test.ts`: which page and frame listen, which messages count;
-  `site-session.test.ts`: the token check before it is kept), and the App Store bundle having none of it
-  (`store-build.test.ts`).
+  refusal), code fields (one field, split boxes, decoys), the code flow in the background, the note and its Upgrade, the
+  right-click menus (`toolbar.test.ts`), and both bundles having no account, no request to the site, no `storage` and no
+  popup (`store-build.test.ts`).
 - `swift test --filter 'Entitlement|BridgeCode|BrowserCodeAccess'`: the token check (good, wrong key, changed claims or
   header, expired, wrong `aud` or `iss`, not Premium) and the `code` request rules.
-- `swift test --filter 'DirectPremium|BridgePremium|BridgePassRelay'`: the `premium` request, what the direct app keeps,
-  and that the App Store app ignores it (`PP_MAS=1 swift test --scratch-path .build-mas` runs that side).
-- `cd extension && pnpm test tests/pass-relay.test.ts`: when the extension sends `premium`, taking it back, and the App
-  Store build sending nothing.
+- `swift test --filter 'DirectPremium|BridgePremium|BridgeUpgrade'`: what the direct app keeps, the `upgrade` request, and
+  that neither app takes a pass from an extension (`PP_MAS=1 swift test --scratch-path .build-mas` runs the App Store side).
 - `swift test --filter 'OTPAuthParsing|OTPScanMatch|QRCodeReader|BridgeScan|OTPScanSession'`: the link checks, which items
   come first, reading a QR code generated in the test with Vision, the `scan` request and `expectCode`, the old code kept
   in the item's history, and the confirmation (locked, replace, expiry, a newer scan).

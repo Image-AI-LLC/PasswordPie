@@ -3,7 +3,7 @@
 // the app sent. No React here: the content script runs on every page and must stay small.
 import { codeFieldIsEmpty, fillCode, findCodeField } from './code-fields';
 import { addNote } from './page-note';
-import type { CodeHintMessage, FrameMessage } from './protocol';
+import type { FrameMessage } from './protocol';
 
 export const CODE_POLL_MS = 250;
 export const HINT_MS = 8_000;
@@ -16,6 +16,8 @@ export interface CodeEnv {
   frameAllowed: () => boolean;
   /** An empty code field is on the page: the background asks the app for the code. */
   notifyCodeField: () => void;
+  /** "Upgrade" was clicked in the note about Premium: the background asks the app to open its Premium window. */
+  requestUpgrade: () => void;
   now?: () => number;
 }
 
@@ -25,7 +27,7 @@ export class CodeFiller {
   private queued: ReturnType<typeof setTimeout> | undefined;
   private deadline = 0;
   private reported = false;
-  private hint: { host: HTMLElement; timer: ReturnType<typeof setTimeout>; text: string; link?: string } | undefined;
+  private hint: { host: HTMLElement; timer: ReturnType<typeof setTimeout>; text: string; action: HTMLButtonElement | undefined } | undefined;
 
   constructor(private readonly env: CodeEnv) {}
 
@@ -41,7 +43,7 @@ export class CodeFiller {
         return this.fill(msg.code);
       case 'code-hint':
         this.reported = false;
-        this.showHint(msg);
+        this.showHint();
         return false;
     }
   }
@@ -55,8 +57,9 @@ export class CodeFiller {
     return this.hint?.text;
   }
 
-  hintLink(): string | undefined {
-    return this.hint?.link;
+  /** The note's Upgrade button. It is in a closed shadow root, so the page cannot reach it. */
+  hintAction(): HTMLButtonElement | undefined {
+    return this.hint?.action;
   }
 
   private now(): number {
@@ -114,18 +117,24 @@ export class CodeFiller {
     return fillCode(field, code);
   }
 
-  /** A small note in the corner (page-note.ts). Takes no focus. */
-  private showHint(msg: CodeHintMessage): void {
+  /** A small note in the corner (page-note.ts). Takes no focus. Upgrade closes it and asks the app for its Premium window. */
+  private showHint(): void {
     this.hideHint();
     const text = 'PasswordPie Premium fills two-step codes for you.';
-    const host = addNote(this.env.document, {
+    const { host, action } = addNote(this.env.document, {
       id: HINT_HOST_ID,
       text,
-      ...(msg.upgradeUrl ? { link: { href: msg.upgradeUrl, label: 'Upgrade' } } : {}),
+      action: {
+        label: 'Upgrade',
+        run: () => {
+          this.hideHint();
+          this.env.requestUpgrade();
+        },
+      },
       onClose: () => this.hideHint(),
     });
     const timer = setTimeout(() => this.hideHint(), HINT_MS);
-    this.hint = { host, timer, text, ...(msg.upgradeUrl ? { link: msg.upgradeUrl } : {}) };
+    this.hint = { host, timer, text, action };
   }
 
   private hideHint(): void {

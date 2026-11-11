@@ -1,15 +1,16 @@
 # PasswordPie browser extension
 
-Fills the account picked in the PasswordPie panel into the page, in Chrome and Safari, and with Premium the two-step code
-too. It also carries your passwordpie.com account: you sign in on the site (the popup only opens its connect page), and
-since the PasswordPie app has no sign-in, the extension hands it the account's Premium. The design (messages, security rules) is in [docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md), the account
-and Premium in [docs/ACCOUNTS.md](../docs/ACCOUNTS.md); what the user sees is "Fill in the browser" and "Premium in the
-browser" in [docs/UX.md](../docs/UX.md).
+Fills the account picked in the PasswordPie panel into the page, in Chrome and Safari, and the two-step code too when
+the app has Premium. It is a bridge between the browser and the PasswordPie app on the same Mac, and nothing more: it has
+no account, signs in nowhere, asks passwordpie.com nothing and stores nothing. A click on its toolbar button opens
+PasswordPie; its right-click menus scan a two-step QR code. The design (messages, security rules) is in
+[docs/BROWSER_EXTENSION.md](../docs/BROWSER_EXTENSION.md), who decides about Premium in
+[docs/ACCOUNTS.md](../docs/ACCOUNTS.md); what the user sees is "Fill in the browser", "Premium in the browser" and "Scan
+a two-step QR code" in [docs/UX.md](../docs/UX.md).
 
-Laid out like [mkext](https://mkext.dev) (Apache-2.0): [WXT](https://wxt.dev), a React 19 + Tailwind + TanStack Query
-popup, and a Better Auth bearer session that passwordpie.com hands over after you sign in there (plain `fetch`, no auth
-client). The content script stays plain TypeScript with no
-framework, because it runs on every page. One source, two builds.
+[WXT](https://wxt.dev) and plain TypeScript: a background service worker and a content script, with no extension pages
+and no UI framework. The content script runs on every page, so it stays small. One source, two builds, and the Safari
+build is the same in the direct download and in the App Store app.
 
 ## Build
 
@@ -20,21 +21,15 @@ framework, because it runs on every page. One source, two builds.
     pnpm build:safari    # → .output/safari-mv3
     pnpm zip:chrome-store  # → .output/passwordpie-extension-<version>-chrome-store.zip, for the Chrome Web Store
 
-Build settings (environment variables at build time):
+There are no build settings: the extension knows one address, the download page the toolbar button opens when the app is
+not installed.
 
-| Variable | Default | |
-|---|---|---|
-| `WXT_PP_SITE_URL` | `https://passwordpie.com` | The site for sign-in and Premium. `http://localhost:8787` for the mock. |
-| `WXT_PP_STORE` | unset | `mas`: the Safari build inside the App Store app, with no account, no request to the site, no upgrade link, no key field and no `storage` permission (`make mas-dev`). |
+## Demo pages
 
-## Testing against the mock site
+    node dev/mock-site.mjs    # http://localhost:8787/demo/login: a sign-in, then a page with six code boxes
 
-    node dev/mock-site.mjs                                   # http://localhost:8787, see the comment at its top
-    WXT_PP_SITE_URL=http://localhost:8787 pnpm build:chrome
-
-Click **Sign in on localhost:8787** in the popup: the mock's sign-in page takes any email with the password `password`,
-then its `/extension/connect` page hands the extension a session. `PPIE-TEST-TEST-TEST` redeems once. Tokens are signed with the test key
-in `dev/test-key.json`, which only debug and `make install` builds of the app trust. The demo script is in docs/UX.md,
+For Premium in the app, open an activation link (`node ../Scripts/mint-activation-link.mjs`), signed with the test key in
+`dev/test-key.json`, which only debug and `make install` builds of the app trust. The demo script is in docs/UX.md,
 "Premium in the browser".
 
 ## Chrome
@@ -66,22 +61,16 @@ transparent background with a see-through keyhole. Regenerate the PNGs after cha
 
 ## Layout
 
-- `src/app/background.ts`: wires browser events, the popup's messages, the panel shortcut, the daily entitlement
-  refresh and the storage changes that drive `PassRelay` to `FillController`, and takes the session the connect page
-  hands over (`acceptSiteSession`).
-- `src/app/content.ts`: wires fill and code messages and focus events to `PageFiller` and `CodeFiller`, and on the
-  site's connect page starts `startSiteConnect`. No React.
-- `src/lib/toolbar.ts`: what a click on the toolbar button does (the popup, or PasswordPie directly once the account
-  has Premium), and the right-click menus: scan, the website and the account on the button, scan on the page.
-- `src/app/popup/`: the toolbar popup page; `src/components/popup.tsx` is the UI, driven through `PopupApi`.
-- `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting, and the code flow
-  (watch for a code field, ask the app with the entitlement token, fill or hint).
-- `src/lib/pass-relay.ts`: hands the account's pass to the app (`premium`) on sign-in, renewal and connect, and takes it
-  back on sign-out, 401 or `premium: false`. Not in the App Store build.
-- `src/lib/account.ts`, `src/lib/auth.ts`, `src/lib/config.ts`: the passwordpie.com session, entitlement and keys.
-- `src/lib/site-connect.ts`, `src/lib/site-session.ts`: signing in on passwordpie.com. The content script's half of the
-  connect page's `postMessage` protocol, and the background's check of the token before it keeps it. Not in the App
-  Store build (`tests/store-build.test.ts`).
-- `src/lib/code-fields.ts`, `src/lib/code-filler.ts`: finding and filling two-step code fields, and the page note.
+- `src/app/background.ts`: wires browser events, the toolbar button, the panel shortcut and the right-click menus to
+  `FillController` and `Toolbar`.
+- `src/app/content.ts`: wires fill and code messages and focus events to `PageFiller` and `CodeFiller`, and shows the
+  note for a scan that found nothing.
+- `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting, the code flow
+  (watch for a code field, ask the app, fill or hint), and Upgrade in the hint (asks the app for its Premium window).
+- `src/lib/toolbar.ts`: the right-click menus: scan and the website on the button, scan on the page, and what a scan
+  that handed nothing over says.
+- `src/lib/qr-page.ts`, `src/lib/qr-scan.ts`, `src/lib/scan-outcome.ts`: reading a two-step QR code from the page.
+- `src/lib/page-note.ts`: the small note in the corner of a page.
+- `src/lib/code-fields.ts`, `src/lib/code-filler.ts`: finding and filling two-step code fields, and the note about Premium.
 - `src/lib/native-channel.ts`: `ChromeNativeChannel` (one port, ids, timeout, reconnect) and `SafariNativeChannel`.
 - `src/lib/fields.ts`, `src/lib/page-filler.ts`: finding and filling sign-in fields, waiting for two-step sign-in.

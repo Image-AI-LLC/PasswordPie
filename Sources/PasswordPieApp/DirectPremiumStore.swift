@@ -25,9 +25,9 @@ enum DirectPremiumActivity: Equatable {
     }
 }
 
-/// Who has Premium in the direct channel: a pass the browser extension handed over, or an activation link from the
-/// website. The app signs in to nothing and asks no site; it trusts the signature on what it holds, never the sender. The
-/// rules are `DirectPremium` in PasswordPieCore. The App Store channel has `AppStorePremiumStore` instead.
+/// Who has Premium in the direct channel: an activation link from the website, where Premium is bought. The app signs in
+/// to nothing and asks no site; it trusts the signature on what it holds, never the sender. The browser extension brings
+/// nothing. The rules are `DirectPremium` in PasswordPieCore. The App Store channel has `AppStorePremiumStore` instead.
 @MainActor
 final class DirectPremiumStore: ObservableObject {
     @Published private(set) var premium = DirectPremium()
@@ -38,7 +38,6 @@ final class DirectPremiumStore: ObservableObject {
     var presentPaywall: (() -> Void)?
 
     private let secrets: SecretStore
-    private let verifyPass: TokenCheck
     private let verifyActivation: TokenCheck
     private let vault: ActivationVault
     /// The direct channel's switch (`directChannelCodesAreFree`). Codes in the app only; never the browser.
@@ -52,13 +51,11 @@ final class DirectPremiumStore: ObservableObject {
 
     init(
         secrets: SecretStore,
-        verifyPass: @escaping TokenCheck,
         verifyActivation: @escaping TokenCheck,
         now: @escaping () -> Date = Date.init,
         freeCodes: Bool = false
     ) {
         self.secrets = secrets
-        self.verifyPass = verifyPass
         self.verifyActivation = verifyActivation
         self.now = now
         self.freeCodes = freeCodes
@@ -71,7 +68,7 @@ final class DirectPremiumStore: ObservableObject {
         expiryTask?.cancel()
     }
 
-    /// Read at every use, so a pass or an activation stops counting the moment it ends, even with no event.
+    /// Read at every use, so an activation stops counting the moment it ends, even with no event.
     var hasPremium: Bool { freeCodes || ownPremium }
 
     /// What this Mac holds, whatever the direct channel's switch says. What the browser bridge uses.
@@ -81,7 +78,7 @@ final class DirectPremiumStore: ObservableObject {
 
     // MARK: Lifecycle
 
-    /// Reads the keychain and looks again when the first proof runs out. Call once at launch.
+    /// Reads the keychain and looks again when the activation runs out. Call once at launch.
     func start() {
         guard !started else { return }
         started = true
@@ -98,27 +95,17 @@ final class DirectPremiumStore: ObservableObject {
     private func load() {
         guard !loaded else { return }
         loaded = true
-        // An earlier build signed in inside the app. Its session and email unlock nothing now; its pass counts until it ends.
-        secrets.delete(.legacySession)
-        secrets.delete(.legacyEmail)
-        var passes: [PassSource: String] = [:]
-        for source in PassSource.allCases {
-            if let token = secrets.read(source.secret) { passes[source] = token }
-        }
-        let result = DirectPremium.load(
-            passes: passes,
-            activation: vault.storedToken(),
-            now: now(),
-            verifyPass: verifyPass,
-            verifyActivation: verifyActivation
-        )
-        for slot in result.discard { secrets.delete(slot.secret) }
+        // Earlier builds signed in inside the app, or took a pass from the browser extension. None of it unlocks anything
+        // now: only an activation does.
+        for secret in PremiumSecret.legacy { secrets.delete(secret) }
+        let result = DirectPremium.load(activation: vault.storedToken(), now: now(), verify: verifyActivation)
+        if result.discard { secrets.delete(.activation) }
         vault.adopt(result.premium.activation)
         premium = result.premium
         lapse = result.lapse
     }
 
-    /// Looks again: at launch, when the menu opens, and when the earliest proof runs out. Nothing here talks to a site.
+    /// Looks again: at launch, when the menu opens, and when the activation runs out. Nothing here talks to a site.
     func refresh(force: Bool = false) async {
         guard started else { return }
         reevaluate()
@@ -127,19 +114,17 @@ final class DirectPremiumStore: ObservableObject {
     func reevaluate() {
         load()
         var next = premium
-        let expiry = next.expire(now: now())
-        if !expiry.removed.isEmpty {
-            for slot in expiry.removed where slot != .activation { secrets.delete(slot.secret) }
-            if expiry.removed.contains(.activation) { vault.forgetIfExpired(now: now()) }
+        if let ended = next.expire(now: now()) {
+            vault.forgetIfExpired(now: now())
             premium = next
-            if let ended = expiry.lapse { lapse = ended }
+            lapse = ended
             // A link's "worked" beside an activation that has since run out would contradict the status.
-            if expiry.removed.contains(.activation), case .activated = activity { activity = .idle }
+            if case .activated = activity { activity = .idle }
         }
         scheduleExpiry()
     }
 
-    /// Nothing announces that a proof ran out, so look again then.
+    /// Nothing announces that the activation ran out, so look again then.
     private func scheduleExpiry() {
         expiryTask?.cancel()
         expiryTask = nil
@@ -150,30 +135,6 @@ final class DirectPremiumStore: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.reevaluate()
         }
-    }
-
-    // MARK: From the browser extension
-
-    /// A `premium` request from `source`'s extension. A pass is kept only when it checks; one that does not changes
-    /// nothing. Taking it back drops only what this browser delivered. Returns whether a pass was kept.
-    @discardableResult
-    func receive(_ relay: PassRelay, from source: PassSource) -> Bool {
-        reevaluate()
-        var next = premium
-        switch relay {
-        case .pass(let token):
-            guard next.receivePass(token, from: source, now: now(), verify: verifyPass) else { return false }
-            secrets.write(token, for: source.secret)
-            premium = next
-            lapse = nil
-        case .drop(let reason):
-            let ended = next.dropPass(from: source, reason: reason, now: now())
-            secrets.delete(source.secret)
-            if next != premium { premium = next }
-            if let ended { lapse = ended }
-        }
-        scheduleExpiry()
-        return true
     }
 
     // MARK: Activation from the website
@@ -202,8 +163,8 @@ final class DirectPremiumStore: ObservableObject {
         linkSpokeAt = now()
     }
 
-    /// Runs `action` if Premium is here. Otherwise opens the Premium window. There is nothing to wait for: the proofs are
-    /// on this Mac.
+    /// Runs `action` if Premium is here. Otherwise opens the Premium window. There is nothing to wait for: the proof is on
+    /// this Mac.
     func requestUnlock(then action: @escaping () -> Void = {}) {
         if hasPremium {
             action()
@@ -219,22 +180,4 @@ final class DirectPremiumStore: ObservableObject {
     }
 }
 
-extension PassSource {
-    var secret: PremiumSecret {
-        switch self {
-        case .chrome: .chromePass
-        case .safari: .safariPass
-        case .appSignIn: .appSignInPass
-        }
-    }
-}
-
-extension DirectPremiumSlot {
-    var secret: PremiumSecret {
-        switch self {
-        case .pass(let source): source.secret
-        case .activation: .activation
-        }
-    }
-}
 #endif

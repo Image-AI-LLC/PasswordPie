@@ -192,7 +192,7 @@ final class FakeSecrets: SecretStore {
 extension DirectPremiumStore {
     /// A direct store over `secrets` that trusts only `PassKey`.
     static func testing(secrets: FakeSecrets, now: @escaping () -> Date = { PremiumFixtures.now }, freeCodes: Bool = false) -> DirectPremiumStore {
-        DirectPremiumStore(secrets: secrets, verifyPass: PassKey.verify, verifyActivation: PassKey.verifyActivation, now: now, freeCodes: freeCodes)
+        DirectPremiumStore(secrets: secrets, verifyActivation: PassKey.verifyActivation, now: now, freeCodes: freeCodes)
     }
 }
 #endif

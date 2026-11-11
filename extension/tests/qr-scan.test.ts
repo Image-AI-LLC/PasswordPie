@@ -1,11 +1,9 @@
 import QRCode from 'qrcode';
 import { describe, expect, it } from 'vitest';
 import { MAX_PAGE_IMAGES, pageQrCandidates, type Box } from '../src/lib/qr-page';
-import { parseScanOutcome } from '../src/lib/scan-outcome';
 import {
   classifyQrText,
   decodeRgba,
-  otpauthLabel,
   scanActiveTab,
   type ScanDeps,
 } from '../src/lib/qr-scan';
@@ -42,12 +40,6 @@ describe('classifyQrText', () => {
     expect(classifyQrText('otpauth-migration://offline?data=abc')).toBe('migration');
     expect(classifyQrText('https://example.com/2fa')).toBe('other');
     expect(classifyQrText('otpauth://totpx/x')).toBe('other');
-  });
-
-  it('reads the issuer and account for the popup', () => {
-    expect(otpauthLabel(DEMO)).toEqual({ issuer: 'Demo', account: 'ada' });
-    expect(otpauthLabel('otpauth://totp/ACME%20Co:jane%40acme.com?secret=A')).toEqual({ issuer: 'ACME Co', account: 'jane@acme.com' });
-    expect(otpauthLabel('not a url')).toEqual({ issuer: '', account: '' });
   });
 });
 
@@ -122,7 +114,7 @@ describe('scanActiveTab', () => {
 
   it('hands the page’s two-step link and only its origin to the app', async () => {
     const { deps: d, log } = deps();
-    expect(await scanActiveTab(d)).toEqual({ kind: 'sent', issuer: 'Demo', account: 'ada' });
+    expect(await scanActiveTab(d)).toEqual({ kind: 'sent' });
     expect(log).toEqual([`scan ${DEMO} https://example.com/`]);
   });
 
@@ -195,12 +187,5 @@ describe('scanActiveTab', () => {
       const { deps: d } = deps({ sendScan: async () => answer, startApp: async () => false });
       expect(await scanActiveTab(d)).toEqual({ kind });
     }
-  });
-
-  it('the popup accepts only well-formed outcomes', () => {
-    expect(parseScanOutcome({ kind: 'sent', issuer: 'Demo', account: 'ada' })).toEqual({ kind: 'sent', issuer: 'Demo', account: 'ada' });
-    expect(parseScanOutcome({ kind: 'none' })).toEqual({ kind: 'none' });
-    expect(parseScanOutcome({ kind: 'toString' })).toEqual({ kind: 'unreachable' });
-    expect(parseScanOutcome(undefined)).toEqual({ kind: 'unreachable' });
   });
 });

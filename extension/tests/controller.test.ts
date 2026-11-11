@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FillController } from '../src/lib/controller';
+import { FillController, UPGRADE_WINDOW_MS } from '../src/lib/controller';
 import { FakeChannel, FakeTabs } from './fakes';
 
 const FILL = { origin: 'https://example.com', username: 'octocat', password: 's3cret' };
@@ -366,7 +366,6 @@ describe('FillController site icons', () => {
 
 describe('FillController two-step codes', () => {
   const ORIGIN = 'https://example.com';
-  let token: string | undefined;
 
   function answer(code: unknown): void {
     channel.answer = (msg) => {
@@ -374,15 +373,6 @@ describe('FillController two-step codes', () => {
       if (msg.type === 'code') return code;
       return { type: 'hello', id: 1, version: 1, locked: false };
     };
-  }
-
-  function make(upgradeUrl?: string): void {
-    controller = new FillController({
-      channel,
-      tabs,
-      account: { entitlementToken: async () => token },
-      ...(upgradeUrl ? { upgradeUrl } : {}),
-    });
   }
 
   async function filled(): Promise<void> {
@@ -397,11 +387,6 @@ describe('FillController two-step codes', () => {
   function watches(): unknown[] {
     return tabs.frameMessages.filter((m) => m.msg.type === 'watch-code').map((m) => m.frameId);
   }
-
-  beforeEach(() => {
-    token = 'jwt-1';
-    make('https://passwordpie.com/pricing');
-  });
 
   it('asks the frames to watch for a code field after filling an account with a code', async () => {
     answer({ type: 'code', id: 2, otp: { origin: ORIGIN, code: '123456', expiresIn: 20 } });
@@ -436,22 +421,13 @@ describe('FillController two-step codes', () => {
     expect(watches()).toEqual([]);
   });
 
-  it('asks the app with the token and fills the answer into the frame that found the field', async () => {
-    answer({ type: 'code', id: 2, otp: { origin: ORIGIN, code: '123456', expiresIn: 20 } });
-    await filled();
-    codeField();
-    await settle(0);
-    expect(channel.sent.filter((m) => m.type === 'code')).toEqual([{ type: 'code', url: `${ORIGIN}/`, entitlement: 'jwt-1' }]);
-    expect(tabs.frameMessages.at(-1)).toEqual({ tabId: 1, frameId: 0, msg: { type: 'code', origin: ORIGIN, code: '123456' } });
-  });
-
-  it('asks without a token when signed out: the app may have Premium itself', async () => {
-    token = undefined;
+  it('asks the app, carrying nothing about Premium, and fills the answer into the frame that found the field', async () => {
     answer({ type: 'code', id: 2, otp: { origin: ORIGIN, code: '123456', expiresIn: 20 } });
     await filled();
     codeField();
     await settle(0);
     expect(channel.sent.filter((m) => m.type === 'code')).toEqual([{ type: 'code', url: `${ORIGIN}/` }]);
+    expect(tabs.frameMessages.at(-1)).toEqual({ tabId: 1, frameId: 0, msg: { type: 'code', origin: ORIGIN, code: '123456' } });
   });
 
   it('asks once per fill', async () => {
@@ -465,35 +441,50 @@ describe('FillController two-step codes', () => {
     expect(channel.sent.filter((m) => m.type === 'code')).toHaveLength(1);
   });
 
-  it('shows the hint without Premium and remembers the site for the popup', async () => {
+  function upgradeClicked(frameId = 0, tabId = 1): void {
+    controller.runtimeMessage({ type: 'upgrade' }, { tab: { id: tabId, url: `${ORIGIN}/two-factor`, active: true }, frameId, url: `${ORIGIN}/two-factor` });
+  }
+
+  function upgradesSent(): number {
+    return channel.sent.filter((m) => m.type === 'upgrade').length;
+  }
+
+  async function hinted(): Promise<void> {
     answer({ type: 'code', id: 2, premium: false });
     await filled();
     codeField();
     await settle(0);
-    expect(tabs.frameMessages.at(-1)?.msg).toEqual({ type: 'code-hint', origin: ORIGIN, upgradeUrl: 'https://passwordpie.com/pricing' });
-    expect(controller.popupStatus()).toEqual({ codeSkippedOn: 'example.com' });
+  }
+
+  it('shows the hint when the app has no Premium, with no link of its own', async () => {
+    await hinted();
+    expect(tabs.frameMessages.at(-1)).toEqual({ tabId: 1, frameId: 0, msg: { type: 'code-hint', origin: ORIGIN } });
   });
 
-  it('forgets the skipped code once a code fills, so the popup does not say it was not filled', async () => {
-    answer({ type: 'code', id: 2, premium: false });
-    await filled();
-    codeField();
-    await settle(0);
-    expect(controller.popupStatus()).toEqual({ codeSkippedOn: 'example.com' });
-    answer({ type: 'code', id: 2, otp: { origin: ORIGIN, code: '123456', expiresIn: 20 } });
-    await filled();
-    codeField();
-    await settle(0);
-    expect(controller.popupStatus()).toEqual({});
+  it("Upgrade in the hint asks the app for its Premium window, once", async () => {
+    await hinted();
+    upgradeClicked();
+    upgradeClicked();
+    expect(channel.sent.filter((m) => m.type === 'upgrade')).toEqual([{ type: 'upgrade' }]);
   });
 
-  it('the App Store build hint has no upgrade link', async () => {
-    make();
-    answer({ type: 'code', id: 2, premium: false });
-    await filled();
-    codeField();
-    await settle(0);
-    expect(tabs.frameMessages.at(-1)?.msg).toEqual({ type: 'code-hint', origin: ORIGIN });
+  it('a page cannot ask for the Premium window: only the hinted frame may, and only while the hint shows', async () => {
+    upgradeClicked();
+    expect(upgradesSent()).toBe(0);
+    await hinted();
+    upgradeClicked(3);
+    upgradeClicked(0, 2);
+    expect(upgradesSent()).toBe(0);
+    await settle(UPGRADE_WINDOW_MS + 1);
+    upgradeClicked();
+    expect(upgradesSent()).toBe(0);
+  });
+
+  it('a closed tab takes its hint with it', async () => {
+    await hinted();
+    controller.tabRemoved(1);
+    upgradeClicked();
+    expect(upgradesSent()).toBe(0);
   });
 
   it('ignores a code field in a frame of another origin, or after the window', async () => {
@@ -537,14 +528,5 @@ describe('FillController two-step codes', () => {
     codeField();
     await settle(0);
     expect(channel.sent.filter((m) => m.type === 'code')).toEqual([]);
-  });
-
-  it('the skipped site fades from the popup after ten minutes', async () => {
-    answer({ type: 'code', id: 2, premium: false });
-    await filled();
-    codeField();
-    await settle(0);
-    await settle(10 * 60_000 + 1);
-    expect(controller.popupStatus()).toEqual({});
   });
 });

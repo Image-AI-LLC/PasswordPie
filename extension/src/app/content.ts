@@ -1,12 +1,10 @@
 import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { CodeFiller } from '@/lib/code-filler';
-import { SITE_URL } from '@/lib/config';
 import { isScanNoteMessage, showScanNote } from '@/lib/page-note';
 import { PageFiller, sameOriginWithTop } from '@/lib/page-filler';
 import { parseFillMessage, parseFrameMessage, type ContentMessage } from '@/lib/protocol';
 import { isQrImagesMessage, pageQrImages } from '@/lib/qr-page';
-import { startSiteConnect, type ConnectResult, type SiteSessionMessage } from '@/lib/site-connect';
 import { pageIconLinks, parseIconLinksMessage } from '@/lib/site-icon';
 
 function send(msg: ContentMessage): void {
@@ -31,17 +29,18 @@ export default defineContentScript({
       origin: location.origin,
       frameAllowed: () => sameOriginWithTop(window),
       notifyCodeField: () => send({ type: 'code-field' }),
+      requestUpgrade: () => send({ type: 'upgrade' }),
     });
 
     browser.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse: (answer: unknown) => void) => {
       // Only the background sends runtime messages here; a web page cannot. The top frame alone answers, and only when
-      // the person chose Scan, in the popup or in a right-click menu.
+      // the person chose Scan in a right-click menu.
       if (isQrImagesMessage(raw)) {
         if (window.top !== window) return false;
         pageQrImages(document, window).then(sendResponse, () => sendResponse([]));
         return true; // answers later
       }
-      // Why a scan from a right-click menu handed nothing over. True tells the background the note is showing.
+      // Why a scan handed nothing over. True tells the background the note is showing.
       if (isScanNoteMessage(raw)) {
         if (window.top !== window) return false;
         showScanNote(document, raw.kind);
@@ -65,17 +64,6 @@ export default defineContentScript({
     });
 
     send({ type: 'ready' });
-
-    // Signing in on passwordpie.com: only on the site's connect page, in the top frame (site-connect.ts). Spelled out so
-    // Vite folds it: the App Store build has no account, and this code is not in it.
-    if (import.meta.env.WXT_PP_STORE !== 'mas') {
-      startSiteConnect(window, SITE_URL, async (token) => {
-        const ask: SiteSessionMessage = { type: 'site-session', token };
-        const answer: unknown = await browser.runtime.sendMessage(ask);
-        const result = answer as Partial<{ ok: boolean; email: unknown }> | undefined;
-        return result?.ok === true && typeof result.email === 'string' ? ({ ok: true, email: result.email } satisfies ConnectResult) : { ok: false };
-      });
-    }
 
     if (window.top === window) {
       window.addEventListener('focus', () => send({ type: 'focus' }));

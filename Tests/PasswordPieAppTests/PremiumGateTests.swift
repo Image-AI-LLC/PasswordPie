@@ -32,7 +32,7 @@ final class PremiumGateTests: XCTestCase {
 
     private func session(premium: Bool, entries: [VaultEntry] = [PremiumFixtures.login()]) async -> VaultSession {
         #if PP_DIRECT
-        if premium { secrets.values[.chromePass] = PassKey.pass(expires: PremiumFixtures.now.addingTimeInterval(7 * 86400)) }
+        if premium { secrets.values[.activation] = ActivationLink.token(in: PassKey.activationLink(expires: PremiumFixtures.now.addingTimeInterval(7 * 86400))) }
         let store = PremiumStore.testing(secrets: secrets, now: { [unowned self] in self.clock })
         store.start()
         #else
@@ -53,7 +53,7 @@ final class PremiumGateTests: XCTestCase {
     /// Premium arrives from wherever this channel gets it.
     private func grantPremium(_ session: VaultSession) async {
         #if PP_DIRECT
-        session.premium.receive(.pass(PassKey.pass(expires: PremiumFixtures.now.addingTimeInterval(7 * 86400))), from: .chrome)
+        session.premium.activate(PassKey.activationLink(expires: PremiumFixtures.now.addingTimeInterval(7 * 86400)))
         #else
         backend.transactions = [PremiumFixtures.lifetime]
         await session.premium.refresh(force: true)
@@ -155,35 +155,35 @@ final class PremiumGateTests: XCTestCase {
     }
 
     #if PP_DIRECT
-    /// Opening the menu looks again, so a pass that ran out while the Mac slept stops counting at once.
+    /// Opening the menu looks again, so an activation that ran out while the Mac slept stops counting at once.
     func testOpeningTheMenuLooksAgain() async throws {
         let session = await session(premium: true)
         XCTAssertTrue(session.premium.hasPremium)
         clock = PremiumFixtures.now.addingTimeInterval(8 * 86400)
         let panel = PanelController(session: session)
         panel.show(.hotkey)
-        let lapsed = await waitUntil { session.premium.lapse == .passRanOut }
+        let lapsed = await waitUntil { session.premium.lapse != nil }
         XCTAssertTrue(lapsed)
         XCTAssertFalse(session.premium.hasPremium)
-        XCTAssertNil(secrets.values[.chromePass])
+        XCTAssertNil(secrets.values[.activation])
         panel.hide()
     }
 
     /// The proofs are on this Mac, so a shortcut at launch never waits on anything.
-    func testAShortcutRightAfterLaunchCopiesWithAPassInTheKeychain() async throws {
+    func testAShortcutRightAfterLaunchCopiesWithAnActivationInTheKeychain() async throws {
         let session = await session(premium: true)
         XCTAssertEqual(session.runCopyShortcut(.copyOneTimePassword, of: try onlyID(session)), .copied)
         XCTAssertEqual(paywalls, 0)
     }
 
-    /// The extension signing in unlocks a code in the app without touching it.
-    func testAPassFromTheExtensionUnlocksTheAppAndSigningOutLocksIt() async throws {
+    /// An activation link unlocks a code in the app, and the code locks again the moment it runs out.
+    func testAnActivationUnlocksTheAppAndItsEndLocksIt() async throws {
         let session = await session(premium: false)
         let id = try onlyID(session)
         XCTAssertEqual(session.runCopyShortcut(.copyOneTimePassword, of: id), .premiumRequired)
         await grantPremium(session)
         XCTAssertEqual(session.runCopyShortcut(.copyOneTimePassword, of: id), .copied)
-        session.premium.receive(.drop(.signedOut), from: .chrome)
+        clock = PremiumFixtures.now.addingTimeInterval(8 * 86400)
         XCTAssertEqual(session.runCopyShortcut(.copyOneTimePassword, of: id), .premiumRequired)
         XCTAssertEqual(paywalls, 2)
     }

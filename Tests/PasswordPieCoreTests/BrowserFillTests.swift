@@ -313,7 +313,7 @@ final class BridgeCodeTests: XCTestCase {
     }
 
     private let tab = #"{"type":"tab","id":1,"url":"https://github.com/","reason":"poke"}"#
-    private let code = #"{"type":"code","id":2,"url":"https://github.com/","entitlement":"token-1"}"#
+    private let code = #"{"type":"code","id":2,"url":"https://github.com/"}"#
 
     /// Picks `entry`, lets the tab take the fill, and returns that answer.
     private func filled(_ state: inout BridgeState, _ entry: VaultEntry, browser: BridgeBrowser = .chrome) -> [String: Any] {
@@ -328,7 +328,7 @@ final class BridgeCodeTests: XCTestCase {
         browser: BridgeBrowser = .chrome,
         locked: Bool = false,
         at: TimeInterval = 5,
-        premium: @escaping (String?) -> Bool = { $0 == "token-1" }
+        premium: @escaping () -> Bool = { true }
     ) -> [String: Any] {
         object(state.handle(request(json ?? code), from: browser, locked: locked, now: start + at, codeAllowed: premium) { $0 == entry.id ? entry : nil })
     }
@@ -346,9 +346,9 @@ final class BridgeCodeTests: XCTestCase {
         var state = BridgeState()
         let entry = login()
         _ = filled(&state, entry)
-        var asked: [String?] = []
-        let answer = ask(&state, entry) { asked.append($0); return true }
-        XCTAssertEqual(asked, ["token-1"], "the token goes to the premium check as sent")
+        var asked = 0
+        let answer = ask(&state, entry) { asked += 1; return true }
+        XCTAssertEqual(asked, 1, "this Mac's Premium is asked once, and nothing from the request goes with it")
         XCTAssertEqual(answer["type"] as? String, "code")
         XCTAssertEqual(answer["id"] as? Int, 2)
         let otp = answer["otp"] as? [String: Any]
@@ -364,7 +364,7 @@ final class BridgeCodeTests: XCTestCase {
         var state = BridgeState()
         let entry = login()
         _ = filled(&state, entry)
-        let answer = ask(&state, entry) { _ in false }
+        let answer = ask(&state, entry) { false }
         XCTAssertEqual(answer["premium"] as? Bool, false)
         XCTAssertNil(answer["otp"])
         XCTAssertEqual(Set(answer.keys), ["type", "id", "premium"])
@@ -382,7 +382,7 @@ final class BridgeCodeTests: XCTestCase {
         var state = BridgeState()
         let entry = login()
         var asked = false
-        let answer = ask(&state, entry) { _ in asked = true; return true }
+        let answer = ask(&state, entry) { asked = true; return true }
         XCTAssertEqual(Set(answer.keys), ["type", "id"])
         XCTAssertFalse(asked, "nothing to ask for, so Premium is not even checked")
     }
@@ -398,9 +398,9 @@ final class BridgeCodeTests: XCTestCase {
         var state = BridgeState()
         let entry = login()
         _ = filled(&state, entry)
-        let elsewhere = #"{"type":"code","id":2,"url":"https://github.com.evil.example/","entitlement":"token-1"}"#
+        let elsewhere = #"{"type":"code","id":2,"url":"https://github.com.evil.example/"}"#
         XCTAssertNil(ask(&state, entry, json: elsewhere)["otp"])
-        let plainHTTP = #"{"type":"code","id":2,"url":"http://github.com/","entitlement":"token-1"}"#
+        let plainHTTP = #"{"type":"code","id":2,"url":"http://github.com/"}"#
         XCTAssertNil(ask(&state, entry, json: plainHTTP)["otp"])
         XCTAssertNotNil(ask(&state, entry)["otp"], "a wrong site does not use the pick up")
     }
@@ -409,7 +409,7 @@ final class BridgeCodeTests: XCTestCase {
         var state = BridgeState()
         let entry = login()
         _ = filled(&state, entry)
-        let sub = #"{"type":"code","id":2,"url":"https://auth.github.com/","entitlement":"token-1"}"#
+        let sub = #"{"type":"code","id":2,"url":"https://auth.github.com/"}"#
         XCTAssertEqual((ask(&state, entry, json: sub)["otp"] as? [String: Any])?["origin"] as? String, "https://auth.github.com")
     }
 
@@ -463,9 +463,16 @@ final class BridgeCodeTests: XCTestCase {
         XCTAssertNil(ask(&state, entry)["otp"])
     }
 
-    func testTheRequestDecodesItsToken() {
-        XCTAssertEqual(request(code).entitlement, "token-1")
-        XCTAssertNil(request(#"{"type":"code","id":2,"url":"https://github.com/"}"#).entitlement)
+    /// An extension from before 2026-11-11 sends its own proof of Premium with the request. It is not read: only this
+    /// Mac's Premium decides.
+    func testATokenInTheRequestChangesNothing() {
+        let withToken = #"{"type":"code","id":2,"url":"https://github.com/","entitlement":"token-1"}"#
+        var state = BridgeState()
+        let entry = login()
+        _ = filled(&state, entry)
+        let answer = ask(&state, entry, json: withToken, premium: { false })
+        XCTAssertNil(answer["otp"])
+        XCTAssertEqual(answer["premium"] as? Bool, false)
     }
 }
 

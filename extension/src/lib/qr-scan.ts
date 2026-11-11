@@ -1,5 +1,5 @@
 // "Scan QR code on this page": read the two-step QR code a site shows and hand its otpauth:// link to the app, which asks
-// the person where to add it. docs/BROWSER_EXTENSION.md, "`scan`". Runs only when the popup's button is clicked.
+// the person where to add it. docs/BROWSER_EXTENSION.md, "`scan`". Runs only when Scan is chosen in a right-click menu.
 // Pictures and the link stay in this extension's memory: nothing is stored, logged, or sent anywhere but the app.
 
 import jsQR from 'jsqr';
@@ -15,27 +15,13 @@ export const MAX_OTPAUTH_LENGTH = 4096;
 
 export type QrKind = 'totp' | 'hotp' | 'migration' | 'other';
 
-/** What a QR code's text is, for the popup's message. The app checks a `totp` link again before using it. */
+/** What a QR code's text is, for the note's line. The app checks a `totp` link again before using it. */
 export function classifyQrText(text: string): QrKind {
   const lower = text.trim().toLowerCase();
   if (lower.startsWith('otpauth-migration:')) return 'migration';
   if (lower.startsWith('otpauth://totp/') || lower.startsWith('otpauth://totp?')) return 'totp';
   if (lower.startsWith('otpauth://hotp')) return 'hotp';
   return 'other';
-}
-
-/** The issuer and account a link names, for the popup only. */
-export function otpauthLabel(text: string): { issuer: string; account: string } {
-  try {
-    const url = new URL(text.trim());
-    const label = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
-    const colon = label.indexOf(':');
-    const issuer = url.searchParams.get('issuer') ?? (colon >= 0 ? label.slice(0, colon) : '');
-    const account = colon >= 0 ? label.slice(colon + 1) : label;
-    return { issuer: issuer.trim(), account: account.trim() };
-  } catch {
-    return { issuer: '', account: '' };
-  }
 }
 
 // MARK: Decoding (background)
@@ -179,6 +165,5 @@ export async function scanActiveTab(deps: ScanDeps): Promise<ScanOutcome> {
   const otpauth = found.text.trim();
   let kind = answerKind(await deps.sendScan(otpauth, `${origin}/`));
   if (kind === 'unreachable' && (await deps.startApp())) kind = answerKind(await deps.sendScan(otpauth, `${origin}/`));
-  if (kind === 'sent') return { kind: 'sent', ...otpauthLabel(otpauth) };
   return { kind };
 }

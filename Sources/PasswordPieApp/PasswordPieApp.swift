@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.bridge.fill(entry, mode, website: website) ?? false
         }
         bridge.onShowPanel = { [weak self] in self?.showFromExtension() }
+        bridge.onUpgrade = { [weak self] in self?.showPaywall() }
         otpScan = OTPScanModel(session: session)
         otpScan.present = { [weak self] in self?.presentScan() }
         otpScan.codeAdded = { [weak self] id, browser, origin in self?.bridge.expectScannedCode(entryID: id, browser: browser, origin: origin) }
