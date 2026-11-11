@@ -583,9 +583,25 @@ at all: it fills codes whenever the app has Premium.
 
 | You are | The popup shows |
 |---|---|
-| Signed out | **Open PasswordPie**, Scan QR code on this page (see "Scan a two-step QR code"), then Sign In with email and password (and Continue with Google in Chrome), Create an account, Forgot password? |
+| Signed out | **Open PasswordPie**, Scan QR code on this page (see "Scan a two-step QR code"), then one line, "Sign in with your PasswordPie account to fill two-step codes in the browser with Premium.", and **Sign in on passwordpie.com**. There is no email or password field in the popup. |
 | Signed in, free | Your email and Sign Out; "Free · Two-step codes in the browser need Premium." with **Upgrade** (opens the pricing page) and a "Have a key?" field |
 | Signed in, Premium | "Premium · Lifetime" (or Yearly or Key, with the end date if it has one): "Two-step codes fill in the browser after the password." If PasswordPie on this Mac did not take it, one more line: "Open PasswordPie on this Mac to bring Premium to it." (it is not running) or "Update PasswordPie on this Mac to bring Premium to it." (an older version). Nothing more when it did, or when it understood and did not take the pass (for example, the browser's cached pass has run out). |
+
+### Signing in
+
+Sign in on passwordpie.com, not in the popup. **Sign in on passwordpie.com** opens passwordpie.com/extension/connect in a
+new tab:
+
+1. Not signed in to the site yet: it goes to the site's sign-in page, with email or Google (and a new account, after
+   its email is verified), and comes back to the connect page.
+2. Signed in: the page connects, and a moment later says "PasswordPie in this browser is signed in as
+   ada@example.com. You can close this tab." Open the popup again: it shows your email and your plan.
+3. No answer from the extension within 3 seconds (it is not installed, or too old): the page links to the Chrome Web
+   Store and offers Try again.
+
+The browser and the site keep separate sessions: Sign Out in the popup does not sign you out of the website, and
+signing out of the website does not sign out the extension. Connecting a different account replaces the one the
+extension had. In Safari, the extension needs access to passwordpie.com (Safari asks for it per site) to hear the page.
 
 The popup asks passwordpie.com for your Premium every time it opens, and the extension asks once a day. Offline, it keeps
 what it knew; a session that ended signs you out.
@@ -616,8 +632,9 @@ and a database item "Demo" with website `http://localhost:8787`, username `ada`,
 `otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo`. Build with `make install` (or a debug build in a bundle signed
 the same way: the bridge checks signatures); only those trust the test key.
 
-1. Click the toolbar button: the popup shows Open PasswordPie and Sign In. Sign in as `ada@example.com` / `password`:
-   "Free".
+1. Click the toolbar button: the popup shows Open PasswordPie and Sign in on passwordpie.com. Click it: the mock's
+   sign-in page opens. Sign in as `ada@example.com` / `password`: the connect page says the browser is signed in as
+   ada@example.com. Open the popup again: "Free".
 2. Open `http://localhost:8787/demo/login`, press `⌘\`, Return on Demo, then Sign In. The code page shows six empty
    boxes and the note in the corner. The popup says the code on localhost:8787 was not filled.
 3. In the popup, redeem `PPIE-TEST-TEST-TEST`: "Premium · Key".
