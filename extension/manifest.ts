@@ -28,13 +28,15 @@ export function extensionManifest({
   return {
     name: 'PasswordPie',
     description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
-    version: '0.2.0',
+    version: '0.3.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
     // `storage` keeps the passwordpie.com session and entitlement token (docs/ACCOUNTS.md); the App Store build has no
     // account and does not ask for it. Signing in happens on the site, so there is no `identity` and no `oauth2`.
     permissions: [
       ...(browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms']),
+      // The lines in the button's right-click menu and the page's (toolbar.ts). It shows no warning at install.
+      'contextMenus',
       ...(account ? ['storage'] : []),
     ],
     host_permissions: ['<all_urls>'],

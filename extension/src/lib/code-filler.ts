@@ -2,6 +2,7 @@
 // (right after PasswordPie filled an account with a code), tells the background when one shows up, and fills the code
 // the app sent. No React here: the content script runs on every page and must stay small.
 import { codeFieldIsEmpty, fillCode, findCodeField } from './code-fields';
+import { addNote } from './page-note';
 import type { CodeHintMessage, FrameMessage } from './protocol';
 
 export const CODE_POLL_MS = 250;
@@ -113,43 +114,16 @@ export class CodeFiller {
     return fillCode(field, code);
   }
 
-  /** A small note in the corner, in a closed shadow root so the page cannot read or restyle it. Takes no focus. */
+  /** A small note in the corner (page-note.ts). Takes no focus. */
   private showHint(msg: CodeHintMessage): void {
     this.hideHint();
-    const doc = this.env.document;
-    const host = doc.createElement('div');
-    host.id = HINT_HOST_ID;
-    const root = host.attachShadow({ mode: 'closed' });
     const text = 'PasswordPie Premium fills two-step codes for you.';
-    root.innerHTML = `<style>
-      :host { all: initial; position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; }
-      .box { display: flex; align-items: center; gap: 10px; max-width: 340px; padding: 10px 12px; border-radius: 10px;
-        background: #FFF6E7; color: #302A24; border: 1px solid #C8BBAA; box-shadow: 0 4px 16px rgba(48,35,21,.18);
-        font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      a { color: #A65312; font-weight: 600; text-decoration: none; white-space: nowrap; }
-      button { all: unset; cursor: pointer; color: #70604F; font-size: 15px; padding: 0 2px; }
-      @media (prefers-color-scheme: dark) {
-        .box { background: #28231F; color: #FFF6E7; border-color: #776858; }
-        a { color: #F6B469; } button { color: #D4C4B2; }
-      }
-    </style><div class="box" role="status"><span class="text"></span></div>`;
-    const box = root.querySelector('.box');
-    const span = root.querySelector('.text');
-    if (span) span.textContent = text;
-    if (box && msg.upgradeUrl) {
-      const link = doc.createElement('a');
-      link.href = msg.upgradeUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'Upgrade';
-      box.append(link);
-    }
-    const close = doc.createElement('button');
-    close.setAttribute('aria-label', 'Close');
-    close.textContent = '×';
-    close.addEventListener('click', () => this.hideHint());
-    box?.append(close);
-    (doc.body ?? doc.documentElement).append(host);
+    const host = addNote(this.env.document, {
+      id: HINT_HOST_ID,
+      text,
+      ...(msg.upgradeUrl ? { link: { href: msg.upgradeUrl, label: 'Upgrade' } } : {}),
+      onClose: () => this.hideHint(),
+    });
     const timer = setTimeout(() => this.hideHint(), HINT_MS);
     this.hint = { host, timer, text, ...(msg.upgradeUrl ? { link: msg.upgradeUrl } : {}) };
   }

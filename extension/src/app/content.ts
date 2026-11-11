@@ -2,6 +2,7 @@ import { browser } from 'wxt/browser';
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { CodeFiller } from '@/lib/code-filler';
 import { SITE_URL } from '@/lib/config';
+import { isScanNoteMessage, showScanNote } from '@/lib/page-note';
 import { PageFiller, sameOriginWithTop } from '@/lib/page-filler';
 import { parseFillMessage, parseFrameMessage, type ContentMessage } from '@/lib/protocol';
 import { isQrImagesMessage, pageQrImages } from '@/lib/qr-page';
@@ -34,11 +35,18 @@ export default defineContentScript({
 
     browser.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse: (answer: unknown) => void) => {
       // Only the background sends runtime messages here; a web page cannot. The top frame alone answers, and only when
-      // the person clicked Scan in the popup.
+      // the person chose Scan, in the popup or in a right-click menu.
       if (isQrImagesMessage(raw)) {
         if (window.top !== window) return false;
         pageQrImages(document, window).then(sendResponse, () => sendResponse([]));
         return true; // answers later
+      }
+      // Why a scan from a right-click menu handed nothing over. True tells the background the note is showing.
+      if (isScanNoteMessage(raw)) {
+        if (window.top !== window) return false;
+        showScanNote(document, raw.kind);
+        sendResponse(true);
+        return false;
       }
       const iconAsk = parseIconLinksMessage(raw);
       if (iconAsk) {

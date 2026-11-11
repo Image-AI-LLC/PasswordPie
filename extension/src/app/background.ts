@@ -5,12 +5,14 @@ import { storageKV } from '@/lib/browser-kv';
 import { SITE_URL, UPGRADE_URL } from '@/lib/config';
 import { FillController, type TabsAdapter } from '@/lib/controller';
 import { ChromeNativeChannel, SafariNativeChannel, SHOW_TIMEOUT_MS, type NativeChannel, type PortLike } from '@/lib/native-channel';
+import type { ScanNoteMessage } from '@/lib/page-note';
 import { PassRelay, relayKeysChanged } from '@/lib/pass-relay';
-import { NATIVE_APP, originOf, parsePopupMessage } from '@/lib/protocol';
+import { NATIVE_APP, WEBSITE_URL, originOf, parsePopupMessage } from '@/lib/protocol';
 import { type QrImagesMessage } from '@/lib/qr-page';
 import { decodeQrDataUrl, scanActiveTab, type ScanDeps } from '@/lib/qr-scan';
 import { parseSiteSessionMessage } from '@/lib/site-connect';
 import { acceptSiteSession, fromConnectPage } from '@/lib/site-session';
+import { Toolbar, type ToolbarBrowser } from '@/lib/toolbar';
 import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
 const RECONNECT_ALARM = 'passwordpie-reconnect';
@@ -89,6 +91,41 @@ function scanDeps(channel: NativeChannel): ScanDeps {
   };
 }
 
+/** The popup page (src/app/popup). */
+const POPUP_PATH = 'popup.html';
+
+/** The button, its menu and the page's menu (toolbar.ts). Each rejects where the browser has no such API. */
+const toolbarBrowser: ToolbarBrowser = {
+  async removeAllMenus() {
+    await browser.contextMenus.removeAll();
+  },
+  createMenu(item) {
+    return new Promise((resolve, reject) => {
+      browser.contextMenus.create(item as Parameters<typeof browser.contextMenus.create>[0], () => {
+        const error = browser.runtime.lastError;
+        if (error) reject(new Error(error.message));
+        else resolve();
+      });
+    });
+  },
+  async setPopup(popup) {
+    await browser.action.setPopup({ popup });
+  },
+  async openPopup() {
+    await browser.action.openPopup();
+  },
+  openTab(url) {
+    return browser.tabs.create({ url });
+  },
+  async showNote(tabId, kind) {
+    const note: ScanNoteMessage = { type: 'scan-note', kind };
+    return (await browser.tabs.sendMessage(tabId, note, { frameId: 0 })) === true;
+  },
+  async setBadge(text, title) {
+    await Promise.all([browser.action.setBadgeText({ text }), browser.action.setTitle({ title })]);
+  },
+};
+
 export default defineBackground(() => {
   const channel = makeChannel();
   // Spelled out so Vite folds it: the App Store build has no account and sends the site nothing (docs/ACCOUNTS.md).
@@ -105,6 +142,22 @@ export default defineBackground(() => {
     ...(relay ? { relay } : {}),
     ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}),
   });
+
+  const toolbar = new Toolbar({
+    browser: toolbarBrowser,
+    popupPath: POPUP_PATH,
+    popupUrl: browser.runtime.getURL(`/${POPUP_PATH}`),
+    websiteUrl: WEBSITE_URL,
+    showPanel: () => controller.showPanel(),
+    scan: () => scanActiveTab(scanDeps(channel)),
+    // Spelled out so Vite folds it: the App Store build asks the site nothing.
+    ...(import.meta.env.WXT_PP_STORE !== 'mas' && account
+      ? { account, refresh: () => refreshEntitlement(account, fetch, SITE_URL) }
+      : {}),
+  });
+  // Fires only while the button has no popup: the account has Premium, or the build has no account.
+  browser.action.onClicked.addListener(() => void toolbar.clicked());
+  browser.contextMenus?.onClicked.addListener((info, tab) => void toolbar.menuClicked(info.menuItemId, tab?.id));
 
   browser.tabs.onActivated.addListener(() => controller.tabActivated());
   browser.tabs.onUpdated.addListener((tabId, change, tab) => controller.tabUpdated(tabId, change, tab));
@@ -147,7 +200,8 @@ export default defineBackground(() => {
     }
     return false;
   });
-  // The toolbar button opens the popup, whose first button opens the panel. The shortcut opens it directly.
+  // The toolbar button opens the popup, whose first button opens the panel, or the panel itself (toolbar.ts). The
+  // shortcut always opens the panel.
   browser.commands?.onCommand.addListener((command) => {
     if (command === OPEN_PANEL_COMMAND) controller.showPanel().catch(() => {});
   });
@@ -163,7 +217,9 @@ export default defineBackground(() => {
   if (import.meta.env.WXT_PP_STORE !== 'mas' && relay) {
     // Sign-in, sign-out, a renewal from the popup or the alarm, and a 401 all land in storage: tell the app each time.
     browser.storage.onChanged.addListener((changes, area) => {
-      if (relayKeysChanged(changes, area)) void relay.sync();
+      if (!relayKeysChanged(changes, area)) return;
+      void relay.sync();
+      void toolbar.sync();
     });
   }
 
@@ -180,4 +236,5 @@ export default defineBackground(() => {
   }
 
   controller.start();
+  void toolbar.start();
 });

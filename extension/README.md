@@ -71,6 +71,8 @@ transparent background with a see-through keyhole. Regenerate the PNGs after cha
   hands over (`acceptSiteSession`).
 - `src/app/content.ts`: wires fill and code messages and focus events to `PageFiller` and `CodeFiller`, and on the
   site's connect page starts `startSiteConnect`. No React.
+- `src/lib/toolbar.ts`: what a click on the toolbar button does (the popup, or PasswordPie directly once the account
+  has Premium), and the right-click menus: scan, the website and the account on the button, scan on the page.
 - `src/app/popup/`: the toolbar popup page; `src/components/popup.tsx` is the UI, driven through `PopupApi`.
 - `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting, and the code flow
   (watch for a code field, ask the app with the entitlement token, fill or hint).

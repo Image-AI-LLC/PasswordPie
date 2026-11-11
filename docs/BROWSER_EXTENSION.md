@@ -86,7 +86,7 @@ Every request has `type` and an `id` (an integer the extension picks). Every ans
 
 ### `hello`
 
-    → {"type":"hello","id":1,"version":1,"extension":"0.2.0"}
+    → {"type":"hello","id":1,"version":1,"extension":"0.3.0"}
     ← {"type":"hello","id":1,"version":1,"locked":false}
 
 Sent when the extension starts and when its port (re)connects. It makes the browser count as connected.
@@ -230,9 +230,14 @@ option could save them as KeePass custom icons so they sync between devices; it 
     → {"type":"show","id":3}
     ← {"type":"show","id":3}
 
-"Open PasswordPie" was clicked in the extension's popup, or its shortcut (`open-panel`, ⌥⇧P by default) was pressed.
-With a popup, the toolbar button no longer sends `action.onClicked`; the popup's first and largest button, shown signed
-in or not, does this instead. The app opens its panel over the browser as its shortcut does, locked or not; a request
+"Open PasswordPie" was clicked in the extension's popup, its shortcut (`open-panel`, ⌥⇧P by default) was pressed, or
+the toolbar button was clicked while it has no popup. The button has a popup only while there is something to set up:
+`extension/src/lib/toolbar.ts` calls `action.setPopup` with `""` once the kept account has a session and Premium that
+has not run out (and always in the App Store build), so the click arrives as `action.onClicked`; that click also asks
+the site for the entitlement, as opening the popup does. It sets the popup back on a sign-out or when Premium is gone,
+and on each start of the background. The popup stays when the browser refused the Scan line in the button's menu
+(`contextMenus`, context `action`): that menu is then the only other place to scan from. In the popup, the first and
+largest button, shown signed in or not, sends `show`. The app opens its panel over the browser as its shortcut does, locked or not; a request
 while the panel is open brings it forward. Carries nothing and returns nothing. The popup closes itself.
 
 When the app did not get the request, the Chrome host and the Safari extension handler, both inside `PasswordPie.app`,
@@ -296,8 +301,17 @@ tab.
 
 ### Scanning a QR code
 
-Only a click on **Scan QR code on this page** in the popup starts it; nothing scans by itself, and a web page cannot ask
-for it (content scripts take runtime messages from the extension only, and none listens to the page).
+Only the person starts it: **Scan QR code on this page** in the popup or in the toolbar button's right-click menu, or
+**Scan QR code with PasswordPie** in the page's right-click menu (`contextMenus`, contexts `page`, `frame` and `image`,
+on http(s) pages). Nothing scans by itself, and a web page cannot ask for it (content scripts take runtime messages from
+the extension only, and none listens to the page). All three run the same scan of the active tab.
+
+The popup shows what happened in a line. A scan from a menu that handed nothing to the app sends the top frame
+`{"type":"scan-note","kind":"none"}` (the outcome's name, never the link), and its content script shows that outcome's
+line in the corner for 8 seconds, as the Premium note. If no content script answers (a browser page), the button gets
+the badge "!" and the line as its title for 6 seconds. The button's menu also has **Open passwordpie.com** (a new tab,
+nothing fetched) and, outside the App Store build, **Account…**, which gives the button its popup for the moment
+`action.openPopup` runs, or opens the popup page in a tab where that fails.
 
 1. The background asks the active tab's top frame (`{"type":"qr-images"}`, frame 0). Its content script
    (`extension/src/lib/qr-page.ts`) takes up to 8 `<img>` (including `data:` URLs), `<canvas>` and `<svg>` elements that

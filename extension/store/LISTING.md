@@ -46,7 +46,7 @@ BUILT TO FILL THE RIGHT PAGE
 
 PREMIUM: TWO-STEP CODES
 • With PasswordPie Premium, the two-step code fills itself on the next page after the password.
-• Sign in on passwordpie.com from the extension's toolbar popup. The site hands this browser its own session, so signing out of one leaves the other signed in.
+• Sign in on passwordpie.com from the extension's toolbar popup. With Premium, the toolbar button opens PasswordPie directly; right-click it for Scan QR code and your account. The site hands this browser its own session, so signing out of one leaves the other signed in.
 
 PRIVATE BY DESIGN
 • Your passwords stay in your KeePass file on your Mac. They go only to the PasswordPie app on the same Mac, through Chrome's native messaging, and never to us or to any server.
@@ -97,10 +97,16 @@ webNavigation.getAllFrames lists the frames of the active tab, so that a fill is
 One alarm a minute checks the native messaging connection to the PasswordPie app and reconnects it if the app was restarted or the service worker was suspended. Without it, the extension stays disconnected until the next tab change.
 ```
 
+**contextMenus**
+
+```text
+Adds three lines to the right-click menu of the extension's toolbar button (Scan QR code on this page, Open passwordpie.com, Account…) and one line to the right-click menu of web pages (Scan QR code with PasswordPie). Once the user's account has Premium, a click on the toolbar button opens the PasswordPie app directly instead of the popup, so these menus are where the scan and the account are reached. Nothing is read from the page until the user chooses a Scan line.
+```
+
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. On passwordpie.com's /extension/connect page only, in the top frame, the content script listens for the page's message that hands over the session after the user signed in there, and passes it to the background. When the user clicks "Scan QR code on this page" in the popup, the content script of the top frame reads the pictures on screen that could be a QR code and, if none can be read, the background takes one picture of the visible tab (tabs.captureVisibleTab); the two-step QR code is decoded inside the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
+Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list. On passwordpie.com's /extension/connect page only, in the top frame, the content script listens for the page's message that hands over the session after the user signed in there, and passes it to the background. When the user chooses "Scan QR code on this page" in the popup or in the toolbar button's right-click menu, or "Scan QR code with PasswordPie" in the page's right-click menu, the content script of the top frame reads the pictures on screen that could be a QR code and, if none can be read, the background takes one picture of the visible tab (tabs.captureVisibleTab); the two-step QR code is decoded inside the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
 ```
 
 ### Remote code
