@@ -34,8 +34,8 @@ build:
 extension:
 	cd extension && pnpm install --frozen-lockfile && pnpm build:chrome && pnpm build:safari
 
-# The Safari build inside the App Store app. The extension has no account and links to no shop, so it is the same build
-# as the direct channel's (docs/UX.md, "Premium in the browser").
+# The Safari build inside the App Store app. The extension has no account, and its Safari build has no line that opens
+# the site, so it is the same build as the direct channel's (docs/ACCOUNTS.md, "App Store rules").
 extension-mas:
 	cd extension && pnpm install --frozen-lockfile && pnpm build:safari
 

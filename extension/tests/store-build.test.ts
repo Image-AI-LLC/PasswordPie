@@ -49,7 +49,7 @@ describe.each(['chrome', 'safari'])('the %s build', (browser) => {
     for (const marker of ACCOUNT_MARKERS) expect(bundles[browser], marker).not.toContain(marker);
   });
 
-  it('keeps one passwordpie.com address: the page the toolbar button and its menu open', () => {
+  it('keeps one passwordpie.com address: the download page the toolbar button opens when the app is not there', () => {
     // WEBSITE_URL in protocol.ts. It is opened in a tab, never fetched. Any other address of the site turns this red.
     const addresses = new Set(bundles[browser]?.match(/https?:\/\/[\w.-]*passwordpie\.com[\w./?=&%-]*/g));
     expect([...addresses]).toEqual(['https://passwordpie.com/']);

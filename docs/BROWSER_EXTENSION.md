@@ -288,8 +288,9 @@ refuses is left out and the others stay.
 A scan that reached the app shows nothing in the browser: the app's Add Two-Step Code window is the answer. One that
 handed nothing over sends the top frame `{"type":"scan-note","kind":"none"}` (the outcome's name, never the link), and
 its content script shows that outcome's line in the corner for 8 seconds, as the Premium note. If no content script
-answers (a browser page), the button gets the badge "!" and the line as its title for 6 seconds. The button's menu also
-has **Open passwordpie.com** (a new tab, nothing fetched).
+answers (a browser page), the button gets the badge "!" and the line as its title for 6 seconds. In Chrome the button's
+menu also has **Open passwordpie.com** (a new tab, nothing fetched); the Safari build leaves it out, because it also
+ships inside the App Store app (ACCOUNTS.md, "App Store rules").
 
 1. The background asks the active tab's top frame (`{"type":"qr-images"}`, frame 0). Its content script
    (`extension/src/lib/qr-page.ts`) takes up to 8 `<img>` (including `data:` URLs), `<canvas>` and `<svg>` elements that

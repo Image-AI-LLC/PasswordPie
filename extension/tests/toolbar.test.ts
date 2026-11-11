@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { ScanOutcome } from '../src/lib/scan-outcome';
 import {
   BADGE_MS,
-  MENU_ITEMS,
   MENU_SCAN_ACTION,
   MENU_SCAN_PAGE,
   MENU_WEBSITE,
   Toolbar,
+  menuItems,
   type MenuItem,
   type ToolbarBrowser,
 } from '../src/lib/toolbar';
@@ -60,12 +60,22 @@ function make(scan: () => Promise<ScanOutcome> = async () => ({ kind: 'none' }))
 
 describe('the right-click menus', () => {
   it("puts scan and the website in the button's menu, and scan in the page's; nothing about an account", () => {
-    expect(MENU_ITEMS.map((i) => [i.id, i.title, i.contexts])).toEqual([
+    expect(menuItems(true).map((i) => [i.id, i.title, i.contexts])).toEqual([
       [MENU_SCAN_ACTION, 'Scan QR code on this page', ['action']],
       [MENU_WEBSITE, 'Open passwordpie.com', ['action']],
       [MENU_SCAN_PAGE, 'Scan QR code with PasswordPie', ['page', 'frame', 'image']],
     ]);
-    expect(MENU_ITEMS.at(-1)?.documentUrlPatterns).toEqual(['http://*/*', 'https://*/*']);
+    expect(menuItems(true).at(-1)?.documentUrlPatterns).toEqual(['http://*/*', 'https://*/*']);
+  });
+
+  it('the Safari build, which also ships in the App Store app, has no line that opens the site', async () => {
+    expect(menuItems(false).map((i) => i.id)).toEqual([MENU_SCAN_ACTION, MENU_SCAN_PAGE]);
+    const browser = new FakeBrowser();
+    const toolbar = new Toolbar({ browser, scan: async () => ({ kind: 'none' }) });
+    await toolbar.start();
+    expect(browser.menus.map((m) => m.id)).toEqual([MENU_SCAN_ACTION, MENU_SCAN_PAGE]);
+    await toolbar.menuClicked(MENU_WEBSITE, 1);
+    expect(browser.tabs).toEqual([]);
   });
 
   it('adds them again at each start, in place of what was there', async () => {
@@ -122,6 +132,17 @@ describe('the right-click menus', () => {
       timeouts[0]?.run();
       expect(browser.badges.at(-1)).toEqual({ text: '', title: 'PasswordPie' });
     }
+  });
+
+  it('the timer of an older mark never clears a newer one', async () => {
+    const { browser, toolbar, timeouts } = make(async () => ({ kind: 'no-page' }));
+    browser.pageShowsNote = false;
+    await toolbar.menuClicked(MENU_SCAN_ACTION, undefined);
+    await toolbar.menuClicked(MENU_SCAN_ACTION, undefined);
+    timeouts[0]?.run();
+    expect(browser.badges.at(-1)?.text).toBe('!');
+    timeouts[1]?.run();
+    expect(browser.badges.at(-1)).toEqual({ text: '', title: 'PasswordPie' });
   });
 
   it('a scan that throws counts as nothing found', async () => {

@@ -106,9 +106,11 @@ signed in there. The page then offers Activate.
 
 The Safari extension ships inside the App Store app, so what it does counts as the app's on the App Privacy label, and it
 may not point anywhere else to buy (guideline 3.1.1). It does neither: it has no account, makes no request to any site,
-and its Upgrade opens the app's own Premium window, which sells through In-App Purchase. There is no separate App Store
-build of the extension any more: `make mas-dev` embeds the same Safari build as `make install`
-(`extension/tests/store-build.test.ts` checks the bundle).
+and its Upgrade opens the app's own Premium window, which sells through In-App Purchase. For the same reason the Safari
+build has no **Open passwordpie.com** line in the button's menu (`menuItems(false)` in `extension/src/lib/toolbar.ts`):
+that site sells Premium. The one address left in it is the download page, opened only when the app cannot be started.
+There is no separate App Store build of the extension any more: `make mas-dev` embeds the same Safari build as
+`make install` (`extension/tests/store-build.test.ts` checks the bundle).
 
 ## Testing without the site
 

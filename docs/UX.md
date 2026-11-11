@@ -431,7 +431,8 @@ Clicking the PasswordPie button in the browser's toolbar does the same as `⌘\`
 the site's accounts at the top. There is no popup in between, and nothing to sign in to. ⌥⇧P in the browser does the same
 (Chrome lets you change it under `chrome://extensions/shortcuts`). If PasswordPie is installed but not running, the button
 starts it and then opens the panel. If it is not installed, it opens passwordpie.com in a new tab, to download it.
-Right-click the button for **Scan QR code on this page** (see "Scan a two-step QR code") and **Open passwordpie.com**.
+Right-click the button for **Scan QR code on this page** (see "Scan a two-step QR code") and, in Chrome, **Open
+passwordpie.com**.
 
 | What you press on an account | The site in the browser is the account's site | It is another site |
 |---|---|---|
@@ -568,12 +569,12 @@ has Premium: a purchase in the App Store version, an activation in the downloade
 A click on the toolbar button opens PasswordPie, as `⌘\` does. It never opens a popup: the extension has nothing of its
 own to show.
 
-Right-click the button for the rest. These two lines are above the browser's own (Pin, Manage Extension…):
+Right-click the button for the rest. These lines are above the browser's own (Pin, Manage Extension…):
 
 | Line | What it does |
 |---|---|
 | **Scan QR code on this page** | Reads the two-step QR code the page shows. See "Scan a two-step QR code". |
-| **Open passwordpie.com** | Opens the website in a new tab. |
+| **Open passwordpie.com** | Opens the website in a new tab. In Chrome only: the Safari extension also ships inside the App Store app, which does not send you to a site that sells Premium. |
 
 The same scan is in the page's own right-click menu, as **Scan QR code with PasswordPie**, so you can right-click the QR
 code itself.
@@ -603,7 +604,7 @@ bundle signed the same way: the bridge checks signatures); only those trust the 
    boxes and the note in the corner. Click Upgrade in the note: the Premium window of PasswordPie opens.
 3. Open an activation link (`node Scripts/mint-activation-link.mjs`): the window says Premium is on.
 4. Repeat 2: the six boxes fill. Press Verify: "Signed in".
-5. Right-click the toolbar button: Scan QR code on this page and Open passwordpie.com.
+5. Right-click the toolbar button: Scan QR code on this page and Open passwordpie.com (Safari: the scan only).
 
 ## A new database says what to do next
 

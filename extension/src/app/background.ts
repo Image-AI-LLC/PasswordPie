@@ -116,7 +116,8 @@ export default defineBackground(() => {
   const controller = new FillController({ channel, tabs });
   const toolbar = new Toolbar({
     browser: toolbarBrowser,
-    websiteUrl: WEBSITE_URL,
+    // Safari's build is also the one inside the App Store app: no line that opens the site there.
+    ...(import.meta.env.BROWSER === 'safari' ? {} : { websiteUrl: WEBSITE_URL }),
     scan: () => scanActiveTab(scanDeps(channel)),
   });
 

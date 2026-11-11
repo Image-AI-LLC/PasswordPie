@@ -1,5 +1,6 @@
 // The small note in the corner of a page: why a two-step code was not filled (code-filler.ts), or why a scan handed
-// nothing over. In a closed shadow root, so the page cannot read or restyle it. Takes no focus.
+// nothing over. In a closed shadow root, so the page cannot read it or reach its buttons; the host's own rules are
+// !important, which beats any rule the page writes for the host element. Takes no focus.
 // No React here: the content script runs on every page and must stay small.
 
 import { isRecord } from './protocol';
@@ -9,7 +10,8 @@ export const NOTE_MS = 8_000;
 export const SCAN_NOTE_HOST_ID = 'passwordpie-scan-note';
 
 const NOTE_STYLE = `
-      :host { all: initial; position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; }
+      :host { all: initial !important; position: fixed !important; z-index: 2147483647 !important;
+        right: 16px !important; bottom: 16px !important; }
       .box { display: flex; align-items: center; gap: 10px; max-width: 340px; padding: 10px 12px; border-radius: 10px;
         background: #FFF6E7; color: #302A24; border: 1px solid #C8BBAA; box-shadow: 0 4px 16px rgba(48,35,21,.18);
         font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }

@@ -312,7 +312,10 @@ final class BridgePremiumTests: XCTestCase {
         let store = PremiumChannel.makeStore(secrets: secrets)
         PremiumChannel.live = store
         defer { PremiumChannel.live = nil }
+        // The App Store channel's store would start real StoreKit: the bridge needs neither.
+        #if PP_DIRECT
         store.start()
+        #endif
         let session = VaultSession(premium: store, pasteboard: FakePasteboard())
         let bridge = BrowserBridge(session: session)
         defer { withExtendedLifetime(session) {} }
