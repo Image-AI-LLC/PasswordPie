@@ -1,21 +1,16 @@
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
-import { AccountStore, refreshEntitlement } from '@/lib/account';
-import { storageKV } from '@/lib/browser-kv';
-import { SITE_URL, UPGRADE_URL } from '@/lib/config';
 import { FillController, type TabsAdapter } from '@/lib/controller';
 import { ChromeNativeChannel, SafariNativeChannel, SHOW_TIMEOUT_MS, type NativeChannel, type PortLike } from '@/lib/native-channel';
-import { PassRelay, relayKeysChanged } from '@/lib/pass-relay';
-import { NATIVE_APP, originOf, parsePopupMessage } from '@/lib/protocol';
+import type { ScanNoteMessage } from '@/lib/page-note';
+import { NATIVE_APP, WEBSITE_URL, originOf } from '@/lib/protocol';
 import { type QrImagesMessage } from '@/lib/qr-page';
 import { decodeQrDataUrl, scanActiveTab, type ScanDeps } from '@/lib/qr-scan';
-import { parseSiteSessionMessage } from '@/lib/site-connect';
-import { acceptSiteSession, fromConnectPage } from '@/lib/site-session';
+import { Toolbar, type ToolbarBrowser } from '@/lib/toolbar';
 import { iconCandidates, offscreenGraphics, parseIconLinks, tabIconPng, type IconLinksMessage } from '@/lib/site-icon';
 
 const RECONNECT_ALARM = 'passwordpie-reconnect';
-const ENTITLEMENT_ALARM = 'passwordpie-entitlement';
-/** The keyboard shortcut for the panel (manifest `commands`): the toolbar button opens the popup now. */
+/** The keyboard shortcut for the panel (manifest `commands`). It does what a click on the toolbar button does. */
 const OPEN_PANEL_COMMAND = 'open-panel'; // manifest.ts commands
 
 function connectNative(): PortLike {
@@ -61,7 +56,7 @@ const tabs: TabsAdapter = {
   },
 };
 
-/** The browser side of "Scan QR code on this page". Pictures stay in memory; the link goes only to the app. */
+/** The browser side of a scan. Pictures stay in memory; the link goes only to the app. */
 function scanDeps(channel: NativeChannel): ScanDeps {
   return {
     async activeTab() {
@@ -89,67 +84,58 @@ function scanDeps(channel: NativeChannel): ScanDeps {
   };
 }
 
+/** The button's menu and the page's menu (toolbar.ts). Each rejects where the browser has no such API. */
+const toolbarBrowser: ToolbarBrowser = {
+  async removeAllMenus() {
+    await browser.contextMenus.removeAll();
+  },
+  createMenu(item) {
+    return new Promise((resolve, reject) => {
+      browser.contextMenus.create(item as Parameters<typeof browser.contextMenus.create>[0], () => {
+        const error = browser.runtime.lastError;
+        if (error) reject(new Error(error.message));
+        else resolve();
+      });
+    });
+  },
+  openTab(url) {
+    return browser.tabs.create({ url });
+  },
+  async showNote(tabId, kind) {
+    const note: ScanNoteMessage = { type: 'scan-note', kind };
+    return (await browser.tabs.sendMessage(tabId, note, { frameId: 0 })) === true;
+  },
+  async setBadge(text, title) {
+    await Promise.all([browser.action.setBadgeText({ text }), browser.action.setTitle({ title })]);
+  },
+};
+
 export default defineBackground(() => {
   const channel = makeChannel();
-  // Spelled out so Vite folds it: the App Store build has no account and sends the site nothing (docs/ACCOUNTS.md).
-  const account = import.meta.env.WXT_PP_STORE === 'mas' ? undefined : new AccountStore(storageKV(browser.storage.local));
-  // The app has no sign-in: this hands it the account's pass, and takes it back on sign-out (docs/BROWSER_EXTENSION.md).
-  const relay =
-    import.meta.env.WXT_PP_STORE === 'mas' || !account
-      ? undefined
-      : new PassRelay({ channel, account, kv: storageKV(browser.storage.local) });
-  const controller = new FillController({
-    channel,
-    tabs,
-    ...(account ? { account } : {}),
-    ...(relay ? { relay } : {}),
-    ...(UPGRADE_URL ? { upgradeUrl: UPGRADE_URL } : {}),
+  // The extension is a bridge to the app and keeps nothing: no sign-in, no session, no `storage` (docs/UX.md).
+  const controller = new FillController({ channel, tabs });
+  const toolbar = new Toolbar({
+    browser: toolbarBrowser,
+    // Safari's build is also the one inside the App Store app: no line that opens the site there.
+    ...(import.meta.env.BROWSER === 'safari' ? {} : { websiteUrl: WEBSITE_URL }),
+    scan: () => scanActiveTab(scanDeps(channel)),
   });
+
+  // The toolbar button shows nothing of its own: a click opens the app's panel, as the shortcut does.
+  browser.action.onClicked.addListener(() => void controller.showPanel().catch(() => {}));
+  browser.commands?.onCommand.addListener((command) => {
+    if (command === OPEN_PANEL_COMMAND) controller.showPanel().catch(() => {});
+  });
+  browser.contextMenus?.onClicked.addListener((info, tab) => void toolbar.menuClicked(info.menuItemId, tab?.id));
 
   browser.tabs.onActivated.addListener(() => controller.tabActivated());
   browser.tabs.onUpdated.addListener((tabId, change, tab) => controller.tabUpdated(tabId, change, tab));
   browser.tabs.onRemoved.addListener((tabId) => controller.tabRemoved(tabId));
   browser.windows.onFocusChanged.addListener((windowId) => controller.windowFocusChanged(windowId));
-  browser.runtime.onMessage.addListener((msg: unknown, sender, sendResponse: (answer: unknown) => void) => {
-    // The site's connect page handing over a session (signing in on passwordpie.com). Spelled out so Vite folds it:
-    // not in the App Store build.
-    if (import.meta.env.WXT_PP_STORE !== 'mas' && account) {
-      const session = parseSiteSessionMessage(msg);
-      if (session) {
-        if (!fromConnectPage(sender, browser.runtime.id, SITE_URL)) {
-          sendResponse({ ok: false });
-          return false;
-        }
-        const accountChanged = relay ? () => relay.sync() : undefined;
-        acceptSiteSession(session.token, account, fetch, SITE_URL, accountChanged ? { accountChanged } : {}).then(
-          sendResponse,
-          () => sendResponse({ ok: false }),
-        );
-        return true; // answers later
-      }
-    }
-    // Only the extension's own pages (the popup) may ask for these; a content script's sender URL is the web page's.
-    const fromExtensionPage = sender.id === browser.runtime.id && (sender.url ?? '').startsWith(browser.runtime.getURL('/'));
-    const popup = fromExtensionPage ? parsePopupMessage(msg) : undefined;
-    if (popup?.type === 'open-panel') {
-      controller.showPanel().catch(() => {});
-      sendResponse(true);
-    } else if (popup?.type === 'popup-status') {
-      sendResponse(controller.popupStatus());
-    } else if (popup?.type === 'scan-page') {
-      scanActiveTab(scanDeps(channel)).then(sendResponse, () => sendResponse({ kind: 'none' }));
-      return true; // answers later
-    } else if (popup?.type === 'app-premium') {
-      controller.appPremium().then(sendResponse, () => sendResponse('none'));
-      return true; // answers later
-    } else {
-      controller.runtimeMessage(msg, sender);
-    }
+  // Content scripts only: there is no extension page to send anything.
+  browser.runtime.onMessage.addListener((msg: unknown, sender) => {
+    controller.runtimeMessage(msg, sender);
     return false;
-  });
-  // The toolbar button opens the popup, whose first button opens the panel. The shortcut opens it directly.
-  browser.commands?.onCommand.addListener((command) => {
-    if (command === OPEN_PANEL_COMMAND) controller.showPanel().catch(() => {});
   });
   browser.runtime.onInstalled.addListener(() => controller.report('startup'));
   browser.runtime.onStartup.addListener(() => controller.report('startup'));
@@ -160,24 +146,6 @@ export default defineBackground(() => {
     if (alarm.name === RECONNECT_ALARM) channel.ensureConnected();
   });
 
-  if (import.meta.env.WXT_PP_STORE !== 'mas' && relay) {
-    // Sign-in, sign-out, a renewal from the popup or the alarm, and a 401 all land in storage: tell the app each time.
-    browser.storage.onChanged.addListener((changes, area) => {
-      if (relayKeysChanged(changes, area)) void relay.sync();
-    });
-  }
-
-  if (import.meta.env.WXT_PP_STORE !== 'mas' && account) {
-    // The entitlement once a day (and each time the popup opens), so the token the app checks stays fresh.
-    // Only when it is not scheduled yet: create() replaces an alarm of the same name, and this runs on every service-worker
-    // start, which would push the refresh back each time.
-    void browser.alarms.get(ENTITLEMENT_ALARM).then((existing) => {
-      if (!existing) void browser.alarms.create(ENTITLEMENT_ALARM, { periodInMinutes: 24 * 60, delayInMinutes: 1 });
-    });
-    browser.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === ENTITLEMENT_ALARM) void refreshEntitlement(account, fetch, SITE_URL).catch(() => undefined);
-    });
-  }
-
   controller.start();
+  void toolbar.start();
 });

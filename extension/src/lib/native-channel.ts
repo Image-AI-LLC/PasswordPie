@@ -11,11 +11,10 @@ export type Request =
   | { type: 'tab'; url: string; reason: TabReason }
   | { type: 'show' }
   | { type: 'icon'; origin: string; png: string }
-  /** `entitlement` is the passwordpie.com token, or absent; the app decides (docs/ACCOUNTS.md). */
-  | { type: 'code'; url: string; entitlement?: string }
-  /** Hands the app this browser's pass, or takes it back (docs/BROWSER_EXTENSION.md, "`premium`"). */
-  | { type: 'premium'; pass: string }
-  | { type: 'premium'; drop: 'signed-out' | 'no-premium' }
+  /** The two-step code for the page. The app answers when it has Premium; the extension knows nothing about that. */
+  | { type: 'code'; url: string }
+  /** "Upgrade" in the note about Premium: the app opens its Premium window (docs/BROWSER_EXTENSION.md, "`upgrade`"). */
+  | { type: 'upgrade' }
   /** A two-step QR code the user scanned on the page, with the page's origin (docs/BROWSER_EXTENSION.md, "`scan`"). */
   | { type: 'scan'; otpauth: string; url: string };
 

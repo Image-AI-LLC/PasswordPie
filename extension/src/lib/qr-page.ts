@@ -1,6 +1,6 @@
 // "Scan QR code on this page", the page's side: the pictures on screen that could be a QR code, read as PNG data URLs.
-// Runs in the top frame's content script only when the background asks, which it does only after a click on Scan in the
-// popup. Kept apart from the decoder so the content script on every page stays small.
+// Runs in the top frame's content script only when the background asks, which it does only after Scan was chosen in a
+// right-click menu. Kept apart from the decoder so the content script on every page stays small.
 
 import { isRecord } from './protocol';
 

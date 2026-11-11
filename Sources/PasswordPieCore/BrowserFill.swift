@@ -193,23 +193,8 @@ public struct BridgeRequest: Decodable, Sendable {
     public var url: String?
     public var reason: String?
     public var version: Int?
-    /// `code` only: the entitlement token from passwordpie.com, checked by the direct app. Never logged or stored.
-    public var entitlement: String?
-    /// `premium` only: the extension's pass from passwordpie.com, for the direct app to keep in the keychain. Never logged.
-    public var pass: String?
-    /// `premium` only: the extension takes back the pass it delivered, and why (`PassDropReason`).
-    public var drop: String?
     /// `scan` only: the text of the QR code the user scanned on the page. Never logged or kept by the bridge.
     public var otpauth: String?
-
-    /// What a `premium` request asks, or nil when it is malformed: exactly one of a non-empty `pass` or a known `drop`.
-    public var passRelay: PassRelay? {
-        switch (pass, drop) {
-        case (let pass?, nil) where !pass.isEmpty: return .pass(pass)
-        case (nil, let drop?): return PassDropReason(rawValue: drop).map { .drop($0) }
-        default: return nil
-        }
-    }
 }
 
 public struct BridgeFill: Codable, Equatable, Sendable {
@@ -249,14 +234,12 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     public var fill: BridgeFill?
     /// `code` answers: the two-step code.
     public var otp: BridgeCode?
-    /// `code` answers: false when this user does not have Premium for codes in the browser.
+    /// `code` answers: false when this Mac has no Premium, so no code goes to the browser.
     public var premium: Bool?
     /// The error code of an `error`.
     public var code: String?
     /// `tab` answers: send this tab's icon with an `icon` request (docs/BROWSER_EXTENSION.md, "icon").
     public var wantIcon: Bool?
-    /// `premium` answers to a pass: whether the app kept it. Never the pass itself.
-    public var accepted: Bool?
     /// `tab` answers: a code was added from a scan for this site; watch for its field (docs/BROWSER_EXTENSION.md, "`scan`").
     public var expectCode: BridgeExpectCode?
 
@@ -267,7 +250,7 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case type, id, version, locked, fill, otp, premium, code, wantIcon, accepted, expectCode
+        case type, id, version, locked, fill, otp, premium, code, wantIcon, expectCode
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -281,7 +264,6 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
         try container.encodeIfPresent(premium, forKey: .premium)
         try container.encodeIfPresent(code, forKey: .code)
         try container.encodeIfPresent(wantIcon, forKey: .wantIcon)
-        try container.encodeIfPresent(accepted, forKey: .accepted)
         try container.encodeIfPresent(expectCode, forKey: .expectCode)
     }
 }
@@ -326,17 +308,15 @@ public struct BridgeState: Sendable {
     }
 
     /// Answers one request. `entry` looks up an account by id in the unlocked vault. `codeAllowed` is the Premium check
-    /// for a two-step code, given the `code` request's entitlement token (docs/ACCOUNTS.md, "Who decides"). `premium` takes
-    /// a `premium` request and says whether a pass was kept; nil in a build that takes no pass (the App Store app), which
-    /// then answers as an app that does not know the message. `scan` takes a checked QR code with the origin of the page
+    /// for a two-step code: whether this Mac has Premium (docs/ACCOUNTS.md, "Who decides"). The extension carries no proof
+    /// of its own, so a `code` request says nothing about Premium. `scan` takes a checked QR code with the origin of the page
     /// it was on (nil for none) and the browser; the answer never says what the app did with it.
     public mutating func handle(
         _ request: BridgeRequest,
         from browser: BridgeBrowser,
         locked: Bool,
         now: Date,
-        codeAllowed: (String?) -> Bool = { _ in false },
-        premium: ((PassRelay) -> Bool)? = nil,
+        codeAllowed: () -> Bool = { false },
         scan: ((ScannedOTP, String?, BridgeBrowser) -> Void)? = nil,
         entry: (UUID) -> VaultEntry?
     ) -> BridgeResponse {
@@ -383,7 +363,7 @@ public struct BridgeState: Sendable {
                   OneTimeCodes.hasCode(account) else {
                 return BridgeResponse(type: "code", id: request.id)
             }
-            guard codeAllowed(request.entitlement),
+            guard codeAllowed(),
                   case .available(let settings) = OneTimeCodes.access(for: account, hasPremium: true) else {
                 return BridgeResponse(type: "code", id: request.id, premium: false)
             }
@@ -391,12 +371,10 @@ public struct BridgeState: Sendable {
             let elapsed = Int(now.timeIntervalSince1970.rounded(.down)) % period
             let code = BridgeCode(origin: page.origin, code: OneTimeCodes.code(settings: settings, at: now), expiresIn: period - elapsed)
             return BridgeResponse(type: "code", id: request.id, otp: code)
-        case "premium":
-            // Not tied to the database: a pass is taken while locked too. The answer never carries the pass.
-            guard let premium, let relay = request.passRelay else { return .error("bad-request", id: request.id) }
-            let kept = premium(relay)
-            guard case .pass = relay else { return BridgeResponse(type: "premium", id: request.id) }
-            return BridgeResponse(type: "premium", id: request.id, accepted: kept)
+        case "upgrade":
+            // "Upgrade" in the page's note about Premium. The app opens its Premium window; the answer only acknowledges
+            // it, the same whatever this Mac has.
+            return BridgeResponse(type: "upgrade", id: request.id)
         case "scan":
             // Said the same way whatever the vault holds, and whether it is locked: the extension learns nothing about it.
             guard let scan, let raw = request.otpauth, !raw.isEmpty, raw.utf8.count <= Self.maxScanLength else {

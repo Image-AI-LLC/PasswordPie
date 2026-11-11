@@ -1,9 +1,7 @@
-// What "Scan QR code on this page" did, and the popup's line for it. Apart from the decoder so the popup stays small.
-
-import { isRecord } from './protocol';
+// What a scan did, and the line the page's note shows for it. Apart from the decoder so the content script stays small.
 
 export type ScanOutcome =
-  | { kind: 'sent'; issuer: string; account: string }
+  | { kind: 'sent' }
   | { kind: 'none' }
   | { kind: 'not-otp' }
   | { kind: 'hotp' }
@@ -15,7 +13,7 @@ export type ScanOutcome =
   /** An app from before `scan`. */
   | { kind: 'old-app' };
 
-/** The popup's line for each outcome. */
+/** The line for each outcome. `sent` shows nothing: the app's window is the answer. */
 export const SCAN_MESSAGES: Record<ScanOutcome['kind'], string> = {
   sent: 'Sent to PasswordPie. Choose the item there and press Add.',
   none: 'No QR code found on this page.',
@@ -27,11 +25,3 @@ export const SCAN_MESSAGES: Record<ScanOutcome['kind'], string> = {
   unreachable: 'Open PasswordPie on this Mac, then scan again.',
   'old-app': 'Update PasswordPie on this Mac to scan QR codes.',
 };
-
-export function parseScanOutcome(value: unknown): ScanOutcome {
-  if (!isRecord(value) || typeof value.kind !== 'string' || !Object.hasOwn(SCAN_MESSAGES, value.kind)) return { kind: 'unreachable' };
-  if (value.kind === 'sent') {
-    return { kind: 'sent', issuer: typeof value.issuer === 'string' ? value.issuer : '', account: typeof value.account === 'string' ? value.account : '' };
-  }
-  return { kind: value.kind as Exclude<ScanOutcome['kind'], 'sent'> };
-}

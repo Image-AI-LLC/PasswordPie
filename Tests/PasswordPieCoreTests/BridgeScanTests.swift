@@ -93,11 +93,11 @@ final class BridgeScanTests: XCTestCase {
         _ = state.expectCode(afterScanOf: entry.id, browser: .chrome, pageURL: "https://example.com", now: start)
         _ = state.handle(request(["type": "tab", "id": 1, "url": "https://example.com/"]), from: .chrome, locked: false, now: start + 1) { _ in entry }
         let refused = object(state.handle(request(["type": "code", "id": 2, "url": "https://example.com/"]), from: .chrome, locked: false, now: start + 2,
-                                          codeAllowed: { _ in false }) { _ in entry })
+                                          codeAllowed: { false }) { _ in entry })
         XCTAssertEqual(refused["premium"] as? Bool, false)
         _ = state.expectCode(afterScanOf: entry.id, browser: .chrome, pageURL: "https://example.com", now: start)
         let code = object(state.handle(request(["type": "code", "id": 3, "url": "https://example.com/"]), from: .chrome, locked: false, now: start + 2,
-                                       codeAllowed: { _ in true }) { _ in entry })
+                                       codeAllowed: { true }) { _ in entry })
         XCTAssertNotNil(code["otp"])
     }
 

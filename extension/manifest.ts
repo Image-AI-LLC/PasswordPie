@@ -12,33 +12,26 @@ export const CHROME_KEY =
  */
 export const STORE_PACKAGE_ENV = 'PP_STORE_PACKAGE';
 
-/** The panel shortcut (`commands`). Chrome may not grant it (a key already taken), so the popup reads the real one. */
+/** The panel shortcut (`commands`). Chrome may not grant it (a key already taken); the toolbar button always works. */
 export const OPEN_PANEL_COMMAND = 'open-panel';
 
-export function extensionManifest({
-  browser,
-  storePackage,
-  account = true,
-}: {
-  browser: ConfigEnv['browser'];
-  storePackage: boolean;
-  /** False for the App Store build (WXT_PP_STORE=mas): no account, so no `storage` permission. */
-  account?: boolean;
-}): UserManifest {
+/** One manifest for every build: the extension has no account, so the App Store's Safari build is the same as the rest. */
+export function extensionManifest({ browser, storePackage }: { browser: ConfigEnv['browser']; storePackage: boolean }): UserManifest {
   return {
     name: 'PasswordPie',
     description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
-    version: '0.2.0',
+    version: '0.3.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
-    // `storage` keeps the passwordpie.com session and entitlement token (docs/ACCOUNTS.md); the App Store build has no
-    // account and does not ask for it. Signing in happens on the site, so there is no `identity` and no `oauth2`.
+    // No `storage`: the extension keeps nothing. No `identity` and no `oauth2`: it has no account and no sign-in.
     permissions: [
       ...(browser === 'safari' ? ['nativeMessaging', 'tabs', 'webNavigation', 'alarms'] : ['nativeMessaging', 'webNavigation', 'alarms']),
-      ...(account ? ['storage'] : []),
+      // The lines in the button's right-click menu and the page's (toolbar.ts). It shows no warning at install.
+      'contextMenus',
     ],
     host_permissions: ['<all_urls>'],
     icons: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png', 128: 'icon/128.png' },
+    // Nothing opens under the button: a click is `action.onClicked`, which opens the app's panel.
     action: { default_title: 'PasswordPie', default_icon: { 16: 'icon/16.png', 32: 'icon/32.png' } },
     commands: {
       [OPEN_PANEL_COMMAND]: { suggested_key: { default: 'Alt+Shift+P' }, description: 'Open the PasswordPie panel' },

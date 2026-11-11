@@ -2,7 +2,8 @@
 // (right after PasswordPie filled an account with a code), tells the background when one shows up, and fills the code
 // the app sent. No React here: the content script runs on every page and must stay small.
 import { codeFieldIsEmpty, fillCode, findCodeField } from './code-fields';
-import type { CodeHintMessage, FrameMessage } from './protocol';
+import { addNote } from './page-note';
+import type { FrameMessage } from './protocol';
 
 export const CODE_POLL_MS = 250;
 export const HINT_MS = 8_000;
@@ -15,6 +16,8 @@ export interface CodeEnv {
   frameAllowed: () => boolean;
   /** An empty code field is on the page: the background asks the app for the code. */
   notifyCodeField: () => void;
+  /** "Upgrade" was clicked in the note about Premium: the background asks the app to open its Premium window. */
+  requestUpgrade: () => void;
   now?: () => number;
 }
 
@@ -24,7 +27,7 @@ export class CodeFiller {
   private queued: ReturnType<typeof setTimeout> | undefined;
   private deadline = 0;
   private reported = false;
-  private hint: { host: HTMLElement; timer: ReturnType<typeof setTimeout>; text: string; link?: string } | undefined;
+  private hint: { host: HTMLElement; timer: ReturnType<typeof setTimeout>; text: string; action: HTMLButtonElement | undefined } | undefined;
 
   constructor(private readonly env: CodeEnv) {}
 
@@ -40,7 +43,7 @@ export class CodeFiller {
         return this.fill(msg.code);
       case 'code-hint':
         this.reported = false;
-        this.showHint(msg);
+        this.showHint();
         return false;
     }
   }
@@ -54,8 +57,9 @@ export class CodeFiller {
     return this.hint?.text;
   }
 
-  hintLink(): string | undefined {
-    return this.hint?.link;
+  /** The note's Upgrade button. It is in a closed shadow root, so the page cannot reach it. */
+  hintAction(): HTMLButtonElement | undefined {
+    return this.hint?.action;
   }
 
   private now(): number {
@@ -113,45 +117,24 @@ export class CodeFiller {
     return fillCode(field, code);
   }
 
-  /** A small note in the corner, in a closed shadow root so the page cannot read or restyle it. Takes no focus. */
-  private showHint(msg: CodeHintMessage): void {
+  /** A small note in the corner (page-note.ts). Takes no focus. Upgrade closes it and asks the app for its Premium window. */
+  private showHint(): void {
     this.hideHint();
-    const doc = this.env.document;
-    const host = doc.createElement('div');
-    host.id = HINT_HOST_ID;
-    const root = host.attachShadow({ mode: 'closed' });
     const text = 'PasswordPie Premium fills two-step codes for you.';
-    root.innerHTML = `<style>
-      :host { all: initial; position: fixed; z-index: 2147483647; right: 16px; bottom: 16px; }
-      .box { display: flex; align-items: center; gap: 10px; max-width: 340px; padding: 10px 12px; border-radius: 10px;
-        background: #FFF6E7; color: #302A24; border: 1px solid #C8BBAA; box-shadow: 0 4px 16px rgba(48,35,21,.18);
-        font: 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      a { color: #A65312; font-weight: 600; text-decoration: none; white-space: nowrap; }
-      button { all: unset; cursor: pointer; color: #70604F; font-size: 15px; padding: 0 2px; }
-      @media (prefers-color-scheme: dark) {
-        .box { background: #28231F; color: #FFF6E7; border-color: #776858; }
-        a { color: #F6B469; } button { color: #D4C4B2; }
-      }
-    </style><div class="box" role="status"><span class="text"></span></div>`;
-    const box = root.querySelector('.box');
-    const span = root.querySelector('.text');
-    if (span) span.textContent = text;
-    if (box && msg.upgradeUrl) {
-      const link = doc.createElement('a');
-      link.href = msg.upgradeUrl;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'Upgrade';
-      box.append(link);
-    }
-    const close = doc.createElement('button');
-    close.setAttribute('aria-label', 'Close');
-    close.textContent = '×';
-    close.addEventListener('click', () => this.hideHint());
-    box?.append(close);
-    (doc.body ?? doc.documentElement).append(host);
+    const { host, action } = addNote(this.env.document, {
+      id: HINT_HOST_ID,
+      text,
+      action: {
+        label: 'Upgrade',
+        run: () => {
+          this.hideHint();
+          this.env.requestUpgrade();
+        },
+      },
+      onClose: () => this.hideHint(),
+    });
     const timer = setTimeout(() => this.hideHint(), HINT_MS);
-    this.hint = { host, timer, text, ...(msg.upgradeUrl ? { link: msg.upgradeUrl } : {}) };
+    this.hint = { host, timer, text, action };
   }
 
   private hideHint(): void {

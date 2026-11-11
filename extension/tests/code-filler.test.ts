@@ -5,9 +5,16 @@ import { input, loadFixture } from './helpers';
 const ORIGIN = 'https://example.com';
 let filler: CodeFiller | undefined;
 let found = 0;
+let upgrades = 0;
 
 function make(frameAllowed = true): CodeFiller {
-  filler = new CodeFiller({ document, origin: location.origin, frameAllowed: () => frameAllowed, notifyCodeField: () => void (found += 1) });
+  filler = new CodeFiller({
+    document,
+    origin: location.origin,
+    frameAllowed: () => frameAllowed,
+    notifyCodeField: () => void (found += 1),
+    requestUpgrade: () => void (upgrades += 1),
+  });
   return filler;
 }
 
@@ -15,6 +22,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
   document.body.innerHTML = '';
   found = 0;
+  upgrades = 0;
 });
 
 afterEach(() => {
@@ -99,23 +107,34 @@ describe('CodeFiller', () => {
     expect(input('otp').value).toBe('');
   });
 
-  it('shows a quiet hint with an upgrade link, and it goes away', async () => {
+  it('shows a quiet hint with Upgrade, and it goes away', async () => {
     loadFixture('code-autocomplete.html');
-    make().handle({ type: 'code-hint', origin: ORIGIN, upgradeUrl: 'https://passwordpie.com/pricing' });
+    make().handle({ type: 'code-hint', origin: ORIGIN });
     const host = document.getElementById(HINT_HOST_ID);
     expect(host).not.toBeNull();
+    expect(filler?.hintText()).toContain('Premium');
+    expect(filler?.hintAction()?.textContent).toBe('Upgrade');
     expect(input('otp').value).toBe('');
     expect(document.activeElement).not.toBe(host);
     await vi.advanceTimersByTimeAsync(HINT_MS + 10);
     expect(document.getElementById(HINT_HOST_ID)).toBeNull();
+    expect(upgrades).toBe(0);
   });
 
-  it('the hint carries no link when there is no upgrade URL', () => {
+  it('Upgrade asks for the app\'s Premium window and closes the hint; it links to no shop', () => {
     make().handle({ type: 'code-hint', origin: ORIGIN });
-    expect(filler?.hintText()).toContain('Premium');
-    expect(filler?.hintLink()).toBeUndefined();
-    make().handle({ type: 'code-hint', origin: ORIGIN, upgradeUrl: 'https://passwordpie.com/pricing' });
-    expect(filler?.hintLink()).toBe('https://passwordpie.com/pricing');
+    const action = filler?.hintAction();
+    expect(action?.tagName).toBe('BUTTON');
+    expect(action?.closest('a')).toBeNull();
+    action?.click();
+    expect(upgrades).toBe(1);
+    expect(document.getElementById(HINT_HOST_ID)).toBeNull();
+    expect(filler?.hintAction()).toBeUndefined();
+  });
+
+  it('shows no hint for another origin, so its Upgrade cannot be reached', () => {
+    make().handle({ type: 'code-hint', origin: 'https://evil.example' });
+    expect(document.getElementById(HINT_HOST_ID)).toBeNull();
   });
 
   it('a later pick reports again after a report that got no answer', () => {

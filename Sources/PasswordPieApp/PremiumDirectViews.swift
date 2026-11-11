@@ -3,8 +3,8 @@ import AppKit
 import PasswordPieCore
 import SwiftUI
 
-// The downloaded app's Premium UI. There is no sign-in: Premium reaches this Mac from the PasswordPie browser extension,
-// or from Activate on passwordpie.com. It sends people to passwordpie.com to buy or redeem a key, so it is not compiled
+// The downloaded app's Premium UI. There is no sign-in: Premium is bought on passwordpie.com and reaches this Mac with
+// Activate there. It sends people to passwordpie.com to buy or redeem a key, so it is not compiled
 // into the App Store channel, which may not point anywhere else to buy (guideline 3.1.1).
 
 /// The passwordpie.com pages the downloaded app opens in the browser. The app itself sends them nothing.
@@ -36,12 +36,6 @@ struct DirectPremiumCopy: Equatable {
         dateText: (Date) -> String = { $0.formatted(date: .long, time: .omitted) }
     ) -> DirectPremiumCopy {
         switch status {
-        case .fromBrowser:
-            return DirectPremiumCopy(
-                title: "Premium is on",
-                detail: "The PasswordPie extension in your browser keeps it up to date.",
-                warning: nil, offersPremium: false, showsActivate: false
-            )
         case .activation(let until):
             let ending = until.timeIntervalSince(now) <= warningDays * 86400
             return DirectPremiumCopy(
@@ -56,12 +50,6 @@ struct DirectPremiumCopy: Equatable {
             switch lapse {
             case nil:
                 detail = ("Free", "Two-step codes need Premium. Everything else in PasswordPie is free.")
-            case .signedOutInBrowser:
-                detail = (off, "You signed out of the PasswordPie extension in your browser. Sign in there again, or activate this Mac on passwordpie.com.")
-            case .browserAccountFree:
-                detail = (off, "The account in your PasswordPie browser extension no longer has Premium.")
-            case .passRanOut:
-                detail = (off, "Your PasswordPie browser extension has not renewed Premium for a week. Open the browser it is signed in to, and Premium comes back by itself.")
             case .activationRanOut(let ended):
                 detail = (off, "The activation from passwordpie.com ended on \(dateText(ended)). Press Activate in your account settings to renew it.")
             }
@@ -137,7 +125,7 @@ private struct DirectPremiumContent: View {
                     }
                 }
                 Divider()
-                small("Already have Premium? Sign in to the PasswordPie extension in your browser, and Premium reaches this Mac by itself. Or press Activate in your account settings on passwordpie.com.")
+                small("Already have Premium? Press Activate in your account settings on passwordpie.com.")
             }
             if copy.showsActivate {
                 Button("Open Account Settings") { NSWorkspace.shared.open(DirectPremiumSite.activate) }

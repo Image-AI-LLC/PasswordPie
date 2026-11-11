@@ -1,64 +1,17 @@
 #!/usr/bin/env node
-// A stand-in for passwordpie.com, for development and the demo (docs/ACCOUNTS.md, "Testing without the site").
+// Demo pages for the browser extension (docs/UX.md, "Premium in the browser" and "Scan a two-step QR code").
 // Node only, no dependencies:  node dev/mock-site.mjs   (PORT=8787 by default)
 //
-// - Signing in on the site, as on passwordpie.com (docs/ACCOUNTS.md, "Signing in (extension)"): /sign-in takes any email
-//   with the password "password" and keeps a cookie session; /extension/connect (also /zh/extension/connect) hands the
-//   extension a new bearer session over window.postMessage; POST /api/auth/extension/session issues it (same origin and
-//   the cookie only). GET /api/auth/get-session and POST /api/auth/sign-out take the bearer token.
-// - GET /api/premium/entitlement and POST /api/premium/redeem, tokens signed with the TEST key in test-key.json.
-//   PPIE-TEST-TEST-TEST works once per run; PPIE-USED-USED-USED answers "used"; PPIE-OLD2-OLD2-OLD2 answers "expired".
 // - /demo/login: a two-step sign-in. Username and password, then a page with six code boxes. The demo account's
 //   two-step secret is JBSWY3DPEHPK3PXP (otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo).
-import { createHmac, createPrivateKey, randomBytes, sign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+//
+// There is no account here: the extension signs in nowhere. For Premium in the app, open an activation link
+// (node Scripts/mint-activation-link.mjs), signed with the TEST key in test-key.json.
+import { createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
 
 const PORT = Number(process.env.PORT ?? 8787);
-const KEY = JSON.parse(readFileSync(new URL('./test-key.json', import.meta.url), 'utf8'));
-const PRIVATE_KEY = createPrivateKey({ key: { kty: 'OKP', crv: 'Ed25519', x: KEY.x, d: KEY.d }, format: 'jwk' });
 const DEMO_SECRET = 'JBSWY3DPEHPK3PXP';
-const KEY_ALPHABET = /^PPIE-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/;
-
-/** email → { id, email, name, premium: null | { plan, expiresAt } } */
-const users = new Map();
-/** bearer session token → email */
-const sessions = new Map();
-/** cookie session id → email: the website's own sign-in, never sent to the extension */
-const siteSessions = new Map();
-const SITE_COOKIE = 'pp_mock_site';
-const sessionTries = [];
-const usedKeys = new Set(['PPIE-USED-USED-USED']);
-const redeemTries = [];
-
-function user(email, name = email.split('@')[0]) {
-  if (!users.has(email)) users.set(email, { id: `user-${users.size + 1}`, email, name, premium: null });
-  return users.get(email);
-}
-
-const b64url = (value) => Buffer.from(typeof value === 'string' ? value : JSON.stringify(value)).toString('base64url');
-
-function entitlementToken(account) {
-  const now = Math.floor(Date.now() / 1000);
-  const end = account.premium.expiresAt ? Math.floor(Date.parse(account.premium.expiresAt) / 1000) : Infinity;
-  const header = b64url({ alg: 'EdDSA', typ: 'JWT', kid: KEY.kid });
-  const claims = b64url({
-    iss: 'https://passwordpie.com',
-    aud: 'passwordpie-app',
-    sub: account.id,
-    premium: true,
-    plan: account.premium.plan,
-    iat: now,
-    exp: Math.min(now + 7 * 86400, end),
-  });
-  return `${header}.${claims}.${sign(null, Buffer.from(`${header}.${claims}`), PRIVATE_KEY).toString('base64url')}`;
-}
-
-function entitlement(account) {
-  const p = account.premium;
-  if (!p || (p.expiresAt && Date.parse(p.expiresAt) <= Date.now())) return { premium: false, plan: null, expiresAt: null, token: null };
-  return { premium: true, plan: p.plan, expiresAt: p.expiresAt, token: entitlementToken(account) };
-}
 
 function totp(secret, at = Date.now()) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -73,18 +26,8 @@ function totp(secret, at = Date.now()) {
 }
 
 function send(res, status, body, headers = {}) {
-  const text = typeof body === 'string' ? body : JSON.stringify(body);
-  const all = {
-    'Content-Type': typeof body === 'string' ? 'text/html; charset=utf-8' : 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Expose-Headers': 'set-auth-token',
-    ...headers,
-  };
-  // An `undefined` header (NO_CORS) is left out.
-  res.writeHead(status, Object.fromEntries(Object.entries(all).filter(([, value]) => value !== undefined)));
-  res.end(text);
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', ...headers });
+  res.end(body);
 }
 
 async function body(req) {
@@ -92,106 +35,13 @@ async function body(req) {
   for await (const chunk of req) chunks.push(chunk);
   const text = Buffer.concat(chunks).toString('utf8');
   if (!text) return {};
-  if ((req.headers['content-type'] ?? '').includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
-  try {
-    return JSON.parse(text);
-  } catch {
-    return {};
-  }
+  return Object.fromEntries(new URLSearchParams(text));
 }
-
-function signedIn(req) {
-  const match = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
-  const email = match && sessions.get(match[1]);
-  return email ? users.get(email) : undefined;
-}
-
-function cookie(req, name) {
-  for (const part of (req.headers.cookie ?? '').split(';')) {
-    const [key, ...rest] = part.trim().split('=');
-    if (key === name) return rest.join('=');
-  }
-  return undefined;
-}
-
-function siteUser(req) {
-  const email = siteSessions.get(cookie(req, SITE_COOKIE) ?? '');
-  return email ? users.get(email) : undefined;
-}
-
-const siteOrigin = (req) => `http://${req.headers.host ?? `localhost:${PORT}`}`;
-
-/** The session endpoint is same-origin only: no CORS headers at all. */
-const NO_CORS = {
-  'Access-Control-Allow-Origin': undefined,
-  'Access-Control-Allow-Headers': undefined,
-  'Access-Control-Allow-Methods': undefined,
-  'Access-Control-Expose-Headers': undefined,
-};
-
-/** Only a path on this site: no other host, no `//evil`. */
-function safeCallback(value) {
-  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/';
-}
-
-const CONNECT_PATH = /^\/(?:[a-z]{2}(?:-[A-Za-z]{2,4})?\/)?extension\/connect\/?$/;
 
 const page = (title, content) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
 <style>body{font:15px -apple-system,sans-serif;max-width:360px;margin:60px auto;color:#302A24;background:#FFF6E7}
 input{font-size:15px;padding:6px;margin:4px 0}.boxes input{width:28px;text-align:center}button{font-size:15px;padding:6px 14px}</style>
 </head><body>${content}</body></html>`;
-
-const escapeHtml = (text) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-const signInPage = (callbackUrl, failed) => page('Sign in (mock passwordpie.com)', `<h1>Sign in</h1>
-<p>Mock passwordpie.com. Any email, password <code>password</code>.</p>
-${failed ? '<p role="alert" style="color:#B3261E">The email or password is not right.</p>' : ''}
-<form method="post" action="/sign-in">
-  <input type="hidden" name="callbackUrl" value="${escapeHtml(callbackUrl)}">
-  <label>Email<br><input name="email" type="email" autocomplete="username" value="ada@example.com"></label><br>
-  <label>Password<br><input name="password" type="password" autocomplete="current-password"></label><br>
-  <button>Sign In</button>
-</form>`);
-
-// The site's side of the connect protocol, as passwordpie.com does it (docs/ACCOUNTS.md, "Signing in (extension)").
-const CONNECT = (email) => page('Connect the extension (mock passwordpie.com)', `<h1>PasswordPie in this browser</h1>
-<p>Signed in to the site as ${escapeHtml(email)}.</p>
-<p id="status" role="status">Connecting…</p>
-<p id="missing" hidden><a href="https://chromewebstore.google.com/detail/passwordpie/ebgkjnfglbkeckkknmeakpkbdpjndjhk">Get PasswordPie for Chrome</a>
- <button id="retry" type="button">Try again</button></p>
-<script>
-const ORIGIN = location.origin;
-const status = document.getElementById('status');
-const missing = document.getElementById('missing');
-let ready = false, timer, giveUp;
-const hello = () => window.postMessage({ source: 'passwordpie-site', type: 'hello' }, ORIGIN);
-function show(text, offerStore) { status.textContent = text; missing.hidden = !offerStore; }
-function start() {
-  ready = false;
-  show('Connecting…', false);
-  hello();
-  timer = setInterval(hello, 250);
-  giveUp = setTimeout(() => { clearInterval(timer); if (!ready) show('PasswordPie is not installed in this browser, or it is too old.', true); }, 3000);
-}
-window.addEventListener('message', async (event) => {
-  if (event.source !== window || event.origin !== ORIGIN) return;
-  const data = event.data;
-  if (!data || data.source !== 'passwordpie-extension') return;
-  if (data.type === 'ready' && !ready) {
-    ready = true; clearInterval(timer); clearTimeout(giveUp);
-    const response = await fetch('/api/auth/extension/session', { method: 'POST', credentials: 'same-origin' });
-    const body = response.ok ? await response.json() : null;
-    if (!body || !body.token) return show('PasswordPie in this browser could not be signed in. Try again.', false);
-    window.postMessage({ source: 'passwordpie-site', type: 'session', token: body.token }, ORIGIN);
-  } else if (data.type === 'connected') {
-    show('PasswordPie in this browser is signed in as ' + data.email + '. You can close this tab.', false);
-  } else if (data.type === 'failed') {
-    show('PasswordPie in this browser could not be signed in. Try again.', false);
-  }
-});
-document.getElementById('retry').addEventListener('click', start);
-start();
-</script>`);
 
 const LOGIN = page('Demo sign-in', `<h1>Demo sign-in</h1>
 <form method="post" action="/demo/login">
@@ -208,72 +58,8 @@ ${[1, 2, 3, 4, 5, 6].map((i) => `<input name="d${i}" maxlength="1" inputmode="nu
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-  const route = `${req.method} ${url.pathname}`;
-  if (req.method === 'OPTIONS') return send(res, 204, '');
-  if (req.method === 'GET' && CONNECT_PATH.test(url.pathname)) {
-    const account = siteUser(req);
-    if (!account) return send(res, 302, '', { Location: `/sign-in?callbackUrl=${encodeURIComponent(url.pathname)}` });
-    return send(res, 200, CONNECT(account.email), { 'Cache-Control': 'no-store' });
-  }
-  switch (route) {
-    case 'GET /sign-in':
-      return send(res, 200, signInPage(safeCallback(url.searchParams.get('callbackUrl')), false));
-    case 'POST /sign-in': {
-      const { email, password, callbackUrl } = await body(req);
-      const next = safeCallback(callbackUrl);
-      if (typeof email !== 'string' || !email.includes('@') || password !== 'password') return send(res, 401, signInPage(next, true));
-      const id = randomBytes(24).toString('base64url');
-      siteSessions.set(id, user(email.trim().toLowerCase()).email);
-      return send(res, 303, '', { Location: next, 'Set-Cookie': `${SITE_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax` });
-    }
-    case 'POST /sign-out': {
-      const id = cookie(req, SITE_COOKIE);
-      if (id) siteSessions.delete(id);
-      return send(res, 303, '', { Location: '/', 'Set-Cookie': `${SITE_COOKIE}=; Path=/; Max-Age=0` });
-    }
-    case 'POST /api/auth/extension/session': {
-      // Same origin only, and only with the website's cookie session. A new session, so either side can sign out alone.
-      const sameOrigin = req.headers.origin === siteOrigin(req) || req.headers['sec-fetch-site'] === 'same-origin';
-      const account = siteUser(req);
-      if (!sameOrigin || !account) return send(res, 401, { error: 'unauthorized' }, { 'Cache-Control': 'no-store', ...NO_CORS });
-      const now = Date.now();
-      while (sessionTries.length && now - sessionTries[0] > 60_000) sessionTries.shift();
-      if (sessionTries.push(now) > 20) return send(res, 429, { error: 'rate-limited' }, { 'Cache-Control': 'no-store', ...NO_CORS });
-      const token = randomBytes(24).toString('base64url');
-      sessions.set(token, account.email);
-      return send(res, 200, { token }, { 'Cache-Control': 'no-store', ...NO_CORS });
-    }
-    case 'GET /api/auth/get-session': {
-      const account = signedIn(req);
-      if (!account) return send(res, 200, null);
-      return send(res, 200, { session: { userId: account.id }, user: { id: account.id, email: account.email, name: account.name } });
-    }
-    case 'POST /api/auth/sign-out': {
-      const match = /^Bearer (.+)$/.exec(req.headers.authorization ?? '');
-      if (match) sessions.delete(match[1]);
-      return send(res, 200, { success: true });
-    }
-    case 'GET /api/premium/entitlement': {
-      const account = signedIn(req);
-      return account ? send(res, 200, entitlement(account)) : send(res, 401, { error: 'unauthorized' });
-    }
-    case 'POST /api/premium/redeem': {
-      const account = signedIn(req);
-      if (!account) return send(res, 401, { error: 'unauthorized' });
-      const now = Date.now();
-      while (redeemTries.length && now - redeemTries[0] > 60_000) redeemTries.shift();
-      if (redeemTries.push(now) > 10) return send(res, 429, { error: 'rate-limited' });
-      const { code } = await body(req);
-      if (typeof code !== 'string' || !KEY_ALPHABET.test(code)) return send(res, 400, { error: 'invalid' });
-      if (code === 'PPIE-OLD2-OLD2-OLD2') return send(res, 400, { error: 'expired' });
-      if (usedKeys.has(code)) return send(res, 400, { error: 'used' });
-      if (code !== 'PPIE-TEST-TEST-TEST') return send(res, 400, { error: 'invalid' });
-      usedKeys.add(code);
-      account.premium = { plan: 'key', expiresAt: null };
-      return send(res, 200, entitlement(account));
-    }
-    case 'GET /pricing':
-      return send(res, 200, page('Pricing (mock)', '<h1>PasswordPie Premium</h1><p>Mock pricing page.</p>'));
+  switch (`${req.method} ${url.pathname}`) {
+    case 'GET /':
     case 'GET /demo/login':
       return send(res, 200, LOGIN);
     case 'POST /demo/login':
@@ -287,8 +73,8 @@ const server = createServer(async (req, res) => {
       return send(res, ok ? 200 : 401, page('Demo', ok ? '<h1>Signed in ✓</h1>' : '<h1>Wrong code</h1><a href="/demo/code">Try again</a>'));
     }
     default:
-      return send(res, 404, { error: 'not-found' });
+      return send(res, 404, page('Not found', '<h1>Not found</h1>'));
   }
 });
 
-server.listen(PORT, () => console.log(`mock passwordpie.com on http://localhost:${PORT}  (demo: /demo/login)`));
+server.listen(PORT, () => console.log(`demo pages on http://localhost:${PORT}/demo/login`));

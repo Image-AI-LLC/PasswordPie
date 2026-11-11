@@ -6,38 +6,25 @@ import XCTest
 /// Who may get a two-step code in the browser: docs/ACCOUNTS.md, "Who decides".
 @MainActor
 final class BrowserCodeAccessTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_762_560_000)
-
-    /// Signed with the public test key in extension/dev/test-key.json; good until 2100. Debug builds trust that key.
-    private func sampleToken() throws -> String {
-        let file = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("extension/dev/test-key.json")
-        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: String])
-        return try XCTUnwrap(json["sampleToken"])
-    }
-
-    #if PP_DIRECT
-    func testAGoodTokenFromTheExtensionIsEnough() throws {
-        XCTAssertTrue(browserCodeAllowed(entitlement: try sampleToken(), now: now, appPremium: { false }))
-    }
-    #else
-    func testAnAppStoreBuildTakesNoTokenFromTheExtension() throws {
-        XCTAssertFalse(browserCodeAllowed(entitlement: try sampleToken(), now: now, appPremium: { false }))
-    }
-    #endif
-
     func testTheAppsOwnPremiumIsEnough() {
-        XCTAssertTrue(browserCodeAllowed(entitlement: nil, now: now, appPremium: { true }))
+        XCTAssertTrue(browserCodeAllowed(appPremium: { true }))
     }
 
-    func testNeitherMeansNoCode() throws {
-        XCTAssertFalse(browserCodeAllowed(entitlement: nil, now: now, appPremium: { false }))
-        XCTAssertFalse(browserCodeAllowed(entitlement: "not.a.token", now: now, appPremium: { false }))
-        var tampered = try sampleToken()
-        let last = tampered.removeLast()
-        tampered.append(last == "A" ? "B" : "A")
-        XCTAssertFalse(browserCodeAllowed(entitlement: tampered, now: now, appPremium: { false }))
+    /// The extension has no account and carries no proof: without Premium on this Mac there is no code, in either channel.
+    func testWithoutItThereIsNoCode() {
+        XCTAssertFalse(browserCodeAllowed(appPremium: { false }))
+    }
+
+    /// The decision takes nothing from the request: no token an extension sends can change it.
+    func testTheDecisionReadsNothingTheExtensionSent() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        let channel = try String(contentsOf: sources.appendingPathComponent("PasswordPieApp/PremiumChannel.swift"), encoding: .utf8)
+        XCTAssertTrue(channel.contains("func browserCodeAllowed(appPremium:"))
+        let fill = try String(contentsOf: sources.appendingPathComponent("PasswordPieCore/BrowserFill.swift"), encoding: .utf8)
+        XCTAssertFalse(fill.contains("var entitlement"), "the request has no field for a proof of Premium")
+        XCTAssertFalse(fill.contains("var pass:"))
     }
 
     /// The direct app's codes are free in its own panel; that must not leak into the browser.

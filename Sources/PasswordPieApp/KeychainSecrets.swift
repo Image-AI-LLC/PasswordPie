@@ -3,17 +3,19 @@ import Security
 
 /// What is kept for Premium, all in the keychain under one service. None of it is ever logged.
 enum PremiumSecret: String, CaseIterable {
-    /// Direct channel: the pass the Chrome extension handed over. Unlocks only while its signature checks and it has not run out.
-    case chromePass = "pass.chrome"
-    /// Direct channel: the pass the Safari extension handed over.
-    case safariPass = "pass.safari"
-    /// Direct channel: the pass an earlier build kept after signing in inside the app. Read, never written.
-    case appSignInPass = "pass"
     /// The token from the last activation link, in both channels. Unlocks only while its signature checks and it has not run out.
     case activation
     /// An earlier direct build's sign-in session and email. Deleted at launch, never read.
     case legacySession = "session"
     case legacyEmail = "email"
+    /// The passes a browser extension, or an earlier build's own sign-in, handed over until 2026-11-11. Deleted at launch,
+    /// never read: only an activation unlocks now.
+    case legacyChromePass = "pass.chrome"
+    case legacySafariPass = "pass.safari"
+    case legacyAppPass = "pass"
+
+    /// What earlier builds kept and this one deletes unread.
+    static let legacy: [PremiumSecret] = [.legacySession, .legacyEmail, .legacyChromePass, .legacySafariPass, .legacyAppPass]
 }
 
 @MainActor

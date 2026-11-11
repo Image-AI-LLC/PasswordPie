@@ -3,7 +3,7 @@
 // channel. Only debug and `make install` builds trust that key.
 // Usage: node Scripts/mint-activation-link.mjs [days] [plan] [audience]
 //   days      how long it lasts; negative for a link that has already run out (default 365)
-//   audience  passwordpie-activation (default), or passwordpie-app to check that a browser pass is refused as an activation
+//   audience  passwordpie-activation (default), or passwordpie-app to check that a token made for anything else is refused
 import { createPrivateKey, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

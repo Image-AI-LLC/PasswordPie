@@ -15,17 +15,15 @@ import {
   type Credentials,
   type FillMessage,
   type FrameMessage,
-  type PopupStatus,
   type TabFill,
   type TabReason,
 } from './protocol';
 import { systemTimers, type TimerHandle, type Timers } from './timers';
-import type { AppPremium, PassRelay } from './pass-relay';
 import { wantsIcon } from './site-icon';
 
 export const REPORT_DEBOUNCE_MS = 100;
-/** How long the popup mentions a code that was not filled for lack of Premium. */
-export const CODE_SKIPPED_MS = 10 * 60_000;
+/** How long after the note about Premium a click on its Upgrade counts: the note shows for 8 s. */
+export const UPGRADE_WINDOW_MS = 10_000;
 const WINDOW_ID_NONE = -1;
 
 export interface TabInfo {
@@ -63,11 +61,6 @@ export interface TabsAdapter {
   tabIcon?(tabId: number, favIconUrl: string | undefined, origin: string): Promise<string | undefined>;
 }
 
-/** Where the extension keeps the passwordpie.com account: only the entitlement token is needed here. */
-export interface AccountSource {
-  entitlementToken(): Promise<string | undefined>;
-}
-
 /** A two-step code field to wait for, after a fill of an account that has one. Holds no secret. */
 interface CodeWait {
   origin: string;
@@ -93,40 +86,15 @@ export class FillController {
   private readonly timers: Timers;
   private readonly entries = new Map<number, Entry>();
   private readonly codeWaits = new Map<number, CodeWait>();
-  private readonly account: AccountSource | undefined;
-  private readonly upgradeUrl: string | undefined;
-  private readonly relay: PassRelay | undefined;
-  private codeSkipped: { site: string; at: number } | undefined;
+  /** The frame of each tab that shows the note about Premium, and until when its Upgrade counts. */
+  private readonly hints = new Map<number, { frameId: number; until: number }>();
   private reportTimer: TimerHandle | undefined;
   private pendingReason: TabReason = 'startup';
 
-  constructor(deps: {
-    channel: NativeChannel;
-    tabs: TabsAdapter;
-    timers?: Timers;
-    account?: AccountSource;
-    upgradeUrl?: string;
-    /** Hands the account's pass to the app. None in the App Store build, which has no account. */
-    relay?: PassRelay;
-  }) {
+  constructor(deps: { channel: NativeChannel; tabs: TabsAdapter; timers?: Timers }) {
     this.channel = deps.channel;
     this.tabs = deps.tabs;
     this.timers = deps.timers ?? systemTimers;
-    this.account = deps.account;
-    this.upgradeUrl = deps.upgradeUrl;
-    this.relay = deps.relay;
-  }
-
-  /** Hands the app the pass now and says whether it has it, for the popup's one line. */
-  appPremium(): Promise<AppPremium> {
-    return this.relay ? this.relay.sync() : Promise.resolve('none');
-  }
-
-  /** What the popup shows besides the account. */
-  popupStatus(): PopupStatus {
-    const skipped = this.codeSkipped;
-    if (!skipped || this.timers.now() - skipped.at > CODE_SKIPPED_MS) return {};
-    return { codeSkippedOn: skipped.site };
   }
 
   start(): void {
@@ -134,18 +102,13 @@ export class FillController {
       onConnect: () => {
         void this.channel.request({ type: 'hello', version: PROTOCOL_VERSION, extension: EXTENSION_VERSION });
         this.report('startup');
-        // The app may have started after the last sign-in or renewal: hand it the pass now.
-        void this.relay?.sync();
       },
-      onPoke: () => {
-        this.report('poke');
-        this.relay?.catchUp();
-      },
+      onPoke: () => this.report('poke'),
     });
   }
 
   /**
-   * The toolbar button: ask the app to open its panel, as its shortcut does. Carries nothing. The host starts the app
+   * The toolbar button and the shortcut: ask the app to open its panel, as its own shortcut does. Carries nothing. The host starts the app
    * when it is installed but not running; with no app to answer, the website opens instead, to download it.
    */
   async showPanel(): Promise<void> {
@@ -187,6 +150,7 @@ export class FillController {
   tabRemoved(tabId: number): void {
     this.drop(tabId);
     this.dropCodeWait(tabId);
+    this.hints.delete(tabId);
   }
 
   runtimeMessage(value: unknown, sender: MessageSender): void {
@@ -203,9 +167,22 @@ export class FillController {
       }
     } else if (msg.type === 'code-field') {
       if (sender.frameId !== undefined && sender.url !== undefined) void this.requestCode(tabId, sender.frameId, sender.url);
+    } else if (msg.type === 'upgrade') {
+      this.upgrade(tabId, sender.frameId);
     } else {
       this.drop(tabId);
     }
+  }
+
+  /**
+   * "Upgrade" in the note about Premium: the app opens its Premium window, where it sells or says where to buy. Only from
+   * the frame the note was sent to, while it shows, so a page cannot ask for the window.
+   */
+  private upgrade(tabId: number, frameId: number | undefined): void {
+    const hint = this.hints.get(tabId);
+    if (!hint || hint.frameId !== frameId || this.timers.now() > hint.until) return;
+    this.hints.delete(tabId);
+    void this.channel.request({ type: 'upgrade' });
   }
 
   hasEntry(tabId: number): boolean {
@@ -284,23 +261,14 @@ export class FillController {
     const wait = this.liveCodeWait(tabId);
     if (!wait || wait.asking || originOf(frameUrl) !== wait.origin) return;
     wait.asking = true;
-    let entitlement: string | undefined;
-    try {
-      entitlement = await this.account?.entitlementToken();
-    } catch {
-      entitlement = undefined;
-    }
-    const answer = codeOfAnswer(
-      await this.channel.request({ type: 'code', url: `${wait.origin}/`, ...(entitlement ? { entitlement } : {}) }),
-    );
+    // Whether there is Premium is the app's to say: it answers with the code, or that it has none to give.
+    const answer = codeOfAnswer(await this.channel.request({ type: 'code', url: `${wait.origin}/` }));
     if (this.codeWaits.get(tabId) === wait) this.dropCodeWait(tabId);
     if (answer.kind === 'code' && answer.origin === wait.origin) {
-      // Premium is here now (the app's own, or this account's): an older "not filled" note is no longer true.
-      this.codeSkipped = undefined;
       await this.tabs.sendToFrame(tabId, frameId, { type: 'code', origin: wait.origin, code: answer.code }).catch(() => undefined);
     } else if (answer.kind === 'no-premium') {
-      this.codeSkipped = { site: new URL(wait.origin).host, at: this.timers.now() };
-      const hint: FrameMessage = { type: 'code-hint', origin: wait.origin, ...(this.upgradeUrl ? { upgradeUrl: this.upgradeUrl } : {}) };
+      this.hints.set(tabId, { frameId, until: this.timers.now() + UPGRADE_WINDOW_MS });
+      const hint: FrameMessage = { type: 'code-hint', origin: wait.origin };
       await this.tabs.sendToFrame(tabId, frameId, hint).catch(() => undefined);
     }
   }

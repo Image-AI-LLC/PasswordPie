@@ -16,12 +16,7 @@ describe('extensionManifest', () => {
 
   it('asks Chrome for no tabs permission: <all_urls> already exposes the active tab URL', () => {
     for (const storePackage of [false, true]) {
-      expect(extensionManifest({ browser: 'chrome', storePackage }).permissions).toEqual([
-        'nativeMessaging',
-        'webNavigation',
-        'alarms',
-        'storage',
-      ]);
+      expect(extensionManifest({ browser: 'chrome', storePackage }).permissions).toEqual(['nativeMessaging', 'webNavigation', 'alarms', 'contextMenus']);
     }
   });
 
@@ -31,39 +26,35 @@ describe('extensionManifest', () => {
       'tabs',
       'webNavigation',
       'alarms',
-      'storage',
+      'contextMenus',
     ]);
   });
 
-  it('asks for no storage permission in the App Store build, which has no account', () => {
-    expect(extensionManifest({ browser: 'safari', storePackage: false, account: false }).permissions).toEqual([
-      'nativeMessaging',
-      'tabs',
-      'webNavigation',
-      'alarms',
-    ]);
-  });
-
-  it('has no Google sign-in: no identity permission and no oauth2, in any build', () => {
+  it('has no account: no storage, no identity and no oauth2, in any build', () => {
     for (const browser of ['chrome', 'safari'] as const) {
       for (const storePackage of [false, true]) {
-        for (const account of [false, true]) {
-          const manifest = extensionManifest({ browser, storePackage, account });
-          expect(manifest.permissions).not.toContain('identity');
-          expect(manifest).not.toHaveProperty('oauth2');
-        }
+        const manifest = extensionManifest({ browser, storePackage });
+        expect(manifest.permissions).not.toContain('storage');
+        expect(manifest.permissions).not.toContain('identity');
+        expect(manifest).not.toHaveProperty('oauth2');
       }
     }
   });
 
-  it('is 0.2.0: the store needs a version above the 0.1.0 it has, and the package agrees', () => {
+  it('has no popup: a click on the toolbar button opens PasswordPie', () => {
+    for (const browser of ['chrome', 'safari'] as const) {
+      expect(extensionManifest({ browser, storePackage: false }).action).not.toHaveProperty('default_popup');
+    }
+  });
+
+  it('is 0.3.0: the store needs a version above the one it has, and the package agrees', () => {
     const { version } = extensionManifest({ browser: 'chrome', storePackage: true });
-    expect(version).toBe('0.2.0');
+    expect(version).toBe('0.3.0');
     expect(JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8')).version).toBe(version);
     expect(EXTENSION_VERSION, 'the version the native hello reports').toBe(version);
   });
 
-  it('declares the panel shortcut the popup also offers', () => {
+  it('declares the panel shortcut', () => {
     expect(extensionManifest({ browser: 'chrome', storePackage: true }).commands).toHaveProperty('open-panel');
   });
 

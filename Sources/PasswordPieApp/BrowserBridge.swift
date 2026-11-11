@@ -114,9 +114,11 @@ final class BrowserBridge: ObservableObject {
     var hidePanel: (Bool) -> Void = { _ in }
     /// The extension's toolbar button was clicked: open the panel as the shortcut does.
     var onShowPanel: (() -> Void)?
+    /// "Upgrade" was clicked in the page's note about Premium: open the Premium window.
+    var onUpgrade: (() -> Void)?
     /// The tab a browser is on changed, so the site list may change.
     var onPageChanged: (() -> Void)?
-    /// The person scanned a two-step QR code in the extension's popup: the checked code, the page's origin, the browser.
+    /// The person scanned a two-step QR code from the extension's right-click menu: the checked code, the page's origin, the browser.
     var onScan: ((ScannedOTP, String?, BridgeBrowser) -> Void)?
     var now: () -> Date = Date.init
 
@@ -214,8 +216,7 @@ final class BrowserBridge: ObservableObject {
                 from: browser,
                 locked: session.locked,
                 now: now,
-                codeAllowed: { token in browserCodeAllowed(entitlement: token, now: now) },
-                premium: PremiumChannel.passRelay(from: browser),
+                codeAllowed: { browserCodeAllowed() },
                 scan: { scanned = ($0, $1, $2) }
             ) { [session] id in session.entry(id) }
             if let scanned {
@@ -226,6 +227,12 @@ final class BrowserBridge: ObservableObject {
             }
             if state.currentURL(for: browser, now: now) != before { onPageChanged?() }
             if response.type == "tab", wantsIcon(request, from: browser) { response.wantIcon = true }
+            if response.type == "upgrade" {
+                // "Upgrade" in the page's note: the Premium window, where this channel sells or says where to buy.
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated { self?.onUpgrade?() }
+                }
+            }
             if response.type == "show" {
                 // After the answer is on its way: the server is waiting on this call to reply.
                 DispatchQueue.main.async { [weak self] in

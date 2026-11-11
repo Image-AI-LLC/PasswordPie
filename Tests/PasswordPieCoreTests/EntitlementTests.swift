@@ -213,10 +213,8 @@ final class EntitlementTests: XCTestCase {
         let sample = try XCTUnwrap(json["sampleToken"])
         // Good until 2100.
         XCTAssertNoThrow(try check(sample, key: EntitlementToken.testPublicKey).get())
-        #if DEBUG || PP_DEV_EXTENSION
-        XCTAssertNotNil(EntitlementToken.verifyTrusted(sample, now: now))
-        #endif
-        XCTAssertNil(EntitlementToken.verifyTrusted(nil, now: now))
+        // It is a pass of the kind the extension used to carry: it is not an activation, in any build.
+        XCTAssertNil(EntitlementToken.verifyActivation(sample, now: now))
     }
 }
 

@@ -16,7 +16,7 @@ typealias PremiumStore = AppStorePremiumStore
 
 /// Which `PremiumStore` this build's channel uses. Chosen at compile time, like everything else in docs/CHANNELS.md.
 enum PremiumChannel {
-    /// The store the app runs on, for `appHasPremium()` and the bridge's `premium` request.
+    /// The store the app runs on, for `appHasPremium()`.
     @MainActor static weak var live: PremiumStore?
 
     /// Where Premium's tokens are kept. A debug build keeps its own, apart from the installed app's.
@@ -33,18 +33,11 @@ enum PremiumChannel {
     static func makeStore(secrets: SecretStore? = nil) -> PremiumStore {
         let store = PremiumStore(
             secrets: secrets ?? KeychainSecrets(service: keychainService),
-            verifyPass: { EntitlementToken.verifyTrusted($0, now: $1) },
             verifyActivation: { EntitlementToken.verifyActivation($0, now: $1) },
             freeCodes: directChannelCodesAreFree
         )
         if live == nil { live = store }
         return store
-    }
-
-    /// The bridge's `premium` request from `browser`'s extension: its pass, or taking it back.
-    @MainActor
-    static func passRelay(from browser: BridgeBrowser) -> ((PassRelay) -> Bool)? {
-        { relay in live?.receive(relay, from: PassSource(browser)) ?? false }
     }
     #else
     @MainActor
@@ -61,18 +54,11 @@ enum PremiumChannel {
         if live == nil { live = store }
         return store
     }
-
-    /// The App Store app takes Premium only from StoreKit or an activation. Its Safari extension has no account and sends
-    /// no pass; one that arrives anyway is answered as an unknown message and changes nothing.
-    @MainActor
-    static func passRelay(from browser: BridgeBrowser) -> ((PassRelay) -> Bool)? {
-        nil
-    }
     #endif
 }
 
 /// **The seam the browser bridge asks:** true when this Mac has Premium of its own. App Store channel: a purchase or an
-/// activation. Direct channel: a pass from a browser extension or an activation; the free-codes switch does not count.
+/// activation. Direct channel: an activation; the free-codes switch does not count.
 @MainActor
 func appHasPremium() -> Bool {
     #if PP_DIRECT
@@ -82,15 +68,10 @@ func appHasPremium() -> Bool {
     #endif
 }
 
-/// Whether a two-step code may go to the browser for a `code` request carrying `entitlement` (docs/ACCOUNTS.md,
-/// "Who decides"). Direct channel: this Mac has Premium, or the extension's token from passwordpie.com is good;
-/// `directChannelCodesAreFree` does not count. App Store channel: the app has Premium, and the Safari extension has no
-/// token to carry. The token is never logged or kept.
+/// Whether a two-step code may go to the browser (docs/ACCOUNTS.md, "Who decides"): only when this Mac has Premium of its
+/// own. The browser extension has no account and carries no proof, so nothing it sends can change the answer.
+/// `directChannelCodesAreFree` does not count.
 @MainActor
-func browserCodeAllowed(entitlement: String?, now: Date, appPremium: @MainActor () -> Bool = appHasPremium) -> Bool {
-    #if PP_DIRECT
-    appPremium() || EntitlementToken.verifyTrusted(entitlement, now: now) != nil
-    #else
+func browserCodeAllowed(appPremium: @MainActor () -> Bool = appHasPremium) -> Bool {
     appPremium()
-    #endif
 }
