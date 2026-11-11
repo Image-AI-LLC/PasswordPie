@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { AccountStore, ENTITLEMENT_KEY, SESSION_TOKEN_KEY, USER_KEY, type KeyValue } from '../src/lib/account';
-import { acceptSiteSession, fromConnectPage } from '../src/lib/site-session';
+import { ACCEPT_WAITS, acceptSiteSession, fromConnectPage } from '../src/lib/site-session';
 
 const SITE = 'https://passwordpie.com';
 const EXT = 'ebgkjnfglbkeckkknmeakpkbdpjndjhk';
@@ -156,6 +156,51 @@ describe('acceptSiteSession', () => {
     expect(await acceptSiteSession('tok-1', store, fetcher, SITE)).toEqual({ ok: true, email: 'ada@example.com' });
     expect(kv.data.get(SESSION_TOKEN_KEY)).toBe('tok-1');
     expect(kv.data.get(USER_KEY)).toEqual({ email: 'ada@example.com', name: 'ada' });
+  });
+});
+
+describe('acceptSiteSession answers in time for the page, which gives up 15 s after ready', () => {
+  const never = () => new Promise<never>(() => undefined);
+  const waits = { sessionMs: 30, relayMs: 30, entitlementMs: 30 };
+
+  it('answers connected, with the session kept, when the entitlement call hangs', async () => {
+    const { fetcher: base } = site({ 'tok-1': 'ada@example.com' });
+    const fetcher = ((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/api/premium/entitlement') ? never() : base(input, init)) as typeof fetch;
+    expect(await acceptSiteSession('tok-1', store, fetcher, SITE, { waits })).toEqual({ ok: true, email: 'ada@example.com' });
+    expect(await store.sessionToken()).toBe('tok-1');
+  });
+
+  it('keeps the new account when the app does not answer about the old pass', async () => {
+    await store.setSessionToken('old');
+    await store.setUser({ email: 'old@example.com' });
+    const { fetcher } = site({ 'tok-2': 'ada@example.com' });
+    expect(await acceptSiteSession('tok-2', store, fetcher, SITE, { waits, accountChanged: never })).toEqual({
+      ok: true,
+      email: 'ada@example.com',
+    });
+    expect(await store.sessionToken()).toBe('tok-2');
+  });
+
+  it('fails, keeping nothing, when the token check hangs', async () => {
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)))) as typeof fetch;
+    expect(await acceptSiteSession('tok-1', store, fetcher, SITE, { waits })).toEqual({ ok: false });
+    expect(kv.data.size).toBe(0);
+  });
+
+  it('fails when the site ends the session between the token check and the entitlement', async () => {
+    const { fetcher: base } = site({ 'tok-1': 'ada@example.com' });
+    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).endsWith('/api/premium/entitlement') ? json({ error: 'unauthorized' }, 401) : base(input, init)) as typeof fetch;
+    // The 401 cleared the account, so the page must not be told it is connected.
+    expect(await acceptSiteSession('tok-1', store, fetcher, SITE, { waits })).toEqual({ ok: false });
+    expect(await store.sessionToken()).toBeUndefined();
+  });
+
+  it('by default answers within 12 s in the worst case', () => {
+    const { sessionMs, relayMs, entitlementMs } = ACCEPT_WAITS;
+    expect(sessionMs + relayMs + entitlementMs).toBeLessThanOrEqual(12_000);
   });
 });
 

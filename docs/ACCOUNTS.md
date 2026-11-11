@@ -73,7 +73,9 @@ The extension's side (`extension/src/lib/site-connect.ts`, `site-session.ts`):
   `frameId`, `url`). It asks `GET /api/auth/get-session` with it first: an unknown token, or no answer, keeps nothing and
   answers `failed`. A good one is kept with its user, replacing any other account (whose entitlement is dropped and whose pass
   the app gives back before the new account is kept, and whose session is ended on the site without waiting), and the entitlement is refreshed, which hands Premium to the app
-  through `PassRelay`. Then it answers `connected` with the email, even if only the entitlement could not be read.
+  through `PassRelay`. Then it answers `connected` with the email, even if only the entitlement could not be read; a 401 there means the
+  site ended the session in between, and the answer is `failed`. Each step is bounded (6 s for the token check, 2 s
+  for the app, 4 s for the entitlement), so the answer goes out within about 12 s: the page gives up 15 s after `ready`.
 - **Sign out:** `POST /api/auth/sign-out` with the bearer token (given up after 5 s), then the session token, user and
   entitlement are removed, even offline. Only this browser's session ends; the website stays signed in.
 - A 401 from any call drops the stored tokens: the session is gone. A 403, a 200 that is not JSON (a challenge or
