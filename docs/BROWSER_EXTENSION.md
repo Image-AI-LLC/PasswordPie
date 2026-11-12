@@ -362,8 +362,9 @@ they arrive (`BridgePeer.link`); nothing in a message says which one is talking.
    focus goes to another app, and also when it goes to a window of another profile, which it cannot see. So when every
    connection says `focused: false` while Chrome is the app in front, the window in front belongs to a profile nobody
    speaks for: no connection is in front. The same holds for an Incognito window the extension is not allowed in.
-2. Else, among connections that never said anything about focus (an extension from before 0.4.0), the last to report a
-   tab. This is how every connection counted before, so such an extension behaves as it did.
+2. Else, among connections that never said anything about focus (an extension from before 0.4.0, or one that connected
+   a moment ago), the one with the latest sign of life: a tab report, or a `show` (the toolbar button was clicked in
+   that profile). This is how every connection counted before, so such an extension behaves as it did.
 3. Else none.
 
 **The panel takes the keyboard.** Opening PasswordPie's panel makes its window key, and Chrome then tells the extension
@@ -371,7 +372,15 @@ they arrive (`BridgePeer.link`); nothing in a message says which one is talking.
 profile's window). So the app holds the answer from the moment the panel begins to open (`BridgeLinks.hold`) until it
 closes (`release`): the connection in front when it opened stays in front, a `focused: false` meanwhile changes
 nothing, and a `focused: true` that arrives just after (the click on Chrome and the shortcut in quick succession) still
-counts.
+counts. A connection that had said nothing when the panel opened keeps counting under rule 2 until the panel closes,
+whatever it says meanwhile: when the toolbar button starts the app, the first thing the extension says is that its
+window lost the focus, to the panel that click opened.
+
+**PasswordPie's own window in front.** With Preferences or a pinned account in front, the app the panel goes back to
+is still Chrome, but no profile has the focus. That is not a profile without the extension: the profile used last
+stands for Chrome (`BridgeLinks.recent`: the one in front, else the last that had the focus, else any connection),
+as any connection did before. The fill is then for no connection in particular, and is taken once Chrome is in front
+again and its profile says so.
 
 With no connection in front, for a pick made over Chrome:
 
@@ -385,6 +394,11 @@ With a connection in front, its `tab` report is the page, the pending fill is fo
 A new tab opened by the app lands in the same profile, for the reason above. From another app (Open and Fill into the
 default browser) the profile is not known in advance: the fill is for no connection in particular, and the first
 connection to report the site takes it unless it says `focused: false`.
+
+What a connection says about its focus is taken on trust between the app's own extensions. The extension's ID has a
+public key (see "Chrome"), so someone who loads their own extension under it in a profile can claim the focus and be
+taken for the profile in front. That gives them nothing new: before, any connection that reported the site took the
+fill. Once a pick is bound to a connection, nothing another connection says redirects it.
 
 Compatibility: an extension before 0.4.0 with this app is rule 2, so nothing changes for it, with one profile or
 several. This extension with an older app sends one extra field the app ignores and a `focus` the app refuses; its

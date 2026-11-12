@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startBrowserBridge() {
         bridge = BrowserBridge(session: session)
         bridge.targetApp = { [weak self] in self?.panelController.targetApp }
+        bridge.targetInFront = { [weak self] in self?.panelController.targetInFront ?? false }
         bridge.hidePanel = { [weak self] refocus in self?.panelController.hide(refocusPrevious: refocus) }
         session.browserFill = { [weak self] entry, mode, website in
             self?.bridge.fill(entry, mode, website: website) ?? false
@@ -877,7 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "chromeConnected": bridge?.chromeConnected ?? false,
             "chromeProfiles": bridge?.chromeProfiles ?? 0,
             "chromeInFront": bridge?.chromeInFront ?? false,
-            "pageURL": BrowserBridge.browser(forBundleID: panelController.targetApp?.bundleIdentifier).flatMap { bridge?.pageURL(for: $0) } ?? NSNull(),
+            "pageURL": BrowserBridge.browser(forBundleID: panelController.targetApp?.bundleIdentifier).flatMap { bridge?.pageURL(for: $0, inFront: panelController.targetInFront) } ?? NSNull(),
             "safariEnabled": bridge?.safariEnabled ?? false,
             "canFill": BridgeBrowser.allCases.filter { bridge?.canFill(in: $0) == true }.map(\.rawValue),
             "extensionBanner": panelController.shownBanner?.title ?? NSNull(),

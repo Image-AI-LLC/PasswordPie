@@ -74,15 +74,19 @@ func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled:
 struct FrontApp: Equatable {
     let bundleID: String?
     let bundleURL: URL?
+    /// False when it was not really in front: PasswordPie's own window was (Preferences, a pinned account), and this is
+    /// the app the panel will go back to. Its browser then has no profile in front, and the one used last stands for it.
+    let inFront: Bool
 
-    init(bundleID: String?, bundleURL: URL?) {
+    init(bundleID: String?, bundleURL: URL?, inFront: Bool = true) {
         self.bundleID = bundleID
         self.bundleURL = bundleURL
+        self.inFront = inFront
     }
 
-    init?(_ app: NSRunningApplication?) {
+    init?(_ app: NSRunningApplication?, inFront: Bool = true) {
         guard let app else { return nil }
-        self.init(bundleID: app.bundleIdentifier, bundleURL: app.bundleURL)
+        self.init(bundleID: app.bundleIdentifier, bundleURL: app.bundleURL, inFront: inFront)
     }
 }
 
@@ -190,6 +194,8 @@ final class BrowserBridge: ObservableObject {
 
     /// The app that was in front when the panel opened.
     var targetApp: () -> NSRunningApplication? = { nil }
+    /// Whether `targetApp` really was in front then. False while PasswordPie's own window was, and after the panel closed.
+    var targetInFront: () -> Bool = { true }
     /// Hides the panel; true gives focus back to the app that was in front.
     var hidePanel: (Bool) -> Void = { _ in }
     /// The extension's toolbar button was clicked: open the panel as the shortcut does.
@@ -233,29 +239,38 @@ final class BrowserBridge: ObservableObject {
 
     // MARK: State
 
-    /// The extension can fill the window in front of `browser`: a connected extension speaks for Chrome's profile in
-    /// front; Safari's extension is on and has reported a tab.
-    func canFill(in browser: BridgeBrowser) -> Bool {
+    /// The connection that stands for Chrome's window. `inFront` is whether Chrome was the app in front: then only a
+    /// profile that says it has the focus (or an extension that says nothing) counts. When PasswordPie's own window was
+    /// in front, no profile has the focus, and the one used last stands for Chrome, as any connection did before.
+    private func chromeLink(inFront: Bool) -> FrontLink? {
+        inFront ? state.front(.chrome) : state.recent(.chrome)
+    }
+
+    /// The extension can fill `browser`'s window: a connected extension speaks for Chrome's profile (see `chromeLink`);
+    /// Safari's extension is on and has reported a tab.
+    func canFill(in browser: BridgeBrowser, inFront: Bool = true) -> Bool {
         switch browser {
-        case .chrome: Self.chromeSupported && state.front(.chrome) != nil
+        case .chrome: Self.chromeSupported && chromeLink(inFront: inFront) != nil
         case .safari: safariEnabled && state.heardFrom(.safari, now: now())
         }
     }
 
     /// The page `browser` is on: what its extension reported, checked against what Accessibility read when the panel opened.
-    func pageURL(for browser: BridgeBrowser) -> String? {
-        let reported = canFill(in: browser) ? state.currentURL(for: browser, now: now()) : nil
+    /// `inFront` is whether the browser was the app in front when the panel opened (see `chromeLink`).
+    func pageURL(for browser: BridgeBrowser, inFront: Bool = true) -> String? {
+        let usedLast = browser == .chrome && !inFront
+        let reported = canFill(in: browser, inFront: inFront) ? state.currentURL(for: browser, now: now(), usedLast: usedLast) : nil
         return resolvedPageURL(extensionURL: reported, windowURL: readURLs[browser])
     }
 
-    func banner(for app: NSRunningApplication?) -> ExtensionBanner? {
-        banner(frontBundleID: app?.bundleIdentifier)
+    func banner(for app: NSRunningApplication?, inFront: Bool = true) -> ExtensionBanner? {
+        banner(frontBundleID: app?.bundleIdentifier, inFront: inFront)
     }
 
-    func banner(frontBundleID: String?) -> ExtensionBanner? {
+    func banner(frontBundleID: String?, inFront: Bool = true) -> ExtensionBanner? {
         extensionBanner(
             frontBundleID: frontBundleID,
-            chromeInFront: state.front(.chrome) != nil,
+            chromeInFront: chromeLink(inFront: inFront) != nil,
             safariEnabled: safariEnabled,
             chromeSupported: Self.chromeSupported
         )
@@ -415,7 +430,7 @@ final class BrowserBridge: ObservableObject {
         switch browser {
         case .chrome:
             // Only the profile in front is asked. One that says nothing about focus cannot be told apart: ask them all.
-            if let link = state.front(.chrome) { poke(.chrome, link: link.certain ? link.peer.link : nil) }
+            if let link = chromeLink(inFront: front?.inFront ?? false) { poke(.chrome, link: link.certain ? link.peer.link : nil) }
         case .safari: if safariEnabled { poke(.safari) }
         }
         guard let pid else { return }
@@ -456,7 +471,7 @@ final class BrowserBridge: ObservableObject {
 
     /// Fills through the extension when the target browser has one. False means the caller types the keystrokes instead.
     func fill(_ entry: VaultEntry, _ mode: FillMode, website: String?) -> Bool {
-        fill(entry, mode, website: website, front: FrontApp(targetApp()))
+        fill(entry, mode, website: website, front: FrontApp(targetApp(), inFront: targetInFront()))
     }
 
     /// `front` is the app that was in front when the panel opened.
@@ -472,7 +487,9 @@ final class BrowserBridge: ObservableObject {
             browserApp = app
         }
         guard let browser, let browserApp else { return false }
-        let inFront = front?.bundleURL == browserApp
+        // The panel was over this browser, and it really was the app in front then.
+        let overBrowser = front?.bundleURL == browserApp
+        let inFront = overBrowser && front?.inFront == true
         // The connection the fill is for: in Chrome, the profile in front. Never a tab of another profile.
         let link: Int?
         switch browser {
@@ -487,7 +504,7 @@ final class BrowserBridge: ObservableObject {
             guard canFill(in: .safari) else { return false }
             link = nil
         }
-        let page = inFront ? pageURL(for: browser) : nil
+        let page = overBrowser ? pageURL(for: browser, inFront: inFront) : nil
         switch browserFillPlan(entry: entry, mode: mode, preferredWebsite: website, pageURL: page) {
         case .keystrokes:
             return false

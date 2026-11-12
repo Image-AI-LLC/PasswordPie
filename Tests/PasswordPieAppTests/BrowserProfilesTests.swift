@@ -231,6 +231,47 @@ final class BrowserProfilesTests: XCTestCase {
         bridge.panelDidHide()
     }
 
+    func testThePanelOpenedByTheToolbarButtonOfAnAppJustStartedShowsNoBanner() throws {
+        // The app was not running: the host started it, and the connection has said nothing when the panel opens.
+        let (bridge, entry) = bridge()
+        connect(bridge, 1)
+        try send(bridge, link: 1, ["type": "show", "id": 1])
+        bridge.panelWillShow(over: chrome, pid: nil)
+        try send(bridge, link: 1, ["type": "focus", "id": 2, "focused": false])
+        try tab(bridge, link: 1, "https://github.com/login", focused: false)
+        XCTAssertNil(bridge.banner(frontBundleID: chrome.bundleID))
+        XCTAssertEqual(bridge.pageURL(for: .chrome), "https://github.com/login")
+        XCTAssertTrue(bridge.fill(entry, .fillOrOpen, website: nil, front: chrome))
+        bridge.panelDidHide()
+        // Chrome has its window back and says so.
+        XCTAssertNotNil(try tab(bridge, link: 1, "https://github.com/login", focused: true)["fill"])
+    }
+
+    // MARK: PasswordPie's own window was in front
+
+    func testOverPasswordPiesOwnWindowTheProfileUsedLastStandsForChrome() throws {
+        // Preferences is open and in front; the app the panel returns to is still Chrome, which no longer has the focus.
+        let (bridge, entry) = bridge()
+        connect(bridge, 1)
+        try tab(bridge, link: 1, "https://github.com/login", focused: true)
+        try send(bridge, link: 1, ["type": "focus", "id": 2, "focused": false])
+        let behind = FrontApp(bundleID: chrome.bundleID, bundleURL: chrome.bundleURL, inFront: false)
+        XCTAssertNil(bridge.banner(frontBundleID: chrome.bundleID, inFront: false), "connected, as it always counted")
+        XCTAssertEqual(bridge.pageURL(for: .chrome, inFront: false), "https://github.com/login")
+        pokes = []
+        XCTAssertTrue(bridge.fill(entry, .fillOrOpen, website: nil, front: behind))
+        XCTAssertEqual(pokes, [nil])
+        XCTAssertNil(try tab(bridge, link: 1, "https://github.com/login", focused: false)["fill"], "not while Chrome is behind")
+        XCTAssertNotNil(try tab(bridge, link: 1, "https://github.com/login", focused: true)["fill"], "once Chrome is in front again")
+    }
+
+    func testOverPasswordPiesOwnWindowWithNothingConnectedTheBannerStillOffersTheExtension() {
+        let (bridge, entry) = bridge()
+        let behind = FrontApp(bundleID: chrome.bundleID, bundleURL: chrome.bundleURL, inFront: false)
+        XCTAssertEqual(bridge.banner(frontBundleID: chrome.bundleID, inFront: false), .addChrome)
+        XCTAssertFalse(bridge.fill(entry, .fillOrOpen, website: nil, front: behind))
+    }
+
     // MARK: The extension in the store before 0.4.0, and one profile
 
     func testAnExtensionThatSaysNothingAboutFocusWorksAsBefore() throws {

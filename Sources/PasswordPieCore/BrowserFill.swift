@@ -45,9 +45,16 @@ public struct BridgeLinks: Sendable {
         var focused: Bool?
         /// Orders the links that say they have the focus: the latest wins.
         var saidOrder = 0
+        /// `saidOrder` of the last time it said it has the focus; 0 if it never did. The profile used last.
+        var hadFocusOrder = 0
         var url: String?
         var urlAt: Date?
         var reportedAt: Date?
+        /// When it last asked for the panel (`show`): a sign of life that is not a tab report.
+        var notedAt: Date?
+
+        /// The latest sign of life, for choosing among extensions that say nothing about focus.
+        var lastSign: Date { max(reportedAt ?? .distantPast, notedAt ?? .distantPast) }
     }
 
     private var links: [BridgePeer: Link] = [:]
@@ -56,6 +63,10 @@ public struct BridgeLinks: Sendable {
     /// focus. The profile that had it when the panel opened stays the one in front until the panel closes.
     private var holding = false
     private var held: [BridgeBrowser: BridgePeer] = [:]
+    /// The connections that had said nothing about focus when the panel opened. The first thing such a one says may
+    /// be that it lost the focus to the panel (the app was just started by the toolbar button), so until the panel
+    /// closes it still counts as one that says nothing.
+    private var heldSilent: Set<BridgePeer> = []
 
     public init() {}
 
@@ -65,12 +76,14 @@ public struct BridgeLinks: Sendable {
 
     public mutating func closed(_ peer: BridgePeer) {
         links[peer] = nil
+        heldSilent.remove(peer)
         if held[peer.browser] == peer { held[peer.browser] = nil }
     }
 
     /// The extension went away: forget every connection of `browser`.
     public mutating func forget(_ browser: BridgeBrowser) {
-        for peer in links.keys where peer.browser == browser { links[peer] = nil }
+        links = links.filter { $0.key.browser != browser }
+        heldSilent = heldSilent.filter { $0.browser != browser }
         held[browser] = nil
     }
 
@@ -80,6 +93,7 @@ public struct BridgeLinks: Sendable {
         order += 1
         links[peer]?.focused = focused
         links[peer]?.saidOrder = order
+        if focused { links[peer]?.hadFocusOrder = order }
         // A click on the browser and the shortcut right after: the word that it has the focus can arrive when the panel
         // is already opening. Losing it never changes what the panel holds: the panel itself takes it.
         if holding, focused { held[peer.browser] = peer }
@@ -94,8 +108,16 @@ public struct BridgeLinks: Sendable {
         links[peer]?.reportedAt = now
     }
 
+    /// The connection asked for the panel (the toolbar button or its shortcut): the person is in that profile.
+    /// It only orders the connections that say nothing about focus; it is not a tab report.
+    public mutating func noted(_ peer: BridgePeer, now: Date) {
+        opened(peer)
+        links[peer]?.notedAt = now
+    }
+
     /// The panel is opening: keep the profile that has the focus now.
     public mutating func hold() {
+        if !holding { heldSilent = Set(links.filter { $0.value.focused == nil }.keys) }
         holding = true
         for browser in BridgeBrowser.allCases {
             if let peer = focusedLink(browser) { held[browser] = peer }
@@ -106,6 +128,7 @@ public struct BridgeLinks: Sendable {
     public mutating func release() {
         holding = false
         held = [:]
+        heldSilent = []
     }
 
     private func focusedLink(_ browser: BridgeBrowser) -> BridgePeer? {
@@ -119,13 +142,26 @@ public struct BridgeLinks: Sendable {
         if holding, let peer = held[browser], links[peer] != nil { return FrontLink(peer: peer, certain: true) }
         if let peer = focusedLink(browser) { return FrontLink(peer: peer, certain: true) }
         // Extensions that say nothing about focus: the last to report, as before. One that only connected still counts.
-        let silent = links.filter { $0.key.browser == browser && $0.value.focused == nil }
-        let latest = silent.max { lhs, rhs in
-            let left = lhs.value.reportedAt ?? .distantPast
-            let right = rhs.value.reportedAt ?? .distantPast
-            return left == right ? lhs.key.link < rhs.key.link : left < right
+        let silent = links.filter { peer, link in
+            peer.browser == browser && (link.focused == nil || (holding && heldSilent.contains(peer)))
         }
-        return latest.map { FrontLink(peer: $0.key, certain: false) }
+        return Self.latest(silent).map { FrontLink(peer: $0, certain: false) }
+    }
+
+    private static func latest(_ links: [BridgePeer: Link]) -> BridgePeer? {
+        links.max { lhs, rhs in
+            lhs.value.lastSign == rhs.value.lastSign ? lhs.key.link < rhs.key.link : lhs.value.lastSign < rhs.value.lastSign
+        }?.key
+    }
+
+    /// The connection that stands for `browser` when it is not the app in front (PasswordPie's own window is, or
+    /// another app): the one in front if there is one, else the profile that had the focus last, else any connection.
+    /// A guess, as "connected" always was: nil only when nothing is connected.
+    public func recent(_ browser: BridgeBrowser) -> FrontLink? {
+        if let front = front(browser) { return front }
+        let mine = links.filter { $0.key.browser == browser }
+        let usedLast = mine.filter { $0.value.hadFocusOrder > 0 }.max { $0.value.hadFocusOrder < $1.value.hadFocusOrder }?.key
+        return (usedLast ?? Self.latest(mine)).map { FrontLink(peer: $0, certain: false) }
     }
 
     /// What `peer` last said about the focus, nil if nothing.
@@ -454,10 +490,16 @@ public struct BridgeState: Sendable {
         links.count(browser)
     }
 
+    /// The connection that stands for `browser` when it is not the app in front: see `BridgeLinks.recent`.
+    public func recent(_ browser: BridgeBrowser) -> FrontLink? {
+        links.recent(browser)
+    }
+
     /// The web page the profile in front of `browser` reported as its active tab, if it is less than `maxAge` old.
-    /// Another profile's tab is never it.
-    public func currentURL(for browser: BridgeBrowser, now: Date, maxAge: TimeInterval = 3600) -> String? {
-        guard let front = links.front(browser) else { return nil }
+    /// Another profile's tab is never it. `usedLast` is for when the browser is not the app in front: then the page
+    /// is that of the profile used last.
+    public func currentURL(for browser: BridgeBrowser, now: Date, maxAge: TimeInterval = 3600, usedLast: Bool = false) -> String? {
+        guard let front = usedLast ? links.recent(browser) : links.front(browser) else { return nil }
         return links.url(of: front.peer, now: now, maxAge: maxAge)
     }
 
@@ -584,6 +626,7 @@ public struct BridgeState: Sendable {
             }
         case "show":
             // The toolbar button. The app opens its panel; the answer only acknowledges it.
+            links.noted(peer, now: now)
             return BridgeResponse(type: "show", id: request.id)
         default:
             return .error("bad-request", id: request.id)

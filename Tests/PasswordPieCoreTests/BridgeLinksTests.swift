@@ -112,8 +112,61 @@ final class BridgeLinksTests: XCTestCase {
         links.closed(work)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: home, certain: false), "the other has said nothing yet")
         links.said(home, focused: false)
+        links.release()
         XCTAssertNil(links.front(.chrome))
         XCTAssertEqual(links.count(.chrome), 1)
+    }
+
+    func testAConnectionThatHadSaidNothingWhenThePanelOpenedStaysInFront() {
+        // PasswordPie was just started by the toolbar button: the connection is new, and the first thing its extension
+        // says is that the window lost the focus, to the panel that the click opened.
+        var links = links(work)
+        links.hold()
+        links.said(work, focused: false)
+        links.reported(work, url: "https://github.com/", focused: false, now: start)
+        XCTAssertEqual(links.front(.chrome), FrontLink(peer: work, certain: false))
+        links.release()
+        XCTAssertNil(links.front(.chrome), "the panel is gone: what it said counts")
+    }
+
+    func testAConnectionThatSaidItLostTheFocusBeforeThePanelIsNotKept() {
+        var links = links(work, home)
+        links.said(work, focused: false)
+        links.hold()
+        links.said(home, focused: false)
+        XCTAssertEqual(links.front(.chrome)?.peer, home, "only the one that had said nothing")
+    }
+
+    func testTheConnectionThatAskedForThePanelIsTheLatestSign() {
+        // Two profiles connected a moment ago and neither has reported: the toolbar button was clicked in one.
+        var links = links(work, home)
+        links.noted(home, now: start)
+        XCTAssertEqual(links.front(.chrome)?.peer, home)
+        links.noted(work, now: start + 1)
+        XCTAssertEqual(links.front(.chrome)?.peer, work)
+        XCTAssertFalse(links.heardFrom(.chrome, now: start + 1, within: 60), "asking for the panel is not a tab report")
+    }
+
+    func testTheProfileUsedLastIsKnownAfterItLosesTheFocus() {
+        // PasswordPie's own window is in front: no Chrome profile has the focus, and the one used last is the best guess.
+        var links = links(work, home)
+        links.said(home, focused: true)
+        links.said(home, focused: false)
+        links.said(work, focused: true)
+        links.said(work, focused: false)
+        XCTAssertNil(links.front(.chrome))
+        XCTAssertEqual(links.recent(.chrome), FrontLink(peer: work, certain: false))
+        links.closed(work)
+        XCTAssertEqual(links.recent(.chrome)?.peer, home)
+    }
+
+    func testForgettingABrowserDropsEveryConnection() {
+        var links = links(work, home, BridgePeer(.safari))
+        links.said(work, focused: true)
+        links.forget(.chrome)
+        XCTAssertEqual(links.count(.chrome), 0)
+        XCTAssertNil(links.front(.chrome))
+        XCTAssertEqual(links.count(.safari), 1)
     }
 
     func testBrowsersAreKeptApart() {
@@ -247,6 +300,22 @@ final class BridgeProfilesTests: XCTestCase {
         XCTAssertNil(state.currentURL(for: .chrome, now: start + 1))
         XCTAssertFalse(state.heardFrom(.chrome, now: start + 1))
         XCTAssertEqual(state.linkCount(.chrome), 0)
+    }
+
+    func testShowMarksTheProfileThatAskedAmongThoseThatHaveSaidNothing() {
+        var state = BridgeState()
+        state.opened(BridgePeer(.chrome, link: 1))
+        state.opened(BridgePeer(.chrome, link: 2))
+        _ = state.handle(request(#"{"type":"show","id":3}"#), from: .chrome, link: 1, locked: true, now: start) { _ in nil }
+        XCTAssertEqual(state.front(.chrome)?.peer, BridgePeer(.chrome, link: 1))
+    }
+
+    func testThePageOfTheProfileUsedLastIsKeptForWhenChromeIsNotInFront() {
+        var state = BridgeState()
+        report(&state, link: 1, "https://github.com/", focused: true)
+        _ = state.handle(request(#"{"type":"focus","id":8,"focused":false}"#), from: .chrome, link: 1, locked: false, now: start + 1) { _ in nil }
+        XCTAssertNil(state.currentURL(for: .chrome, now: start + 2))
+        XCTAssertEqual(state.currentURL(for: .chrome, now: start + 2, usedLast: true), "https://github.com/")
     }
 
     func testThePanelHoldsThePageOfTheProfileItOpenedOver() {
