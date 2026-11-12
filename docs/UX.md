@@ -451,14 +451,38 @@ Without the extension, or in any other app, Fill types the username and password
 
 ### Getting the extension
 
-When Chrome is in front and its extension is not connected, the panel's first line, above the search box, is
-**Add Chrome Extension…** with Chrome's icon. Click it to open PasswordPie's page in the Chrome Web Store, in Chrome.
-Once the extension is installed and talking to PasswordPie, the line goes away.
+When Chrome is in front and the profile you are using has no connected extension, the panel's first line, above the
+search box, is **Add Chrome Extension…** with Chrome's icon. Click it to open PasswordPie's page in the Chrome Web
+Store, in that Chrome profile. Once the extension is installed and talking to PasswordPie, the line goes away.
 
 Safari has the same line, **Enable Safari Extension…**. It opens Safari's Extensions settings with PasswordPie selected,
 where you turn it on.
 
+The same two are always in **Preferences → Browser extensions**, whether or not a browser is in front. Each browser has
+a line that says where it stands (**Connected**, **Connected in 2 profiles**, **Not connected**; **On** or **Off** for
+Safari) and its button: **Add Chrome Extension…**, and **Enable Safari Extension…** (**Open Safari Settings…** once it
+is on). **Add Chrome Extension…** stays there after Chrome is connected, because another profile may still need it.
+**Browser Extensions…** in the gear menu, and in the menu that Option-clicking the menu bar icon opens, goes straight
+to that section.
+
 Chrome is in the version downloaded from passwordpie.com. The App Store version has Safari only, for now.
+
+### More than one Chrome profile
+
+Chrome keeps extensions per profile, so the PasswordPie extension in your work profile does nothing for your personal
+one. PasswordPie goes by the profile whose window is in front:
+
+- **A profile with the extension.** The site group is that window's tab, and Return fills that tab. A tab in another
+  profile is never filled, even when it is on the same site.
+- **A profile without it.** The first line is **Add Chrome Extension…**, and it opens the store page in that profile.
+  Until it is installed there, PasswordPie does not go by what another profile's extension says: the site group comes
+  from the window's address when PasswordPie has Accessibility access, and is left out when it has not, and Fill types
+  the username and password, as in any app without the extension.
+- **An Incognito window** counts as a profile without the extension, until you turn on "Allow in Incognito" for
+  PasswordPie in `chrome://extensions`.
+
+To add the extension to another profile later, bring a window of that profile to the front in Chrome, then choose
+**Add Chrome Extension…** in Preferences: the store page opens in the profile you used last.
 
 ### What it will not do
 
@@ -490,6 +514,12 @@ Use a database with a GitHub login, and the PasswordPie extension installed in C
 4. Go to example.com. Press `⌘\`, type `github`, press Return. A new tab opens github.com/login and fills it.
 5. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
 6. Repeat 2 to 4 in Safari after "Enable Safari Extension…".
+7. Two Chrome profiles, the extension only in the first, both on github.com/login. In the first, `⌘\` shows GITHUB.COM
+   and Return fills. Click the second profile's window and press `⌘\`: the first line is "Add Chrome Extension…", and
+   Return types into this window; the first profile's tab stays empty. Click the line: the store page opens in the
+   second profile.
+8. Open Preferences from the gear menu's Browser Extensions…: Chrome says "Connected", with Add Chrome Extension… next
+   to it.
 
 ## Site icons without telling anyone
 
