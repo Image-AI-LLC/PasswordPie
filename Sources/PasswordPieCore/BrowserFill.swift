@@ -75,7 +75,7 @@ public struct BridgeLinks: Sendable {
     }
 
     /// The profile's windows gained or lost the focus.
-    public mutating func said(_ peer: BridgePeer, focused: Bool, now: Date) {
+    public mutating func said(_ peer: BridgePeer, focused: Bool) {
         opened(peer)
         order += 1
         links[peer]?.focused = focused
@@ -88,7 +88,7 @@ public struct BridgeLinks: Sendable {
     /// A `tab` report: the active tab's page (nil when it is not a web page), and the focus if the extension says it.
     public mutating func reported(_ peer: BridgePeer, url: String?, focused: Bool?, now: Date) {
         opened(peer)
-        if let focused { said(peer, focused: focused, now: now) }
+        if let focused { said(peer, focused: focused) }
         links[peer]?.url = url
         links[peer]?.urlAt = url == nil ? nil : now
         links[peer]?.reportedAt = now
@@ -518,7 +518,7 @@ public struct BridgeState: Sendable {
         case "focus":
             // The profile's windows gained or lost the focus. Says nothing back, locked or not.
             guard let focused = request.focused else { return .error("bad-request", id: request.id) }
-            links.said(peer, focused: focused, now: now)
+            links.said(peer, focused: focused)
             return BridgeResponse(type: "focus", id: request.id)
         case "tab":
             let url = request.url ?? ""

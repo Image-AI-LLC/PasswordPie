@@ -617,8 +617,11 @@ struct BrowserExtensionsSection: View {
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // The text takes the width the button leaves, instead of sharing it with the spacer.
+            .layoutPriority(1)
             Spacer(minLength: 8)
             Button(button, action: action)
+                .fixedSize()
         }
     }
 }

@@ -15,29 +15,29 @@ final class BridgeLinksTests: XCTestCase {
 
     func testTheProfileThatSaysItHasTheFocusIsInFront() {
         var links = links(work, home)
-        links.said(work, focused: true, now: start)
-        links.said(home, focused: false, now: start)
+        links.said(work, focused: true)
+        links.said(home, focused: false)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: work, certain: true))
 
         // The person clicks the other profile's window: one says it lost the focus, the other that it has it.
-        links.said(work, focused: false, now: start + 1)
-        links.said(home, focused: true, now: start + 1)
+        links.said(work, focused: false)
+        links.said(home, focused: true)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: home, certain: true))
     }
 
     func testNoProfileIsInFrontWhenEachSaysItLostTheFocus() {
         // The window in front belongs to a profile without the extension: nobody speaks for it.
         var links = links(work)
-        links.said(work, focused: true, now: start)
-        links.said(work, focused: false, now: start + 1)
+        links.said(work, focused: true)
+        links.said(work, focused: false)
         XCTAssertNil(links.front(.chrome))
     }
 
     func testTheLatestToSayItHasTheFocusWinsWhenTwoStillDo() {
         // The one that lost it has not said so yet.
         var links = links(work, home)
-        links.said(work, focused: true, now: start)
-        links.said(home, focused: true, now: start + 1)
+        links.said(work, focused: true)
+        links.said(home, focused: true)
         XCTAssertEqual(links.front(.chrome)?.peer, home)
     }
 
@@ -60,18 +60,18 @@ final class BridgeLinksTests: XCTestCase {
 
     func testASilentExtensionMayBeInFrontWhenTheOthersSayTheyAreNot() {
         var links = links(work, home)
-        links.said(work, focused: false, now: start)
+        links.said(work, focused: false)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: home, certain: false))
-        links.said(work, focused: true, now: start + 1)
+        links.said(work, focused: true)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: work, certain: true), "one that says so wins over a guess")
     }
 
     func testThePanelKeepsTheProfileItOpenedOver() {
         // PasswordPie's panel takes the keyboard, so Chrome tells the extension its window lost the focus.
         var links = links(work)
-        links.said(work, focused: true, now: start)
+        links.said(work, focused: true)
         links.hold()
-        links.said(work, focused: false, now: start + 0.1)
+        links.said(work, focused: false)
         links.reported(work, url: "https://github.com/", focused: false, now: start + 0.2)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: work, certain: true))
         links.release()
@@ -80,7 +80,7 @@ final class BridgeLinksTests: XCTestCase {
 
     func testThePanelOverAProfileWithoutTheExtensionHasNoneInFront() {
         var links = links(work)
-        links.said(work, focused: false, now: start)
+        links.said(work, focused: false)
         links.hold()
         links.reported(work, url: "https://github.com/", focused: false, now: start + 0.2)
         XCTAssertNil(links.front(.chrome))
@@ -89,36 +89,36 @@ final class BridgeLinksTests: XCTestCase {
     func testAFocusSaidWhileThePanelOpensStillCounts() {
         // The shortcut came a moment after the click on Chrome: "focused" arrives after the panel began to open.
         var links = links(work)
-        links.said(work, focused: false, now: start)
+        links.said(work, focused: false)
         links.hold()
-        links.said(work, focused: true, now: start + 0.01)
-        links.said(work, focused: false, now: start + 0.05)
+        links.said(work, focused: true)
+        links.said(work, focused: false)
         XCTAssertEqual(links.front(.chrome)?.peer, work)
     }
 
     func testOpeningThePanelAgainKeepsWhatItHeld() {
         var links = links(work)
-        links.said(work, focused: true, now: start)
+        links.said(work, focused: true)
         links.hold()
-        links.said(work, focused: false, now: start + 0.1)
+        links.said(work, focused: false)
         links.hold()
         XCTAssertEqual(links.front(.chrome)?.peer, work)
     }
 
     func testAClosedConnectionIsForgotten() {
         var links = links(work, home)
-        links.said(work, focused: true, now: start)
+        links.said(work, focused: true)
         links.hold()
         links.closed(work)
         XCTAssertEqual(links.front(.chrome), FrontLink(peer: home, certain: false), "the other has said nothing yet")
-        links.said(home, focused: false, now: start)
+        links.said(home, focused: false)
         XCTAssertNil(links.front(.chrome))
         XCTAssertEqual(links.count(.chrome), 1)
     }
 
     func testBrowsersAreKeptApart() {
         var links = links(work, BridgePeer(.safari))
-        links.said(work, focused: false, now: start)
+        links.said(work, focused: false)
         XCTAssertNil(links.front(.chrome))
         XCTAssertEqual(links.front(.safari)?.peer, BridgePeer(.safari))
     }
