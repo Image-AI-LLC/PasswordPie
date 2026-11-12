@@ -20,7 +20,7 @@ export function extensionManifest({ browser, storePackage }: { browser: ConfigEn
   return {
     name: 'PasswordPie',
     description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
-    version: '0.3.0',
+    version: '0.4.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
     // No `storage`: the extension keeps nothing. No `identity` and no `oauth2`: it has no account and no sign-in.

@@ -47,9 +47,9 @@ describe('extensionManifest', () => {
     }
   });
 
-  it('is 0.3.0: the store needs a version above the one it has, and the package agrees', () => {
+  it('is 0.4.0: the store needs a version above the one it has, and the package agrees', () => {
     const { version } = extensionManifest({ browser: 'chrome', storePackage: true });
-    expect(version).toBe('0.3.0');
+    expect(version).toBe('0.4.0');
     expect(JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8')).version).toBe(version);
     expect(EXTENSION_VERSION, 'the version the native hello reports').toBe(version);
   });

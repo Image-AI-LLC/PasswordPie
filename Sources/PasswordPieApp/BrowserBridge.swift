@@ -60,13 +60,77 @@ enum ExtensionBanner: Equatable {
     }
 }
 
-/// Which banner the panel shows for the app that was in front, if any.
-func extensionBanner(frontBundleID: String?, chromeConnected: Bool, safariEnabled: Bool, chromeSupported: Bool) -> ExtensionBanner? {
+/// Which banner the panel shows for the app that was in front, if any. `chromeInFront` is whether an extension speaks
+/// for the Chrome profile in front: one connected in another profile does not count.
+func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled: Bool, chromeSupported: Bool) -> ExtensionBanner? {
     switch BrowserBridge.browser(forBundleID: frontBundleID) {
-    case .chrome: chromeSupported && !chromeConnected ? .addChrome : nil
+    case .chrome: chromeSupported && !chromeInFront ? .addChrome : nil
     case .safari: safariEnabled ? nil : .enableSafari
     case nil: nil
     }
+}
+
+/// What the bridge needs to know of the app that was in front when the panel opened.
+struct FrontApp: Equatable {
+    let bundleID: String?
+    let bundleURL: URL?
+    /// False when it was not really in front: PasswordPie's own window was (Preferences), and this is
+    /// the app the panel will go back to. Its browser then has no profile in front, and the one used last stands for it.
+    let inFront: Bool
+
+    init(bundleID: String?, bundleURL: URL?, inFront: Bool = true) {
+        self.bundleID = bundleID
+        self.bundleURL = bundleURL
+        self.inFront = inFront
+    }
+
+    init?(_ app: NSRunningApplication?, inFront: Bool = true) {
+        guard let app else { return nil }
+        self.init(bundleID: app.bundleIdentifier, bundleURL: app.bundleURL, inFront: inFront)
+    }
+}
+
+/// Where a fill through Chrome's extension goes.
+enum ChromeFillRoute: Equatable {
+    /// No extension speaks for the profile that would get it: type the keystrokes.
+    case keystrokes
+    /// The profile in front, by its connection. No other profile may take it.
+    case link(Int)
+    /// Not known which profile: any connection may take it, except one that says its profile is not in front.
+    case anyProfile
+}
+
+/// `chromeInFront` is whether Chrome was the app in front; `front` the connection of its profile in front, if any;
+/// `connected` whether any profile is connected. Chrome opens a new tab in the profile used last, and from another app
+/// that is not known before the tab reports.
+func chromeFillRoute(chromeInFront: Bool, front: FrontLink?, connected: Bool) -> ChromeFillRoute {
+    guard chromeInFront else { return connected ? .anyProfile : .keystrokes }
+    guard let front else { return .keystrokes }
+    return front.certain ? .link(front.peer.link) : .anyProfile
+}
+
+/// A browser's line in Preferences, "Browser extensions".
+struct ExtensionStatus: Equatable {
+    let text: String
+    let on: Bool
+
+    /// `profiles` is how many Chrome profiles have the extension connected now.
+    static func chrome(profiles: Int) -> ExtensionStatus {
+        switch profiles {
+        case ..<1: ExtensionStatus(text: "Not connected", on: false)
+        case 1: ExtensionStatus(text: "Connected", on: true)
+        default: ExtensionStatus(text: "Connected in \(profiles) profiles", on: true)
+        }
+    }
+
+    static func safari(enabled: Bool) -> ExtensionStatus {
+        ExtensionStatus(text: enabled ? "On" : "Off", on: enabled)
+    }
+}
+
+/// Safari's button in Preferences. Both open Safari's Extensions settings with PasswordPie selected.
+func safariExtensionButtonTitle(enabled: Bool) -> String {
+    enabled ? "Open Safari Settings…" : ExtensionBanner.enableSafari.title
 }
 
 /// The app's side of the browser extensions: the socket server, which browsers are connected, the tab each one is on,
@@ -93,8 +157,13 @@ final class BrowserBridge: ObservableObject {
         }
     }
 
-    @Published private(set) var chromeConnected = false
+    /// How many Chrome profiles have the extension connected now.
+    @Published private(set) var chromeProfiles = 0
+    /// An extension speaks for the Chrome profile in front. False when every connected profile says the focus is
+    /// elsewhere: the window in front belongs to a profile without the extension.
+    @Published private(set) var chromeInFront = false
     @Published private(set) var safariEnabled = false
+    var chromeConnected: Bool { chromeProfiles > 0 }
 
     private unowned let session: VaultSession
     private var state = BridgeState()
@@ -103,13 +172,29 @@ final class BrowserBridge: ObservableObject {
     /// Where icons from the extension go.
     var icons: () -> SiteIconStore = { SiteIconStore.shared }
     private var server: BrowserBridgeServer?
+    private var chromeLinks: Set<BridgePeer> = []
+    /// The connection the latest scan came from, per browser: its code is expected in that Chrome profile.
+    private var scanLinks: [BridgeBrowser: Int] = [:]
+    /// Sends a frame to one Chrome connection, or to all when the link is nil.
+    var pushToChrome: (Data, Int?) -> Void = { _, _ in }
+    /// Opens a page in the browser at the given bundle, or in the default browser when there is none.
+    var openInBrowser: (URL, URL?) -> Void = { url, app in
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        if let app {
+            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration)
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
     /// From the Accessibility fallback, for the panel's site list only. Replaced every time the panel opens.
     private var readURLs: [BridgeBrowser: String] = [:]
     private var readGeneration = 0
     private var cancellables = Set<AnyCancellable>()
 
-    /// The app that was in front when the panel opened.
-    var targetApp: () -> NSRunningApplication? = { nil }
+    /// The app a fill is for: the one the panel opened over, or with the panel closed the one in front now
+    /// (`PanelController.fillTarget`).
+    var fillTarget: () -> FrontApp? = { nil }
     /// Hides the panel; true gives focus back to the app that was in front.
     var hidePanel: (Bool) -> Void = { _ in }
     /// The extension's toolbar button was clicked: open the panel as the shortcut does.
@@ -124,12 +209,13 @@ final class BrowserBridge: ObservableObject {
 
     init(session: VaultSession) {
         self.session = session
+        pushToChrome = { [weak self] data, link in self?.server?.push(data, to: .chrome, link: link) }
     }
 
     func start() {
         let server = BrowserBridgeServer(
-            handler: { [weak self] frame, browser in self?.answer(frame, from: browser) },
-            changed: { [weak self] counts in self?.connectionsChanged(counts) }
+            handler: { [weak self] frame, peer in self?.answer(frame, from: peer.browser, link: peer.link) },
+            changed: { [weak self] peers in self?.connectionsChanged(peers) }
         )
         do {
             try server.start()
@@ -152,39 +238,63 @@ final class BrowserBridge: ObservableObject {
 
     // MARK: State
 
-    /// The extension can fill in `browser`: Chrome's host is connected now; Safari's extension is on and has reported a tab.
-    func canFill(in browser: BridgeBrowser) -> Bool {
+    /// The connection that stands for Chrome's window. `inFront` is whether Chrome was the app in front: then only a
+    /// profile that says it has the focus (or an extension that says nothing) counts. When PasswordPie's own window was
+    /// in front, no profile has the focus, and the one used last stands for Chrome, as any connection did before.
+    private func chromeLink(inFront: Bool) -> FrontLink? {
+        inFront ? state.front(.chrome) : state.recent(.chrome)
+    }
+
+    /// The extension can fill `browser`'s window: a connected extension speaks for Chrome's profile (see `chromeLink`);
+    /// Safari's extension is on and has reported a tab.
+    func canFill(in browser: BridgeBrowser, inFront: Bool = true) -> Bool {
         switch browser {
-        case .chrome: Self.chromeSupported && chromeConnected
+        case .chrome: Self.chromeSupported && chromeLink(inFront: inFront) != nil
         case .safari: safariEnabled && state.heardFrom(.safari, now: now())
         }
     }
 
     /// The page `browser` is on: what its extension reported, checked against what Accessibility read when the panel opened.
-    func pageURL(for browser: BridgeBrowser) -> String? {
-        let reported = canFill(in: browser) ? state.currentURL(for: browser, now: now()) : nil
+    /// `inFront` is whether the browser really is the app in front for this panel or fill (see `chromeLink`).
+    func pageURL(for browser: BridgeBrowser, inFront: Bool = true) -> String? {
+        let usedLast = browser == .chrome && !inFront
+        let reported = canFill(in: browser, inFront: inFront) ? state.currentURL(for: browser, now: now(), usedLast: usedLast) : nil
         return resolvedPageURL(extensionURL: reported, windowURL: readURLs[browser])
     }
 
-    func banner(for app: NSRunningApplication?) -> ExtensionBanner? {
+    func banner(for app: NSRunningApplication?, inFront: Bool = true) -> ExtensionBanner? {
+        banner(frontBundleID: app?.bundleIdentifier, inFront: inFront)
+    }
+
+    func banner(frontBundleID: String?, inFront: Bool = true) -> ExtensionBanner? {
         extensionBanner(
-            frontBundleID: app?.bundleIdentifier,
-            chromeConnected: chromeConnected,
+            frontBundleID: frontBundleID,
+            chromeInFront: chromeLink(inFront: inFront) != nil,
             safariEnabled: safariEnabled,
             chromeSupported: Self.chromeSupported
         )
     }
 
-    private func connectionsChanged(_ counts: [BridgeBrowser: Int]) {
-        let connected = (counts[.chrome] ?? 0) > 0
-        guard connected != chromeConnected else { return }
-        chromeConnected = connected
-        if connected {
-            // Ask for the tab now, so the site list does not wait for the next tab change.
-            poke(.chrome)
-        } else {
-            state.forget(.chrome)
-        }
+    /// The server's open connections changed. Each Chrome connection is one profile's extension.
+    func connectionsChanged(_ peers: Set<BridgePeer>) {
+        let chrome = peers.filter { $0.browser == .chrome }
+        guard chrome != chromeLinks else { return }
+        let page = state.currentURL(for: .chrome, now: now())
+        let added = chrome.subtracting(chromeLinks)
+        for peer in chromeLinks.subtracting(chrome) { state.closed(peer) }
+        for peer in added { state.opened(peer) }
+        chromeLinks = chrome
+        if chromeProfiles != chrome.count { chromeProfiles = chrome.count }
+        frontChanged(pageBefore: page)
+        // Ask for the tab now, so the site list does not wait for the next tab change.
+        for peer in added.sorted(by: { $0.link < $1.link }) { poke(.chrome, link: peer.link) }
+    }
+
+    /// Which Chrome profile is in front may have changed: the banner and the site list follow it.
+    private func frontChanged(pageBefore: String?) {
+        let inFront = state.front(.chrome) != nil
+        if inFront != chromeInFront { chromeInFront = inFront }
+        if state.currentURL(for: .chrome, now: now()) != pageBefore { onPageChanged?() }
     }
 
     func refreshSafariState() {
@@ -204,7 +314,8 @@ final class BrowserBridge: ObservableObject {
 
     // MARK: Messages
 
-    func answer(_ frame: Data, from browser: BridgeBrowser) -> Data? {
+    /// Answers one frame. `link` is the connection it came on: for Chrome, one per profile.
+    func answer(_ frame: Data, from browser: BridgeBrowser, link: Int = 0) -> Data? {
         var response: BridgeResponse
         if let request = try? JSONDecoder().decode(BridgeRequest.self, from: frame) {
             if request.type == "icon" { return try? JSONEncoder().encode(answerIcon(frame, from: browser)) }
@@ -214,18 +325,24 @@ final class BrowserBridge: ObservableObject {
             response = state.handle(
                 request,
                 from: browser,
+                link: link,
                 locked: session.locked,
                 now: now,
                 codeAllowed: { browserCodeAllowed() },
                 scan: { scanned = ($0, $1, $2) }
             ) { [session] id in session.entry(id) }
             if let scanned {
+                scanLinks[browser] = link
                 // After the answer is on its way, as for `show`. The answer says the same whatever happens next.
                 DispatchQueue.main.async { [weak self] in
                     MainActor.assumeIsolated { self?.onScan?(scanned.0, scanned.1, scanned.2) }
                 }
             }
-            if state.currentURL(for: browser, now: now) != before { onPageChanged?() }
+            if browser == .chrome {
+                frontChanged(pageBefore: before)
+            } else if state.currentURL(for: browser, now: now) != before {
+                onPageChanged?()
+            }
             if response.type == "tab", wantsIcon(request, from: browser) { response.wantIcon = true }
             if response.type == "upgrade" {
                 // "Upgrade" in the page's note: the Premium window, where this channel sells or says where to buy.
@@ -265,19 +382,22 @@ final class BrowserBridge: ObservableObject {
 
     /// A scanned code was saved in `entryID`. When that item may fill the page it was scanned on, the extension is told to
     /// watch that page for its code field, and the code is answered as after a fill (`browserCodeAllowed` still decides).
+    /// Only the connection the scan came from is told: in Chrome, the profile that scanned.
     func expectScannedCode(entryID: UUID, browser: BridgeBrowser, origin: String) {
+        let link = scanLinks[browser] ?? 0
         guard let entry = session.entry(entryID), let page = BrowserSite(url: origin),
               entryWebsites(entry).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
-              state.expectCode(afterScanOf: entryID, browser: browser, pageURL: origin, now: now()) else { return }
-        poke(browser)
+              state.expectCode(afterScanOf: entryID, browser: browser, link: link, pageURL: origin, now: now()) else { return }
+        poke(browser, link: link)
     }
 
-    /// Asks the extension to report its tab now. Carries nothing.
-    func poke(_ browser: BridgeBrowser) {
+    /// Asks the extension to report its tab now. Carries nothing. For Chrome, `link` is the one connection to ask, or
+    /// nil for all of them.
+    func poke(_ browser: BridgeBrowser, link: Int? = nil) {
         switch browser {
         case .chrome:
             guard let data = try? JSONEncoder().encode(BridgeResponse.poke) else { return }
-            server?.push(data, to: .chrome)
+            pushToChrome(data, link)
         case .safari:
             SFSafariApplication.dispatchMessage(
                 withName: "poke",
@@ -291,18 +411,30 @@ final class BrowserBridge: ObservableObject {
 
     /// The panel is opening over `app`. Freshens what is known about its tab.
     func panelWillShow(over app: NSRunningApplication?) {
+        panelWillShow(over: FrontApp(app), pid: app?.processIdentifier)
+    }
+
+    /// `pid` is the front app's process, for reading its window; nil reads nothing.
+    func panelWillShow(over front: FrontApp?, pid: pid_t?) {
         readURLs = [:]
         readGeneration &+= 1
         refreshSafariState()
-        guard let app, let browser = Self.browser(forBundleID: app.bundleIdentifier) else { return }
+        // Before the panel takes the keyboard: from then on Chrome tells its extensions that their windows lost the
+        // focus, and the profile that has it now must stay the one in front.
+        let page = state.currentURL(for: .chrome, now: now())
+        state.panelOpened()
+        frontChanged(pageBefore: page)
+        guard let browser = Self.browser(forBundleID: front?.bundleID) else { return }
         // Poke whenever the extension could answer, not only when it reported lately: a tab left open for hours sends nothing.
         switch browser {
-        case .chrome: if chromeConnected { poke(.chrome) }
+        case .chrome:
+            // Only the profile in front is asked. One that says nothing about focus cannot be told apart: ask them all.
+            if let link = chromeLink(inFront: front?.inFront ?? false) { poke(.chrome, link: link.certain ? link.peer.link : nil) }
         case .safari: if safariEnabled { poke(.safari) }
         }
+        guard let pid else { return }
         // Also read the window: it shows the list without the extension, and catches a report that went stale.
         let generation = readGeneration
-        let pid = app.processIdentifier
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let url = BrowserURLReader.read(pid: pid, browser: browser)
             DispatchQueue.main.async {
@@ -315,22 +447,22 @@ final class BrowserBridge: ObservableObject {
         }
     }
 
-    func install(_ banner: ExtensionBanner) {
-        switch banner {
-        case .addChrome:
-            open(Self.chromeInstallURL, inBrowser: Self.chromeBundleID)
-        case .enableSafari:
-            SFSafariApplication.showPreferencesForExtension(withIdentifier: BridgeConstants.safariExtensionIdentifier) { _ in }
-        }
+    /// The panel closed: what each profile says about the focus counts again.
+    func panelDidHide() {
+        let page = state.currentURL(for: .chrome, now: now())
+        state.panelClosed()
+        frontChanged(pageBefore: page)
     }
 
-    private func open(_ url: URL, inBrowser bundleID: String) {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            NSWorkspace.shared.open([url], withApplicationAt: app, configuration: configuration)
-        } else {
-            NSWorkspace.shared.open(url)
+    /// Opens where the extension is added or turned on. `front` is the app the panel was over: when that is Chrome, the
+    /// store page opens in it, and Chrome puts it in the profile whose window was used last, the one in front.
+    func install(_ banner: ExtensionBanner, in front: FrontApp? = nil) {
+        switch banner {
+        case .addChrome:
+            let chrome = front?.bundleID == Self.chromeBundleID ? front?.bundleURL : nil
+            openInBrowser(Self.chromeInstallURL, chrome ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.chromeBundleID))
+        case .enableSafari:
+            SFSafariApplication.showPreferencesForExtension(withIdentifier: BridgeConstants.safariExtensionIdentifier) { _ in }
         }
     }
 
@@ -338,9 +470,14 @@ final class BrowserBridge: ObservableObject {
 
     /// Fills through the extension when the target browser has one. False means the caller types the keystrokes instead.
     func fill(_ entry: VaultEntry, _ mode: FillMode, website: String?) -> Bool {
+        fill(entry, mode, website: website, front: fillTarget())
+    }
+
+    /// `front` is the app the fill is for (`PanelController.fillTarget`): the one the panel opened over, or with the
+    /// panel closed the one in front now.
+    func fill(_ entry: VaultEntry, _ mode: FillMode, website: String?, front: FrontApp?) -> Bool {
         guard mode != .open else { return false }
-        let front = targetApp()
-        var browser = Self.browser(forBundleID: front?.bundleIdentifier)
+        var browser = Self.browser(forBundleID: front?.bundleID)
         var browserApp = front?.bundleURL
         // From another app, Open and Fill goes to the default browser.
         if browser == nil, mode != .fill, let url = webURL(website ?? entry.url),
@@ -349,24 +486,39 @@ final class BrowserBridge: ObservableObject {
             browser = found
             browserApp = app
         }
-        guard let browser, let browserApp, canFill(in: browser) else { return false }
-        let page = front?.bundleURL == browserApp ? pageURL(for: browser) : nil
+        guard let browser, let browserApp else { return false }
+        // The panel was over this browser, and it really was the app in front then.
+        let overBrowser = front?.bundleURL == browserApp
+        let inFront = overBrowser && front?.inFront == true
+        // The connection the fill is for: in Chrome, the profile in front. Never a tab of another profile.
+        let link: Int?
+        switch browser {
+        case .chrome:
+            guard Self.chromeSupported else { return false }
+            switch chromeFillRoute(chromeInFront: inFront, front: state.front(.chrome), connected: chromeConnected) {
+            case .keystrokes: return false
+            case .link(let id): link = id
+            case .anyProfile: link = nil
+            }
+        case .safari:
+            guard canFill(in: .safari) else { return false }
+            link = nil
+        }
+        let page = overBrowser ? pageURL(for: browser, inFront: inFront) : nil
         switch browserFillPlan(entry: entry, mode: mode, preferredWebsite: website, pageURL: page) {
         case .keystrokes:
             return false
         case .thisTab(let site):
-            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now()) else { return false }
+            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link) else { return false }
             state.pending.set(pending)
             hidePanel(true)
-            poke(browser)
+            poke(browser, link: link)
             return true
         case .newTab(let site, let url):
-            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now()) else { return false }
+            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link) else { return false }
             state.pending.set(pending)
             hidePanel(false)
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            NSWorkspace.shared.open([url], withApplicationAt: browserApp, configuration: configuration)
+            openInBrowser(url, browserApp)
             return true
         }
     }

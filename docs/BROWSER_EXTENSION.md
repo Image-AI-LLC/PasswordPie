@@ -17,9 +17,9 @@ Firefox.
 | Safari Web Extension app extension | `PasswordPie.app/Contents/PlugIns/PasswordPieSafari.appex`, target `PasswordPieSafari` | both |
 | Chrome native messaging host | `PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost`, target `PasswordPieBrowserHost` | direct only |
 | Host manifest `com.oldcai.passwordpie.json` | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
-| Bridge server (socket, peer check, pending fill) | main app, `BrowserBridge*.swift` | both |
+| Bridge server (socket, peer check, pending fill, which Chrome profile is in front) | main app, `BrowserBridge*.swift` | both |
 | Transport (framing, socket path, peer check) | target `PasswordPieBridge` | shared by the app, the host and the appex |
-| Site matching (eTLD+1), messages, pending fill rules | `PasswordPieCore` (`PublicSuffix.swift`, `BrowserFill.swift`) | both, tested with `swift test` |
+| Site matching (eTLD+1), messages, pending fill rules, the connection in front (`BridgeLinks`) | `PasswordPieCore` (`PublicSuffix.swift`, `BrowserFill.swift`) | both, tested with `swift test` |
 
 ## Transport: a Unix socket in the App Group container
 
@@ -60,19 +60,21 @@ A Safari Web Extension can only message the native side when the extension asks;
 So credentials only ever travel as the answer to a request the extension made:
 
 1. The user picks an account and presses Return. The app records one **pending fill**: entry id, target browser, target
-   site (eTLD+1 of the entry website that matched), created at. It expires after 30 s. Whether the app opened a new
-   tab makes no difference: any tab of that browser on that site may take it.
+   site (eTLD+1 of the entry website that matched), created at, and for Chrome the connection of the profile in front
+   (see "Chrome profiles"). It expires after 30 s. Whether the app opened a new tab makes no difference: any tab of that
+   browser, in that profile, on that site may take it.
 2. The app hides the panel (focus goes back to the browser) or opens the login URL in that browser
    (`NSWorkspace.open(_:withApplicationAt:)`, a new tab).
-3. The app sends a **poke** (no data) so the extension asks now: over the host's open port for Chrome,
+3. The app sends a **poke** (no data) so the extension asks now: over the open port of the profile in front for Chrome,
    `SFSafariApplication.dispatchMessage` for Safari. The extension also asks on its own when the active tab changes, a
    tab finishes loading, or the page regains focus, so a lost poke only costs a moment.
 4. The extension sends a `tab` report: the active tab's URL. If a pending fill for that browser matches the URL's site,
    and the vault is unlocked, the answer carries the username and password, and the pending fill is deleted. Otherwise the
    answer is empty and the pending fill keeps waiting until it expires.
 
-The same `tab` report keeps the app's "browser → current URL" cache fresh, for the "this site" list at the top of the panel.
-No AppleScript is used, so there is no Automation prompt.
+The same `tab` report keeps the app's "connection → current URL" cache fresh, for the "this site" list at the top of
+the panel: the list is the tab of the connection in front, never another profile's. No AppleScript is used, so there is
+no Automation prompt.
 
 Premium is not part of any of this: the extension has none to report, and the app asks for none.
 
@@ -82,14 +84,14 @@ Every request has `type` and an `id` (an integer the extension picks). Every ans
 
 ### `hello`
 
-    → {"type":"hello","id":1,"version":1,"extension":"0.3.0"}
+    → {"type":"hello","id":1,"version":1,"extension":"0.4.0"}
     ← {"type":"hello","id":1,"version":1,"locked":false}
 
 Sent when the extension starts and when its port (re)connects. It makes the browser count as connected.
 
 ### `tab`
 
-    → {"type":"tab","id":2,"url":"https://github.com/","reason":"activated"}
+    → {"type":"tab","id":2,"url":"https://github.com/","reason":"activated","focused":true}
     ← {"type":"tab","id":2}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28}}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28,"otp":true}}
@@ -98,6 +100,9 @@ Sent when the extension starts and when its port (re)connects. It makes the brow
 origin of the active tab's top frame in the focused window, written as `scheme://host[:port]/`: matching needs nothing
 else, so a path, query or fragment (reset links, OAuth codes) never leaves the browser. An empty or non-http(s) `url`
 clears the cached URL and never fills.
+`focused` (Chrome, from 0.4.0) says whether a window of the extension's profile has the focus as the report goes out
+(`windows.getLastFocused`, every window type). Safari's build and older extensions leave it out. A report with
+`focused: false` never gets a fill that is not for its own connection (see "Chrome profiles").
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 `otp: true` says the account has a two-step code. It carries no code: the app now keeps a **pending code** for that
 browser and the page's site for 30 seconds, and the extension watches that tab's frames of `origin` for a code field.
@@ -124,6 +129,17 @@ note with Upgrade. An empty answer means nothing was waiting.
 unlocked, when the tab's site (eTLD+1) has an account whose website host has no icon yet (none bundled, none cached), and
 at most once per site every 10 minutes (`SiteIconLedger`). On any other site the answer has no `wantIcon`, so the
 extension learns nothing new about the vault and sends nothing more.
+
+### `focus`
+
+    → {"type":"focus","id":4,"focused":false}
+    ← {"type":"focus","id":4}
+
+Chrome only, from 0.4.0. The profile's windows gained or lost the focus (`windows.onFocusChanged`; `WINDOW_ID_NONE` is
+lost). Sent at once, ahead of the debounced `tab` report that follows a focus gained, so the app stops taking this
+profile's tab for the page in front as soon as the person leaves it. Carries nothing else, and the answer only
+acknowledges it, locked or not. An app from before this message answers `bad-request`, which the extension ignores.
+Without `focused` it is a `bad-request`.
 
 ### `upgrade`
 
@@ -232,7 +248,8 @@ download it. After `app-not-responding` it does nothing: the app is installed.
 
     ← {"type":"poke"}
 
-Ask now: send a `tab` report for the active tab.
+Ask now: send a `tab` report for the active tab. In Chrome it goes to the connection of the profile in front, or to
+every connection when that is not known (extensions that say nothing about focus).
 
 ### `error`
 
@@ -251,6 +268,9 @@ All in `PasswordPieCore`, with tests:
 - **No downgrade.** An https entry does not fill an http page, except for `localhost` and `127.0.0.1`.
 - **Fresh and once.** A pending fill is used by the first matching report and then deleted. After 30 s it is deleted
   unused. Locking the vault deletes it. A new pick replaces it.
+- **The profile in front.** A pick made over Chrome is for the connection of the profile in front, and no other
+  connection may take it, whatever site its tab is on. A two-step code goes to the connection that took the fill, and
+  the code of a scan to the connection that scanned.
 - **Locked means nothing.** While the vault is locked, `tab` answers never carry a fill, and `hello` says `locked`.
 - **Only the matching frame.** The answer names the exact `origin` of the URL that matched. The extension fills only frames
   whose origin equals it: the top frame and same-origin iframes. Cross-origin iframes get nothing (the background finds
@@ -329,6 +349,65 @@ an account with a code, on that origin, for 30 seconds.
   A cached icon is the only trace of a visit on disk, and only for a site the vault already has an account on.
 - The fill never submits the form.
 
+## Chrome profiles
+
+Chrome keeps extensions per profile, and starts one native host per profile that has the extension. The host manifest
+is in `NativeMessagingHosts` beside the profile folders, so every profile finds it. The app therefore has one
+connection per profile with the extension, and none for a profile without it. The server numbers the connections as
+they arrive (`BridgePeer.link`); nothing in a message says which one is talking.
+
+**Which connection is in front** (`BridgeLinks.front`, pure, in `PasswordPieCore`):
+
+1. The connection whose extension said `focused: true` last. A profile's extension is told `WINDOW_ID_NONE` when the
+   focus goes to another app, and also when it goes to a window of another profile, which it cannot see. So when every
+   connection says `focused: false` while Chrome is the app in front, the window in front belongs to a profile nobody
+   speaks for: no connection is in front. The same holds for an Incognito window the extension is not allowed in.
+2. Else, among connections that never said anything about focus (an extension from before 0.4.0, or one that connected
+   a moment ago), the one with the latest sign of life: a tab report, or a `show` (the toolbar button was clicked in
+   that profile). This is how every connection counted before, so such an extension behaves as it did.
+3. Else none.
+
+**The panel takes the keyboard.** Opening PasswordPie's panel makes its window key, and Chrome then tells the extension
+`WINDOW_ID_NONE` although Chrome is still the app in front (measured on Chrome 157; the same event as for another
+profile's window). So the app holds the answer from the moment the panel begins to open (`BridgeLinks.hold`) until it
+closes (`release`): the connection in front when it opened stays in front, a `focused: false` meanwhile changes
+nothing, and a `focused: true` that arrives just after (the click on Chrome and the shortcut in quick succession) still
+counts. A connection that had said nothing when the panel opened keeps counting under rule 2 until the panel closes,
+whatever it says meanwhile: when the toolbar button starts the app, the first thing the extension says is that its
+window lost the focus, to the panel that click opened.
+
+**PasswordPie's own window in front.** With Preferences in front, the app the panel goes back to
+is still Chrome, but no profile has the focus. That is not a profile without the extension: the profile used last
+stands for Chrome (`BridgeLinks.recent`: the one in front, else the last that had the focus, else any connection),
+as any connection did before. The fill is then for no connection in particular, and is taken once Chrome is in front
+again and its profile says so.
+
+**The panel closed.** A pinned account's Open and Fill runs with no panel, and its window never takes the focus. That
+fill is for the app in front at that moment, not the one the panel last opened over (`PanelController.fillTarget`),
+and the same rules apply to it: Chrome in front with no connection in front types keystrokes.
+
+With no connection in front, for a pick made over Chrome:
+
+- the panel shows **Add Chrome Extension…**, and it opens the store page with `NSWorkspace.open(_:withApplicationAt:)`
+  on the Chrome that was in front. Chrome opens a link from another app in the profile whose window was used last
+  (measured), which is the profile in front;
+- the page is only what Accessibility read from the window, or unknown;
+- Fill types keystrokes. Nothing is sent to, or opened for, another profile's connection.
+
+With a connection in front, its `tab` report is the page, the pending fill is for it alone, and only it is poked.
+A new tab opened by the app lands in the same profile, for the reason above. From another app (Open and Fill into the
+default browser) the profile is not known in advance: the fill is for no connection in particular, and the first
+connection to report the site takes it unless it says `focused: false`.
+
+What a connection says about its focus is taken on trust between the app's own extensions. The extension's ID has a
+public key (see "Chrome"), so someone who loads their own extension under it in a profile can claim the focus and be
+taken for the profile in front. That gives them nothing new: before, any connection that reported the site took the
+fill. Once a pick is bound to a connection, nothing another connection says redirects it.
+
+Compatibility: an extension before 0.4.0 with this app is rule 2, so nothing changes for it, with one profile or
+several. This extension with an older app sends one extra field the app ignores and a `focus` the app refuses; its
+`tab` reports go out exactly when they did.
+
 ## Chrome
 
 - The host manifest's `allowed_origins` lists one extension ID, `BridgeConstants.chromeExtensionID`: the Chrome Web Store
@@ -343,8 +422,10 @@ an account with a code, on that origin, for 30 seconds.
   can fake that, so the host also requires its parent process to be Google Chrome, checked by code signature (team
   `EQHXZ8M8AV`, `com.google.Chrome`). Chrome Beta, Dev and Canary, like other Chromium browsers, are not in v1: they keep
   typed keystrokes.
-- The extension keeps one `chrome.runtime.connectNative` port open. That keeps its service worker alive and the host
-  running, and it is how pokes arrive. "Connected" means the app has an authenticated host connection right now.
+- The extension keeps one `chrome.runtime.connectNative` port open, in each profile it is installed in. That keeps its
+  service worker alive and the host running, and it is how pokes arrive. "Connected" means the app has an authenticated
+  host connection right now; Preferences counts them ("Connected in 2 profiles"). The panel's line asks more: a
+  connection that is in front.
 - The host exits when its connection to the app ends (the app quit or was updated); the extension's port then reconnects
   and Chrome starts a fresh host. It must not reconnect itself: an update replaces the host's executable too, and a host
   still running the old code fails the app's signature check ("the code on disk does not match what is running") on
@@ -401,14 +482,17 @@ needs Accessibility to be granted already and never asks for it.
 |---|---|---|
 | Safari extension | yes | yes (needs profiles for the appex and App Group) |
 | Chrome extension (Chrome Web Store), native host | yes | not in v1 |
-| "Add Chrome Extension…" row | yes | not compiled |
-| "Enable Safari Extension…" row | yes | yes |
+| "Add Chrome Extension…" row, and Chrome's line in Preferences → Browser extensions | yes | not compiled / left out |
+| "Enable Safari Extension…" row, and Safari's line in Preferences → Browser extensions | yes | yes |
 | AX fallback for the current URL | yes, if Accessibility is granted | same code; untested in the sandbox (see CHANNELS.md) |
 
 ## Testing
 
 - `swift test`: public suffix rules, same-site and downgrade rules, pending fill expiry and single use, message coding,
   framing, the "this site" list, site icon lookup order, when `wantIcon` is set, and which `icon` requests are refused.
+- `swift test --filter 'BridgeLinks|BridgeProfiles|BrowserProfiles|ChromeFillRoute|ExtensionStatus'`: which connection is
+  in front (focus said, lost, never said, held by the panel), that another profile's tab is neither the page nor
+  filled, the banner for a profile without the extension, where the store page opens, and Preferences' lines.
 - `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures
   (autocomplete hints, forms with no attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin
   refusal), code fields (one field, split boxes, decoys), the code flow in the background, the note and its Upgrade, the

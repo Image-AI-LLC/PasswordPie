@@ -159,6 +159,19 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     var rootWindow: NSWindow { panel }
     /// The app that was in front when the panel opened: where Fill goes.
     var targetApp: NSRunningApplication? { previousApp }
+    /// Whether `previousApp` really was the app in front when the panel opened. False when PasswordPie's own window was
+    /// (Preferences): `previousApp` is then only where the panel goes back to. False once it closed.
+    private(set) var targetInFront = false
+    /// The app a fill is for, and whether it is in front. While the panel is open: the app it opened over. With the
+    /// panel closed (a pinned account's Open and Fill; that window never takes the focus): the app in front now. When
+    /// that is PasswordPie itself, the app the panel last went back to, which is then not in front.
+    var fillTarget: (app: NSRunningApplication?, inFront: Bool) {
+        if panel.isVisible { return (previousApp, targetInFront) }
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            return (front, true)
+        }
+        return (previousApp, false)
+    }
     var isVisible: Bool { panel.isVisible }
 
     var onPanelHidden: (() -> Void)?
@@ -325,11 +338,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     func show(_ anchor: PanelAnchor) {
         // The store does not always announce a refund, and a menu-bar app rarely comes forward. Opening the menu is the next chance to ask.
         Task { [session] in await session.premium.refresh() }
-        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            previousApp = front
-        }
+        let front = NSWorkspace.shared.frontmostApplication
+        let another = front.map { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier } ?? false
+        if another, let front { previousApp = front }
+        // An open panel makes PasswordPie the app in front; showing it again says nothing new about what it is over.
+        if !panel.isVisible { targetInFront = another }
         // Before the menu is built: the site group at its top comes from what the bridge knows about the front tab.
-        bridge?.panelWillShow(over: previousApp)
+        bridge?.panelWillShow(over: FrontApp(previousApp, inFront: targetInFront), pid: previousApp?.processIdentifier)
         updateBanner()
         // Within 10 seconds of closing, the search and the selected account come back. Otherwise: empty search,
         // initial menu, first row selected. Locking forgets it, so a locked panel never has one.
@@ -351,6 +366,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         // A test process can have no screens. Still compare Chrome; there is nowhere to place the panel.
         guard let screen = screen(for: anchor) else {
             session.noteChromePanelShown()
+            // No panel came up, so none will close: give back what `panelWillShow` holds.
+            bridge?.panelDidHide()
+            targetInFront = false
             return
         }
         var origin: NSPoint
@@ -419,6 +437,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         menu.closeAll()
         panel.orderOut(nil)
+        // The panel no longer holds the keyboard: the browser's own word about its focus counts again.
+        bridge?.panelDidHide()
+        targetInFront = false
         endLockScene()
         header.searchField.stringValue = ""
         // A half-typed master password must not wait in the field for whoever opens the panel next.
@@ -644,7 +665,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     }
 
     private func updateBanner() {
-        shownBanner = session.locked ? nil : bridge?.banner(for: previousApp)
+        shownBanner = session.locked ? nil : bridge?.banner(for: previousApp, inFront: targetInFront)
         if let shownBanner { banner.show(shownBanner) }
         effect.bannerHeight = shownBanner == nil ? 0 : ExtensionBannerView.height
     }
@@ -659,13 +680,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private func installBannerExtension() {
         guard let shownBanner, let bridge else { return }
         hide(refocusPrevious: false)
-        bridge.install(shownBanner)
+        bridge.install(shownBanner, in: FrontApp(previousApp, inFront: targetInFront))
     }
 
     /// The front browser's site and its accounts, for the top of the initial menu.
     private func siteSectionRows() -> [MenuRow] {
         guard let bridge, let browser = BrowserBridge.browser(forBundleID: previousApp?.bundleIdentifier),
-              let page = bridge.pageURL(for: browser), let site = BrowserSite(url: page) else { return [] }
+              let page = bridge.pageURL(for: browser, inFront: targetInFront), let site = BrowserSite(url: page) else { return [] }
         let entries = SiteSuggestions.entries(session.allEntries, pageURL: page, lastUsed: session.lastUsedMap)
         return MenuBuilder.siteRows(site: site.key, entries: entries, sources: session.entrySources)
     }
@@ -971,6 +992,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         let gear = NSMenu()
         if session.locked {
             add(to: gear, "Preferences…", #selector(openPreferences))
+            add(to: gear, browserExtensionsMenuTitle, #selector(openBrowserExtensions))
             add(to: gear, "Open Database…", #selector(openDatabase))
             gear.addItem(.separator())
             add(to: gear, "Quit PasswordPie", #selector(quit))
@@ -985,6 +1007,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         add(to: gear, "Lock", #selector(lockNow), key: "l")
         gear.addItem(.separator())
         add(to: gear, "Preferences…", #selector(openPreferences), key: ",")
+        add(to: gear, browserExtensionsMenuTitle, #selector(openBrowserExtensions))
         add(to: gear, "Open Database…", #selector(openDatabase))
         add(to: gear, "New Database…", #selector(newDatabase))
         gear.addItem(.separator())
@@ -1004,6 +1027,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     @objc private func newItem() { hide(refocusPrevious: false); session.newEntry() }
     @objc private func lockNow() { session.lock() }
     @objc private func openPreferences() { hide(refocusPrevious: false); AppDelegate.shared?.showPreferences() }
+    @objc private func openBrowserExtensions() { showPreferences(at: .browserExtensions) }
     @objc private func openDatabase() { session.chooseDatabase() }
     @objc private func newDatabase() { session.newDatabase() }
     @objc private func quit() { NSApp.terminate(nil) }
