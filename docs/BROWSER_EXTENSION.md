@@ -382,6 +382,10 @@ stands for Chrome (`BridgeLinks.recent`: the one in front, else the last that ha
 as any connection did before. The fill is then for no connection in particular, and is taken once Chrome is in front
 again and its profile says so.
 
+**The panel closed.** A pinned account's Open and Fill runs with no panel, and its window never takes the focus. That
+fill is for the app in front at that moment, not the one the panel last opened over (`PanelController.fillTarget`),
+and the same rules apply to it: Chrome in front with no connection in front types keystrokes.
+
 With no connection in front, for a pick made over Chrome:
 
 - the panel shows **Add Chrome Extension…**, and it opens the store page with `NSWorkspace.open(_:withApplicationAt:)`
