@@ -160,8 +160,15 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// The app that was in front when the panel opened: where Fill goes.
     var targetApp: NSRunningApplication? { previousApp }
     /// Whether `previousApp` really was the app in front when the panel opened. False when PasswordPie's own window was
-    /// (Preferences, a pinned account): `previousApp` is then only where the panel goes back to. False once it closed.
+    /// (Preferences): `previousApp` is then only where the panel goes back to. False once it closed.
     private(set) var targetInFront = false
+    /// The same for a fill: while the panel is open, what held when it opened. With the panel closed (a pinned
+    /// account's Open and Fill; that window never takes the focus), whether `previousApp` is the app in front now.
+    var targetInFrontNow: Bool {
+        if panel.isVisible { return targetInFront }
+        guard let previousApp else { return false }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier == previousApp.processIdentifier
+    }
     var isVisible: Bool { panel.isVisible }
 
     var onPanelHidden: (() -> Void)?
@@ -358,6 +365,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             session.noteChromePanelShown()
             // No panel came up, so none will close: give back what `panelWillShow` holds.
             bridge?.panelDidHide()
+            targetInFront = false
             return
         }
         var origin: NSPoint

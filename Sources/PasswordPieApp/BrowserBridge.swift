@@ -74,7 +74,7 @@ func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled:
 struct FrontApp: Equatable {
     let bundleID: String?
     let bundleURL: URL?
-    /// False when it was not really in front: PasswordPie's own window was (Preferences, a pinned account), and this is
+    /// False when it was not really in front: PasswordPie's own window was (Preferences), and this is
     /// the app the panel will go back to. Its browser then has no profile in front, and the one used last stands for it.
     let inFront: Bool
 
@@ -194,7 +194,7 @@ final class BrowserBridge: ObservableObject {
 
     /// The app that was in front when the panel opened.
     var targetApp: () -> NSRunningApplication? = { nil }
-    /// Whether `targetApp` really was in front then. False while PasswordPie's own window was, and after the panel closed.
+    /// Whether `targetApp` really was in front then, or is now when the panel is closed. False while PasswordPie's own window is.
     var targetInFront: () -> Bool = { true }
     /// Hides the panel; true gives focus back to the app that was in front.
     var hidePanel: (Bool) -> Void = { _ in }

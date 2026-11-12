@@ -376,7 +376,7 @@ counts. A connection that had said nothing when the panel opened keeps counting 
 whatever it says meanwhile: when the toolbar button starts the app, the first thing the extension says is that its
 window lost the focus, to the panel that click opened.
 
-**PasswordPie's own window in front.** With Preferences or a pinned account in front, the app the panel goes back to
+**PasswordPie's own window in front.** With Preferences in front, the app the panel goes back to
 is still Chrome, but no profile has the focus. That is not a profile without the extension: the profile used last
 stands for Chrome (`BridgeLinks.recent`: the one in front, else the last that had the focus, else any connection),
 as any connection did before. The fill is then for no connection in particular, and is taken once Chrome is in front

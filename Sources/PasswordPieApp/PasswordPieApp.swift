@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startBrowserBridge() {
         bridge = BrowserBridge(session: session)
         bridge.targetApp = { [weak self] in self?.panelController.targetApp }
-        bridge.targetInFront = { [weak self] in self?.panelController.targetInFront ?? false }
+        bridge.targetInFront = { [weak self] in self?.panelController.targetInFrontNow ?? false }
         bridge.hidePanel = { [weak self] refocus in self?.panelController.hide(refocusPrevious: refocus) }
         session.browserFill = { [weak self] entry, mode, website in
             self?.bridge.fill(entry, mode, website: website) ?? false
