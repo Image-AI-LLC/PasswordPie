@@ -517,7 +517,7 @@ Use a database with a GitHub login, and the PasswordPie extension installed in C
 6. Repeat 2 to 4 in Safari after "Enable Safari Extension…".
 7. Two Chrome profiles, the extension only in the first, both on github.com/login. In the first, `⌘\` shows GITHUB.COM
    and Return fills. Click the second profile's window and press `⌘\`: the first line is "Add Chrome Extension…", and
-   Return types into this window; the first profile's tab stays empty. Click the line: the store page opens in the
+   ⇧Return types into this window; the first profile's tab stays empty. Click the line: the store page opens in the
    second profile.
 8. Open Preferences from the gear menu's Browser Extensions…: Chrome says "Connected", with Add Chrome Extension… next
    to it.

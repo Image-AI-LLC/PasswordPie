@@ -205,7 +205,7 @@ final class BrowserProfilesTests: XCTestCase {
         connect(bridge, 1)
         try tab(bridge, link: 1, "https://github.com/login", focused: true)
         pokes = []
-        bridge.panelWillShow(over: nil, front: chrome)
+        bridge.panelWillShow(over: chrome, pid: nil)
         XCTAssertEqual(pokes, [1])
         // Chrome tells the extension its window lost the focus: PasswordPie's panel has the keyboard.
         try send(bridge, link: 1, ["type": "focus", "id": 2, "focused": false])
@@ -225,7 +225,7 @@ final class BrowserProfilesTests: XCTestCase {
         try tab(bridge, link: 1, "https://github.com/login", focused: true)
         try send(bridge, link: 1, ["type": "focus", "id": 2, "focused": false])
         pokes = []
-        bridge.panelWillShow(over: nil, front: chrome)
+        bridge.panelWillShow(over: chrome, pid: nil)
         XCTAssertTrue(pokes.isEmpty, "nobody to ask: the profile behind is left alone")
         XCTAssertEqual(bridge.banner(frontBundleID: chrome.bundleID), .addChrome)
         bridge.panelDidHide()

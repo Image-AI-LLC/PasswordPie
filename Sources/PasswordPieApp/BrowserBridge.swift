@@ -395,8 +395,13 @@ final class BrowserBridge: ObservableObject {
 
     // MARK: Panel
 
-    /// The panel is opening over `app`. Freshens what is known about its tab. `front` stands in for `app` in tests.
-    func panelWillShow(over app: NSRunningApplication?, front: FrontApp? = nil) {
+    /// The panel is opening over `app`. Freshens what is known about its tab.
+    func panelWillShow(over app: NSRunningApplication?) {
+        panelWillShow(over: FrontApp(app), pid: app?.processIdentifier)
+    }
+
+    /// `pid` is the front app's process, for reading its window; nil reads nothing.
+    func panelWillShow(over front: FrontApp?, pid: pid_t?) {
         readURLs = [:]
         readGeneration &+= 1
         refreshSafariState()
@@ -405,7 +410,7 @@ final class BrowserBridge: ObservableObject {
         let page = state.currentURL(for: .chrome, now: now())
         state.panelOpened()
         frontChanged(pageBefore: page)
-        guard let browser = Self.browser(forBundleID: front?.bundleID ?? app?.bundleIdentifier) else { return }
+        guard let browser = Self.browser(forBundleID: front?.bundleID) else { return }
         // Poke whenever the extension could answer, not only when it reported lately: a tab left open for hours sends nothing.
         switch browser {
         case .chrome:
@@ -413,10 +418,9 @@ final class BrowserBridge: ObservableObject {
             if let link = state.front(.chrome) { poke(.chrome, link: link.certain ? link.peer.link : nil) }
         case .safari: if safariEnabled { poke(.safari) }
         }
-        guard let app else { return }
+        guard let pid else { return }
         // Also read the window: it shows the list without the extension, and catches a report that went stale.
         let generation = readGeneration
-        let pid = app.processIdentifier
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let url = BrowserURLReader.read(pid: pid, browser: browser)
             DispatchQueue.main.async {
