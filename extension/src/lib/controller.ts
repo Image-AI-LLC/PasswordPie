@@ -50,6 +50,11 @@ export interface MessageSender {
 export interface TabsAdapter {
   /** The active tab of the last focused window. */
   activeTab(): Promise<TabInfo | undefined>;
+  /**
+   * Whether a window of this profile has the focus now. Chrome only: its extensions are per profile, so the app must
+   * know whether this one's profile is the one in front. Left out where the browser has nothing to say (Safari).
+   */
+  profileFocused?(): Promise<boolean>;
   frames(tabId: number): Promise<FrameInfo[]>;
   /** Resolves with the frame's answer; rejects or resolves undefined when no content script answered. */
   sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown>;
@@ -143,8 +148,15 @@ export class FillController {
     if (tab.active && (change.status === 'complete' || change.url !== undefined)) this.report('updated');
   }
 
+  /**
+   * `WINDOW_ID_NONE` means no window of this profile has the focus: another app, another Chrome profile's window, or
+   * PasswordPie's own panel. The app is told at once, ahead of the debounced report, so it never takes this profile's
+   * tab for the page in front once the person has moved on. No tab is reported for a focus lost.
+   */
   windowFocusChanged(windowId: number): void {
-    if (windowId !== WINDOW_ID_NONE) this.report('focus');
+    const focused = windowId !== WINDOW_ID_NONE;
+    if (this.tabs.profileFocused) void this.channel.request({ type: 'focus', focused });
+    if (focused) this.report('focus');
   }
 
   tabRemoved(tabId: number): void {
@@ -189,6 +201,15 @@ export class FillController {
     return this.entries.has(tabId);
   }
 
+  /** Whether this profile has the focus, read as the report goes out. Undefined where the browser cannot say. */
+  private async profileFocused(): Promise<boolean | undefined> {
+    try {
+      return await this.tabs.profileFocused?.();
+    } catch {
+      return undefined;
+    }
+  }
+
   private async reportNow(reason: TabReason): Promise<void> {
     let tab: TabInfo | undefined;
     try {
@@ -196,9 +217,10 @@ export class FillController {
     } catch {
       tab = undefined;
     }
+    const focused = await this.profileFocused();
     const url = reportableUrl(tab?.url);
     const tabId = tab?.id;
-    const answer = await this.channel.request({ type: 'tab', url, reason });
+    const answer = await this.channel.request({ type: 'tab', url, reason, ...(focused === undefined ? {} : { focused }) });
     if (wantsIcon(answer) && tabId !== undefined) void this.sendIcon(tabId, tab?.favIconUrl, url);
     const fill = fillOfTabAnswer(answer);
     // A code just added from a scan of this page: watch for its field, as after a fill. Nothing secret in it.

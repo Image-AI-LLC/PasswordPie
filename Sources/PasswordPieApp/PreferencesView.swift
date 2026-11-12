@@ -5,6 +5,7 @@ import SwiftUI
 /// A section other parts of the app open Preferences at.
 enum PreferencesSection: Hashable {
     case importPasswords
+    case browserExtensions
     #if PP_DIRECT
     case chrome
     #endif
@@ -19,6 +20,8 @@ final class PreferencesNavigator: ObservableObject {
 struct PreferencesView: View {
     @ObservedObject var session: VaultSession
     @ObservedObject var navigator: PreferencesNavigator
+    /// The browser extensions' state, for "Browser extensions". Nil leaves the section out.
+    var bridge: BrowserBridge?
     @StateObject private var recorder = ShortcutRecorder()
     @Environment(\.colorScheme) private var colorScheme
 
@@ -50,6 +53,10 @@ struct PreferencesView: View {
                 section("Security") { security }
                 section("Everyday") { everyday }
                 section("Database") { database }
+                if let bridge {
+                    section("Browser extensions") { BrowserExtensionsSection(bridge: bridge) }
+                        .id(PreferencesSection.browserExtensions)
+                }
                 section("Import passwords") { importPasswords }
                     .id(PreferencesSection.importPasswords)
                 #if PP_DIRECT
@@ -547,5 +554,71 @@ struct PreferencesView: View {
         if session.touchIDEnabled { return "On for this database. It works for 7 days after a master-password unlock." }
         if session.locked { return "Unlock with this file's password. PasswordPie then saves it for Touch ID for 7 days." }
         return "Available for 7 days after you unlock with this file's password."
+    }
+}
+
+/// The gear menu's and the menu bar icon's way to "Browser extensions" in Preferences.
+let browserExtensionsMenuTitle = "Browser Extensions…"
+
+/// Where each browser's extension stands, and the way to add it or turn it on. Always here, whatever app is in front:
+/// the line above the search box shows only over a browser that is missing it (docs/UX.md, "Getting the extension").
+struct BrowserExtensionsSection: View {
+    @ObservedObject var bridge: BrowserBridge
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if BrowserBridge.chromeSupported {
+                row(
+                    browser: "Chrome",
+                    bundleID: BrowserBridge.chromeBundleID,
+                    detail: "Fills sign-in forms in Chrome, and lists the accounts for the site you are on first. Chrome keeps extensions per profile: to add it to another profile, bring that profile's window to the front in Chrome, then add it here.",
+                    status: .chrome(profiles: bridge.chromeProfiles),
+                    button: ExtensionBanner.addChrome.title
+                ) { bridge.install(.addChrome) }
+                Divider()
+            }
+            row(
+                browser: "Safari",
+                bundleID: BrowserBridge.safariBundleID,
+                detail: "The same in Safari. Turn it on in Safari's Extensions settings.",
+                status: .safari(enabled: bridge.safariEnabled),
+                button: safariExtensionButtonTitle(enabled: bridge.safariEnabled)
+            ) { bridge.install(.enableSafari) }
+        }
+        .controlSize(.regular)
+        .onAppear { bridge.refreshSafariState() }
+        // Coming back from Safari's settings: the switch there may have changed.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in bridge.refreshSafariState() }
+    }
+
+    private func row(browser: String, bundleID: String, detail: String, status: ExtensionStatus, button: String, action: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+                    .resizable()
+                    .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(browser).fontWeight(.medium)
+                    if status.on {
+                        Label(status.text, systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(status.text)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+                Text(detail)
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button(button, action: action)
+        }
     }
 }

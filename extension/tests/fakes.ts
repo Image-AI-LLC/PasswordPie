@@ -44,6 +44,9 @@ export class FakeTabs implements TabsAdapter {
     return this.active;
   }
 
+  /** Chrome's build can tell whether its profile has the focus; Safari's leaves this out. Set it to be Chrome. */
+  profileFocused?: () => Promise<boolean>;
+
   async frames(tabId: number): Promise<FrameInfo[]> {
     return this.framesByTab.get(tabId) ?? [{ frameId: 0, url: this.active?.url ?? '' }];
   }

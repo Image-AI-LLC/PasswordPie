@@ -8,7 +8,13 @@ export const SHOW_TIMEOUT_MS = 12_000;
 /** A request without its id; the channel adds the id. */
 export type Request =
   | { type: 'hello'; version: number; extension: string }
-  | { type: 'tab'; url: string; reason: TabReason }
+  /**
+   * The active tab. `focused` says whether a window of this profile has the focus (Chrome only): the app goes by the
+   * profile in front, and another profile's tab is never the page (docs/BROWSER_EXTENSION.md, "Chrome profiles").
+   */
+  | { type: 'tab'; url: string; reason: TabReason; focused?: boolean }
+  /** This profile's windows gained or lost the focus. Sent at once; an app from before it answers with an error. */
+  | { type: 'focus'; focused: boolean }
   | { type: 'show' }
   | { type: 'icon'; origin: string; png: string }
   /** The two-step code for the page. The app answers when it has Premium; the extension knows nothing about that. */

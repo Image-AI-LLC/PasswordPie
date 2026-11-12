@@ -4,13 +4,14 @@ import PasswordPieBridge
 import PasswordPieCore
 
 /// The app's end of the bridge socket. It accepts only the Safari app extension and the Chrome host, as their code
-/// signatures say, answers each frame on the main actor, and can push frames to every open Chrome connection.
+/// signatures say, answers each frame on the main actor, and can push frames to the open Chrome connections: one per
+/// Chrome profile with the extension, numbered as they arrive.
 /// Frames are never logged. See docs/BROWSER_EXTENSION.md.
 final class BrowserBridgeServer: @unchecked Sendable {
-    /// Answers one frame from `browser`. Nil sends nothing back.
-    typealias Handler = @MainActor (Data, BridgeBrowser) -> Data?
-    /// The number of open connections per browser changed.
-    typealias Changed = @MainActor ([BridgeBrowser: Int]) -> Void
+    /// Answers one frame from `peer`. Nil sends nothing back.
+    typealias Handler = @MainActor (Data, BridgePeer) -> Data?
+    /// The open connections changed.
+    typealias Changed = @MainActor (Set<BridgePeer>) -> Void
 
     private static let peers: [String: BridgeBrowser] = [
         BridgeConstants.chromeHostIdentifier: .chrome,
@@ -19,13 +20,13 @@ final class BrowserBridgeServer: @unchecked Sendable {
 
     private final class Connection: @unchecked Sendable {
         let fd: Int32
-        let browser: BridgeBrowser
+        let peer: BridgePeer
         private let writeLock = NSLock()
         private var closed = false
 
-        init(fd: Int32, browser: BridgeBrowser) {
+        init(fd: Int32, peer: BridgePeer) {
             self.fd = fd
-            self.browser = browser
+            self.peer = peer
         }
 
         /// A push can still be queued when the connection ends; once closed, the descriptor may belong to someone else.
@@ -52,6 +53,9 @@ final class BrowserBridgeServer: @unchecked Sendable {
     private let lock = NSLock()
     private var listener: Int32 = -1
     private var connections: [ObjectIdentifier: Connection] = [:]
+    /// The last number given to a Chrome connection. Each stays open, so each gets its own; Safari's come and go per
+    /// message and share 0.
+    private var lastLink = 0
 
     init(handler: @escaping Handler, changed: @escaping Changed) {
         self.handler = handler
@@ -67,9 +71,10 @@ final class BrowserBridgeServer: @unchecked Sendable {
         Thread.detachNewThread { [self] in acceptLoop(fd) }
     }
 
-    func push(_ payload: Data, to browser: BridgeBrowser) {
+    /// Sends `payload` to one connection of `browser`, or to all of them when `link` is nil.
+    func push(_ payload: Data, to browser: BridgeBrowser, link: Int? = nil) {
         lock.lock()
-        let targets = connections.values.filter { $0.browser == browser }
+        let targets = connections.values.filter { $0.peer.browser == browser && (link == nil || $0.peer.link == link) }
         lock.unlock()
         for connection in targets {
             DispatchQueue.global(qos: .userInitiated).async { connection.send(payload) }
@@ -105,43 +110,45 @@ final class BrowserBridgeServer: @unchecked Sendable {
             close(fd)
             return
         }
-        let connection = Connection(fd: fd, browser: browser)
+        let connection = Connection(fd: fd, peer: BridgePeer(browser, link: browser == .chrome ? nextLink() : 0))
         register(connection)
         var reader = BridgeFrame.Reader()
         var pending: [Data] = []
         while let frame = try? BridgeSocket.readFrame(fd, reader: &reader, pending: &pending) {
             let handler = handler
-            let answer = DispatchQueue.main.sync { MainActor.assumeIsolated { handler(frame, browser) } }
+            let peer = connection.peer
+            let answer = DispatchQueue.main.sync { MainActor.assumeIsolated { handler(frame, peer) } }
             if let answer { connection.send(answer) }
         }
         unregister(connection)
         connection.close()
     }
 
+    private func nextLink() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        lastLink += 1
+        return lastLink
+    }
+
     private func register(_ connection: Connection) {
         lock.lock()
         connections[ObjectIdentifier(connection)] = connection
-        // Queued under the lock, so the main queue sees the counts in the order they were true.
-        report(countsLocked())
+        // Queued under the lock, so the main queue sees the connections in the order they were true.
+        report(Set(connections.values.map(\.peer)))
         lock.unlock()
     }
 
     private func unregister(_ connection: Connection) {
         lock.lock()
         connections[ObjectIdentifier(connection)] = nil
-        // Queued under the lock, so the main queue sees the counts in the order they were true.
-        report(countsLocked())
+        // Queued under the lock, so the main queue sees the connections in the order they were true.
+        report(Set(connections.values.map(\.peer)))
         lock.unlock()
     }
 
-    private func countsLocked() -> [BridgeBrowser: Int] {
-        var counts: [BridgeBrowser: Int] = [:]
-        for connection in connections.values { counts[connection.browser, default: 0] += 1 }
-        return counts
-    }
-
-    private func report(_ counts: [BridgeBrowser: Int]) {
+    private func report(_ peers: Set<BridgePeer>) {
         let changed = changed
-        DispatchQueue.main.async { MainActor.assumeIsolated { changed(counts) } }
+        DispatchQueue.main.async { MainActor.assumeIsolated { changed(peers) } }
     }
 }

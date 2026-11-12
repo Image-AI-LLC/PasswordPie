@@ -32,7 +32,7 @@ describe('FillController reports', () => {
   it('says hello and reports the active tab on startup', async () => {
     controller.start();
     await settle();
-    expect(channel.sent[0]).toEqual({ type: 'hello', version: 1, extension: '0.3.0' });
+    expect(channel.sent[0]).toEqual({ type: 'hello', version: 1, extension: '0.4.0' });
     expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'startup' }]);
   });
 
@@ -105,6 +105,80 @@ describe('FillController reports', () => {
     controller.runtimeMessage({ type: 'focus' }, { tab: { id: 1, active: true }, frameId: 0 });
     await settle();
     expect(channel.tabReports().map((r) => r.reason)).toEqual(['focus']);
+  });
+});
+
+describe('FillController Chrome profiles', () => {
+  // Chrome keeps extensions per profile. The app goes by the profile in front, which only its extension can tell
+  // (docs/BROWSER_EXTENSION.md, "Chrome profiles").
+  let focused: boolean;
+
+  beforeEach(() => {
+    focused = true;
+    tabs.profileFocused = async () => focused;
+  });
+
+  it('says with every tab report whether its profile has the focus', async () => {
+    controller.start();
+    await settle();
+    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'startup', focused: true }]);
+    channel.sent = [];
+    // A page finishes loading while the person is in another profile's window.
+    focused = false;
+    controller.tabUpdated(1, { status: 'complete' }, { id: 1, url: 'https://example.com/login', active: true });
+    await settle();
+    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'updated', focused: false }]);
+  });
+
+  it('tells the app at once when the profile loses the focus, and reports no tab', async () => {
+    controller.windowFocusChanged(-1);
+    expect(channel.sent).toEqual([{ type: 'focus', focused: false }]);
+    await settle();
+    expect(channel.tabReports()).toHaveLength(0);
+  });
+
+  it('tells the app at once when the profile gains the focus, then reports its tab', async () => {
+    controller.windowFocusChanged(7);
+    expect(channel.sent).toEqual([{ type: 'focus', focused: true }]);
+    await settle();
+    expect(channel.sent.slice(1)).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'focus', focused: true }]);
+  });
+
+  it('reads the focus when the report goes out, not when it was asked for', async () => {
+    controller.windowFocusChanged(7);
+    // Lost again within the debounce: PasswordPie's panel took the keyboard.
+    focused = false;
+    controller.windowFocusChanged(-1);
+    await settle();
+    expect(channel.sent).toEqual([
+      { type: 'focus', focused: true },
+      { type: 'focus', focused: false },
+      { type: 'tab', url: 'https://example.com/', reason: 'focus', focused: false },
+    ]);
+  });
+
+  it('leaves the word out when the browser could not say', async () => {
+    tabs.profileFocused = async () => {
+      throw new Error('no window');
+    };
+    controller.report('activated');
+    await settle();
+    expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'activated' }]);
+  });
+
+  it('keeps working with an app from before this message, which answers it with an error', async () => {
+    channel.answer = (msg) => (msg.type === 'focus' ? { type: 'error', id: 1, code: 'bad-request' } : { type: 'tab', id: 1, fill: FILL });
+    controller.windowFocusChanged(7);
+    await settle();
+    expect(tabs.fills.map((f) => f.msg.username)).toEqual(['octocat']);
+  });
+
+  it('says nothing about focus in Safari, which has no word for it', async () => {
+    delete tabs.profileFocused;
+    controller.windowFocusChanged(-1);
+    controller.windowFocusChanged(7);
+    await settle();
+    expect(channel.sent).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'focus' }]);
   });
 });
 

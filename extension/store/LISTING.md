@@ -54,7 +54,7 @@ NO ACCOUNT, NO SIGN-IN
 PRIVATE BY DESIGN
 • Your passwords stay in your KeePass file on your Mac. They go only to the PasswordPie app on the same Mac, through Chrome's native messaging, and never to us or to any server.
 • The extension has no account, stores nothing in the browser, and sends nothing to passwordpie.com or to us.
-• It tells the app only the site of the active tab (such as https://example.com), never the page's full address, its contents or your history.
+• It tells the app only the site of the active tab (such as https://example.com) and whether a window of this Chrome profile is in front, never the page's full address, its contents or your history.
 • When PasswordPie has an account for that site but no icon for it, the extension sends the app the site's icon, which it fetches without cookies from the address the page gives for it.
 • No analytics, no tracking, no remote code.
 
@@ -79,7 +79,7 @@ Fill the username, password and two-step code that the user picks in the Passwor
 **nativeMessaging**
 
 ```text
-The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. It is not used for anything else.
+The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. It is not used for anything else.
 ```
 
 **webNavigation**

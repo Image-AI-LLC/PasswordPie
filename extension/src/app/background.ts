@@ -27,11 +27,30 @@ function makeChannel(): NativeChannel {
   return new ChromeNativeChannel(connectNative);
 }
 
+/**
+ * Every kind of window of this profile counts as the profile being in front, a DevTools window too. The default
+ * (normal and popup) would report the focus lost while the person is still in this profile.
+ */
+const PROFILE_WINDOWS: { windowTypes: Array<'normal' | 'popup' | 'panel' | 'app' | 'devtools'> } = {
+  windowTypes: ['normal', 'popup', 'panel', 'app', 'devtools'],
+};
+/** Chrome keeps extensions per profile; Safari's extension has no such word to give the app. */
+const TELLS_FOCUS = import.meta.env.BROWSER !== 'safari';
+
 const tabs: TabsAdapter = {
   async activeTab() {
     const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
     return tab;
   },
+  ...(TELLS_FOCUS
+    ? {
+        async profileFocused() {
+          // No window of this profile at all is not having the focus.
+          const last = await browser.windows.getLastFocused(PROFILE_WINDOWS).catch(() => undefined);
+          return last?.focused === true;
+        },
+      }
+    : {}),
   async frames(tabId) {
     const frames = await browser.webNavigation.getAllFrames({ tabId });
     return (frames ?? []).map((frame) => ({ frameId: frame.frameId, url: frame.url }));
@@ -131,7 +150,8 @@ export default defineBackground(() => {
   browser.tabs.onActivated.addListener(() => controller.tabActivated());
   browser.tabs.onUpdated.addListener((tabId, change, tab) => controller.tabUpdated(tabId, change, tab));
   browser.tabs.onRemoved.addListener((tabId) => controller.tabRemoved(tabId));
-  browser.windows.onFocusChanged.addListener((windowId) => controller.windowFocusChanged(windowId));
+  if (TELLS_FOCUS) browser.windows.onFocusChanged.addListener((windowId) => controller.windowFocusChanged(windowId), PROFILE_WINDOWS);
+  else browser.windows.onFocusChanged.addListener((windowId) => controller.windowFocusChanged(windowId));
   // Content scripts only: there is no extension page to send anything.
   browser.runtime.onMessage.addListener((msg: unknown, sender) => {
     controller.runtimeMessage(msg, sender);

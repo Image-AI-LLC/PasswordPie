@@ -496,7 +496,8 @@ To add the extension to another profile later, bring a window of that profile to
 ### Privacy
 
 - The site of the tab you are on (such as `https://github.com`, never the page or anything after it) goes from the
-  extension to PasswordPie on your Mac, to find the accounts for it. It is kept in memory only, never written to disk or
+  extension to PasswordPie on your Mac, to find the accounts for it. Chrome's extension also says whether a window of
+  its profile is in front, and nothing else about your windows. It is kept in memory only, never written to disk or
   to a log, and never sent anywhere else.
 - The username and password go only to the page you asked to fill, and only while PasswordPie is unlocked.
 - The extension and PasswordPie check each other: Chrome lets only PasswordPie's extension start PasswordPie's helper, and

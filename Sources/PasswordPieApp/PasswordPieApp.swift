@@ -357,7 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.title = "PasswordPie Preferences"
             window.applyWarmTitlebar()
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: PreferencesView(session: session, navigator: preferencesNavigator))
+            window.contentView = NSHostingView(rootView: PreferencesView(session: session, navigator: preferencesNavigator, bridge: bridge))
             window.setContentSize(NSSize(width: 560, height: 800))
             window.contentMinSize = NSSize(width: 560, height: 480)
             if let screen = NSScreen.main {
@@ -568,6 +568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Show PasswordPie", action: #selector(showCenteredAction), keyEquivalent: "")
         menu.addItem(withTitle: "Preferences…", action: #selector(showPreferencesAction), keyEquivalent: ",")
+        menu.addItem(withTitle: browserExtensionsMenuTitle, action: #selector(showBrowserExtensionsAction), keyEquivalent: "")
         menu.addItem(withTitle: session.locked ? "Locked" : "Lock Now", action: #selector(lockNow), keyEquivalent: "")
         let hotkey = NSMenuItem(
             title: hotKey == nil ? "\(session.hotKey.display) is not registered" : "Shortcut \(session.hotKey.display)",
@@ -586,6 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func lockNow() { session.lock() }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func showPreferencesAction() { showPreferences() }
+    @objc private func showBrowserExtensionsAction() { showPreferences(at: .browserExtensions) }
     @objc private func showAboutAction() { showAbout() }
 
     /// Without a main menu a menu-bar-only app has no Edit commands, so ⌘V and friends do nothing in text fields.
@@ -873,6 +875,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "systemIdleSeconds": SystemIdle.seconds(),
             "hotkey": hotKeyStatus,
             "chromeConnected": bridge?.chromeConnected ?? false,
+            "chromeProfiles": bridge?.chromeProfiles ?? 0,
+            "chromeInFront": bridge?.chromeInFront ?? false,
+            "pageURL": BrowserBridge.browser(forBundleID: panelController.targetApp?.bundleIdentifier).flatMap { bridge?.pageURL(for: $0) } ?? NSNull(),
             "safariEnabled": bridge?.safariEnabled ?? false,
             "canFill": BridgeBrowser.allCases.filter { bridge?.canFill(in: $0) == true }.map(\.rawValue),
             "extensionBanner": panelController.shownBanner?.title ?? NSNull(),

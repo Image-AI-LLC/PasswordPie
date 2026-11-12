@@ -419,6 +419,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         menu.closeAll()
         panel.orderOut(nil)
+        // The panel no longer holds the keyboard: the browser's own word about its focus counts again.
+        bridge?.panelDidHide()
         endLockScene()
         header.searchField.stringValue = ""
         // A half-typed master password must not wait in the field for whoever opens the panel next.
@@ -659,7 +661,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private func installBannerExtension() {
         guard let shownBanner, let bridge else { return }
         hide(refocusPrevious: false)
-        bridge.install(shownBanner)
+        bridge.install(shownBanner, in: FrontApp(previousApp))
     }
 
     /// The front browser's site and its accounts, for the top of the initial menu.
@@ -971,6 +973,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         let gear = NSMenu()
         if session.locked {
             add(to: gear, "Preferences…", #selector(openPreferences))
+            add(to: gear, browserExtensionsMenuTitle, #selector(openBrowserExtensions))
             add(to: gear, "Open Database…", #selector(openDatabase))
             gear.addItem(.separator())
             add(to: gear, "Quit PasswordPie", #selector(quit))
@@ -985,6 +988,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         add(to: gear, "Lock", #selector(lockNow), key: "l")
         gear.addItem(.separator())
         add(to: gear, "Preferences…", #selector(openPreferences), key: ",")
+        add(to: gear, browserExtensionsMenuTitle, #selector(openBrowserExtensions))
         add(to: gear, "Open Database…", #selector(openDatabase))
         add(to: gear, "New Database…", #selector(newDatabase))
         gear.addItem(.separator())
@@ -1004,6 +1008,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     @objc private func newItem() { hide(refocusPrevious: false); session.newEntry() }
     @objc private func lockNow() { session.lock() }
     @objc private func openPreferences() { hide(refocusPrevious: false); AppDelegate.shared?.showPreferences() }
+    @objc private func openBrowserExtensions() { showPreferences(at: .browserExtensions) }
     @objc private func openDatabase() { session.chooseDatabase() }
     @objc private func newDatabase() { session.newDatabase() }
     @objc private func quit() { NSApp.terminate(nil) }

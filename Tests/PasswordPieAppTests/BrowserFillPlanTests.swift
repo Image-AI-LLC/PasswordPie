@@ -89,23 +89,23 @@ final class ResolvedPageURLTests: XCTestCase {
 
 final class ExtensionBannerTests: XCTestCase {
     func testChromeWithoutItsExtension() {
-        XCTAssertEqual(extensionBanner(frontBundleID: "com.google.Chrome", chromeConnected: false, safariEnabled: true, chromeSupported: true), .addChrome)
-        XCTAssertNil(extensionBanner(frontBundleID: "com.google.Chrome", chromeConnected: true, safariEnabled: false, chromeSupported: true))
+        XCTAssertEqual(extensionBanner(frontBundleID: "com.google.Chrome", chromeInFront: false, safariEnabled: true, chromeSupported: true), .addChrome)
+        XCTAssertNil(extensionBanner(frontBundleID: "com.google.Chrome", chromeInFront: true, safariEnabled: false, chromeSupported: true))
     }
 
     func testNoChromeBannerWhereChromeIsNotSupported() {
-        XCTAssertNil(extensionBanner(frontBundleID: "com.google.Chrome", chromeConnected: false, safariEnabled: false, chromeSupported: false))
+        XCTAssertNil(extensionBanner(frontBundleID: "com.google.Chrome", chromeInFront: false, safariEnabled: false, chromeSupported: false))
     }
 
     func testSafari() {
-        XCTAssertEqual(extensionBanner(frontBundleID: "com.apple.Safari", chromeConnected: false, safariEnabled: false, chromeSupported: true), .enableSafari)
-        XCTAssertNil(extensionBanner(frontBundleID: "com.apple.Safari", chromeConnected: false, safariEnabled: true, chromeSupported: true))
+        XCTAssertEqual(extensionBanner(frontBundleID: "com.apple.Safari", chromeInFront: false, safariEnabled: false, chromeSupported: true), .enableSafari)
+        XCTAssertNil(extensionBanner(frontBundleID: "com.apple.Safari", chromeInFront: false, safariEnabled: true, chromeSupported: true))
     }
 
     func testOtherAppsNever() {
         // Chrome Beta, Dev and Canary have no host in v1, so they keep typed keystrokes and get no banner.
         for id in ["com.apple.TextEdit", "org.mozilla.firefox", "com.google.Chrome.beta", "com.google.Chrome.canary", nil] {
-            XCTAssertNil(extensionBanner(frontBundleID: id, chromeConnected: false, safariEnabled: false, chromeSupported: true))
+            XCTAssertNil(extensionBanner(frontBundleID: id, chromeInFront: false, safariEnabled: false, chromeSupported: true))
         }
     }
 

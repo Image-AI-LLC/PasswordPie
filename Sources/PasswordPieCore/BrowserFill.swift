@@ -9,6 +9,150 @@ public enum BridgeBrowser: String, Sendable, CaseIterable {
     case safari
 }
 
+/// One end of the bridge: the browser, and which of its connections. Chrome keeps one connection open for each profile
+/// that has the extension, numbered by the app's server as they arrive. Safari opens a connection per message, so its
+/// link is always 0.
+public struct BridgePeer: Hashable, Sendable {
+    public let browser: BridgeBrowser
+    public let link: Int
+
+    public init(_ browser: BridgeBrowser, link: Int = 0) {
+        self.browser = browser
+        self.link = link
+    }
+}
+
+/// The connection that stands for the browser's window in front.
+public struct FrontLink: Equatable, Sendable {
+    public let peer: BridgePeer
+    /// True when its extension said it has the focus. False for an extension that says nothing about focus (the one in
+    /// the store before 0.4.0): it is connected, so it may be in front, as it always counted.
+    public let certain: Bool
+
+    public init(peer: BridgePeer, certain: Bool) {
+        self.peer = peer
+        self.certain = certain
+    }
+}
+
+/// What each connection last said, and which one is the profile in front. Chrome's extensions are per profile, and a
+/// profile's extension is told when its windows gain or lose the focus; a profile without the extension says nothing.
+/// So the profile in front is the one that says it has the focus, and when none does, the window in front belongs to
+/// a profile nobody speaks for. See docs/BROWSER_EXTENSION.md, "Chrome profiles". Memory only.
+public struct BridgeLinks: Sendable {
+    private struct Link: Sendable {
+        /// Nil until the extension says: one that never does counts as before.
+        var focused: Bool?
+        /// Orders the links that say they have the focus: the latest wins.
+        var saidOrder = 0
+        var url: String?
+        var urlAt: Date?
+        var reportedAt: Date?
+    }
+
+    private var links: [BridgePeer: Link] = [:]
+    private var order = 0
+    /// While PasswordPie's panel is open it has the keyboard, so the browser tells its extension the window lost the
+    /// focus. The profile that had it when the panel opened stays the one in front until the panel closes.
+    private var holding = false
+    private var held: [BridgeBrowser: BridgePeer] = [:]
+
+    public init() {}
+
+    public mutating func opened(_ peer: BridgePeer) {
+        if links[peer] == nil { links[peer] = Link() }
+    }
+
+    public mutating func closed(_ peer: BridgePeer) {
+        links[peer] = nil
+        if held[peer.browser] == peer { held[peer.browser] = nil }
+    }
+
+    /// The extension went away: forget every connection of `browser`.
+    public mutating func forget(_ browser: BridgeBrowser) {
+        for peer in links.keys where peer.browser == browser { links[peer] = nil }
+        held[browser] = nil
+    }
+
+    /// The profile's windows gained or lost the focus.
+    public mutating func said(_ peer: BridgePeer, focused: Bool, now: Date) {
+        opened(peer)
+        order += 1
+        links[peer]?.focused = focused
+        links[peer]?.saidOrder = order
+        // A click on the browser and the shortcut right after: the word that it has the focus can arrive when the panel
+        // is already opening. Losing it never changes what the panel holds: the panel itself takes it.
+        if holding, focused { held[peer.browser] = peer }
+    }
+
+    /// A `tab` report: the active tab's page (nil when it is not a web page), and the focus if the extension says it.
+    public mutating func reported(_ peer: BridgePeer, url: String?, focused: Bool?, now: Date) {
+        opened(peer)
+        if let focused { said(peer, focused: focused, now: now) }
+        links[peer]?.url = url
+        links[peer]?.urlAt = url == nil ? nil : now
+        links[peer]?.reportedAt = now
+    }
+
+    /// The panel is opening: keep the profile that has the focus now.
+    public mutating func hold() {
+        holding = true
+        for browser in BridgeBrowser.allCases {
+            if let peer = focusedLink(browser) { held[browser] = peer }
+        }
+    }
+
+    /// The panel closed.
+    public mutating func release() {
+        holding = false
+        held = [:]
+    }
+
+    private func focusedLink(_ browser: BridgeBrowser) -> BridgePeer? {
+        links.filter { $0.key.browser == browser && $0.value.focused == true }
+            .max { $0.value.saidOrder < $1.value.saidOrder }?.key
+    }
+
+    /// The connection of the profile in front, or nil when there is none: nothing connected, or every profile with the
+    /// extension says the focus is elsewhere.
+    public func front(_ browser: BridgeBrowser) -> FrontLink? {
+        if holding, let peer = held[browser], links[peer] != nil { return FrontLink(peer: peer, certain: true) }
+        if let peer = focusedLink(browser) { return FrontLink(peer: peer, certain: true) }
+        // Extensions that say nothing about focus: the last to report, as before. One that only connected still counts.
+        let silent = links.filter { $0.key.browser == browser && $0.value.focused == nil }
+        let latest = silent.max { lhs, rhs in
+            let left = lhs.value.reportedAt ?? .distantPast
+            let right = rhs.value.reportedAt ?? .distantPast
+            return left == right ? lhs.key.link < rhs.key.link : left < right
+        }
+        return latest.map { FrontLink(peer: $0.key, certain: false) }
+    }
+
+    /// What `peer` last said about the focus, nil if nothing.
+    public func focused(_ peer: BridgePeer) -> Bool? {
+        links[peer]?.focused
+    }
+
+    /// The web page `peer` last reported as its active tab, if it is less than `maxAge` old.
+    public func url(of peer: BridgePeer, now: Date, maxAge: TimeInterval) -> String? {
+        guard let link = links[peer], let url = link.url, let at = link.urlAt, now.timeIntervalSince(at) <= maxAge else { return nil }
+        return url
+    }
+
+    /// True when a connection of `browser` sent a tab report in the last `within` seconds.
+    public func heardFrom(_ browser: BridgeBrowser, now: Date, within: TimeInterval) -> Bool {
+        links.contains { peer, link in
+            guard peer.browser == browser, let last = link.reportedAt else { return false }
+            return now.timeIntervalSince(last) <= within
+        }
+    }
+
+    /// How many connections `browser` has: for Chrome, the open profiles with the extension.
+    public func count(_ browser: BridgeBrowser) -> Int {
+        links.keys.filter { $0.browser == browser }.count
+    }
+}
+
 /// A web address reduced to what fill decisions need: its scheme, its origin and its site.
 public struct BrowserSite: Equatable, Sendable {
     public let scheme: String
@@ -94,14 +238,19 @@ public struct PendingFill: Equatable, Sendable {
     public let website: String
     public let site: BrowserSite
     public let created: Date
+    /// The connection it is for: the Chrome profile that was in front at the pick. Nil when that is not known (a new tab
+    /// in a browser that was not in front, or an extension that says nothing about focus): then any connection of the
+    /// browser may take it, except one that says its profile is not in front.
+    public let link: Int?
 
-    public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date) {
+    public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date, link: Int? = nil) {
         guard let site = BrowserSite(url: website) else { return nil }
         self.entryID = entryID
         self.browser = browser
         self.website = website
         self.site = site
         self.created = created
+        self.link = link
     }
 }
 
@@ -110,6 +259,8 @@ public struct PendingFill: Equatable, Sendable {
 public struct PendingCode: Equatable, Sendable {
     public let entryID: UUID
     public let browser: BridgeBrowser
+    /// The connection that took the fill, or scanned the code: the code goes to that Chrome profile only.
+    public var link = 0
     /// The page that took the fill. A code goes only to a page of the same site.
     public let site: BrowserSite
     /// When the fill was taken, or when a scanned code was added.
@@ -147,37 +298,44 @@ public struct PendingFillStore: Sendable {
     }
 
     /// The pending code to announce in a `tab` answer, once, if `browser` reports a page of its site in time.
-    mutating func takeAnnouncement(browser: BridgeBrowser, page: BrowserSite, now: Date) -> PendingCode? {
+    mutating func takeAnnouncement(browser: BridgeBrowser, link: Int = 0, page: BrowserSite, now: Date) -> PendingCode? {
         guard let code, code.announce else { return nil }
         let age = now.timeIntervalSince(code.created)
         guard age <= Self.codeLifetime, age >= -1 else {
             self.code = nil
             return nil
         }
-        guard code.browser == browser, code.site.allowsFill(on: page) else { return nil }
+        guard code.browser == browser, code.link == link, code.site.allowsFill(on: page) else { return nil }
         self.code?.announce = false
         return code
     }
 
     /// The pending code, if `browser` asks from a page of its site. Taking it deletes it. An expired one is deleted unused.
-    mutating func takeCode(browser: BridgeBrowser, pageURL: String, now: Date) -> PendingCode? {
+    mutating func takeCode(browser: BridgeBrowser, link: Int = 0, pageURL: String, now: Date) -> PendingCode? {
         guard let code else { return nil }
         let age = now.timeIntervalSince(code.created)
         guard age <= Self.codeLifetime, age >= -1 else {
             self.code = nil
             return nil
         }
-        guard code.browser == browser, let page = BrowserSite(url: pageURL), code.site.allowsFill(on: page) else { return nil }
+        guard code.browser == browser, code.link == link, let page = BrowserSite(url: pageURL), code.site.allowsFill(on: page) else { return nil }
         self.code = nil
         return code
     }
 
     /// The pending fill, if `browser` reports a page it may fill. Taking it deletes it. An expired one is deleted unused.
-    public mutating func take(browser: BridgeBrowser, pageURL: String, now: Date) -> PendingFill? {
+    /// `link` is the connection reporting and `focused` what it says of its profile's windows: a fill for one connection
+    /// goes to that one, and a fill for none never goes to a profile that says it is not in front.
+    public mutating func take(browser: BridgeBrowser, link: Int = 0, focused: Bool? = nil, pageURL: String, now: Date) -> PendingFill? {
         guard let fill = pending else { return nil }
         let age = now.timeIntervalSince(fill.created)
         guard age <= Self.lifetime, age >= -1 else {
             pending = nil
+            return nil
+        }
+        if let wanted = fill.link {
+            guard wanted == link else { return nil }
+        } else if focused == false {
             return nil
         }
         guard fill.browser == browser, let page = BrowserSite(url: pageURL), fill.site.allowsFill(on: page) else { return nil }
@@ -193,6 +351,9 @@ public struct BridgeRequest: Decodable, Sendable {
     public var url: String?
     public var reason: String?
     public var version: Int?
+    /// `tab` and `focus`: whether a window of the extension's profile has the focus. Missing from an extension that
+    /// does not say (before 0.4.0, and Safari's).
+    public var focused: Bool?
     /// `scan` only: the text of the QR code the user scanned on the page. Never logged or kept by the bridge.
     public var otpauth: String?
 }
@@ -268,11 +429,10 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     }
 }
 
-/// The app's side of the protocol: the pending fill and the last URL each browser reported. Memory only.
+/// The app's side of the protocol: the pending fill, and what each connection last reported. Memory only.
 public struct BridgeState: Sendable {
     public var pending = PendingFillStore()
-    private var currentURLs: [BridgeBrowser: (url: String, at: Date)] = [:]
-    private var lastReports: [BridgeBrowser: Date] = [:]
+    public private(set) var links = BridgeLinks()
 
     /// The longest QR code text a `scan` may carry. A real `otpauth://` link is a few hundred bytes.
     public static let maxScanLength = 4096
@@ -281,30 +441,58 @@ public struct BridgeState: Sendable {
 
     /// True when `browser` sent a tab report, of any page, in the last `within` seconds: its extension works.
     public func heardFrom(_ browser: BridgeBrowser, now: Date, within: TimeInterval = 3600) -> Bool {
-        guard let last = lastReports[browser] else { return false }
-        return now.timeIntervalSince(last) <= within
+        links.heardFrom(browser, now: now, within: within)
     }
 
-    /// The last web page `browser` reported as its active tab, if it is less than `maxAge` old.
+    /// The connection of `browser`'s profile in front, if one speaks for it.
+    public func front(_ browser: BridgeBrowser) -> FrontLink? {
+        links.front(browser)
+    }
+
+    /// How many connections `browser` has open: for Chrome, the profiles with the extension.
+    public func linkCount(_ browser: BridgeBrowser) -> Int {
+        links.count(browser)
+    }
+
+    /// The web page the profile in front of `browser` reported as its active tab, if it is less than `maxAge` old.
+    /// Another profile's tab is never it.
     public func currentURL(for browser: BridgeBrowser, now: Date, maxAge: TimeInterval = 3600) -> String? {
-        guard let current = currentURLs[browser], now.timeIntervalSince(current.at) <= maxAge else { return nil }
-        return current.url
+        guard let front = links.front(browser) else { return nil }
+        return links.url(of: front.peer, now: now, maxAge: maxAge)
+    }
+
+    /// A connection opened (Chrome: a profile's extension connected).
+    public mutating func opened(_ peer: BridgePeer) {
+        links.opened(peer)
+    }
+
+    /// A connection closed: forget what it said.
+    public mutating func closed(_ peer: BridgePeer) {
+        links.closed(peer)
+    }
+
+    /// PasswordPie's panel is opening over the browser, and will take the keyboard from it.
+    public mutating func panelOpened() {
+        links.hold()
+    }
+
+    public mutating func panelClosed() {
+        links.release()
     }
 
     /// The person added a scanned code to `entryID` in the app. The extension that scanned it may fill that code into
     /// the page, as after a fill: the next `tab` report of the site says to watch for the field, and the `code` request
     /// that follows is answered as usual (Premium included). False when `pageURL` is not a web page.
     @discardableResult
-    public mutating func expectCode(afterScanOf entryID: UUID, browser: BridgeBrowser, pageURL: String, now: Date) -> Bool {
+    public mutating func expectCode(afterScanOf entryID: UUID, browser: BridgeBrowser, link: Int = 0, pageURL: String, now: Date) -> Bool {
         guard let site = BrowserSite(url: pageURL) else { return false }
-        pending.expectCode(PendingCode(entryID: entryID, browser: browser, site: site, created: now, announce: true))
+        pending.expectCode(PendingCode(entryID: entryID, browser: browser, link: link, site: site, created: now, announce: true))
         return true
     }
 
     /// The browser's extension went away: forget what it said.
     public mutating func forget(_ browser: BridgeBrowser) {
-        currentURLs[browser] = nil
-        lastReports[browser] = nil
+        links.forget(browser)
     }
 
     /// Answers one request. `entry` looks up an account by id in the unlocked vault. `codeAllowed` is the Premium check
@@ -314,6 +502,7 @@ public struct BridgeState: Sendable {
     public mutating func handle(
         _ request: BridgeRequest,
         from browser: BridgeBrowser,
+        link: Int = 0,
         locked: Bool,
         now: Date,
         codeAllowed: () -> Bool = { false },
@@ -321,23 +510,29 @@ public struct BridgeState: Sendable {
         entry: (UUID) -> VaultEntry?
     ) -> BridgeResponse {
         if locked { pending.clear() }
+        let peer = BridgePeer(browser, link: link)
         switch request.type {
         case "hello":
+            links.opened(peer)
             return BridgeResponse(type: "hello", id: request.id, version: BridgeResponse.protocolVersion, locked: locked)
+        case "focus":
+            // The profile's windows gained or lost the focus. Says nothing back, locked or not.
+            guard let focused = request.focused else { return .error("bad-request", id: request.id) }
+            links.said(peer, focused: focused, now: now)
+            return BridgeResponse(type: "focus", id: request.id)
         case "tab":
-            lastReports[browser] = now
             let url = request.url ?? ""
             guard let page = BrowserSite(url: url) else {
-                currentURLs[browser] = nil
+                links.reported(peer, url: nil, focused: request.focused, now: now)
                 return BridgeResponse(type: "tab", id: request.id)
             }
-            currentURLs[browser] = (url, now)
+            links.reported(peer, url: url, focused: request.focused, now: now)
             guard !locked,
-                  let fill = pending.take(browser: browser, pageURL: url, now: now),
+                  let fill = pending.take(browser: browser, link: link, focused: links.focused(peer), pageURL: url, now: now),
                   let account = entry(fill.entryID),
                   entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) else {
                 var answer = BridgeResponse(type: "tab", id: request.id)
-                if !locked, let code = pending.takeAnnouncement(browser: browser, page: page, now: now) {
+                if !locked, let code = pending.takeAnnouncement(browser: browser, link: link, page: page, now: now) {
                     let left = PendingFillStore.codeLifetime - now.timeIntervalSince(code.created)
                     answer.expectCode = BridgeExpectCode(origin: page.origin, expiresIn: max(1, Int(left.rounded(.up))))
                 }
@@ -345,7 +540,7 @@ public struct BridgeState: Sendable {
             }
             let left = PendingFillStore.lifetime - now.timeIntervalSince(fill.created)
             let hasCode = OneTimeCodes.hasCode(account)
-            pending.expectCode(hasCode ? PendingCode(entryID: account.id, browser: browser, site: page, created: now) : nil)
+            pending.expectCode(hasCode ? PendingCode(entryID: account.id, browser: browser, link: link, site: page, created: now) : nil)
             let credentials = BridgeFill(
                 origin: page.origin,
                 username: account.username,
@@ -357,7 +552,7 @@ public struct BridgeState: Sendable {
         case "code":
             let url = request.url ?? ""
             guard !locked, let page = BrowserSite(url: url),
-                  let wanted = pending.takeCode(browser: browser, pageURL: url, now: now),
+                  let wanted = pending.takeCode(browser: browser, link: link, pageURL: url, now: now),
                   let account = entry(wanted.entryID),
                   entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
                   OneTimeCodes.hasCode(account) else {
