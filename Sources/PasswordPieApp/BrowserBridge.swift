@@ -255,7 +255,7 @@ final class BrowserBridge: ObservableObject {
     }
 
     /// The page `browser` is on: what its extension reported, checked against what Accessibility read when the panel opened.
-    /// `inFront` is whether the browser was the app in front when the panel opened (see `chromeLink`).
+    /// `inFront` is whether the browser really is the app in front for this panel or fill (see `chromeLink`).
     func pageURL(for browser: BridgeBrowser, inFront: Bool = true) -> String? {
         let usedLast = browser == .chrome && !inFront
         let reported = canFill(in: browser, inFront: inFront) ? state.currentURL(for: browser, now: now(), usedLast: usedLast) : nil
@@ -473,7 +473,8 @@ final class BrowserBridge: ObservableObject {
         fill(entry, mode, website: website, front: fillTarget())
     }
 
-    /// `front` is the app that was in front when the panel opened.
+    /// `front` is the app the fill is for (`PanelController.fillTarget`): the one the panel opened over, or with the
+    /// panel closed the one in front now.
     func fill(_ entry: VaultEntry, _ mode: FillMode, website: String?, front: FrontApp?) -> Bool {
         guard mode != .open else { return false }
         var browser = Self.browser(forBundleID: front?.bundleID)
