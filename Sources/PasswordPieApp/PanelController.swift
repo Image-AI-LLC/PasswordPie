@@ -162,12 +162,15 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     /// Whether `previousApp` really was the app in front when the panel opened. False when PasswordPie's own window was
     /// (Preferences): `previousApp` is then only where the panel goes back to. False once it closed.
     private(set) var targetInFront = false
-    /// The same for a fill: while the panel is open, what held when it opened. With the panel closed (a pinned
-    /// account's Open and Fill; that window never takes the focus), whether `previousApp` is the app in front now.
-    var targetInFrontNow: Bool {
-        if panel.isVisible { return targetInFront }
-        guard let previousApp else { return false }
-        return NSWorkspace.shared.frontmostApplication?.processIdentifier == previousApp.processIdentifier
+    /// The app a fill is for, and whether it is in front. While the panel is open: the app it opened over. With the
+    /// panel closed (a pinned account's Open and Fill; that window never takes the focus): the app in front now. When
+    /// that is PasswordPie itself, the app the panel last went back to, which is then not in front.
+    var fillTarget: (app: NSRunningApplication?, inFront: Bool) {
+        if panel.isVisible { return (previousApp, targetInFront) }
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            return (front, true)
+        }
+        return (previousApp, false)
     }
     var isVisible: Bool { panel.isVisible }
 

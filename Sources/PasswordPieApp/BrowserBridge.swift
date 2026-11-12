@@ -192,10 +192,9 @@ final class BrowserBridge: ObservableObject {
     private var readGeneration = 0
     private var cancellables = Set<AnyCancellable>()
 
-    /// The app that was in front when the panel opened.
-    var targetApp: () -> NSRunningApplication? = { nil }
-    /// Whether `targetApp` really was in front then, or is now when the panel is closed. False while PasswordPie's own window is.
-    var targetInFront: () -> Bool = { true }
+    /// The app a fill is for: the one the panel opened over, or with the panel closed the one in front now
+    /// (`PanelController.fillTarget`).
+    var fillTarget: () -> FrontApp? = { nil }
     /// Hides the panel; true gives focus back to the app that was in front.
     var hidePanel: (Bool) -> Void = { _ in }
     /// The extension's toolbar button was clicked: open the panel as the shortcut does.
@@ -471,7 +470,7 @@ final class BrowserBridge: ObservableObject {
 
     /// Fills through the extension when the target browser has one. False means the caller types the keystrokes instead.
     func fill(_ entry: VaultEntry, _ mode: FillMode, website: String?) -> Bool {
-        fill(entry, mode, website: website, front: FrontApp(targetApp(), inFront: targetInFront()))
+        fill(entry, mode, website: website, front: fillTarget())
     }
 
     /// `front` is the app that was in front when the panel opened.

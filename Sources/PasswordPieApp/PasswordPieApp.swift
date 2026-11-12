@@ -73,8 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The browser extensions fill through the bridge; Fill falls back to keystrokes when it cannot.
     private func startBrowserBridge() {
         bridge = BrowserBridge(session: session)
-        bridge.targetApp = { [weak self] in self?.panelController.targetApp }
-        bridge.targetInFront = { [weak self] in self?.panelController.targetInFrontNow ?? false }
+        bridge.fillTarget = { [weak self] in
+            guard let target = self?.panelController.fillTarget else { return nil }
+            return FrontApp(target.app, inFront: target.inFront)
+        }
         bridge.hidePanel = { [weak self] refocus in self?.panelController.hide(refocusPrevious: refocus) }
         session.browserFill = { [weak self] entry, mode, website in
             self?.bridge.fill(entry, mode, website: website) ?? false
