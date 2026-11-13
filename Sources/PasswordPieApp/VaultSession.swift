@@ -232,6 +232,11 @@ final class VaultSession: ObservableObject {
     var hidePanel: (() -> Void)?
     /// Fills through the browser extension when the target browser has one; false means type the keystrokes.
     var browserFill: ((VaultEntry, FillMode, String?) -> Bool)?
+    /// Reset Password through the browser extension: the account, the reset address and the new password for the page's
+    /// new and confirm boxes. False means it did nothing, and the page is only opened.
+    var browserReset: ((VaultEntry, String, String) -> Bool)?
+    /// Opens a page in the default browser. Replaced in tests, which never open a real one.
+    var openWebPage: (URL) -> Void = { NSWorkspace.shared.open($0) }
     var onWrongPassword: (() -> Void)?
     var onAutoLockChange: ((AutoLockSettings) -> Void)?
     /// Called for every vault action and unlock, so the idle timer restarts.
@@ -1370,8 +1375,38 @@ final class VaultSession: ObservableObject {
     func openURL(of id: UUID, website: String? = nil) {
         guard let raw = website ?? entry(id)?.url, let url = webURL(raw) else { return }
         onActivity?()
-        NSWorkspace.shared.open(url)
+        openWebPage(url)
         recordUse(id)
+    }
+
+    /// Reset Password. The App Store app, and an account that is not in a database PasswordPie writes, open the reset
+    /// link, or the account's website when it has none. The downloaded app first makes sure a new password is waiting
+    /// with the account, and lets the Chrome extension fill it into the page; the saved password does not change here.
+    /// See "Reset Password makes the new password for you" in docs/UX.md.
+    @discardableResult
+    func resetPassword(_ id: UUID) -> PasswordReset {
+        guard let entry = entry(id) else { return .opened }
+        let address = PasswordRotation.resetAddress(of: entry)
+        #if PP_DIRECT
+        switch passwordCandidate(for: id) {
+        case .waiting(let candidate):
+            // The page gets the new password only through the extension, which checks the site. Never by keystrokes.
+            if browserReset?(entry, address, candidate.value) == true {
+                onActivity?()
+                recordUse(id)
+            } else {
+                openURL(of: id, website: address)
+            }
+            return .ready
+        case .failed:
+            openURL(of: id, website: address)
+            return .notSaved
+        case .unavailable:
+            break
+        }
+        #endif
+        openURL(of: id, website: address)
+        return .opened
     }
 
     /// When each account was last used, for search ranking: this app's own record, or Chrome's for a login with that id, whichever is later.
@@ -1735,6 +1770,16 @@ enum DatabaseChooser {
         panel.canChooseDirectories = false
         panel.message = "Choose a KeePass, Bitwarden, Proton Pass, PUX, OPVault, or CSV database"
     }
+}
+
+/// What Reset Password did besides opening the page.
+enum PasswordReset: Equatable {
+    /// Only the page: the App Store app, or an account that is not in a database PasswordPie writes.
+    case opened
+    /// A new password is waiting with the account, in the file.
+    case ready
+    /// The new password could not be written. Nothing changed, and nothing is filled.
+    case notSaved
 }
 
 // MARK: Menu catalog

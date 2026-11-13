@@ -4,6 +4,7 @@ import {
   PROTOCOL_VERSION,
   WEBSITE_URL,
   APP_NOT_RESPONDING,
+  CHANGE_WATCH_MS,
   CODE_LIFETIME_MS,
   codeOfAnswer,
   expectCodeOfTabAnswer,
@@ -93,6 +94,8 @@ export class FillController {
   private readonly codeWaits = new Map<number, CodeWait>();
   /** The frame of each tab that shows the note about Premium, and until when its Upgrade counts. */
   private readonly hints = new Map<number, { frameId: number; until: number }>();
+  /** The tabs given a new password, and for which origin: a submit there is told to the app, once. Holds no secret. */
+  private readonly changes = new Map<number, { origin: string; expiry: TimerHandle }>();
   private reportTimer: TimerHandle | undefined;
   private pendingReason: TabReason = 'startup';
 
@@ -163,6 +166,7 @@ export class FillController {
     this.drop(tabId);
     this.dropCodeWait(tabId);
     this.hints.delete(tabId);
+    this.dropChange(tabId);
   }
 
   runtimeMessage(value: unknown, sender: MessageSender): void {
@@ -181,6 +185,8 @@ export class FillController {
       if (sender.frameId !== undefined && sender.url !== undefined) void this.requestCode(tabId, sender.frameId, sender.url);
     } else if (msg.type === 'upgrade') {
       this.upgrade(tabId, sender.frameId);
+    } else if (msg.type === 'changed') {
+      this.changed(tabId, sender);
     } else {
       this.drop(tabId);
     }
@@ -195,6 +201,27 @@ export class FillController {
     if (!hint || hint.frameId !== frameId || this.timers.now() > hint.until) return;
     this.hints.delete(tabId);
     void this.channel.request({ type: 'upgrade' });
+  }
+
+  /**
+   * The form the new password was filled into is being submitted: the app asks whether the site took it. Only for a tab
+   * that was given a new password, from a frame of that origin, and once. Only the origin goes, as in a tab report.
+   */
+  private changed(tabId: number, sender: MessageSender): void {
+    const change = this.changes.get(tabId);
+    if (!change || sender.url === undefined || originOf(sender.url) !== change.origin) return;
+    const tabUrl = sender.tab?.url;
+    if (tabUrl !== undefined && originOf(tabUrl) !== change.origin) return;
+    this.dropChange(tabId);
+    // An app from before this message answers with an error; nothing is read from the answer.
+    void this.channel.request({ type: 'changed', url: `${change.origin}/` });
+  }
+
+  private dropChange(tabId: number): void {
+    const change = this.changes.get(tabId);
+    if (!change) return;
+    this.timers.clearTimeout(change.expiry);
+    this.changes.delete(tabId);
   }
 
   hasEntry(tabId: number): boolean {
@@ -311,8 +338,15 @@ export class FillController {
   private keep(tabId: number, fill: TabFill): void {
     this.drop(tabId);
     const credentials: Credentials = { origin: fill.origin, username: fill.username, password: fill.password };
+    if (fill.newPassword !== undefined) credentials.newPassword = fill.newPassword;
     const expiry = this.timers.setTimeout(() => this.drop(tabId), fill.lifetimeMs);
     this.entries.set(tabId, { ...credentials, tabId, expiresAt: this.timers.now() + fill.lifetimeMs, expiry });
+    // The newest fill decides: a plain one after it ends the wait for a submit.
+    this.dropChange(tabId);
+    if (fill.newPassword !== undefined) {
+      const changeExpiry = this.timers.setTimeout(() => this.dropChange(tabId), CHANGE_WATCH_MS);
+      this.changes.set(tabId, { origin: fill.origin, expiry: changeExpiry });
+    }
   }
 
   private drop(tabId: number): void {
@@ -354,6 +388,7 @@ export class FillController {
       origin: entry.origin,
       username: entry.username,
       password: entry.password,
+      ...(entry.newPassword === undefined ? {} : { newPassword: entry.newPassword }),
       waitMs: Math.max(0, entry.expiresAt - this.timers.now()),
     };
     const targets = frames.filter(

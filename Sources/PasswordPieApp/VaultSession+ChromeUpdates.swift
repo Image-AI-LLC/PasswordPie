@@ -25,6 +25,15 @@ private struct ChromeWrite: Sendable {
     }
 }
 
+/// The new password Reset Password keeps with an account until the website has taken it.
+enum PasswordCandidate: Equatable {
+    case waiting(PreviousPasswords.Item)
+    /// The account is not in a database PasswordPie writes in place. Reset Password only opens the page.
+    case unavailable
+    /// It could not be written. Nothing changed.
+    case failed
+}
+
 /// How the rules in "The newest password wins" (docs/UX.md) reach the file.
 extension VaultSession {
     /// What keeps a login from replacing a password, given the rows read and the files open.
@@ -156,6 +165,38 @@ extension VaultSession {
         return transact(id) { entry in
             PreviousPasswords.restore(itemID, on: &entry, previousDate: date, now: now)
         }
+    }
+
+    /// The new password waiting with the account: the one already there, or one generated now and written to the file
+    /// before anything is filled. The saved password is not touched.
+    func passwordCandidate(for id: UUID) -> PasswordCandidate {
+        let now = chromeClock()
+        var reached = false
+        var waiting: PreviousPasswords.Item?
+        var added: PreviousPasswords.Item?
+        let written = transact(id) { entry in
+            reached = true
+            if let existing = PreviousPasswords.candidate(of: entry, now: now) {
+                waiting = existing
+                return false
+            }
+            added = PreviousPasswords.addCandidate(PasswordGenerator.generate(CharacterRecipe()), on: &entry, now: now)
+            return added != nil
+        }
+        if let waiting { return .waiting(waiting) }
+        // Not in a file that can be written (a Chrome login, a CSV), or its record is from a newer version: no new password.
+        // A Chrome update being written right now is different: the account could have had one, and did not get it.
+        guard reached else { return chromeWriteInFlight && storedEntry(id) != nil ? .failed : .unavailable }
+        guard let added else { return .unavailable }
+        return written ? .waiting(added) : .failed
+    }
+
+    /// The person said the website took the new password: it becomes the saved one, by the same path as Restore, and the
+    /// one it replaces goes to previous passwords. False when nothing is waiting any more, or the file was not written.
+    func usePasswordCandidate(of id: UUID) -> Bool {
+        guard !locked, let entry = storedEntry(id),
+              let candidate = PreviousPasswords.candidate(of: entry, now: chromeClock()) else { return false }
+        return restorePreviousPassword(candidate.id, of: id)
     }
 
     func clearPreviousPasswords(of id: UUID) -> Bool {

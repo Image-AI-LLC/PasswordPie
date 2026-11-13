@@ -1,7 +1,7 @@
 // Message shapes shared by the background, the content script and the native side.
 // The native protocol is in docs/BROWSER_EXTENSION.md, "Messages".
 
-export const EXTENSION_VERSION = '0.5.0'; // manifest.ts version (tests/manifest.test.ts)
+export const EXTENSION_VERSION = '0.6.0'; // manifest.ts version (tests/manifest.test.ts)
 export const PROTOCOL_VERSION = 1;
 export const NATIVE_APP = 'com.passwordpie';
 /** Where the toolbar button goes when PasswordPie is not installed or cannot be started. */
@@ -14,6 +14,8 @@ export const APP_NOT_RESPONDING = 'app-not-responding';
 export const FILL_LIFETIME_MS = 30_000;
 /** How long after a fill the page may show its two-step code field: the app's pending code lasts 30 s from the fill. */
 export const CODE_LIFETIME_MS = 30_000;
+/** How long after a fill with a new password a submit of its form is told to the app (docs/UX.md, "Reset Password"). */
+export const CHANGE_WATCH_MS = 600_000;
 
 export type TabReason = 'activated' | 'updated' | 'focus' | 'poke' | 'startup';
 
@@ -21,6 +23,11 @@ export interface Credentials {
   origin: string;
   username: string;
   password: string;
+  /**
+   * Reset Password: the password the app generated and the site does not know yet. It goes into the page's new and
+   * confirm boxes, and `password` into the box for the current one.
+   */
+  newPassword?: string;
 }
 
 /** background → content script */
@@ -33,6 +40,7 @@ export interface FillMessage extends Credentials {
 /** content script → background, the answer to a FillMessage */
 export interface FillResult {
   username: boolean;
+  /** The password went in. For a fill with `newPassword`: the new one did. */
   password: boolean;
 }
 
@@ -63,6 +71,8 @@ export type ContentMessage =
   | { type: 'focus' }
   | { type: 'ready' }
   | { type: 'filled'; password: true }
+  /** The form the new password was filled into is being submitted. Carries nothing; sent once per fill. */
+  | { type: 'changed' }
   /** An empty code field appeared while the frame was watching. */
   | { type: 'code-field' }
   /** "Upgrade" was clicked in the note about Premium: the app opens its Premium window. */
@@ -93,11 +103,18 @@ export function fillOfTabAnswer(value: unknown): TabFill | undefined {
   if (!isRecord(fill)) return undefined;
   const { origin, username, password, expiresIn, otp } = fill;
   if (typeof origin !== 'string' || typeof username !== 'string' || typeof password !== 'string') return undefined;
+  const newPassword = newPasswordOf(fill);
   const lifetimeMs =
     typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn > 0
       ? Math.min(expiresIn * 1000, FILL_LIFETIME_MS)
       : FILL_LIFETIME_MS;
-  return { origin, username, password, lifetimeMs, otp: otp === true };
+  return { origin, username, password, ...(newPassword === undefined ? {} : { newPassword }), lifetimeMs, otp: otp === true };
+}
+
+/** A fill's `newPassword`. Anything but a non-empty string is none: the fill is then a plain one. */
+function newPasswordOf(fill: Record<string, unknown>): string | undefined {
+  const { newPassword } = fill;
+  return typeof newPassword === 'string' && newPassword !== '' ? newPassword : undefined;
 }
 
 /** A `tab` answer's `expectCode`: a code was just added from a scan for this origin; watch its frames for the field. */
@@ -144,6 +161,8 @@ export function parseFillMessage(value: unknown): FillMessage | undefined {
   const { origin, username, password, waitMs } = value;
   if (typeof origin !== 'string' || typeof username !== 'string' || typeof password !== 'string') return undefined;
   const msg: FillMessage = { type: 'fill', origin, username, password };
+  const newPassword = newPasswordOf(value);
+  if (newPassword !== undefined) msg.newPassword = newPassword;
   if (typeof waitMs === 'number' && Number.isFinite(waitMs) && waitMs >= 0) msg.waitMs = waitMs;
   return msg;
 }
@@ -158,6 +177,7 @@ export function parseContentMessage(value: unknown): ContentMessage | undefined 
   if (value.type === 'focus') return { type: 'focus' };
   if (value.type === 'ready') return { type: 'ready' };
   if (value.type === 'filled' && value.password === true) return { type: 'filled', password: true };
+  if (value.type === 'changed') return { type: 'changed' };
   if (value.type === 'code-field') return { type: 'code-field' };
   if (value.type === 'upgrade') return { type: 'upgrade' };
   return undefined;

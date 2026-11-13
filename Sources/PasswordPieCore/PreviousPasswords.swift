@@ -127,8 +127,10 @@ public enum PreviousPasswords {
         // `distinct` is newest-entered first, so the first used value is the one most recently replaced.
         let protectedID = distinct.first(where: \.used)?.id
         var kept = distinct.filter { now.timeIntervalSince($0.enteredAt) < retention || $0.id == protectedID }
+        // The password waiting to become the saved one may already be the website's: the count never pushes it out.
+        let waitingID = kept.first(where: isCandidate)?.id
         while kept.count > maxItems {
-            let evictable = kept.filter { $0.id != protectedID }
+            let evictable = kept.filter { $0.id != protectedID && $0.id != waitingID }
             guard let victim = evictable.last(where: { !$0.used }) ?? evictable.last else { break }
             kept.removeAll { $0.id == victim.id }
         }
@@ -171,6 +173,39 @@ public enum PreviousPasswords {
         entry.password = item.value
         set(trimmed(state, now: now), on: &entry)
         return true
+    }
+
+    // MARK: A new password, not used yet
+
+    /// Reset Password generates the new password here and leaves the saved one alone, until the person says the website
+    /// took it. Chrome's unused values are `.chrome`, and a value that was once saved is `used`, so this is only ever
+    /// that waiting password. See "Reset Password makes the new password for you" in docs/UX.md.
+    static func isCandidate(_ item: Item) -> Bool {
+        item.source == .saved && !item.used
+    }
+
+    /// The new password waiting for this account, if any: the newest one, and never the saved password itself.
+    public static func candidate(of entry: VaultEntry, now: Date) -> Item? {
+        var state = state(of: entry)
+        state.items.removeAll { $0.value == entry.password }
+        return trimmed(state, now: now).items.filter(isCandidate).max { $0.enteredAt < $1.enteredAt }
+    }
+
+    /// Keeps `value` as the account's new password, not used yet. The saved password does not change.
+    /// An account that already has one waiting keeps that one, so pressing Reset Password twice fills the same password.
+    /// Nil when nothing was added: an empty value, the saved password itself, or a record this version cannot read.
+    @discardableResult
+    public static func addCandidate(_ value: String, on entry: inout VaultEntry, now: Date) -> Item? {
+        guard isReadable(entry) else { return nil }
+        if let waiting = candidate(of: entry, now: now) { return waiting }
+        guard !value.isEmpty, value != entry.password else { return nil }
+        var state = state(of: entry)
+        // A value the account had before is new again: it is on its way back in, not a record of the past.
+        state.items.removeAll { $0.value == value }
+        let item = Item(value: value, source: .saved, date: now, enteredAt: now, used: false)
+        state.items.append(item)
+        set(trimmed(state, now: now), on: &entry)
+        return item
     }
 
     /// Empties the list. What was decided about Chrome's changes stays, so a cleared value does not return on the next read.

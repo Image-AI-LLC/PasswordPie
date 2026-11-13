@@ -84,6 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// True while the scan window closes because the vault locked: the scan keeps waiting for the unlock.
     private var closingScanForLock = false
     private(set) var otpScan: OTPScanModel!
+    #if PP_DIRECT
+    private var passwordChangeWindow: NSWindow?
+    private(set) var passwordChange: PasswordChangeModel!
+    #endif
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
     private var reporter: StatusReporter?
@@ -107,6 +111,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         otpScan.present = { [weak self] in self?.presentScan() }
         otpScan.codeAdded = { [weak self] id, browser, origin in self?.bridge.expectScannedCode(entryID: id, browser: browser, origin: origin) }
         bridge.onScan = { [weak self] scanned, origin, browser in self?.otpScan.receive(scanned, origin: origin, browser: browser) }
+        #if PP_DIRECT
+        session.browserReset = { [weak self] entry, address, newPassword in
+            self?.bridge.openReset(entry, address: address, newPassword: newPassword) ?? false
+        }
+        passwordChange = PasswordChangeModel(session: session)
+        passwordChange.present = { [weak self] in self?.showPasswordChangeWindow() }
+        passwordChange.dismiss = { [weak self] in self?.passwordChangeWindow?.close() }
+        bridge.onPasswordChanged = { [weak self] id, host in self?.passwordChange.receive(id, host: host) }
+        #endif
         panelController.bridge = bridge
         bridge.start()
     }
@@ -138,6 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .filter { $0 }
             .sink { [weak self] _ in
                 self?.closeScanForLock()
+                #if PP_DIRECT
+                // The question names an account. Closing it is Not Yet: the new password keeps waiting.
+                self?.passwordChangeWindow?.close()
+                #endif
                 self?.largeTypeWindow?.close()
                 self?.largeTypeWindow = nil
                 let pinned = Array(self?.pinnedAccounts.values.map(\.panel) ?? [])
@@ -487,6 +504,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         scanWindow?.makeKeyAndOrderFront(nil)
     }
 
+    #if PP_DIRECT
+    /// "Did example.com accept the new password?" It floats over the browser, where the website's own answer is.
+    private func showPasswordChangeWindow() {
+        autoLock.registerActivity()
+        if passwordChangeWindow == nil {
+            let host = NSHostingController(rootView: PasswordChangeConfirmView(model: passwordChange) { [weak self] in
+                self?.passwordChangeWindow?.close()
+            })
+            host.sizingOptions = [.preferredContentSize]
+            let window = NSWindow(contentViewController: host)
+            window.styleMask = [.titled, .closable]
+            window.applyWarmTitlebar()
+            window.isReleasedWhenClosed = false
+            window.level = .floating
+            window.delegate = self
+            window.center()
+            passwordChangeWindow = window
+        }
+        let title = passwordChange.question?.title ?? ""
+        passwordChangeWindow?.title = title.isEmpty ? "New Password" : title
+        panelController.hide(refocusPrevious: false)
+        NSApp.activate(ignoringOtherApps: true)
+        passwordChangeWindow?.makeKeyAndOrderFront(nil)
+    }
+    #endif
+
     /// Locking hides other items' names. A scan still waiting comes back after the unlock; a finished one is done.
     private func closeScanForLock() {
         if case .added = otpScan?.phase { otpScan.cancel() }
@@ -544,6 +587,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         if window === paywallWindow { paywallWindow = nil }
         if window === chromeReviewWindow { chromeReviewWindow = nil }
+        #if PP_DIRECT
+        if window === passwordChangeWindow {
+            passwordChangeWindow = nil
+            // The close button is Not Yet.
+            passwordChange.cancel()
+        }
+        #endif
         if window === scanWindow {
             scanWindow = nil
             // The close button is Cancel. Locking only hides the window.

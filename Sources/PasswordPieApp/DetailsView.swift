@@ -81,7 +81,9 @@ func chromeUpdatedText(_ date: Date, now: Date = Date()) -> String {
 }
 
 /// The top line of a previous password: `updated Oct 20` or `date unknown`, then `not used yet` for a value never saved.
+/// The password Reset Password generated has no past to date: it is `new · not used yet`.
 func previousPasswordCaption(_ item: PreviousPasswords.Item, now: Date = Date()) -> String {
+    if item.source == .saved, !item.used { return "new · not used yet" }
     var caption = "date unknown"
     if let date = item.date {
         let calendar = Calendar(identifier: .gregorian)
@@ -158,6 +160,8 @@ final class DetailsModel: ObservableObject {
     @Published var previousOpen = false
     /// Which rows say Restore could not be written.
     @Published private(set) var restoreFailures: Set<UUID> = []
+    /// Reset Password could not write the new password to the file.
+    @Published private(set) var resetNotSaved = false
     @Published var confirmingClear = false
     @Published private(set) var clearFailed = false
     /// The last Chrome update for this account could not be written.
@@ -418,10 +422,11 @@ final class DetailsModel: ObservableObject {
     }
 
     /// Runs the field's action. The popover then hides for copy and open; a pinned window never does.
-    /// Opens the reset link, or the account's website when it has none.
+    /// Opens the reset link, or the account's website when it has none. The downloaded app also keeps a new password
+    /// with the account and fills it into the page (`VaultSession.resetPassword`).
     func resetPassword() {
-        guard let entry = session.entry(entryID) else { return }
-        session.openURL(of: entryID, website: PasswordRotation.resetAddress(of: entry))
+        resetNotSaved = session.resetPassword(entryID) == .notSaved
+        if resetNotSaved { announce("Couldn't save a new password. Nothing changed.") }
     }
 
     func perform(_ action: FieldAction, on field: DetailField) {
@@ -869,14 +874,21 @@ private struct PasswordReminderRow: View {
 
     var body: some View {
         DetailChrome(label: "change password") {
-            HStack {
-                Text(PasswordRotation.phrase(daysLeft: days))
-                    .font(.system(size: 13))
-                    .foregroundStyle(days <= 0 ? Palette.error(dark: colorScheme == .dark) : Color.primary)
-                Spacer()
-                Button("Reset Password") { model.resetPassword() }
-                    .controlSize(.small)
-                    .help("Opens the page where this password is changed.")
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(PasswordRotation.phrase(daysLeft: days))
+                        .font(.system(size: 13))
+                        .foregroundStyle(days <= 0 ? Palette.error(dark: colorScheme == .dark) : Color.primary)
+                    Spacer()
+                    Button("Reset Password") { model.resetPassword() }
+                        .controlSize(.small)
+                        .help("Opens the page where this password is changed.")
+                }
+                if model.resetNotSaved {
+                    Text("Couldn't save a new password. Nothing changed.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.error(dark: colorScheme == .dark))
+                }
             }
         }
         .frame(minHeight: 30)

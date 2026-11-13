@@ -111,6 +111,33 @@ function chooseLoneUsername(inputs: HTMLInputElement[]): HTMLInputElement | null
   return looking.length === 1 ? (looking[0] ?? null) : null;
 }
 
+/** The fields of a page that changes a password (docs/UX.md, "Reset Password makes the new password for you"). */
+export interface ChangeFields {
+  username: HTMLInputElement | null;
+  /** Where the page asks for the password it knows. */
+  current: HTMLInputElement | null;
+  /** The new password's boxes: the new one and its confirmation. */
+  fresh: HTMLInputElement[];
+}
+
+export function findChangeFields(root: Document | ShadowRoot | Element): ChangeFields {
+  const inputs = collectInputs(root).filter(isUsable);
+  const passwords = inputs.filter((el) => el.type === 'password');
+  const marked = passwords.filter((el) => tokens(el).includes('new-password'));
+  const first = passwords[0];
+  // Unmarked: three boxes are current, new, confirm. One box alone is a sign-in on the way to the page (a reset link
+  // opened while signed out): it takes the current password, never the new one.
+  const positional = passwords.length >= 3 || passwords.length === 1;
+  const current =
+    passwords.find((el) => tokens(el).includes('current-password')) ??
+    (positional && first && !marked.includes(first) ? first : null);
+  // Unmarked: two boxes are new and confirm (a reset by email); of three or more, the last two.
+  const fresh = (marked.length > 0 ? marked : passwords.slice(-2)).filter((el) => el !== current);
+  const anchor = current ?? fresh[0];
+  const username = anchor ? chooseUsername(anchor, inputs) : chooseLoneUsername(inputs);
+  return { username, current, fresh };
+}
+
 export function findLoginFields(root: Document | ShadowRoot | Element): LoginFields {
   const inputs = collectInputs(root).filter(isUsable);
   const passwords = inputs.filter((el) => el.type === 'password');

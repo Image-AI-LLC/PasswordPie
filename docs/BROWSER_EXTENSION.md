@@ -108,6 +108,7 @@ Sent when the extension starts and when its port (re)connects. It makes the brow
     ← {"type":"tab","id":2}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28}}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28,"otp":true}}
+    ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28,"newPassword":"…"}}
 
 `reason` is one of `activated`, `updated`, `focus`, `poke`, `startup` (diagnostic only; it changes nothing). `url` is the
 origin of the active tab's top frame in the focused window, written as `scheme://host[:port]/`: matching needs nothing
@@ -119,6 +120,10 @@ clears the cached URL and never fills.
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 `otp: true` says the account has a two-step code. It carries no code: the app now keeps a **pending code** for that
 browser and the page's site for 30 seconds, and the extension watches that tab's frames of `origin` for a code field.
+`newPassword` is there only after **Reset Password** in the direct app (docs/UX.md, "Reset Password makes the new
+password for you"): the page is a change-password form. `password` is still the saved one, for the box that asks for the
+current password; `newPassword` goes in the new and the confirm box. The key is left out of every other fill. The
+extension never submits the form and never presses the site's button. See `changed` below.
 
 ### `code`
 
@@ -142,6 +147,33 @@ note with Upgrade. An empty answer means nothing was waiting.
 unlocked, when the tab's site (eTLD+1) has an account whose website host has no icon yet (none bundled, none cached), and
 at most once per site every 10 minutes (`SiteIconLedger`). On any other site the answer has no `wantIcon`, so the
 extension learns nothing new about the vault and sends nothing more.
+
+### `changed`
+
+    → {"type":"changed","id":6,"url":"https://github.com/"}
+    ← {"type":"changed","id":6,"version":1}
+
+The page that got a `fill` with `newPassword` took its form: the person pressed the site's own button. `url` is the
+tab's origin, as in `tab`. The app then asks the person, in a small window over the browser, "Did github.com accept the
+new password?" Nothing is saved before they answer: the extension cannot tell an accepted form from a refused one, and
+neither can the app.
+
+When the app hands out a fill with `newPassword`, it keeps one **pending change**: the account, the browser, the
+connection that took the fill, and the site of the reset address. A `changed` request counts when it comes from that
+browser and connection, from a page that site may fill (same site, no downgrade), within 600 seconds, while the vault is
+unlocked and the account still has that site. It is used once; a newer one replaces it; locking deletes it. It holds
+no password.
+
+The answer is always the same, matched or not, locked or not, with or without a `url`: it never says whether an account
+was waiting. It is never an `error`.
+
+Compatibility, both ways harmless:
+
+- An extension from before this ignores `newPassword` and fills the username and the saved password as usual. It never
+  sends `changed`, so the question does not come up, and the new password waits under previous passwords.
+- An app from before this never sends `newPassword`, so the extension has nothing to report. If it did send `changed`,
+  that app answers `{"type":"error","code":"bad-request"}`, which the extension ignores.
+- The App Store app and Safari never get `newPassword`: Reset Password only opens the page there.
 
 ### `focus`
 
@@ -281,6 +313,10 @@ All in `PasswordPieCore`, with tests:
 - **No downgrade.** An https entry does not fill an http page, except for `localhost` and `127.0.0.1`.
 - **Fresh and once.** A pending fill is used by the first matching report and then deleted. After 30 s it is deleted
   unused. Locking the vault deletes it. A new pick replaces it.
+- **A new password only to the account's own site.** Reset Password hands the new password to the bridge only when the
+  reset address is on a site of the account under the two rules above, and only for Chrome with an extension that
+  speaks for the profile. Otherwise the page just opens. The new password is never typed by keystrokes, and a new
+  password that has become the saved one since the pick is left out.
 - **The profile in front.** A pick made over Chrome is for the connection of the profile in front, and no other
   connection may take it, whatever site its tab is on. A two-step code goes to the connection that took the fill, and
   the code of a scan to the connection that scanned.
@@ -517,6 +553,9 @@ needs Accessibility to be granted already and never asks for it.
   header, expired, wrong `aud` or `iss`, not Premium) and the `code` request rules.
 - `swift test --filter 'DirectPremium|BridgePremium|BridgeUpgrade'`: what the direct app keeps, the `upgrade` request, and
   that neither app takes a pass from an extension (`PP_MAS=1 swift test --scratch-path .build-mas` runs the App Store side).
+- `swift test --filter 'BridgeChange|PasswordResetSession|PreviousPasswords'`: the `newPassword` key (present only for a
+  reset fill), the pending change (once, its browser, connection, site, 600 seconds, locking), the same `changed` answer
+  when nothing matched, the new password kept in the file without changing the saved one, and the question's two answers.
 - `swift test --filter 'OTPAuthParsing|OTPScanMatch|QRCodeReader|BridgeScan|OTPScanSession'`: the link checks, which items
   come first, reading a QR code generated in the test with Vision, the `scan` request and `expectCode`, the old code kept
   in the item's history, and the confirmation (locked, replace, expiry, a newer scan).
