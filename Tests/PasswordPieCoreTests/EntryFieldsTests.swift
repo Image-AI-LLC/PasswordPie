@@ -33,6 +33,35 @@ final class EntryFieldsTests: XCTestCase {
         XCTAssertEqual(edited, original)
     }
 
+    private func duplicates() -> VaultEntry {
+        var entry = entry()
+        entry.fields.append(VaultField(key: "PIN", value: "5678", protected: true))
+        entry.fields.append(VaultField(key: "URL (2)", value: "https://second.example/"))
+        return entry
+    }
+
+    func testFieldsSharingAKeyKeepTheirOwnValues() {
+        let original = duplicates()
+        var edited = original
+        EntryFields.apply(websites: EntryFields.websites(of: original), custom: EntryFields.custom(of: original), to: &edited)
+        XCTAssertEqual(edited, original)
+
+        var changed = original
+        var custom = EntryFields.custom(of: original)
+        custom.removeAll { $0.value == "5678" }
+        var sites = EntryFields.websites(of: original)
+        sites.removeAll { $0.value == "https://second.example/" }
+        EntryFields.apply(websites: sites, custom: custom, to: &changed)
+        XCTAssertEqual(changed.fields.filter { $0.key == "PIN" }.map(\.value), ["1234"])
+        XCTAssertEqual(changed.fields.filter { $0.key == "URL (2)" }.map(\.value), ["https://checkout.steampowered.com/login/"])
+
+        var first = original
+        var rows = EntryFields.custom(of: original)
+        rows[rows.firstIndex { $0.value == "1234" }!].value = "9999"
+        EntryFields.apply(websites: EntryFields.websites(of: original), custom: rows, to: &first)
+        XCTAssertEqual(first.fields.filter { $0.key == "PIN" }.map(\.value), ["9999", "5678"])
+    }
+
     func testDeletingARowRemovesTheField() {
         var edited = entry()
         let custom = EntryFields.custom(of: edited).filter { $0.name != "no_name_eeaae" }

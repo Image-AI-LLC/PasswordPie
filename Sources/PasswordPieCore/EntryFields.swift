@@ -72,11 +72,11 @@ public enum EntryFields {
         for row in sites where listed.contains(row.key) { taken.insert(row.key.lowercased()) }
         for row in fields where listed.contains(row.key) && name(of: row) == row.key { taken.insert(row.key.lowercased()) }
 
-        var replaced: [String: VaultField] = [:]
+        var replaced: [String: [VaultField]] = [:]
         var added: [VaultField] = []
         for row in sites {
             if listed.contains(row.key) {
-                replaced[row.key] = VaultField(key: row.key, value: row.value, protected: row.protected)
+                replaced[row.key, default: []].append(VaultField(key: row.key, value: row.value, protected: row.protected))
             } else {
                 added.append(VaultField(key: unique("URL", from: 2, always: true, taken: &taken), value: row.value))
             }
@@ -86,9 +86,17 @@ public enum EntryFields {
             let kept = listed.contains(row.key)
             let key = kept && wanted == row.key ? row.key : unique(wanted, from: 2, always: false, taken: &taken)
             let field = VaultField(key: key, value: row.value, protected: row.protected)
-            if kept { replaced[row.key] = field } else { added.append(field) }
+            if kept { replaced[row.key, default: []].append(field) } else { added.append(field) }
         }
-        entry.fields = entry.fields.compactMap { listed.contains($0.key) ? replaced[$0.key] : $0 } + added
+        // Fields that share a key take their rows in order, so each keeps its own value.
+        var next: [String: Int] = [:]
+        entry.fields = entry.fields.compactMap { field in
+            guard listed.contains(field.key), !field.value.isEmpty else { return field }
+            let index = next[field.key, default: 0]
+            next[field.key] = index + 1
+            let rows = replaced[field.key] ?? []
+            return index < rows.count ? rows[index] : nil
+        } + added
     }
 
     private static func name(of row: EditableField) -> String {
