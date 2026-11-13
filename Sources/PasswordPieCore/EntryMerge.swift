@@ -31,9 +31,14 @@ public enum EntryMerge {
         return manifest.parts.count
     }
 
-    /// Websites beyond the main one, kept under numbered names such as `URL (2)`.
+    /// Websites beyond the main one: numbered names such as `URL (2)`, and the `KP2A_URL_1` names other KeePass apps
+    /// and the importers use.
     public static func otherWebsites(_ entry: VaultEntry) -> [VaultField] {
-        entry.fields.filter { !$0.value.isEmpty && isNumberedSuffix($0.key, base: "URL") }
+        entry.fields.filter { !$0.value.isEmpty && (isNumberedSuffix($0.key, base: "URL") || isKeePassWebsiteKey($0.key)) }
+    }
+
+    private static func isKeePassWebsiteKey(_ key: String) -> Bool {
+        key == "KP2A_URL" || key.hasPrefix("KP2A_URL_")
     }
 
     /// Fields a merge added beside the main title, username, password, website, notes, and one-time password.

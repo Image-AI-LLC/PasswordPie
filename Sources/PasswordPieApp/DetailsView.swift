@@ -502,7 +502,7 @@ private struct ContentHeightKey: PreferenceKey {
 }
 
 /// The site icon, or the letter tile when none is bundled or cached.
-private struct SiteIconView: View {
+struct SiteIconView: View {
     var host: String?
     var title: String
     var side: CGFloat
