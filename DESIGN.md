@@ -409,7 +409,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   clear of the star and the Chrome badge at the bottom right. In the details, a 30 pt `change password` row under
   strength: the phrase in `body` (`error` from the due day on) and a small Reset Password button at the end. In the
   editor, a Password reminder card after the main one: Change every (a pop-up, and a 56 pt days field for Custom) and,
-  once a period is set, Reset link. Behavior: docs/UX.md, "A reminder to change a password".
+  once a period is set, Reset link. A Custom that is not a whole number of days from 1 to 3650 stops Save and shows one
+  `caption` line in `error` under Change every, cleared when the field or the pop-up changes. Behavior: docs/UX.md, "A reminder to change a password".
 - **QR scan button** — at the end of the editor's One-time password field: `qrcode.viewfinder` as a borderless menu
   button. A click scans the clipboard; its menu has Scan Clipboard and Choose Image…. The whole row takes a dropped image
   or image file, and ⌘V of an image in the field scans it. A failure is one `caption` line in `error` under the field; a

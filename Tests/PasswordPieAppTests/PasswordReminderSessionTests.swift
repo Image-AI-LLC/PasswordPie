@@ -68,4 +68,50 @@ final class PasswordReminderSessionTests: XCTestCase {
         let onDisk = try KDBX.load(data: Data(contentsOf: directory.appendingPathComponent("test.kdbx")), password: "pw")
         XCTAssertNotNil(onDisk.entries.first { $0.title == "Payroll" }.flatMap(PasswordRotation.changed))
     }
+
+    /// Another app changed the password while PasswordPie was locked: opening the file dates the new one.
+    func testOpeningAFileWhoseReminderLostItsDateDatesItAgain() async throws {
+        let session = unlockedSession()
+        var entry = VaultEntry()
+        entry.title = "Payroll"
+        entry.username = "ada"
+        entry.password = "first"
+        PasswordRotation.setPeriod(30, on: &entry)
+        session.saveEditing(entry)
+        session.lock()
+
+        let url = directory.appendingPathComponent("test.kdbx")
+        var vault = try KDBX.load(data: Data(contentsOf: url), password: "pw")
+        vault.entries[0].password = "changed elsewhere"
+        XCTAssertNil(PasswordRotation.changed(of: vault.entries[0]))
+        try KDBX.save(vault: &vault, password: "pw").write(to: url)
+
+        session.passwordDraft = "pw"
+        session.unlock()
+        for _ in 0..<500 where session.unlocking {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        let reopened = try XCTUnwrap(session.entries.first { $0.title == "Payroll" })
+        XCTAssertNotNil(PasswordRotation.changed(of: reopened))
+        let onDisk = try KDBX.load(data: Data(contentsOf: url), password: "pw")
+        XCTAssertNotNil(onDisk.entries.first.flatMap(PasswordRotation.changed))
+    }
+
+    /// An account that becomes due while the app stays open shows up when the panel opens.
+    func testAnAccountThatBecomesDueWhileOpenAppearsInTheMenu() throws {
+        let session = unlockedSession()
+        var entry = VaultEntry()
+        entry.title = "Payroll"
+        entry.username = "ada"
+        entry.password = "first"
+        PasswordRotation.setPeriod(30, on: &entry)
+        session.saveEditing(entry)
+        XCTAssertNotEqual(session.topLevelRows?.first?.title, "Passwords to Change")
+
+        session.chromeClock = { Date().addingTimeInterval(31 * 86_400) }
+        session.refreshDueReminders()
+
+        XCTAssertEqual(session.topLevelRows?.first?.title, "Passwords to Change")
+    }
 }

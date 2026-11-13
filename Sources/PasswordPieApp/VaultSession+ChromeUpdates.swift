@@ -175,6 +175,7 @@ extension VaultSession {
               let baseline = openedFiles[index].vault.fileBaseline else { return false }
         var vault = openedFiles[index].vault
         guard change(&vault.entries[slot]) else { return false }
+        Self.stampPasswordDates(in: &vault.entries, now: chromeClock())
         onActivity?()
         let write = ChromeWrite(path: path, url: openedFiles[index].url, vault: vault, password: openedFiles[index].password, keyFile: openedFiles[index].keyFile, baseline: baseline, revision: openedFiles[index].revision, updated: [])
         guard let written = try? write.perform() else { return false }
@@ -246,6 +247,7 @@ extension VaultSession {
             if change.replacement != nil, kind != .declined { write.updated.insert(change.entryID) }
             staged[path] = write
         }
+        for path in order { Self.stampPasswordDates(in: &staged[path]!.vault.entries, now: now) }
         return order.compactMap { staged[$0] }
     }
 }

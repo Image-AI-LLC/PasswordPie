@@ -956,7 +956,9 @@ stops working, usually when you need to get in.
 
 **Set it.** In the item editor, the **Password reminder** group has two rows:
 
-- **Change every**: Never (the default), 30, 60, 90 or 180 days, 1 year, or Custom with a number of days.
+- **Change every**: Never (the default), 30, 60, 90 or 180 days, 1 year, or Custom with a number of days. A Custom
+  that is not a whole number from 1 to 3650 is not saved: one red line under the row says so, until you change the
+  field or the pop-up.
 - **Reset link**: the page where this account's password is changed. Optional; without it, the account's website is
   used.
 

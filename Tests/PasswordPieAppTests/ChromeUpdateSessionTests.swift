@@ -102,6 +102,31 @@ final class ChromeUpdateSessionTests: XCTestCase {
         XCTAssertEqual(PreviousPasswords.items(of: try XCTUnwrap(try stored().first), now: session.chromeClock()).map(\.value), ["mine"])
     }
 
+    func testAChromeUpdateAndARestoreKeepTheReminderDated() async throws {
+        let session = session()
+        var own = VaultEntry()
+        own.title = "github.com"
+        own.url = "https://github.com"
+        own.username = "ann"
+        own.password = "mine"
+        PasswordRotation.setPeriod(30, on: &own)
+        session.saveEditing(own)
+        await read(session, logins: [login()])
+
+        let updated = try XCTUnwrap(session.entries.first)
+        XCTAssertEqual(updated.password, "from-chrome")
+        XCTAssertNotNil(PasswordRotation.changed(of: updated), "in the session")
+        XCTAssertNotNil(try stored().first.flatMap(PasswordRotation.changed), "in the file")
+
+        let model = try details(session, updated.id)
+        let item = try XCTUnwrap(model.previous.first)
+        XCTAssertTrue(session.restorePreviousPassword(item.id, of: updated.id))
+        let restored = try XCTUnwrap(session.entries.first)
+        XCTAssertEqual(restored.password, "mine")
+        XCTAssertNotNil(PasswordRotation.changed(of: restored), "in the session")
+        XCTAssertNotNil(try stored().first.flatMap(PasswordRotation.changed), "in the file")
+    }
+
     func testAnOpenDetailsViewFollowsTheBackgroundWrite() async throws {
         let session = session()
         let own = account(session)

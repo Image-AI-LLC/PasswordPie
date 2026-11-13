@@ -53,7 +53,7 @@ public enum PasswordRotation {
     }
 
     /// Records when the password was set, for an entry with a reminder whose password has no date or has changed.
-    /// `known` is the date PasswordPie has for this password, if any; a date in the future is not believed.
+    /// `known` is the date PasswordPie has for this password, if any; an impossible date is not believed.
     /// True when the entry changed.
     @discardableResult
     public static func reconcile(_ entry: inout VaultEntry, known: Date? = nil, now: Date) -> Bool {
@@ -63,7 +63,8 @@ public enum PasswordRotation {
             return entry.fields.count != before
         }
         guard changed(of: entry) == nil else { return false }
-        let date = known.map { min($0, now) } ?? now
+        // A date from the file can be anything: one before 1970 or after now is not believed, and never reaches Int().
+        let date = known.flatMap { $0.timeIntervalSince1970 > 0 && $0 <= now ? $0 : nil } ?? now
         let stamp = "\(Int(date.timeIntervalSince1970)) \(digest(entry.password))"
         entry.fields.removeAll { $0.key == changedKey }
         entry.fields.append(VaultField(key: changedKey, value: stamp, protected: true))

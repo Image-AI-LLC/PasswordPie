@@ -121,6 +121,8 @@ final class VaultSession: ObservableObject {
     @Published private(set) var allEntries: [VaultEntry] = []
     /// The menu shown with an empty search, built off the main thread. Nil until the first build for this catalog finishes.
     @Published private(set) var topLevelRows: [MenuRow]?
+    /// The accounts `topLevelRows` was built with as due, so a due date passing while the app stays open is noticed.
+    private var dueIDsInRows: Set<UUID> = []
     /// Search text for `allEntries`, built off the main thread a piece at a time. A search uses what is indexed so far.
     @Published private(set) var searchIndex = SearchIndex()
     /// True while entries are still being added to `searchIndex`.
@@ -147,13 +149,13 @@ final class VaultSession: ObservableObject {
     @Published var chromeBatchError = ""
     /// Entries whose newest update could not be written. They keep the saved password.
     @Published var chromeUpdateFailures: Set<UUID> = []
+    /// Replaced in tests, so a fixture's dates can be in this clock's past.
+    var chromeClock: () -> Date = Date.init
     #if PP_DIRECT
     /// Every row from the last read, including a login's second store.
     var chromeRows: [ChromeRow] = []
     /// Other open databases are still decrypting. "Exactly one saved entry" can't be answered until they have arrived.
     var chromeAwaitingSiblings = false
-    /// Replaced in tests, so a fixture's dates can be in this clock's past.
-    var chromeClock: () -> Date = Date.init
     /// Events already waiting for a decision. Not persisted: a restart works it out again.
     var chromeHeldEvents: Set<String> = []
     var chromeWriteInFlight = false
@@ -1160,7 +1162,9 @@ final class VaultSession: ObservableObject {
     private func autoMergeFile(at path: String) {
         guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
         let merged = EntryMerge.merged(openedFiles[index].vault.entries)
-        guard merged != openedFiles[index].vault.entries else { return }
+        // A password another app changed leaves a reminder without a date: writing dates it again.
+        let undated = merged.contains { !$0.trashed && PasswordRotation.period(of: $0) != nil && PasswordRotation.changed(of: $0) == nil }
+        guard merged != openedFiles[index].vault.entries || undated else { return }
         openedFiles[index].vault.entries = merged
         _ = persist(path: path)
     }
@@ -1567,11 +1571,14 @@ final class VaultSession: ObservableObject {
     /// See "A reminder to change a password" in docs/UX.md.
     private func stampPasswordDates(path: String) {
         guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
-        let now = Date()
-        for slot in openedFiles[index].vault.entries.indices
-        where openedFiles[index].vault.entries[slot].fields.contains(where: { PasswordRotation.isKey($0.key) }) {
-            let known = PreviousPasswords.passwordDate(of: openedFiles[index].vault.entries[slot], fallback: nil)
-            PasswordRotation.reconcile(&openedFiles[index].vault.entries[slot], known: known, now: now)
+        Self.stampPasswordDates(in: &openedFiles[index].vault.entries, now: Date())
+    }
+
+    /// Also run on the vault a Chrome update or a restore is about to write, which never goes through `persist`.
+    static func stampPasswordDates(in entries: inout [VaultEntry], now: Date) {
+        for slot in entries.indices where entries[slot].fields.contains(where: { PasswordRotation.isKey($0.key) }) {
+            let known = PreviousPasswords.passwordDate(of: entries[slot], fallback: nil)
+            PasswordRotation.reconcile(&entries[slot], known: known, now: now)
         }
     }
 
@@ -1739,6 +1746,12 @@ extension VaultSession {
     /// Entries folded per background step. Each step makes them searchable.
     static let indexChunkSize = 500
 
+    /// Rebuilds the menu when an account became due since it was built. Called as the panel opens.
+    func refreshDueReminders() {
+        guard !locked, Set(PasswordRotation.due(in: allEntries, now: chromeClock()).map(\.id)) != dueIDsInRows else { return }
+        catalogChanged()
+    }
+
     /// Called whenever `entries` or `liveEntries` changes.
     func catalogChanged() {
         let catalog = visibleCatalog()
@@ -1753,10 +1766,12 @@ extension VaultSession {
         // Entries that did not change keep their prepared search text, so an edit or a favorite refolds one entry.
         let (kept, pending) = searchIndex.reusing(for: visible)
         let sources = entrySources
+        let now = chromeClock()
+        dueIDsInRows = Set(PasswordRotation.due(in: visible, now: now).map(\.id))
         if visible.count <= Self.inlineCatalogLimit {
             searchIndex = kept.adding(SearchIndex(pending))
             indexing = false
-            topLevelRows = MenuBuilder.topLevel(entries: visible, sources: sources)
+            topLevelRows = MenuBuilder.topLevel(entries: visible, sources: sources, now: now)
             return
         }
 
@@ -1774,7 +1789,7 @@ extension VaultSession {
         let generation = menuGeneration
         menuWork.append(Task { @MainActor [weak self] in
             let rows = await Task.detached(priority: .userInitiated) {
-                MenuBuilder.topLevel(entries: visible, sources: sources)
+                MenuBuilder.topLevel(entries: visible, sources: sources, now: now)
             }.value
             guard let self, self.menuGeneration == generation else { return }
             self.topLevelRows = rows

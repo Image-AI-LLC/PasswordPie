@@ -27,6 +27,7 @@ struct EditorView: View {
     /// Days between password changes: 0 is Never, -1 is Custom with `customDays`.
     @State private var changeEvery = 0
     @State private var customDays = ""
+    @State private var reminderError = ""
     @State private var resetLink = ""
     /// The row Add Website or Add Field just made, which takes the keyboard.
     @State private var added: UUID?
@@ -179,6 +180,14 @@ struct EditorView: View {
                         Text("days").font(.system(size: 12)).foregroundStyle(Palette.secondaryText(dark: dark))
                     }
                     Spacer(minLength: 0)
+                }
+                if !reminderError.isEmpty {
+                    Text(reminderError)
+                        .font(.caption)
+                        .foregroundStyle(Palette.error(dark: colorScheme == .dark))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
                 }
                 if changeEvery != 0 {
                     EditorDivider()
@@ -361,6 +370,8 @@ struct EditorView: View {
             return true
         }
         .onChange(of: otpInput) { _, _ in otpScanError = "" }
+        .onChange(of: customDays) { _, _ in reminderError = "" }
+        .onChange(of: changeEvery) { _, _ in reminderError = "" }
     }
 
     /// The item as it would be saved with what the field holds now, for the code preview.
@@ -422,6 +433,10 @@ struct EditorView: View {
     /// A bare Base32 secret becomes an otpauth URL, the form KeePassXC stores in the `otp` field.
     private func commit() {
         guard var entry = session.editing else { return }
+        if changeEvery == -1, Int(customDays.trimmingCharacters(in: .whitespaces)).map({ (1...PasswordRotation.longestPeriod).contains($0) }) != true {
+            reminderError = "Custom takes a whole number of days from 1 to \(PasswordRotation.longestPeriod)."
+            return
+        }
         entry.otp = editorOTPValue(otpInput, title: entry.title, username: entry.username)
         let favorite = entry.favorite
         var tags = tagsInput.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }

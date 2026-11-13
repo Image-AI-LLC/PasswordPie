@@ -39,6 +39,14 @@ final class PasswordRotationTests: XCTestCase {
         XCTAssertEqual(PasswordRotation.changed(of: future), start)
     }
 
+    func testAnImpossibleKnownDateIsNotBelieved() {
+        for seconds in [-1e300, -9.3e18, -1, 0, 1e300] {
+            var entry = account()
+            PasswordRotation.reconcile(&entry, known: Date(timeIntervalSince1970: seconds), now: start)
+            XCTAssertEqual(PasswordRotation.changed(of: entry), start)
+        }
+    }
+
     func testAnyChangeOfThePasswordStartsTheClockAgain() {
         var entry = account()
         PasswordRotation.reconcile(&entry, now: start)
@@ -99,5 +107,23 @@ final class PasswordRotationTests: XCTestCase {
         XCTAssertEqual(rows.first?.children.map(\.title), ["Payroll"])
         XCTAssertEqual(rows.first?.children.first?.due, true)
         XCTAssertNotEqual(MenuBuilder.topLevel(entries: [fine], now: start).first?.title, "Passwords to Change")
+    }
+
+    func testAFullerTwinKeepsTheReminderOfTheAccountItAbsorbs() throws {
+        var reminded = account(period: 30)
+        reminded.id = UUID()
+        PasswordRotation.setResetLink("https://example.com/reset", on: &reminded)
+        PasswordRotation.reconcile(&reminded, now: start)
+        var fuller = account(period: nil)
+        fuller.id = UUID()
+        fuller.notes = "backup codes"
+
+        let merged = EntryMerge.merged([reminded, fuller])
+
+        let survivor = try XCTUnwrap(merged.first { !$0.trashed })
+        XCTAssertEqual(survivor.id, fuller.id)
+        XCTAssertEqual(PasswordRotation.period(of: survivor), 30)
+        XCTAssertEqual(PasswordRotation.resetLink(of: survivor), "https://example.com/reset")
+        XCTAssertEqual(PasswordRotation.changed(of: survivor), Date(timeIntervalSince1970: TimeInterval(Int(start.timeIntervalSince1970))))
     }
 }
