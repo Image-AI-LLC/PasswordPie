@@ -392,6 +392,17 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   visible 10 pt from the right, centred in the row. Clicking the row or the button, or Return on the row, runs it.
   VoiceOver reads "Locked. Included with Premium." for the dots, not each dot. The item's code is never computed and its
   period never read.
+- **Item editor** — 450 × 640 pt, `surface`, content scrolls over a fixed footer (Move to Trash, Cancel, Save). First
+  the site icon (28 pt), the title in `title` and the favorite star (`favorite` when on, `text-secondary` outline when
+  off). Then cards: `field-surface`, radius 8, 20 pt from the window edge, 12 pt apart, rows 30 pt with a `Color.primary`
+  8 % line inset 12 pt. A row is a 122 pt label column (`control`, `text-secondary`) and the value in `body`; a
+  secret that is shown is `body-code`. A value is a plain field: only the one with the keyboard gets a `surface` fill
+  and a 1.5 pt `focus` outline, radius 5. Row actions sit in 20 pt slots at the end, in `text-secondary`: `eye`, then
+  `minus.circle` last. A list (websites, other fields) ends with a 28 pt add row in the value column: `plus` and the
+  label in `control` `text-secondary`. Orange is only Save, the focus outline and a switch that is on. Other fields
+  and Notes have a 11.5 pt medium `text-secondary` name over the card. Unnamed form fields is one folded row: a
+  chevron, the name and the count; open, a small Remove All… button sits at its end and the rows follow.
+  Behavior: docs/UX.md, "Edit every field of an item".
 - **QR scan button** — at the end of the editor's One-time password field: `qrcode.viewfinder` as a borderless menu
   button. A click scans the clipboard; its menu has Scan Clipboard and Choose Image…. The whole row takes a dropped image
   or image file, and ⌘V of an image in the field scans it. A failure is one `caption` line in `error` under the field; a
