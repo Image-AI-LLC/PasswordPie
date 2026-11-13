@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.oldcai.passwordpie.safari</string>
+  <string>com.passwordpie.safari</string>
   <key>CFBundleName</key>
   <string>PasswordPie</string>
   <key>CFBundleDisplayName</key>

@@ -525,14 +525,15 @@ final class BrowserBridge: ObservableObject {
 }
 
 #if PP_DIRECT
-/// Chrome finds native messaging hosts through a manifest in its profile folder. The app writes it at launch, pointing
-/// at the host inside the running bundle, and only for the extension IDs that may use it.
+/// Chrome finds native messaging hosts through a manifest in its profile folder. The app writes one at launch for each
+/// name in `BridgeConstants.nativeHostNames`, all pointing at the host inside the running bundle, and only for the
+/// extension IDs that may use it.
 enum ChromeHostManifest {
-    static let fileName = BridgeConstants.nativeHostName + ".json"
+    static func fileName(_ name: String) -> String { name + ".json" }
 
-    static func manifest(hostPath: String, extensionIDs: [String] = BridgeConstants.chromeExtensionIDs) -> Data {
+    static func manifest(name: String, hostPath: String, extensionIDs: [String] = BridgeConstants.chromeExtensionIDs) -> Data {
         let object: [String: Any] = [
-            "name": BridgeConstants.nativeHostName,
+            "name": name,
             "description": "PasswordPie",
             "path": hostPath,
             "type": "stdio",
@@ -548,14 +549,16 @@ enum ChromeHostManifest {
         let chrome = home.appendingPathComponent("Library/Application Support/Google/Chrome")
         guard FileManager.default.fileExists(atPath: chrome.path) else { return }
         let folder = chrome.appendingPathComponent("NativeMessagingHosts")
-        let file = folder.appendingPathComponent(fileName)
-        let data = manifest(hostPath: host.path)
-        guard (try? Data(contentsOf: file)) != data else { return }
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try data.write(to: file, options: .atomic)
-        } catch {
-            NSLog("PasswordPie: could not write the Chrome host manifest (%@)", String(describing: error))
+        for name in BridgeConstants.nativeHostNames {
+            let file = folder.appendingPathComponent(fileName(name))
+            let data = manifest(name: name, hostPath: host.path)
+            guard (try? Data(contentsOf: file)) != data else { continue }
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try data.write(to: file, options: .atomic)
+            } catch {
+                NSLog("PasswordPie: could not write the Chrome host manifest %@ (%@)", name, String(describing: error))
+            }
         }
     }
 }

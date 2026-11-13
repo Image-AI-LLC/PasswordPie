@@ -11,12 +11,32 @@ enum PasswordPieMain {
 
     @MainActor
     static func main() {
+        migrateFromLegacyNamespace()
         let app = NSApplication.shared
         let delegate = AppDelegate()
         Self.delegate = delegate
         app.delegate = delegate
         app.setActivationPolicy(.accessory)
         app.run()
+    }
+
+    /// The direct build v0.1.0 had the old ID (`AppNamespace.legacyID`). Before anything reads a preference, bring over what it kept,
+    /// once (`LegacyMigration`). Direct channel only: no App Store build ever had the old ID, and the sandbox hides other
+    /// apps' preferences anyway.
+    @MainActor
+    private static func migrateFromLegacyNamespace() {
+        #if PP_DIRECT
+        LegacyMigration.runOnce(
+            legacyPreferences: LegacyMigration.preferences(domain: AppNamespace.legacyID),
+            services: LegacyMigration.Services(
+                touchID: TouchIDSecretStore().service,
+                keyFile: VaultSession.keyFileService,
+                premium: PremiumChannel.keychainService,
+                premiumAccounts: [PremiumSecret.activation.rawValue]
+            ),
+            defaultDatabasePath: VaultSession.defaultDatabaseURL.path
+        )
+        #endif
     }
 }
 

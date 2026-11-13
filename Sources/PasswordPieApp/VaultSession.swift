@@ -284,12 +284,18 @@ final class VaultSession: ObservableObject {
         ["kdbx", "kdb"].contains(url.pathExtension.lowercased())
     }
 
+    /// The database opened when none was ever chosen.
+    nonisolated static var defaultDatabaseURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PasswordPie", isDirectory: true)
+            .appendingPathComponent("PasswordPie.kdbx")
+    }
+
     /// Both come from the channel unless a test passes its own.
     init(premium: PremiumStore? = nil, pasteboard: PasteboardLike? = nil, keyFileMemory: KeyFileKeychain? = nil) {
         self.premium = premium ?? PremiumChannel.makeStore()
         self.keyFileMemory = keyFileMemory ?? TouchIDSecretStore(service: VaultSession.keyFileService)
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("PasswordPie", isDirectory: true)
+        let support = Self.defaultDatabaseURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         let usagePath = ProcessInfo.processInfo.environment["PASSWORDPIE_USAGE"]
         usage = UsageStore(url: usagePath.map { URL(fileURLWithPath: $0) } ?? support.appendingPathComponent("usage.json"))
@@ -299,7 +305,7 @@ final class VaultSession: ObservableObject {
         } else if let saved = UserDefaults.standard.string(forKey: "databasePath") {
             initialPath = saved
         } else {
-            initialPath = support.appendingPathComponent("PasswordPie.kdbx").path
+            initialPath = Self.defaultDatabaseURL.path
         }
         databaseURL = URL(fileURLWithPath: initialPath)
         searchAll = UserDefaults.standard.bool(forKey: "searchAllFields")

@@ -3,7 +3,7 @@ import XCTest
 @testable import PasswordPieCore
 
 final class TouchIDSecretStoreTests: XCTestCase {
-    private let service = "com.oldcai.passwordpie.tests"
+    private let service = "com.passwordpie.tests"
     private var account = ""
 
     override func setUp() {

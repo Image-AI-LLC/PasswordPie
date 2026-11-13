@@ -16,7 +16,7 @@
   <!-- The bridge socket to the browser extensions lives in the shared group container. -->
   <key>com.apple.security.application-groups</key>
   <array>
-    <string>2S468LUF8V.com.oldcai.passwordpie</string>
+    <string>2S468LUF8V.com.passwordpie</string>
   </array>
 </dict>
 </plist>

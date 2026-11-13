@@ -22,9 +22,9 @@ enum PremiumChannel {
     /// Where Premium's tokens are kept. A debug build keeps its own, apart from the installed app's.
     static var keychainService: String {
         #if DEBUG
-        "com.oldcai.passwordpie.account.dev"
+        "\(AppNamespace.id).account.dev"
         #else
-        "com.oldcai.passwordpie.account"
+        "\(AppNamespace.id).account"
         #endif
     }
 

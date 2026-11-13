@@ -5,7 +5,7 @@ public enum PremiumPlan: String, CaseIterable, Sendable {
     case lifetime
     case yearly
 
-    public var productID: String { "com.oldcai.passwordpie.premium.\(rawValue)" }
+    public var productID: String { "\(AppNamespace.id).premium.\(rawValue)" }
 
     public init?(productID: String) {
         guard let plan = Self.allCases.first(where: { $0.productID == productID }) else { return nil }

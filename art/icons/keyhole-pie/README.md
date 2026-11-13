@@ -16,7 +16,7 @@ The subsequently redesigned lock panel is documented in `art/lock-screen/`.
 - `menubar_app_{1,2}x.png`: production native template image rendered offscreen at 18/36 pixels. These are not screenshots of a full menu bar.
 
 The full app screenshots use a separately ad-hoc signed debug bundle with identifier
-`com.oldcai.passwordpie.brand-preview-20261031`, its own UserDefaults and a disposable
+`com.passwordpie.brand-preview-20261031`, its own UserDefaults and a disposable
 `BrandPreview.kdbx` containing one synthetic Sample Login. The debug environment
 sets `PASSWORDPIE_DB`, `PASSWORDPIE_DISABLE_HOTKEY=1`, `PASSWORDPIE_STICKY=1`,
 `PASSWORDPIE_SHOW=1` and `PASSWORDPIE_APPEARANCE=light|dark`. The unlocked preview

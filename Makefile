@@ -2,7 +2,7 @@ APP := PasswordPie.app
 APPEX := PasswordPieAutoFill.appex
 SAFARI_APPEX := PasswordPieSafari.appex
 HOST := PasswordPieBrowserHost
-HOST_ID := com.oldcai.passwordpie.browser-host
+HOST_ID := com.passwordpie.browser-host
 # The browser extension (WXT). The Safari build goes inside the Safari appex; the Chrome build is loaded unpacked
 # or uploaded to the Chrome Web Store. Needs Node and pnpm.
 SAFARI_EXT := extension/.output/safari-mv3

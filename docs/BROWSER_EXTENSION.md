@@ -16,15 +16,28 @@ Firefox.
 | Extension (WXT + TypeScript: a background and a content script, no extension pages and no UI framework) | `extension/` | Chrome build and Safari build from one source, the same in both channels |
 | Safari Web Extension app extension | `PasswordPie.app/Contents/PlugIns/PasswordPieSafari.appex`, target `PasswordPieSafari` | both |
 | Chrome native messaging host | `PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost`, target `PasswordPieBrowserHost` | direct only |
-| Host manifest `com.oldcai.passwordpie.json` | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
+| Host manifests `com.passwordpie.json` and a legacy one (see "Host manifests") | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
 | Bridge server (socket, peer check, pending fill, which Chrome profile is in front) | main app, `BrowserBridge*.swift` | both |
 | Transport (framing, socket path, peer check) | target `PasswordPieBridge` | shared by the app, the host and the appex |
 | Site matching (eTLD+1), messages, pending fill rules, the connection in front (`BridgeLinks`) | `PasswordPieCore` (`PublicSuffix.swift`, `BrowserFill.swift`) | both, tested with `swift test` |
 
+## Host manifests
+
+The extension connects with `connectNative('com.passwordpie')` from 0.5.0. Until 2026-11-13 everything was named
+`com.oldcai.passwordpie`, and the store extension up to 0.4.0 still connects to that name. So at every launch the app
+writes two manifests, `com.passwordpie.json` and `com.oldcai.passwordpie.json`, both naming the same
+`PasswordPieBrowserHost` and the same `allowed_origins` (`BridgeConstants.chromeExtensionIDs`). The names are
+`BridgeConstants.nativeHostNames`. Chrome starts the same host
+for either name; the host does not care which one.
+
+The legacy one is transitional: remove `legacyNativeHostName` (and its manifest) once the store's live version is 0.5.0
+or later and has had time to update everyone. Remove it from the allow-list in `LegacyNamespaceGuardTests` too. A
+manifest an earlier app left on disk stays; it is harmless once nothing connects to it.
+
 ## Transport: a Unix socket in the App Group container
 
-All three processes are signed by team `2S468LUF8V` and share the App Group `2S468LUF8V.com.oldcai.passwordpie`. The main app
-listens on a Unix domain socket at `~/Library/Group Containers/2S468LUF8V.com.oldcai.passwordpie/bridge.sock`
+All three processes are signed by team `2S468LUF8V` and share the App Group `2S468LUF8V.com.passwordpie`. The main app
+listens on a Unix domain socket at `~/Library/Group Containers/2S468LUF8V.com.passwordpie/bridge.sock`
 (`FileManager.containerURL(forSecurityApplicationGroupIdentifier:)`). The Safari appex and the Chrome host connect to it.
 
 Why not XPC: the main app is a normal login-item app, not a launchd job, so it cannot vend a Mach service name that
@@ -41,8 +54,8 @@ other one is:
 
 | Side | Accepts only |
 |---|---|
-| App (server) | `com.oldcai.passwordpie.safari` (Safari appex) or `com.oldcai.passwordpie.browser-host` (Chrome host). The identifier, not anything in a message, says which browser is talking. |
-| Chrome host (client) | `com.oldcai.passwordpie` (the app) |
+| App (server) | `com.passwordpie.safari` (Safari appex) or `com.passwordpie.browser-host` (Chrome host). The identifier, not anything in a message, says which browser is talking. |
+| Chrome host (client) | `com.passwordpie` (the app) |
 | Safari appex (client) | not checked: inside Safari's sandbox, securityd cannot read the app's bundle and the check fails with `EPERM`. It relies on the app checking it, and on the socket being in the team's group container (owner-only), which another sandboxed app cannot reach. **Known gap:** a non-sandboxed process of the same user can take the socket over. It then learns the origin (scheme, host, port) of each tab the Safari extension reports, which is never a path or query, and it can answer with a fill of its own choosing. It never gets a credential from PasswordPie. Closing this needs a server proof the sandbox can check, such as a shared keychain item, which needs provisioning profiles (post-merge list). |
 
 An ad-hoc signed build fails the check, so it never fills: test with `make install`, which signs with the development
@@ -84,7 +97,7 @@ Every request has `type` and an `id` (an integer the extension picks). Every ans
 
 ### `hello`
 
-    → {"type":"hello","id":1,"version":1,"extension":"0.4.0"}
+    → {"type":"hello","id":1,"version":1,"extension":"0.5.0"}
     ← {"type":"hello","id":1,"version":1,"locked":false}
 
 Sent when the extension starts and when its port (re)connects. It makes the browser count as connected.
@@ -217,7 +230,7 @@ then under that host's registrable domain, in this order:
 1. **Bundled:** `Contents/Resources/SiteIcons/<host>.png` (64 px) and `<host>@2x.png` (128 px), for the top 100 sites of
    the Majestic Million. `make site-icons` (`Scripts/fetch_site_icons.py`) refetches them on a development Mac; sources
    are in `Assets/SiteIcons/SOURCES.md`.
-2. **Cached:** icons from `icon` requests, in `~/Library/Caches/com.oldcai.passwordpie/favicons/` as
+2. **Cached:** icons from `icon` requests, in `~/Library/Caches/com.passwordpie/favicons/` as
    `<sha256 of host>.png` (folder 0700, files 0600), so a directory listing is not a site list. An icon is stored under the
    tab's host, and under its registrable domain when that has no icon yet. macOS may purge the folder; the icon then comes
    back on the next visit.
@@ -443,6 +456,8 @@ The listing text, privacy answers, promo tile and screenshots are in `extension/
 is the Image AI, LLC account in the Chrome Web Store developer dashboard.
 
 1. Raise `version` in `extension/manifest.ts`; the store needs a higher version for every upload.
+   0.5.0 connects to `com.passwordpie`, which only apps from the rename on install: publish it after that direct release
+   is out.
 2. `cd extension && pnpm test && pnpm zip:chrome-store`. Upload
    `.output/passwordpie-extension-<version>-chrome-store.zip` under Package, and submit for review.
 3. Leave "publish automatically after review" off when the update needs a newer app, such as a new message the released

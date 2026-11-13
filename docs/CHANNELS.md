@@ -33,6 +33,27 @@ Check neither build has an account or a way to reach the site:
     codesign -d --entitlements :- build/mas/PasswordPie.app | grep -c network.client                      # expect 0
     grep -rlE 'api/premium|api/auth' build/mas/PasswordPie.app/Contents/PlugIns/*Safari*/Contents/Resources   # expect nothing
 
+## Upgrading from v0.1.0 (the old bundle ID)
+
+The direct build v0.1.0 was `com.oldcai.passwordpie`; everything is `com.passwordpie` since 2026-11-13. macOS sees the new
+app as a different app, so on its first launch it brings over what it can, once (`LegacyMigration`, run before anything
+reads a preference; marker `legacyNamespaceMigrated`):
+
+| What | Carried over? |
+|---|---|
+| Preferences (database list, Touch ID flags, shortcuts, clipboard timeout…) | Yes: each key the new domain lacks is copied from the old one |
+| Touch ID secret, remembered key file, Premium activation (login keychain) | Only when readable without a dialog. The old items' access lists name the old signature, so in practice no: the lock screen asks for the master password once, and that unlock turns Touch ID back on (a Touch ID flag with no secret turns itself off quietly). A key file is chosen again on the lock screen; Premium is activated again from passwordpie.com |
+| Accessibility access (Fill by typing, the URL read) | No: macOS asks again at the first Fill. System Settings may list PasswordPie twice; the new one is the one that is off |
+| Safari extension | No: Safari lists it as new; turn it on again in Safari's settings |
+| AutoFill provider (`.autofill`) | No: a new provider to macOS; turned on again in System Settings > AutoFill & Passwords where it was on |
+| Chrome extension | Yes: the app installs the old host name too (BROWSER_EXTENSION.md, "Host manifests") |
+| Site icon cache | No: the extension sends icons again as sites are visited |
+| Access to Chrome Safe Storage (Chrome passwords, when on) | No: that item's access list names the old signature, so macOS asks once; Always Allow ends it |
+
+Keychain reads here never show a dialog (`TouchIDSecretStore` turns keychain UI off), and nothing old is deleted: the
+old items belong to the old signature. Nothing on a development Mac needs cleaning either: old keychain items and the
+socket in the old App Group container are never read by the new build.
+
 ## Releasing the direct download
 
     NOTARY_ENV=<file with APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID> Scripts/release-direct.sh
@@ -93,10 +114,10 @@ and older ones move to the protected `PasswordPie.PreviousPasswords` field; see 
 A key file is read once, when it is chosen in an open panel (Choose Key File…, Use Existing Key File…) or written to
 the place chosen in a save panel (Add Key File…). Both are user-selected files, which
 `com.apple.security.files.user-selected.read-write` covers. After the first unlock with it, PasswordPie keeps the
-file's **contents** in the login keychain (generic password, service `com.oldcai.passwordpie.keyfile`, account = the
+file's **contents** in the login keychain (generic password, service `com.passwordpie.keyfile`, account = the
 database path, the same legacy keychain as the Touch ID secret, which works in the sandbox). Later unlocks read the
 keychain, never the original path, so neither channel needs a security-scoped bookmark to the key file. Forget Key File
-deletes the item; Remove Key File deletes it too, and so does removing the database from the list in Preferences. The Touch ID secret (`com.oldcai.passwordpie`) holds only the master
+deletes the item; Remove Key File deletes it too, and so does removing the database from the list in Preferences. The Touch ID secret (`com.passwordpie`) holds only the master
 password; a KeePass 1 key file that older builds put inside it is still read, and removed on Forget Key File.
 
 ## Open items before an App Store submission
@@ -175,7 +196,7 @@ on took a week-long pass from the browser extension). None of that was ever rele
 and the extension in the Chrome Web Store (0.1.0) has no account. All five are deleted at every launch, unread; a Mac
 that had Premium only from a pass says "Free" and how to activate.
 
-**Keychain.** The legacy login keychain, service `com.oldcai.passwordpie.account` (`.dev` in any debug build), account
+**Keychain.** The legacy login keychain, service `com.passwordpie.account` (`.dev` in any debug build), account
 `activation`. It works in the sandbox without a profile (see above). It is never logged, echoed over the bridge or
 written anywhere else. Nothing is read from it before `PremiumStore.start()` or a link arriving.
 
@@ -238,11 +259,11 @@ Run > Options > StoreKit Configuration. Launching the built `.app` directly talk
 
 These are in App Store Connect and the Apple Developer site, and cannot be done from this repo.
 
-1. Check that In-App Purchase is on for the App ID `com.oldcai.passwordpie`.
+1. Check that In-App Purchase is on for the App ID `com.passwordpie`.
 2. Sign the Paid Apps agreement, and fill in the bank and tax details. Until they are active, products do not load.
-3. Create the non-consumable `com.oldcai.passwordpie.premium.lifetime`. Base price US$29 in the United States storefront.
+3. Create the non-consumable `com.passwordpie.premium.lifetime`. Base price US$29 in the United States storefront.
 4. Create a subscription group, such as "PasswordPie Premium". Add the auto-renewable subscription
-   `com.oldcai.passwordpie.premium.yearly` with a 1 year duration and a base price of US$10.
+   `com.passwordpie.premium.yearly` with a 1 year duration and a base price of US$10.
 5. For both, add a display name, a description and a review screenshot of the Premium window.
 6. Leave Billing Grace Period off. Codes lock at `expirationDate`, so a grace period would charge people for days they
    cannot use. Turning it on needs a code change first.

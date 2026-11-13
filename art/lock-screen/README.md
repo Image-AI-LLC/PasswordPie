@@ -26,7 +26,7 @@ lines with full-message help, so footer actions remain available.
 - `keyfile-{light,dark}.png`: real key-file chooser row for an inert synthetic `.kdb` fixture; this fixture is not unlocked.
 - `component-options-stress-{light,dark}.png`: native SwiftUI component fixture with Touch ID, long key-file name and a long error simultaneously. These are offscreen component renders, not a real biometric session.
 
-The full app captures use the isolated `com.oldcai.passwordpie.brand-preview-20261031`
+The full app captures use the isolated `com.passwordpie.brand-preview-20261031`
 bundle, a synthetic `BrandPreview.kdbx` and newly generated disposable databases.
 No personal vault, production installation, Touch ID enrollment or global shortcut
 was changed. All preview processes were terminated and waited for.

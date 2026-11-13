@@ -36,7 +36,7 @@ enum KeyFileOutcome: Equatable {
 }
 
 extension VaultSession {
-    static let keyFileService = "com.oldcai.passwordpie.keyfile"
+    static let keyFileService = "\(AppNamespace.id).keyfile"
 
     static let keyFileWarning = "Without this key file, the database cannot be opened, and PasswordPie cannot recover it. "
         + "Keep a backup somewhere else: not in the database's folder, and not in the same cloud storage."

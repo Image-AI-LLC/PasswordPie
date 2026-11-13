@@ -118,9 +118,9 @@ final class ExtensionBannerTests: XCTestCase {
 #if PP_DIRECT
 final class ChromeHostManifestTests: XCTestCase {
     func testManifestNamesTheHostAndOnlyOurExtension() throws {
-        let data = ChromeHostManifest.manifest(hostPath: "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost", extensionIDs: ["ebgkjnfglbkeckkknmeakpkbdpjndjhk"])
+        let data = ChromeHostManifest.manifest(name: "com.passwordpie", hostPath: "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost", extensionIDs: ["ebgkjnfglbkeckkknmeakpkbdpjndjhk"])
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(object["name"] as? String, "com.oldcai.passwordpie")
+        XCTAssertEqual(object["name"] as? String, "com.passwordpie")
         XCTAssertEqual(object["type"] as? String, "stdio")
         XCTAssertEqual(object["path"] as? String, "/Applications/PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost")
         XCTAssertEqual(object["allowed_origins"] as? [String], ["chrome-extension://ebgkjnfglbkeckkknmeakpkbdpjndjhk/"])
@@ -131,6 +131,46 @@ final class ChromeHostManifestTests: XCTestCase {
         XCTAssertEqual(BridgeConstants.chromeExtensionIDs, [BridgeConstants.chromeExtensionID])
         XCTAssertTrue(BrowserBridge.chromeSupported)
         XCTAssertEqual(BrowserBridge.chromeInstallURL.absoluteString, "https://chromewebstore.google.com/detail/\(BridgeConstants.chromeExtensionID)")
+    }
+
+    func testTheHostAnswersToTheNewNameAndTheStoreExtensionsOldOne() {
+        // The store extension up to 0.4.0 connects to the old name; 0.5.0 and later to the new one.
+        XCTAssertEqual(BridgeConstants.nativeHostName, "com.passwordpie")
+        XCTAssertEqual(BridgeConstants.nativeHostNames, ["com.passwordpie", "com.oldcai.passwordpie"])
+    }
+
+    func testInstallWritesOneManifestPerNameForTheSameHost() throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let chrome = home.appendingPathComponent("Library/Application Support/Google/Chrome")
+        try FileManager.default.createDirectory(at: chrome, withIntermediateDirectories: true)
+        let app = home.appendingPathComponent("PasswordPie.app")
+        let macOS = app.appendingPathComponent("Contents/MacOS")
+        try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleIdentifier": "com.passwordpie.tests.bundle", "CFBundleExecutable": "PasswordPie", "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: app.appendingPathComponent("Contents/Info.plist"))
+        for name in ["PasswordPie", "PasswordPieBrowserHost"] {
+            let file = macOS.appendingPathComponent(name)
+            try Data("#!/bin/sh\n".utf8).write(to: file)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        }
+        let bundle = try XCTUnwrap(Bundle(url: app))
+
+        ChromeHostManifest.install(bundle: bundle, home: home)
+
+        let folder = chrome.appendingPathComponent("NativeMessagingHosts")
+        var written: [String: [String: Any]] = [:]
+        for name in BridgeConstants.nativeHostNames {
+            let data = try Data(contentsOf: folder.appendingPathComponent("\(name).json"))
+            written[name] = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        }
+        XCTAssertEqual(Set(written.keys), ["com.passwordpie", "com.oldcai.passwordpie"])
+        for (name, object) in written {
+            XCTAssertEqual(object["name"] as? String, name)
+            XCTAssertEqual((object["path"] as? String).map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path },
+                           macOS.appendingPathComponent("PasswordPieBrowserHost").resolvingSymlinksInPath().path)
+            XCTAssertEqual(object["allowed_origins"] as? [String], BridgeConstants.chromeExtensionIDs.map { "chrome-extension://\($0)/" })
+        }
     }
 
     func testABareBinaryWritesNothing() throws {
