@@ -32,7 +32,7 @@ describe('FillController reports', () => {
   it('says hello and reports the active tab on startup', async () => {
     controller.start();
     await settle();
-    expect(channel.sent[0]).toEqual({ type: 'hello', version: 1, extension: '0.5.0' });
+    expect(channel.sent[0]).toEqual({ type: 'hello', version: 1, extension: '0.6.0' });
     expect(channel.tabReports()).toEqual([{ type: 'tab', url: 'https://example.com/', reason: 'startup' }]);
   });
 

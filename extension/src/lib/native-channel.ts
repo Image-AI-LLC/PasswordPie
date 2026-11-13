@@ -22,7 +22,12 @@ export type Request =
   /** "Upgrade" in the note about Premium: the app opens its Premium window (docs/BROWSER_EXTENSION.md, "`upgrade`"). */
   | { type: 'upgrade' }
   /** A two-step QR code the user scanned on the page, with the page's origin (docs/BROWSER_EXTENSION.md, "`scan`"). */
-  | { type: 'scan'; otpauth: string; url: string };
+  | { type: 'scan'; otpauth: string; url: string }
+  /**
+   * The form a new password was filled into was submitted on this page: the app asks whether the site accepted it
+   * (docs/UX.md, "Reset Password makes the new password for you"). An app from before it answers with an error.
+   */
+  | { type: 'changed'; url: string };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */

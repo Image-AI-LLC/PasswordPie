@@ -1,4 +1,5 @@
-import { findLoginFields } from './fields';
+import { ChangeWatch } from './change-watch';
+import { findChangeFields, findLoginFields } from './fields';
 import type { FillMessage, FillResult } from './protocol';
 
 export const WAIT_FOR_FIELDS_MS = 30_000;
@@ -12,6 +13,8 @@ export interface PageEnv {
   frameAllowed: () => boolean;
   /** Tells the background the password filled after the answer was sent. */
   notifyPasswordFilled: () => void;
+  /** Tells the background the form the new password went into is being submitted. */
+  notifyChanged?: () => void;
   now?: () => number;
 }
 
@@ -30,6 +33,10 @@ export function fillInput(el: HTMLInputElement, value: string): void {
 class Session {
   private usernameEl: HTMLInputElement | null = null;
   private passwordFilled = false;
+  /** Change mode: the boxes already filled, so a later look does not write over what the person typed since. */
+  private readonly filled = new Set<HTMLInputElement>();
+  /** Change mode: the boxes given the new password. */
+  private readonly freshFilled = new Set<HTMLInputElement>();
   private observer: MutationObserver | undefined;
   private poll: ReturnType<typeof setInterval> | undefined;
   private queued: ReturnType<typeof setTimeout> | undefined;
@@ -39,6 +46,8 @@ class Session {
     private readonly env: PageEnv,
     private readonly msg: FillMessage,
     private readonly now: () => number,
+    /** A box took the new password. */
+    private readonly newPasswordFilled: (el: HTMLInputElement) => void,
   ) {
     this.deadline = now() + Math.min(msg.waitMs ?? WAIT_FOR_FIELDS_MS, WAIT_FOR_FIELDS_MS);
   }
@@ -47,7 +56,8 @@ class Session {
   begin(): FillResult {
     this.attempt();
     const result = { username: this.usernameEl !== null, password: this.passwordFilled };
-    if (!this.passwordFilled) this.watch();
+    // A fill with a new password keeps looking: a page may show or enable its confirm box only once the new one is filled.
+    if (!this.passwordFilled || this.msg.newPassword !== undefined) this.watch();
     return result;
   }
 
@@ -61,6 +71,10 @@ class Session {
   }
 
   private attempt(): void {
+    if (this.msg.newPassword !== undefined) {
+      this.attemptChange(this.msg.newPassword);
+      return;
+    }
     const { username, password } = findLoginFields(this.env.document);
     if (username && username !== this.usernameEl) {
       fillInput(username, this.msg.username);
@@ -72,17 +86,59 @@ class Session {
     }
   }
 
+  /**
+   * A fill with a new password: the current one where the page asks for it, the new one in the new and confirm boxes.
+   * Done once the new password is in; a sign-in page on the way gets the current one and the fill stays for the next page.
+   */
+  private attemptChange(newPassword: string): void {
+    const { username, current, fresh } = findChangeFields(this.env.document);
+    if (this.passwordFilled) {
+      // The new password is in: only a box that belongs with one still holding it is filled now (a confirm box shown
+      // late), and it goes into two boxes at most. A sign-in the page shows after the change is not this fill's.
+      const held = [...this.freshFilled].filter((el) => el.isConnected && el.value === newPassword);
+      for (const el of fresh) {
+        if (held.length >= 2) break;
+        if (this.filled.has(el) || !held.some((other) => other.form === el.form)) continue;
+        this.fillFresh(el, newPassword);
+        held.push(el);
+      }
+      return;
+    }
+    if (username && username !== this.usernameEl) {
+      fillInput(username, this.msg.username);
+      this.usernameEl = username;
+    }
+    if (current && !this.filled.has(current)) {
+      fillInput(current, this.msg.password);
+      this.filled.add(current);
+    }
+    for (const el of fresh) {
+      if (this.filled.has(el)) continue;
+      this.fillFresh(el, newPassword);
+    }
+  }
+
+  private fillFresh(el: HTMLInputElement, newPassword: string): void {
+    fillInput(el, newPassword);
+    this.filled.add(el);
+    this.freshFilled.add(el);
+    this.passwordFilled = true;
+    this.newPasswordFilled(el);
+  }
+
   private watch(): void {
     const view = this.env.document.defaultView;
+    const change = this.msg.newPassword !== undefined;
     const check = (): void => {
-      if (this.passwordFilled) return;
+      const before = this.passwordFilled;
+      if (before && !change) return;
       if (this.now() > this.deadline) {
         this.stop();
         return;
       }
       this.attempt();
-      if (this.passwordFilled) {
-        this.stop();
+      if (this.passwordFilled && !before) {
+        if (!change) this.stop();
         this.env.notifyPasswordFilled();
       }
     };
@@ -107,19 +163,27 @@ class Session {
 /** The content script's fill logic, one per frame. */
 export class PageFiller {
   private session: Session | undefined;
+  private changeWatch: ChangeWatch | undefined;
 
   constructor(private readonly env: PageEnv) {}
 
   handle(msg: FillMessage): FillResult {
     if (msg.origin !== this.env.origin || !this.env.frameAllowed()) return { username: false, password: false };
     this.stop();
-    this.session = new Session(this.env, msg, this.env.now ?? Date.now);
+    const { notifyChanged } = this.env;
+    // The origin and frame checks above are the only way here: the new password goes where the current one may.
+    const changeWatch =
+      msg.newPassword !== undefined && notifyChanged ? new ChangeWatch(this.env.document, msg.newPassword, notifyChanged) : undefined;
+    this.changeWatch = changeWatch;
+    this.session = new Session(this.env, msg, this.env.now ?? Date.now, (el) => changeWatch?.add(el));
     return this.session.begin();
   }
 
   stop(): void {
     this.session?.stop();
     this.session = undefined;
+    this.changeWatch?.stop();
+    this.changeWatch = undefined;
   }
 }
 

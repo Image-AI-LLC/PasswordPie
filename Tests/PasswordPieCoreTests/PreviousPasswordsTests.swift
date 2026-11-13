@@ -223,4 +223,92 @@ final class PreviousPasswordsTests: XCTestCase {
         entry.password = "changed in KeePassXC"
         XCTAssertEqual(PreviousPasswords.passwordDate(of: entry, fallback: fallback), fallback)
     }
+
+    // MARK: A new password, not used yet
+
+    func testAddingACandidateKeepsTheSavedPasswordAndStoresItProtected() throws {
+        var entry = login("current")
+        let added = try XCTUnwrap(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
+        XCTAssertEqual(entry.password, "current", "the website still knows only this one")
+        XCTAssertEqual(added.source, .saved)
+        XCTAssertFalse(added.used)
+        XCTAssertEqual(PreviousPasswords.candidate(of: entry, now: now), added)
+        XCTAssertEqual(PreviousPasswords.items(of: entry, now: now).map(\.value), ["brand-new"])
+        XCTAssertEqual(entry.fields.first { $0.key == PreviousPasswords.key }?.protected, true)
+        XCTAssertNil(PreviousPasswords.passwordDate(of: entry, fallback: nil), "nothing says the saved password changed")
+    }
+
+    func testASecondCandidateIsNotAddedWhileOneWaits() throws {
+        var entry = login("current")
+        let first = try XCTUnwrap(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
+        let before = entry
+        XCTAssertEqual(PreviousPasswords.addCandidate("another", on: &entry, now: now.addingTimeInterval(60)), first)
+        XCTAssertEqual(entry, before)
+    }
+
+    func testACandidateIsNeverTheSavedPasswordOrEmpty() {
+        var entry = login("current")
+        let before = entry
+        XCTAssertNil(PreviousPasswords.addCandidate("current", on: &entry, now: now))
+        XCTAssertNil(PreviousPasswords.addCandidate("", on: &entry, now: now))
+        XCTAssertEqual(entry, before)
+        XCTAssertNil(PreviousPasswords.candidate(of: entry, now: now))
+
+        // Typed into the editor as the saved password meanwhile: it is no longer waiting.
+        XCTAssertNotNil(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
+        entry.password = "brand-new"
+        XCTAssertNil(PreviousPasswords.candidate(of: entry, now: now))
+    }
+
+    func testOnlyAnUnusedSavedValueIsACandidate() {
+        var entry = login("current")
+        var state = PreviousPasswords.State()
+        state.items = [item("from-chrome", used: false), item("was-saved", used: true, source: .saved)]
+        PreviousPasswords.set(state, on: &entry)
+        XCTAssertNil(PreviousPasswords.candidate(of: entry, now: now))
+    }
+
+    func testACandidateIsNotAddedToARecordThisVersionCannotRead() {
+        var entry = login("current")
+        entry.setValue("{\"v\":99}", for: PreviousPasswords.key, protected: true)
+        let before = entry
+        XCTAssertNil(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
+        XCTAssertEqual(entry, before)
+    }
+
+    func testTheWaitingCandidateOutlastsUnusedChromeValuesAndOlderSavedOnes() {
+        var state = PreviousPasswords.State()
+        // The candidate entered the list before every Chrome value, so by age alone it would leave first.
+        state.items = [item("waiting", used: false, entered: 30 * day, source: .saved)]
+            + (0..<7).map { item("chrome-\($0)", used: false, entered: Double($0 + 1) * day) }
+            + (0..<9).map { item("used-\($0)", used: true, entered: Double($0 + 1) * day, source: .saved) }
+        let kept = PreviousPasswords.trimmed(state, now: now).items.map(\.value)
+        XCTAssertEqual(kept.count, 10)
+        XCTAssertTrue(kept.contains("waiting"))
+        XCTAssertTrue(kept.contains("used-0"), "the most recently replaced value is still kept")
+        XCTAssertFalse(kept.contains { $0.hasPrefix("chrome-") }, "never-adopted Chrome values go first")
+    }
+
+    /// The site may already hold it, and this may be the only copy: the 90 days do not remove it.
+    func testAWaitingCandidateIsKeptPastNinetyDays() {
+        var entry = login("current")
+        XCTAssertNotNil(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
+        XCTAssertNotNil(PreviousPasswords.candidate(of: entry, now: now.addingTimeInterval(89 * day)))
+        XCTAssertEqual(PreviousPasswords.candidate(of: entry, now: now.addingTimeInterval(400 * day))?.value, "brand-new")
+    }
+
+    func testUsingTheCandidateMakesItTheSavedPasswordAndRetiresTheOldOne() throws {
+        var entry = login("current")
+        let candidate = try XCTUnwrap(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
+        let later = now.addingTimeInterval(120)
+
+        XCTAssertTrue(PreviousPasswords.restore(candidate.id, on: &entry, previousDate: now.addingTimeInterval(-day), now: later))
+
+        XCTAssertEqual(entry.password, "brand-new")
+        XCTAssertNil(PreviousPasswords.candidate(of: entry, now: later))
+        let items = PreviousPasswords.items(of: entry, now: later)
+        XCTAssertEqual(items.map(\.value), ["current"])
+        XCTAssertEqual(items.first?.used, true)
+        XCTAssertEqual(PreviousPasswords.passwordDate(of: entry, fallback: nil), later)
+    }
 }

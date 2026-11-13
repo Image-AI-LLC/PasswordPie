@@ -12,6 +12,8 @@
 //   work.
 //   The two-step secret is JBSWY3DPEHPK3PXP (otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo).
 // - /demo/login and /demo/code are the same two pages under their old addresses.
+// - /change-password: the account's email as text, and the current, new and confirm boxes (docs/UX.md, "Reset Password
+//   makes the new password for you"). Change goes to /change-password/done, "Password changed". Any passwords work.
 //
 // There is no account here: the extension signs in nowhere. For Premium in the app, open an activation link
 // (node Scripts/mint-activation-link.mjs), signed with the TEST key in test-key.json.
@@ -124,6 +126,20 @@ const HOME = page('Home · Fernway', `<div class="home"><div class="bar"><div cl
 <div class="tile"><b>Design review notes</b><span>Edited 1 hour ago</span></div>
 <div class="tile"><b>Launch checklist</b><span>4 of 9 done</span></div></div></div></div>`);
 
+const CHANGE = page('Change password · Fernway', `${BRAND}<main><form class="card" method="post" action="/change-password">
+  <h1>Change your password</h1><p class="sub">Signed in as <b>sam@fernway.example</b></p>
+  <label for="current">Current password</label>
+  <input id="current" name="current" type="password" autocomplete="current-password">
+  <label for="new">New password</label>
+  <input id="new" name="new" type="password" autocomplete="new-password">
+  <label for="confirm">Confirm new password</label>
+  <input id="confirm" name="confirm" type="password" autocomplete="new-password">
+  <button>Change</button>
+</form></main>`);
+
+const CHANGED = page('Password changed · Fernway', `${BRAND}<main><div class="card"><h1>Password changed</h1>
+<p class="sub">Use your new password the next time you sign in.</p><a href="/home">Back to Fernway</a></div></main>`);
+
 const WRONG = (retry) => page('Two-step verification · Fernway', `${BRAND}<main><div class="card"><h1>That code didn't work</h1>
 <p class="sub">Codes change every 30 seconds.</p><a href="${retry}">Try again</a></div></main>`);
 
@@ -157,6 +173,12 @@ async function handle(req, res) {
       return send(res, 200, CODE('/demo/code'));
     case 'POST /demo/code':
       return verify(req, res, '/demo/code');
+    case 'GET /change-password':
+      return send(res, 200, CHANGE);
+    case 'POST /change-password':
+      return send(res, 303, '', { Location: '/change-password/done' });
+    case 'GET /change-password/done':
+      return send(res, 200, CHANGED);
     case 'GET /home':
       return send(res, 200, HOME);
     case 'GET /favicon.svg':

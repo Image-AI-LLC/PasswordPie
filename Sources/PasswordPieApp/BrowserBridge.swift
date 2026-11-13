@@ -187,6 +187,8 @@ final class BrowserBridge: ObservableObject {
             NSWorkspace.shared.open(url)
         }
     }
+    /// The browser that opens `url` when no browser was in front. Replaced in tests.
+    var defaultBrowser: (URL) -> URL? = { NSWorkspace.shared.urlForApplication(toOpen: $0) }
     /// From the Accessibility fallback, for the panel's site list only. Replaced every time the panel opens.
     private var readURLs: [BridgeBrowser: String] = [:]
     private var readGeneration = 0
@@ -205,6 +207,9 @@ final class BrowserBridge: ObservableObject {
     var onPageChanged: (() -> Void)?
     /// The person scanned a two-step QR code from the extension's right-click menu: the checked code, the page's origin, the browser.
     var onScan: ((ScannedOTP, String?, BridgeBrowser) -> Void)?
+    /// A change-password page that got an account's new password says its form was sent: the account, and the page's
+    /// host for the question. Only the person can say whether the site took it.
+    var onPasswordChanged: ((UUID, String) -> Void)?
     var now: () -> Date = Date.init
 
     init(session: VaultSession) {
@@ -322,6 +327,7 @@ final class BrowserBridge: ObservableObject {
             let before = state.currentURL(for: browser, now: now())
             let now = now()
             var scanned: (ScannedOTP, String?, BridgeBrowser)?
+            var changedEntry: UUID?
             response = state.handle(
                 request,
                 from: browser,
@@ -329,8 +335,15 @@ final class BrowserBridge: ObservableObject {
                 locked: session.locked,
                 now: now,
                 codeAllowed: { browserCodeAllowed() },
-                scan: { scanned = ($0, $1, $2) }
+                scan: { scanned = ($0, $1, $2) },
+                changed: { changedEntry = $0 }
             ) { [session] id in session.entry(id) }
+            if let changedEntry, let host = request.url.flatMap({ BrowserSite(url: $0) })?.host {
+                // After the answer is on its way, as for `show`. The answer says the same whatever happens next.
+                DispatchQueue.main.async { [weak self] in
+                    MainActor.assumeIsolated { self?.onPasswordChanged?(changedEntry, host) }
+                }
+            }
             if let scanned {
                 scanLinks[browser] = link
                 // After the answer is on its way, as for `show`. The answer says the same whatever happens next.
@@ -521,6 +534,41 @@ final class BrowserBridge: ObservableObject {
             openInBrowser(url, browserApp)
             return true
         }
+    }
+
+    /// Reset Password: opens `address` in Chrome and fills it when it loads, the saved password where the page asks for
+    /// the current one and `newPassword` in its new and confirm boxes. False means nothing was done and the caller only
+    /// opens the page: the address is not on a site of the account, the browser it would open in is not Chrome, or no
+    /// extension speaks for the profile that would get it. The new password is never typed by keystrokes.
+    func openReset(_ entry: VaultEntry, address: String, newPassword: String) -> Bool {
+        openReset(entry, address: address, newPassword: newPassword, front: fillTarget())
+    }
+
+    /// `front` is the app the panel opened over. From another app the page goes to the default browser, as it did
+    /// before there was anything to fill.
+    func openReset(_ entry: VaultEntry, address: String, newPassword: String, front: FrontApp?) -> Bool {
+        guard Self.chromeSupported, !newPassword.isEmpty, let url = webURL(address),
+              entryWebsites(entry).contains(where: { BrowserSite.allowsFill(entryWebsite: $0, pageURL: address) }) else { return false }
+        var browser = Self.browser(forBundleID: front?.bundleID)
+        var browserApp = front?.bundleURL
+        if browser == nil, let app = defaultBrowser(url) {
+            browser = Self.browser(forBundleID: Bundle(url: app)?.bundleIdentifier)
+            browserApp = app
+        }
+        // Safari's extension does not fill a change form (docs/UX.md, "When it does not apply").
+        guard browser == .chrome, let browserApp else { return false }
+        let inFront = front?.bundleURL == browserApp && front?.inFront == true
+        let link: Int?
+        switch chromeFillRoute(chromeInFront: inFront, front: state.front(.chrome), connected: chromeConnected) {
+        case .keystrokes: return false
+        case .link(let id): link = id
+        case .anyProfile: link = nil
+        }
+        guard let pending = PendingFill(entryID: entry.id, browser: .chrome, website: address, created: now(), link: link, newPassword: newPassword) else { return false }
+        state.pending.set(pending)
+        hidePanel(false)
+        openInBrowser(url, browserApp)
+        return true
     }
 }
 

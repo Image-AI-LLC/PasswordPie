@@ -22,6 +22,7 @@ export default defineContentScript({
       origin: location.origin,
       frameAllowed: () => sameOriginWithTop(window),
       notifyPasswordFilled: () => send({ type: 'filled', password: true }),
+      notifyChanged: () => send({ type: 'changed' }),
     });
 
     const codes = new CodeFiller({

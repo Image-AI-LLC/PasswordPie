@@ -373,7 +373,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
 - **Previous passwords** — direct channel. Below strength: a 28 pt row, `▸ previous passwords (2)`, in `caption`
   `text-secondary`, keeping its count when open, with `⋯` at the right once open. A row is two lines: `label` for the time
-  (`updated Oct 20`, `date unknown`, then `· not used yet` for a value never saved, and the Chrome mark for a value from
+  (`updated Oct 20`, `date unknown`, then `· not used yet` for a value never saved; `new · not used yet` alone for the password Reset Password generated, and the Chrome mark for a value from
   Chrome), and the value below. Two compact quiet split action buttons sit at the right and are always visible: Restore
   (Use for a value never saved) and Copy. Focused, they read `Restore ⌘↩` and `Copy ↩`, and neither is styled as the
   default. Clear Previous Passwords asks inline, because a modal would close the popover.
@@ -407,7 +407,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `clock.badge.exclamationmark.fill` symbol in `error`, the title, and the count in `error` `menu-item` 6 pt before
   the arrow (`on-selection` on a selected row). A due account has a 6 pt `error` dot at the top right of its icon,
   clear of the star and the Chrome badge at the bottom right. In the details, a 30 pt `change password` row under
-  strength: the phrase in `body` (`error` from the due day on) and a small Reset Password button at the end. In the
+  strength: the phrase in `body` (`error` from the due day on) and a small Reset Password button at the end; when its new password
+  could not be written, one `caption` line in `error` under the phrase. In the
   editor, a Password reminder card after the main one: Change every (a pop-up, and a 56 pt days field for Custom) and,
   once a period is set, Reset link. A Custom that is not a whole number of days from 1 to 3650 stops Save and shows one
   `caption` line in `error` under Change every, cleared when the field or the pop-up changes. Behavior: docs/UX.md, "A reminder to change a password".
@@ -425,6 +426,13 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   code** on an ink 5 % radius 8 well with a quiet Copy and a primary Done; locked, the **Locked one-time code**'s dots and
   Upgrade to unlock, which is primary, and Done a
   plain system button. Expired: one `body` line and a primary Close. Never the system's blue default button. Locking
+  closes it.
+- **New password question window** — direct channel only. 380 pt, `window-surface`, 16 pt padding, floating level so it
+  stays over the browser, where the website's own answer is. The window's title is the account's title. A 22 pt
+  `key.horizontal` symbol in `brand-accent`; "Did <host> accept the new password?" in `body` semibold; one `caption`
+  `text-secondary` line saying what Use New Password does. Not Yet (Escape) is a plain system button and Use New
+  Password is `BrandPrimaryButtonStyle`, the default. A write that failed adds "Couldn't save. Nothing changed." in
+  `caption` `error` and the window stays. The close button is Not Yet. Never the system's blue default button. Locking
   closes it.
 - **Preferences > Database, key file and master password** — below Touch ID, each after a divider. "Key file": `body`
   medium title, a `caption` `text-secondary` line that says what the open database needs, and "On" with a check when it

@@ -278,8 +278,11 @@ public struct PendingFill: Equatable, Sendable {
     /// in a browser that was not in front, or an extension that says nothing about focus): then any connection of the
     /// browser may take it, except one that says its profile is not in front.
     public let link: Int?
+    /// Reset Password only: the account's new password, not used yet, for the page's new and confirm boxes. `website` is
+    /// then the reset address. Nil for every ordinary fill.
+    public let newPassword: String?
 
-    public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date, link: Int? = nil) {
+    public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date, link: Int? = nil, newPassword: String? = nil) {
         guard let site = BrowserSite(url: website) else { return nil }
         self.entryID = entryID
         self.browser = browser
@@ -287,7 +290,21 @@ public struct PendingFill: Equatable, Sendable {
         self.site = site
         self.created = created
         self.link = link
+        self.newPassword = newPassword
     }
+}
+
+/// A new password went to a change-password page, and the page may report that its form was sent. Holds no password:
+/// only which account to ask the person about.
+public struct PendingChange: Equatable, Sendable {
+    public let entryID: UUID
+    public let browser: BridgeBrowser
+    /// The connection that took the fill: only that Chrome profile's report counts.
+    public let link: Int
+    /// The site of the reset address. The report must come from a page of it.
+    public let site: BrowserSite
+    /// When the fill was taken.
+    public let created: Date
 }
 
 /// The two-step code of an account that just filled, waiting for the page to show its code field. Holds no code: it is
@@ -308,16 +325,22 @@ public struct PendingCode: Equatable, Sendable {
 
 /// At most one pending fill. It is used once, by the first matching tab report, and dropped after 30 seconds.
 /// After it fills an account with a two-step code, at most one pending code, used once and dropped after 30 seconds.
+/// After it fills a new password into a change-password page, at most one pending change, used once and dropped after
+/// 10 minutes.
 public struct PendingFillStore: Sendable {
     public static let lifetime: TimeInterval = 30
     /// From the moment the fill was taken: enough to press Sign In and reach the code page.
     public static let codeLifetime: TimeInterval = 30
+    /// From the moment the fill was taken: enough to read the site's rules, fix what it refused and press its button.
+    public static let changeLifetime: TimeInterval = 600
     public private(set) var pending: PendingFill?
     public private(set) var code: PendingCode?
+    public private(set) var change: PendingChange?
 
     public init() {}
 
-    /// A new pick replaces the old one, and the code of the one before.
+    /// A new pick replaces the old one, and the code of the one before. A change still waiting for its page stays:
+    /// filling another account meanwhile does not answer it.
     public mutating func set(_ fill: PendingFill) {
         pending = fill
         code = nil
@@ -326,6 +349,27 @@ public struct PendingFillStore: Sendable {
     public mutating func clear() {
         pending = nil
         code = nil
+        change = nil
+    }
+
+    /// A new password was just handed to a page; `change` is what its report will be matched against. A newer one
+    /// replaces the one before.
+    mutating func expectChange(_ change: PendingChange) {
+        self.change = change
+    }
+
+    /// The pending change, if `browser` reports from a page of its site in time. Taking it deletes it. An expired one is
+    /// deleted unused.
+    mutating func takeChange(browser: BridgeBrowser, link: Int = 0, pageURL: String, now: Date) -> PendingChange? {
+        guard let change else { return nil }
+        let age = now.timeIntervalSince(change.created)
+        guard age <= Self.changeLifetime, age >= -1 else {
+            self.change = nil
+            return nil
+        }
+        guard change.browser == browser, change.link == link, let page = BrowserSite(url: pageURL), change.site.allowsFill(on: page) else { return nil }
+        self.change = nil
+        return change
     }
 
     /// The pick filled; `code` is its account's code to wait for, or nil when it has none.
@@ -402,6 +446,10 @@ public struct BridgeFill: Codable, Equatable, Sendable {
     public var expiresIn: Int
     /// True when the account has a two-step code: the extension watches for a code field and asks with `code`.
     public var otp: Bool?
+    /// Reset Password only: the account's new password, for the page's new and confirm boxes. `password` is still the
+    /// saved one, for the box that asks for the current password. Left out of every other fill. The extension never
+    /// submits the form.
+    public var newPassword: String?
 }
 
 /// The answer to `code`: the current two-step code for the page.
@@ -540,7 +588,8 @@ public struct BridgeState: Sendable {
     /// Answers one request. `entry` looks up an account by id in the unlocked vault. `codeAllowed` is the Premium check
     /// for a two-step code: whether this Mac has Premium (docs/ACCOUNTS.md, "Who decides"). The extension carries no proof
     /// of its own, so a `code` request says nothing about Premium. `scan` takes a checked QR code with the origin of the page
-    /// it was on (nil for none) and the browser; the answer never says what the app did with it.
+    /// it was on (nil for none) and the browser; the answer never says what the app did with it. `changed` takes the
+    /// account whose change-password page says its form was sent; the answer is the same whether or not one matched.
     public mutating func handle(
         _ request: BridgeRequest,
         from browser: BridgeBrowser,
@@ -549,6 +598,7 @@ public struct BridgeState: Sendable {
         now: Date,
         codeAllowed: () -> Bool = { false },
         scan: ((ScannedOTP, String?, BridgeBrowser) -> Void)? = nil,
+        changed: ((UUID) -> Void)? = nil,
         entry: (UUID) -> VaultEntry?
     ) -> BridgeResponse {
         if locked { pending.clear() }
@@ -583,14 +633,31 @@ public struct BridgeState: Sendable {
             let left = PendingFillStore.lifetime - now.timeIntervalSince(fill.created)
             let hasCode = OneTimeCodes.hasCode(account)
             pending.expectCode(hasCode ? PendingCode(entryID: account.id, browser: browser, link: link, site: page, created: now) : nil)
+            // A new password that became the saved one since the pick is no longer new: the fill is an ordinary one.
+            let newPassword = fill.newPassword.flatMap { $0.isEmpty || $0 == account.password ? nil : $0 }
+            if newPassword != nil {
+                pending.expectChange(PendingChange(entryID: account.id, browser: browser, link: link, site: fill.site, created: now))
+            }
             let credentials = BridgeFill(
                 origin: page.origin,
                 username: account.username,
                 password: account.password,
                 expiresIn: max(1, Int(left.rounded(.up))),
-                otp: hasCode ? true : nil
+                otp: hasCode ? true : nil,
+                newPassword: newPassword
             )
             return BridgeResponse(type: "tab", id: request.id, fill: credentials)
+        case "changed":
+            // The page that got a new password says its form was sent. Said the same way whatever is waiting, and whether
+            // the vault is locked: the extension learns nothing about the account. The app only asks the person.
+            let url = request.url ?? ""
+            if !locked, let page = BrowserSite(url: url),
+               let change = pending.takeChange(browser: browser, link: link, pageURL: url, now: now),
+               let account = entry(change.entryID),
+               entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) {
+                changed?(account.id)
+            }
+            return BridgeResponse(type: "changed", id: request.id, version: BridgeResponse.protocolVersion)
         case "code":
             let url = request.url ?? ""
             guard !locked, let page = BrowserSite(url: url),
