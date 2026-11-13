@@ -259,7 +259,7 @@ final class PremiumGateTests: XCTestCase {
         }
         XCTAssertEqual(locked.components(separatedBy: "Included with Premium").count, 2, "said once, to VoiceOver only")
         XCTAssertTrue(locked.contains("static let accessibilityText = \"Locked. Included with Premium.\""))
-        XCTAssertTrue(details.contains("case .locked:\n            LockedOneTimeCode()"), "OneTimeCodeView draws the locked look for .locked")
+        XCTAssertTrue(squeezed(details).contains("case.locked:LockedOneTimeCode()"), "OneTimeCodeView draws the locked look for .locked")
     }
 
     /// The dots say nothing, so the row says in words that the code is locked and comes with Premium: one element with
@@ -271,10 +271,16 @@ final class PremiumGateTests: XCTestCase {
         let start = try XCTUnwrap(details.range(of: "struct LockedOneTimeCode: View {"))
         let end = try XCTUnwrap(details.range(of: "\n}\n", range: start.upperBound..<details.endIndex))
         let locked = String(details[start.lowerBound..<end.upperBound])
-        XCTAssertTrue(locked.contains(".accessibilityElement(children: .ignore)\n        .accessibilityLabel(Self.accessibilityText)"))
+        XCTAssertTrue(squeezed(locked).contains(".accessibilityElement(children:.ignore)"))
+        XCTAssertTrue(squeezed(locked).contains(".accessibilityLabel(Self.accessibilityText)"))
         let lockMark = try XCTUnwrap(details.range(of: "private var lockMark: AnyView {"))
         let lockEnd = try XCTUnwrap(details.range(of: "\n    }\n", range: lockMark.upperBound..<details.endIndex))
         XCTAssertTrue(details[lockMark.lowerBound..<lockEnd.upperBound].contains(".accessibilityHidden(true)"))
+    }
+
+    /// Source text without whitespace, so formatting never decides a test.
+    private func squeezed(_ text: String) -> String {
+        text.filter { !$0.isWhitespace }
     }
 
     // MARK: The locked row as drawn
@@ -290,7 +296,10 @@ final class PremiumGateTests: XCTestCase {
         var entry = VaultEntry()
         entry.title = "Bank"
         entry.otp = PremiumFixtures.login().otp
+        // A new database each time: one that exists already unlocks asynchronously, and saving would race it.
+        setenv("PASSWORDPIE_DB", directory.appendingPathComponent("draw-\(UUID().uuidString).kdbx").path, 1)
         let session = await session(premium: premium, entries: [entry])
+        XCTAssertFalse(session.locked)
         let model = try model(session)
         model.focusedRow = .previousHeader // no row has the keyboard, so the tint shows
         var fitted: CGFloat = 0

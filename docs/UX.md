@@ -84,10 +84,10 @@ to unlock on the code's row when you do not, and it sends you to the right place
 
 The free version does everything except make a code: search, copy, fill, edit, import, Touch ID, pinned windows.
 
-An item with a two-step code still says so. Its "one-time password" row sits right under the password, with a small
-lock after its name, six dots where the code would be, and an **Upgrade to unlock** button. The row is as tall as a live
-code's, so nothing moves when Premium arrives. Clicking the row or the button opens a small Premium window. VoiceOver
-reads the row as locked and included with Premium.
+An item with a two-step code still says so. Its "one-time password" row sits under the password and its strength bar,
+with a small lock after its name, six dots where the code would be, and an **Upgrade to unlock** button. The row is as
+tall as a live code's, so nothing moves when Premium arrives. Clicking the row or the button opens a small Premium
+window. VoiceOver reads the row as locked and included with Premium.
 
 Where Premium comes from depends on where the app came from.
 
