@@ -1,0 +1,218 @@
+<!doctype html>
+<!-- PasswordPie store promo video. HyperFrames composition, 1920x1080, 60 fps. The clips and timing.js come from
+     prep.mjs (real screen recordings in ../takes); see ../README.md. Colours and type from DESIGN.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --surface: #FFF6E7; --text: #302A24; --text2: #70604F; --accent: #EE8C32; --accent-text: #A65312; }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: var(--surface); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; color: var(--text);
+    -webkit-font-smoothing: antialiased; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--surface); }
+
+  /* One header per scene, in the band above the browser. */
+  .head { position: absolute; left: 180px; right: 180px; top: 0; height: 210px; display: flex; align-items: center;
+    justify-content: space-between; gap: 48px; opacity: 0; }
+  .head h1 { margin: 0; font-size: 66px; line-height: 1.05; font-weight: 700; letter-spacing: -1.6px; }
+  .head p { margin: 14px 0 0; font-size: 30px; color: var(--text2); }
+
+  /* The browser: the recording without Chrome's tab strip. */
+  #card { position: absolute; left: 180px; top: 210px; width: 1560px; height: 828px; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 24px 70px rgba(48,42,36,.16), 0 0 0 1px rgba(48,42,36,.10); background: #fff; opacity: 0; }
+  #card video { position: absolute; left: 0; top: 0; width: 1560px; height: 828px; }
+  #veil { position: absolute; inset: 0; background: var(--surface); opacity: 0; }
+
+  /* Marks: the orange ring on what PasswordPie filled, the key that was pressed, and the speed when it is not real time. */
+  .ring { position: absolute; border: 4px solid var(--accent); border-radius: 12px; opacity: 0; }
+  .key { position: absolute; left: 960px; top: 950px; transform: translateX(-50%); display: flex; align-items: baseline; gap: 14px;
+    padding: 12px 26px; border-radius: 16px; background: var(--text); color: var(--surface); opacity: 0; white-space: nowrap; }
+  .key b { font-size: 42px; font-weight: 600; }
+  .key span { font-size: 28px; color: #D4C4B2; }
+  .key.small { padding: 8px 18px; border-radius: 12px; transform: none; }
+  .key.small b { font-size: 30px; }
+  .chip { position: absolute; padding: 8px 16px; border-radius: 10px; background: var(--text); color: var(--surface);
+    font-size: 26px; font-weight: 700; opacity: 0; }
+
+  /* Scene 2: the measured time is the picture. */
+  #h2 .big { font-size: 172px; font-weight: 700; letter-spacing: -6px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #h2 .big small { font-size: 64px; letter-spacing: 0; margin-left: 10px; color: var(--text2); }
+  #h2 .side { text-align: right; }
+  #h2 .side div { font-size: 40px; font-weight: 700; letter-spacing: -.6px; }
+  #h2 .side p { margin-top: 10px; }
+  #h2 .side p.small { margin-top: 4px; font-size: 24px; }
+
+  /* Scene 4: same page, two ways, timed from the first key. */
+  .half { position: absolute; top: 236px; width: 820px; height: 514px; border-radius: 12px; overflow: hidden; opacity: 0;
+    box-shadow: 0 20px 56px rgba(48,42,36,.15), 0 0 0 1px rgba(48,42,36,.10); background: #fff; }
+  .half video { position: absolute; left: 0; top: 0; width: 820px; height: 514px; }
+  #left { left: 100px; } #right { left: 1000px; }
+  .under { position: absolute; top: 778px; width: 820px; opacity: 0; }
+  .under .row { display: flex; justify-content: space-between; align-items: flex-end; }
+  .under h2 { margin: 0; font-size: 42px; font-weight: 700; letter-spacing: -.6px; }
+  .under p { margin: 4px 0 0; font-size: 26px; color: var(--text2); }
+  .under .t { font-size: 84px; font-weight: 700; letter-spacing: -2px; font-variant-numeric: tabular-nums; line-height: .9; }
+  .track { margin-top: 26px; height: 16px; border-radius: 8px; background: rgba(48,42,36,.08); overflow: hidden; }
+  .bar { height: 16px; width: 0; border-radius: 8px; background: var(--text); }
+  #under-left { left: 100px; } #under-right { left: 1000px; }
+  #under-right .t { color: var(--accent-text); } #under-right .bar { background: var(--accent); }
+
+  /* End card. */
+  #end { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    opacity: 0; background: var(--surface); }
+  #end .lockup { display: flex; align-items: center; gap: 30px; }
+  #end img { width: 136px; height: 136px; }
+  #end .word { font-family: "SF Pro Rounded", ui-rounded, -apple-system, sans-serif; font-size: 124px; font-weight: 700;
+    letter-spacing: -1.5px; line-height: 1; }
+  #end .line { margin-top: 30px; font-size: 48px; color: var(--text2); }
+  #end .url { margin-top: 18px; font-size: 48px; font-weight: 700; color: var(--accent-text); }
+  #end .note { position: absolute; bottom: 40px; font-size: 22px; color: var(--text2); }
+</style>
+</head>
+<body>
+<div id="stage" data-composition-id="root" data-start="0" data-duration="25.5" data-width="1920" data-height="1080">
+
+  <div class="head" id="h1"><div><h1>⌘\, then Return: filled in under half a second.</h1>
+    <p>PasswordPie for Mac, with its Chrome extension.</p></div></div>
+  <div class="head" id="h2"><div class="big"><span id="count">0</span><small>ms</small></div>
+    <div class="side"><div>Return → both fields filled</div><p id="h2-note"></p><p class="small" id="h2-machine">MacBook Air (M2) · macOS 27 · Chrome 157</p></div></div>
+  <div class="head" id="h3"><div><h1>Two-step code? Filled on the next page.</h1><p>With PasswordPie Premium.</p></div></div>
+  <div class="head" id="h4"><div><h1>Filling a sign-in, from the first key.</h1><p>The same page, typed by hand and with PasswordPie.</p></div></div>
+
+  <div id="card">
+    <video id="v-live" data-start="0.6" data-duration="3.6" data-track-index="1" src="clips/live.mp4" muted playsinline></video>
+    <video id="v-slow" data-start="4.2" data-duration="5" data-track-index="2" src="clips/slow.mp4" muted playsinline></video>
+    <video id="v-two" data-start="9.2" data-duration="4.8" data-track-index="3" src="clips/twostep.mp4" muted playsinline></video>
+    <div id="veil"></div>
+    <div class="chip" id="slow-chip" style="right: 22px; top: 78px;">4× slower</div>
+  </div>
+  <!-- Canvas pixels of the email and password fields and the six code boxes in the card. -->
+  <div class="ring" id="ring-email" style="left: 1003px; top: 522px; width: 467px; height: 60px;"></div>
+  <div class="ring" id="ring-pass" style="left: 1003px; top: 632px; width: 467px; height: 60px;"></div>
+  <div class="ring" id="ring-code" style="left: 1001px; top: 573px; width: 469px; height: 80px;"></div>
+
+  <div class="key" id="k-hot"><b>⌘\</b></div>
+  <div class="key" id="k-ret"><b>return</b></div>
+  <div class="key" id="k-ret2"><b>return</b></div>
+  <div class="key" id="k-ret3"><b>return</b></div>
+  <div class="key" id="k-sign"><b>return</b><span>Sign in</span></div>
+  <div class="key" id="k-verify"><b>return</b><span>Verify</span></div>
+
+  <div class="half" id="left">
+    <video id="v-typing" data-start="14.1" data-duration="7.4" data-track-index="4" src="clips/typing.mp4" muted playsinline></video>
+    <div class="chip" id="ff-chip" style="right: 16px; top: 16px;">4× speed</div>
+  </div>
+  <div class="half" id="right">
+    <video id="v-quick" data-start="14.1" data-duration="7.4" data-track-index="5" src="clips/quick.mp4" muted playsinline></video>
+    <div class="key small" id="k-hot4" style="left: 16px; top: 440px;"><b>⌘\</b></div>
+    <div class="key small" id="k-ret4" style="left: 16px; top: 440px;"><b>return</b></div>
+  </div>
+  <div class="under" id="under-left"><div class="row"><div><h2>Typing it</h2><p>About 40 words a minute</p></div>
+    <div class="t" id="t-left">0.0 s</div></div><div class="track"><div class="bar" id="bar-left"></div></div></div>
+  <div class="under" id="under-right"><div class="row"><div><h2>PasswordPie</h2><p>⌘\, then return</p></div>
+    <div class="t" id="t-right">0.0 s</div></div><div class="track"><div class="bar" id="bar-right"></div></div></div>
+
+  <div id="end">
+    <div class="lockup"><img src="mark-orange.svg" alt=""><div class="word">PasswordPie</div></div>
+    <div class="line">Password Manager for Mac, with a Chrome extension</div>
+    <div class="url">passwordpie.com</div>
+    <div class="note">Real screen recordings. Slowed-down and sped-up parts are marked.</div>
+  </div>
+</div>
+
+<script src="timing.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script>
+(() => {
+  const T = window.PP;
+  const tl = gsap.timeline({ paused: true });
+  const S1 = 0.6, S2 = 4.2, S3 = 9.2, S4 = 14.1, S5 = 21.6;
+  // A key cap shows a moment before the press it stands for, so it is read with what the press does.
+  const LEAD = 0.12;
+
+  const head = (id, at, prev) => {
+    // The old header is gone before the new one comes: two never overlap.
+    if (prev) tl.to(prev, { opacity: 0, y: -14, duration: 0.2, ease: 'power2.in' }, at - 0.2);
+    tl.fromTo(id, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: 'power3.out' }, at + 0.02);
+  };
+  const key = (id, at) => {
+    tl.fromTo(id, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.12, ease: 'power2.out' }, at - LEAD);
+    tl.to(id, { opacity: 0, duration: 0.2, ease: 'power1.in' }, at + 0.45);
+  };
+  const ring = (ids, at, hold) => {
+    tl.fromTo(ids, { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.18, ease: 'back.out(2)' }, at);
+    tl.to(ids, { opacity: 0, duration: 0.3, ease: 'none' }, at + hold);
+  };
+
+  // 1. Real time.
+  head('#h1', 0.05);
+  tl.fromTo('#card', { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.55, ease: 'expo.out' }, S1);
+  key('#k-hot', S1 + T.live.hotkey);
+  key('#k-ret', S1 + T.live.ret);
+  ring(['#ring-email', '#ring-pass'], S1 + T.live.filled, 1.1);
+
+  // 2. The same take again, slower: a quick veil marks the cut back to the start.
+  tl.fromTo('#veil', { opacity: 0 }, { opacity: 1, duration: 0.12, ease: 'none' }, S2 - 0.12);
+  tl.to('#veil', { opacity: 0, duration: 0.3, ease: 'power1.out' }, S2);
+  head('#h2', S2, '#h1');
+  tl.fromTo('#slow-chip', { opacity: 0 }, { opacity: 1, duration: 0.2 }, S2);
+  key('#k-ret2', S2 + T.slow.ret);
+  const median = Math.round(T.measured.medianMs);
+  const count = { v: 0 };
+  const show = () => { document.getElementById('count').textContent = String(Math.round(count.v)); };
+  tl.set(count, { v: 0, onUpdate: show }, S2);
+  // Runs from Return to the frame the fields fill in, and stops on the measured median.
+  tl.to(count, { v: median, duration: T.slow.filled - T.slow.ret, ease: 'none', onUpdate: show }, S2 + T.slow.ret);
+  tl.to('#count', { color: '#A65312', duration: 0.15 }, S2 + T.slow.filled);
+  ring(['#ring-email', '#ring-pass'], S2 + T.slow.filled, 1.6);
+  tl.set('#h2-note', { textContent: `Median of ${T.measured.runs} runs · 90% within ${Math.round(T.measured.p90Ms)} ms` }, 0);
+  tl.to('#slow-chip', { opacity: 0, duration: 0.2 }, S3 - 0.2);
+
+  // 3. Two-step, in real time.
+  head('#h3', S3, '#h2');
+  tl.fromTo('#v-two', { opacity: 0 }, { opacity: 1, duration: 0.25, ease: 'none' }, S3);
+  key('#k-ret3', S3 + T.twostep.ret);
+  key('#k-sign', S3 + T.twostep.submit);
+  ring('#ring-code', S3 + T.twostep.code, 1.25);
+  key('#k-verify', S3 + T.twostep.verify);
+
+  // 4. Side by side. Both timers start at the first key; the bars share one scale.
+  head('#h4', S4, '#h3');
+  tl.to('#card', { opacity: 0, scale: 0.97, duration: 0.3, ease: 'power2.in' }, S4 - 0.3);
+  tl.fromTo('#left', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out' }, S4 - 0.1);
+  tl.fromTo('#right', { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.5, ease: 'circ.out' }, S4 - 0.02);
+  tl.fromTo('.under', { opacity: 0 }, { opacity: 1, duration: 0.4, ease: 'none', stagger: 0.08 }, S4 + 0.05);
+  const R = T.race;
+  key('#k-hot4', S4 + R.pieHotkeyAt);
+  key('#k-ret4', S4 + R.pieReturnAt);
+  const typingEnd = R.typingMs / 1000;
+  const leftDoneAt = R.realtime + (typingEnd - (R.realtime - R.typingClickAt)) / R.ff;
+  const pxPerSecond = 820 / typingEnd;
+  const left = { v: 0 }, right = { v: 0 };
+  const showL = () => { document.getElementById('t-left').textContent = `${left.v.toFixed(1)} s`;
+    document.getElementById('bar-left').style.width = `${left.v * pxPerSecond}px`; };
+  const showR = () => { document.getElementById('t-right').textContent = `${right.v.toFixed(1)} s`;
+    document.getElementById('bar-right').style.width = `${Math.max(right.v * pxPerSecond, 0)}px`; };
+  tl.set(left, { v: 0, onUpdate: showL }, S4);
+  tl.set(right, { v: 0, onUpdate: showR }, S4);
+  tl.to(left, { v: R.realtime - R.typingClickAt, duration: R.realtime - R.typingClickAt, ease: 'none', onUpdate: showL }, S4 + R.typingClickAt);
+  tl.to(left, { v: typingEnd, duration: leftDoneAt - R.realtime, ease: 'none', onUpdate: showL }, S4 + R.realtime);
+  tl.to(right, { v: R.pieMs / 1000, duration: R.pieFilledAt - R.pieHotkeyAt, ease: 'none', onUpdate: showR }, S4 + R.pieHotkeyAt);
+  tl.fromTo('#ff-chip', { opacity: 0 }, { opacity: 1, duration: 0.15 }, S4 + R.realtime);
+  tl.to('#ff-chip', { opacity: 0, duration: 0.2 }, S4 + leftDoneAt);
+
+  // 5. End card, after the side-by-side has gone.
+  tl.to(['#h4', '#left', '#right', '.under'], { opacity: 0, duration: 0.25, ease: 'power1.in' }, S5 - 0.25);
+  tl.fromTo('#end', { opacity: 0 }, { opacity: 1, duration: 0.35, ease: 'power1.out' }, S5);
+  tl.from('#end img', { scale: 0.7, rotation: -24, duration: 0.7, ease: 'back.out(1.7)' }, S5 + 0.05);
+  tl.from('#end .word', { x: -20, opacity: 0, duration: 0.5, ease: 'power3.out' }, S5 + 0.15);
+  tl.from('#end .line', { y: 16, opacity: 0, duration: 0.5, ease: 'power2.out' }, S5 + 0.35);
+  tl.from('#end .url', { y: 12, opacity: 0, duration: 0.5, ease: 'expo.out' }, S5 + 0.5);
+  tl.from('#end .note', { opacity: 0, duration: 0.6, ease: 'none' }, S5 + 0.8);
+
+  window.__timelines = window.__timelines || {};
+  window.__timelines.root = tl;
+})();
+</script>
+</body>
+</html>

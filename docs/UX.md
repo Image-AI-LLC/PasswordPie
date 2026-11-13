@@ -636,7 +636,7 @@ bundle signed the same way: the bridge checks signatures); only those trust the 
 2. Open `http://localhost:8787/demo/login`, press `⌘\`, Return on Demo, then Sign In. The code page shows six empty
    boxes and the note in the corner. Click Upgrade in the note: the Premium window of PasswordPie opens.
 3. Open an activation link (`node Scripts/mint-activation-link.mjs`): the window says Premium is on.
-4. Repeat 2: the six boxes fill. Press Verify: "Signed in".
+4. Repeat 2: the six boxes fill. Press Verify: "Welcome back, Sam".
 5. Right-click the toolbar button: Scan QR code on this page and Open passwordpie.com (Safari: the scan only).
 
 ## A new database says what to do next

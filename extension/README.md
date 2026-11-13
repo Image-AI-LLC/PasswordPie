@@ -26,7 +26,7 @@ not installed.
 
 ## Demo pages
 
-    node dev/mock-site.mjs    # http://localhost:8787/demo/login: a sign-in, then a page with six code boxes
+    node dev/mock-site.mjs    # http://localhost:8787/login (or /demo/login): a sign-in, then a page with six code boxes
 
 For Premium in the app, open an activation link (`node ../Scripts/mint-activation-link.mjs`), signed with the test key in
 `dev/test-key.json`, which only debug and `make install` builds of the app trust. The demo script is in docs/UX.md,
