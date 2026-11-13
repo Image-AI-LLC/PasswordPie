@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CHROME_KEY, extensionManifest } from '../manifest';
-import { EXTENSION_VERSION } from '../src/lib/protocol';
+import { EXTENSION_VERSION, NATIVE_APP } from '../src/lib/protocol';
 
 describe('extensionManifest', () => {
   it('pins the unpacked Chrome ID with the public key in every build but the store package', () => {
@@ -47,11 +47,43 @@ describe('extensionManifest', () => {
     }
   });
 
-  it('is 0.4.0: the store needs a version above the one it has, and the package agrees', () => {
+  it('is 0.5.0: the store needs a version above the one it has, and the package agrees', () => {
     const { version } = extensionManifest({ browser: 'chrome', storePackage: true });
-    expect(version).toBe('0.4.0');
+    expect(version).toBe('0.5.0');
     expect(JSON.parse(readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8')).version).toBe(version);
     expect(EXTENSION_VERSION, 'the version the native hello reports').toBe(version);
+  });
+
+  it('connects to the com.passwordpie host: the app installs it next to the old name the store extension ≤ 0.4.0 uses', () => {
+    expect(NATIVE_APP).toBe('com.passwordpie');
+  });
+
+  it('puts "Password Manager" in the Chrome store title, within the 75 characters the store shows', () => {
+    for (const storePackage of [true, false]) {
+      const manifest = extensionManifest({ browser: 'chrome', storePackage });
+      expect(manifest.name).toBe('PasswordPie: Password Manager for Mac');
+      expect(manifest.name).toContain('Password Manager');
+      expect([...manifest.name!].length).toBeLessThanOrEqual(75);
+      expect(manifest.short_name).toBe('PasswordPie');
+    }
+  });
+
+  it('keeps the Chrome summary within 132 characters and says it needs the app', () => {
+    const { description } = extensionManifest({ browser: 'chrome', storePackage: true });
+    expect([...description!].length).toBeLessThanOrEqual(132);
+    expect(description).toContain('Needs the PasswordPie app');
+  });
+
+  it('keeps the plain name in Safari, whose settings list it next to the app', () => {
+    const manifest = extensionManifest({ browser: 'safari', storePackage: false });
+    expect(manifest.name).toBe('PasswordPie');
+    expect(manifest).not.toHaveProperty('short_name');
+  });
+
+  it('keeps the toolbar title PasswordPie in every build', () => {
+    for (const browser of ['chrome', 'safari'] as const) {
+      expect(extensionManifest({ browser, storePackage: false }).action?.default_title).toBe('PasswordPie');
+    }
   });
 
   it('declares the panel shortcut', () => {

@@ -45,7 +45,7 @@ native SwiftUI/AppKit controls and semantic system colors, not the mockup bitmap
   retained; Never changed only lockOnIdle, preserving the three other lock flags
   and the saved timeout. These are native app captures, not HTML reproductions.
 
-The QA app was a separately signed debug bundle (`com.oldcai.passwordpie.preferences-preview`)
+The QA app was a separately signed debug bundle (`com.passwordpie.preferences-preview`)
 with its own preferences domain. Initial interaction checks used a nonexistent
 `/tmp/passwordpie-preferences-qa/Preview.kdbx`; final screenshots used a disposable
 synthetic `Icons.kdbx` fixture to show enabled database actions. The installed app and real vault were

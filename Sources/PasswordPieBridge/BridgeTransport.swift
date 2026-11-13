@@ -8,13 +8,19 @@ import Security
 
 public enum BridgeConstants {
     public static let teamID = "2S468LUF8V"
-    public static let appGroup = "2S468LUF8V.com.oldcai.passwordpie"
+    public static let appGroup = "2S468LUF8V.com.passwordpie"
     public static let socketName = "bridge.sock"
-    public static let appIdentifier = "com.oldcai.passwordpie"
-    public static let chromeHostIdentifier = "com.oldcai.passwordpie.browser-host"
-    public static let safariExtensionIdentifier = "com.oldcai.passwordpie.safari"
-    /// The native messaging host name the extension connects to.
-    public static let nativeHostName = "com.oldcai.passwordpie"
+    public static let appIdentifier = "com.passwordpie"
+    public static let chromeHostIdentifier = "com.passwordpie.browser-host"
+    public static let safariExtensionIdentifier = "com.passwordpie.safari"
+    /// The native messaging host name the extension connects to (extension 0.5.0 and later).
+    public static let nativeHostName = "com.passwordpie"
+    /// The name the Chrome Web Store extension up to 0.4.0 connects to, from before the move to `com.passwordpie`. The app
+    /// installs a manifest under both names for the same host. Remove this once the store's live version is 0.5.0 or later
+    /// (docs/BROWSER_EXTENSION.md, "Host manifests").
+    public static let legacyNativeHostName = "com.oldcai.passwordpie"
+    /// Every name the app installs a host manifest under.
+    public static let nativeHostNames = [nativeHostName, legacyNativeHostName]
     /// The Chrome Web Store item's ID. `CHROME_KEY` in extension/manifest.ts is the store's public key, so an unpacked
     /// development build gets the same ID (extension/tests/extension-id.test.ts checks they match). See
     /// docs/BROWSER_EXTENSION.md, "Chrome".

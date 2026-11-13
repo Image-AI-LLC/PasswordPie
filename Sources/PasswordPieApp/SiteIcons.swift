@@ -17,7 +17,7 @@ final class SiteIconStore: ObservableObject {
     /// Not in the database: writing icons there would change the user's KDBX file under every other KeePass app.
     private static var defaultCacheDirectory: URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("com.oldcai.passwordpie", isDirectory: true)
+            .appendingPathComponent(AppNamespace.id, isDirectory: true)
             .appendingPathComponent("favicons", isDirectory: true)
     }
 

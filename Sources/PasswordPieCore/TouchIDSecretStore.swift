@@ -105,7 +105,7 @@ public enum RememberedFile {
 public struct TouchIDSecretStore: Sendable {
     public let service: String
 
-    public init(service: String = "com.oldcai.passwordpie") {
+    public init(service: String = AppNamespace.id) {
         self.service = service
     }
 

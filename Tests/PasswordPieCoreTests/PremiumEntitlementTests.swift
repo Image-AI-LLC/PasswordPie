@@ -15,9 +15,9 @@ final class PremiumEntitlementTests: XCTestCase {
     }
 
     func testProductIDsAreTheOnesInAppStoreConnect() {
-        XCTAssertEqual(PremiumPlan.lifetime.productID, "com.oldcai.passwordpie.premium.lifetime")
-        XCTAssertEqual(PremiumPlan.yearly.productID, "com.oldcai.passwordpie.premium.yearly")
-        XCTAssertEqual(PremiumPlan(productID: "com.oldcai.passwordpie.premium.yearly"), .yearly)
+        XCTAssertEqual(PremiumPlan.lifetime.productID, "com.passwordpie.premium.lifetime")
+        XCTAssertEqual(PremiumPlan.yearly.productID, "com.passwordpie.premium.yearly")
+        XCTAssertEqual(PremiumPlan(productID: "com.passwordpie.premium.yearly"), .yearly)
         XCTAssertNil(PremiumPlan(productID: "com.example.other"))
     }
 

@@ -774,6 +774,29 @@ Use a database with an item "Demo" (website `http://localhost:8787`, username `a
    row: the link fills in and the code shows. Save.
 5. Copy some text and click the QR button: "Copy a screenshot of the QR code first, or an otpauth:// link."
 
+## Updating from PasswordPie 0.1.0
+
+PasswordPie 0.1.0 had another identity on the Mac. The next version is the same app under the name it keeps from now on,
+so macOS treats it as new in a few places.
+
+### What carries over
+
+Your databases, the list in Preferences, the shortcuts and every other setting. The Chrome extension keeps working, with
+the version you have and with the next one.
+
+### What asks again, once
+
+- **The master password.** The first unlock is with the master password; Touch ID works again from the next lock.
+- **A key file**, if a database has one: choose it on the lock screen once more.
+- **Accessibility access**, at the first Fill: macOS asks again. In System Settings, PasswordPie may be listed twice;
+  turn on the one that is off. The other one can be removed with −.
+- **The Safari extension**: turn PasswordPie on again in Safari > Settings > Extensions.
+- **Premium**: press Activate in your account settings on passwordpie.com again.
+
+Nothing asks about what the old version kept in the keychain: it is left alone. One prompt can come from Chrome, not
+from the update: with Chrome passwords turned on, macOS asks once more whether PasswordPie may use "Chrome Safe
+Storage". Choose Always Allow, as the first time.
+
 ## A key file that stays on this Mac
 
 **In one line:** give a database a second key, a small file that stays on your Mac. A copy of the database that leaks

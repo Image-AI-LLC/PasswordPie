@@ -18,9 +18,17 @@ export const OPEN_PANEL_COMMAND = 'open-panel';
 /** One manifest for every build: the extension has no account, so the App Store's Safari build is the same as the rest. */
 export function extensionManifest({ browser, storePackage }: { browser: ConfigEnv['browser']; storePackage: boolean }): UserManifest {
   return {
-    name: 'PasswordPie',
-    description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.',
-    version: '0.4.0',
+    // Chrome: the store takes its title (≤ 75 characters) and summary (≤ 132) from these, so they say what it is in the
+    // words people search for, and that it needs the app. Safari lists the extension under the app's own name in its
+    // settings, in both channels, so it keeps the plain one. Nothing matches on the name (tests/manifest.test.ts).
+    ...(browser === 'chrome'
+      ? {
+          name: 'PasswordPie: Password Manager for Mac',
+          short_name: 'PasswordPie',
+          description: 'Autofill passwords from PasswordPie, the KeePass password manager for Mac. Needs the PasswordPie app.',
+        }
+      : { name: 'PasswordPie', description: 'Fills sign-in forms from the PasswordPie app on your Mac. Needs PasswordPie for Mac.' }),
+    version: '0.5.0',
     // Chrome: <all_urls> already exposes tab.url, so `tabs` would only add a "browsing history" warning. Safari grants
     // host access per site and keeps it.
     // No `storage`: the extension keeps nothing. No `identity` and no `oauth2`: it has no account and no sign-in.

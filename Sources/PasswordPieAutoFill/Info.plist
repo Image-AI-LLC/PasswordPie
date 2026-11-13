@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.oldcai.passwordpie.autofill</string>
+  <string>com.passwordpie.autofill</string>
   <key>CFBundleName</key>
   <string>PasswordPie AutoFill</string>
   <key>CFBundleExecutable</key>

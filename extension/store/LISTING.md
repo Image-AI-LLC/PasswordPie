@@ -13,8 +13,9 @@ when the listing changes, so the next update starts from what is live. The packa
 - Submitting warns that `<all_urls>` may mean an in-depth review. `activeTab` cannot replace it: a fill starts from a
   pick in the app, or in a tab the app opened, with no click on the extension.
 - Upload: `extension/.output/passwordpie-extension-<version>-chrome-store.zip` (no `key` in the manifest).
-- Name and summary come from the manifest: **PasswordPie**, "Fills sign-in forms from the PasswordPie app on your Mac.
-  Needs PasswordPie for Mac."
+- Name and summary come from the Chrome build's manifest (store limits 75 and 132 characters,
+  `tests/manifest.test.ts`): **PasswordPie: Password Manager for Mac**, "Autofill passwords from PasswordPie, the KeePass
+  password manager for Mac. Needs the PasswordPie app." The Safari build keeps the name **PasswordPie**.
 
 ## Store listing
 
@@ -29,7 +30,7 @@ when the listing changes, so the next update starts from what is live. The packa
 ### Description
 
 ```text
-PasswordPie fills the account you pick in PasswordPie, the KeePass password manager in your Mac's menu bar, into the sign-in form of the page you're on.
+PasswordPie fills the account you pick in PasswordPie, the KeePass password manager for Mac that lives in your menu bar, into the sign-in form of the page you're on.
 
 This extension needs the PasswordPie app for Mac. It can't fill anything without it. Get PasswordPie at https://passwordpie.com/
 
@@ -79,7 +80,7 @@ Fill the username, password and two-step code that the user picks in the Passwor
 **nativeMessaging**
 
 ```text
-The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.oldcai.passwordpie). It sends the origin of the active tab (such as https://example.com) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. It is not used for anything else.
+The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.passwordpie). It sends the origin of the active tab (such as https://example.com) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. It is not used for anything else.
 ```
 
 **webNavigation**
@@ -103,7 +104,7 @@ Adds two lines to the right-click menu of the extension's toolbar button (Scan Q
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin is sent to the PasswordPie app, to find the accounts for that site) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon for it, the background also asks the content script of the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies, to show it in the app's account list.  When the user chooses "Scan QR code on this page" in the toolbar button's right-click menu, or "Scan QR code with PasswordPie" in the page's right-click menu, the content script of the top frame reads the pictures on screen that could be a QR code and, if none can be read, the background takes one picture of the visible tab (tabs.captureVisibleTab); the two-step QR code is decoded inside the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing on a page until the user picks an account in the app, and it never submits the form.
+Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin goes to the PasswordPie app, to find that site's accounts) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon, the background asks the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies. When the user chooses a Scan QR code line in a right-click menu, the top frame reads the pictures on screen that could be a QR code and, if none reads, the background takes one picture of the visible tab (tabs.captureVisibleTab); the code is decoded in the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing until the user picks an account, and it never submits the form.
 ```
 
 ### Remote code
