@@ -1,4 +1,4 @@
-import { parentOf } from './fields';
+import { collectInputs, parentOf } from './fields';
 import { CHANGE_WATCH_MS } from './protocol';
 
 const BUTTONS = 'button, input[type="submit"], input[type="image"], input[type="button"], [role="button"]';
@@ -35,6 +35,8 @@ export class ChangeWatch {
   private readonly fields = new Set<HTMLInputElement>();
   private readonly forms = new Set<HTMLFormElement>();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** A press next to boxes outside a form, waiting for the page's own handlers to run. */
+  private judging: ReturnType<typeof setTimeout> | undefined;
   private stopped = false;
 
   constructor(
@@ -69,6 +71,8 @@ export class ChangeWatch {
     this.fields.clear();
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.judging !== undefined) clearTimeout(this.judging);
+    this.judging = undefined;
   }
 
   private readonly onSubmit = (event: Event): void => {
@@ -98,7 +102,17 @@ export class ChangeWatch {
     }
     // Boxes outside any form: the page submits by script, from some button next to them.
     const container = this.looseContainer();
-    if (container && lineage(control).includes(container)) this.signal(null);
+    if (!container || !lineage(control).includes(container) || this.judging !== undefined) return;
+    // Whether a box still holds the password is read now: a page may empty its boxes as it sends them.
+    if (!this.holds(null)) return;
+    // A Show or Hide button is next to them too, and is not the page's submit. It turns a box between password and
+    // text, which shows only once the page's own handlers have run.
+    const types = collectInputs(container).map((el) => [el, el.type] as const);
+    this.judging = setTimeout(() => {
+      this.judging = undefined;
+      if (types.some(([el, type]) => el.type !== type)) return;
+      this.tell();
+    }, 0);
   }
 
   /** The nearest element that holds every box outside a form, and a button. */
@@ -116,10 +130,16 @@ export class ChangeWatch {
 
   /** The form (or, for `null`, the boxes outside any form) is being submitted. */
   private signal(form: HTMLFormElement | null): void {
+    if (this.holds(form)) this.tell();
+  }
+
+  /** Only while a box still holds the password filled: one the person typed over is not the app's to ask about. */
+  private holds(form: HTMLFormElement | null): boolean {
+    return [...this.fields].some((el) => el.form === form && el.value === this.newPassword);
+  }
+
+  private tell(): void {
     if (this.stopped) return;
-    // Only while a box still holds the password filled: one the person typed over is not the app's to ask about.
-    const holds = [...this.fields].some((el) => el.form === form && el.value === this.newPassword);
-    if (!holds) return;
     this.stop();
     this.report();
   }

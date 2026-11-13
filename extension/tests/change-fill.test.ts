@@ -155,6 +155,56 @@ describe('PageFiller with a new password', () => {
   });
 });
 
+describe('a confirm box that shows up after the fill', () => {
+  const FORM = '<form id="change"><input id="new" type="password" autocomplete="new-password"><button id="go">Change</button></form>';
+  const CONFIRM = '<input id="confirm" type="password" autocomplete="new-password">';
+
+  function addToForm(html: string): void {
+    document.getElementById('change')?.insertAdjacentHTML('beforeend', html);
+  }
+
+  it('is filled, and counts for the submit report', async () => {
+    document.body.innerHTML = FORM;
+    countSubmits();
+    makeFiller().handle(fill);
+    await vi.advanceTimersByTimeAsync(500);
+    addToForm(CONFIRM);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(input('confirm').value).toBe('N3w-pass');
+    expect(notified).toBe(0);
+    input('new').value = 'my-own';
+    button('go').click();
+    expect(changed).toBe(1);
+  });
+
+  it('is left alone when the person typed over the box that held the password', async () => {
+    document.body.innerHTML = FORM;
+    makeFiller().handle(fill);
+    input('new').value = 'my-own';
+    addToForm(CONFIRM);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(input('confirm').value).toBe('');
+  });
+
+  it('is left alone in another form, and as a third box, and after the deadline', async () => {
+    document.body.innerHTML = FORM;
+    makeFiller().handle(fill);
+    document.body.insertAdjacentHTML('beforeend', '<form id="other"><input id="other-new" type="password" autocomplete="new-password"></form>');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(input('other-new').value).toBe('');
+    addToForm(CONFIRM);
+    await vi.advanceTimersByTimeAsync(300);
+    addToForm('<input id="third" type="password" autocomplete="new-password">');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(input('third').value).toBe('');
+    document.body.innerHTML = FORM;
+    await vi.advanceTimersByTimeAsync(31_000);
+    addToForm(CONFIRM);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(input('confirm').value).toBe('');
+  });
+});
+
 describe('telling the app the form was submitted', () => {
   it('says so once when the form is submitted', () => {
     loadFixture('change-password-page.html');
@@ -242,6 +292,38 @@ describe('telling the app the form was submitted', () => {
     expect(changed).toBe(0);
     button('go').click();
     button('go').click();
+    vi.advanceTimersByTime(1);
+    expect(changed).toBe(1);
+  });
+
+  it('boxes outside any form: a Show button next to them does not count, by click or by Enter, and Save still does', () => {
+    loadFixture('change-scripted.html');
+    button('panel').insertAdjacentHTML('afterbegin', '<button id="show" type="button">Show</button>');
+    const flip = (): void => {
+      for (const id of ['new', 'confirm']) input(id).type = input(id).type === 'password' ? 'text' : 'password';
+    };
+    button('show').addEventListener('click', flip);
+    button('show').addEventListener('keydown', flip);
+    makeFiller().handle(fill);
+    button('show').click();
+    vi.advanceTimersByTime(1);
+    pressEnter(button('show'));
+    vi.advanceTimersByTime(1);
+    expect(changed).toBe(0);
+    button('go').click();
+    vi.advanceTimersByTime(1);
+    expect(changed).toBe(1);
+  });
+
+  it('boxes outside any form: a page that empties its boxes as it sends them still reports', () => {
+    loadFixture('change-scripted.html');
+    button('go').addEventListener('click', () => {
+      input('new').value = '';
+      input('confirm').value = '';
+    });
+    makeFiller().handle(fill);
+    button('go').click();
+    vi.advanceTimersByTime(1);
     expect(changed).toBe(1);
   });
 

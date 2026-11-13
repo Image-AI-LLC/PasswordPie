@@ -106,7 +106,7 @@ struct PasswordChangeConfirmView: View {
                 .keyboardShortcut(.cancelAction)
                 Button("Use New Password") { model.useNewPassword() }
                     .buttonStyle(BrandPrimaryButtonStyle())
-                    .keyboardShortcut(.defaultAction)
+                    // No Return shortcut: the window comes up as the form is sent, and a Return still on its way must not answer it.
             }
         }
         .padding(16)

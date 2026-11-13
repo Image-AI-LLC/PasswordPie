@@ -126,9 +126,10 @@ public enum PreviousPasswords {
         }
         // `distinct` is newest-entered first, so the first used value is the one most recently replaced.
         let protectedID = distinct.first(where: \.used)?.id
-        var kept = distinct.filter { now.timeIntervalSince($0.enteredAt) < retention || $0.id == protectedID }
-        // The password waiting to become the saved one may already be the website's: the count never pushes it out.
-        let waitingID = kept.first(where: isCandidate)?.id
+        // The password waiting to become the saved one may already be the website's, and this may be its only copy:
+        // neither the 90 days nor the count pushes it out. It leaves when it is used or removed by hand.
+        let waitingID = distinct.first(where: isCandidate)?.id
+        var kept = distinct.filter { now.timeIntervalSince($0.enteredAt) < retention || $0.id == protectedID || $0.id == waitingID }
         while kept.count > maxItems {
             let evictable = kept.filter { $0.id != protectedID && $0.id != waitingID }
             guard let victim = evictable.last(where: { !$0.used }) ?? evictable.last else { break }

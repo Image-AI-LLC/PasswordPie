@@ -1000,9 +1000,15 @@ That is also the way to finish by hand: when there is no extension, when the sit
 again, or when the question did not come up.
 
 - Press Reset Password again while a new password is waiting and the same one is filled; a second is not generated.
+- A waiting new password is kept until you use it or remove it: the 90 days and the limit of 10 do not apply to it,
+  because the site may already have it.
+- Use New Password has no Return shortcut. The question comes up as you send the form, and a Return still on its way
+  must not answer it.
 - The site refused the password (too long, a character it does not allow)? Choose Not Yet, change the waiting password
   in the editor's Password row, or type one on the site and let Chrome save it: "The newest password wins".
 - The question comes only for a page on the account's site, within 10 minutes of Reset Password, once.
+- Reset Password for two accounts on one site, with both pages open: only the newest page is asked about. Finish the
+  other with Use.
 - PasswordPie never presses the site's button and never decides by itself that the password changed.
 
 ### When it does not apply

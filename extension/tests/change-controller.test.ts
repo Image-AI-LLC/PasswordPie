@@ -113,6 +113,22 @@ describe('FillController with a new password', () => {
     expect(changedRequests()).toEqual([{ type: 'changed', url: 'https://example.com/' }]);
   });
 
+  it('only the newest page is asked about: an earlier tab that took a reset fill says nothing any more', async () => {
+    answerWith(CHANGE);
+    controller.report('poke');
+    await settle();
+    const second = { ...PAGE, tab: { ...PAGE.tab, id: 2 } };
+    tabs.active = second.tab;
+    controller.report('poke');
+    await settle();
+    controller.runtimeMessage({ type: 'changed' }, PAGE);
+    await settle();
+    expect(changedRequests()).toEqual([]);
+    controller.runtimeMessage({ type: 'changed' }, second);
+    await settle();
+    expect(changedRequests()).toHaveLength(1);
+  });
+
   it('an app from before this message answers with an error, and nothing breaks', async () => {
     channel.answer = (msg) => (msg.type === 'tab' ? { type: 'tab', id: 1, fill: CHANGE } : { type: 'error', id: 1, code: 'bad-request' });
     controller.report('poke');

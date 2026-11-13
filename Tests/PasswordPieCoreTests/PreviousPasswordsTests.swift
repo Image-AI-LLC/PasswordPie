@@ -289,11 +289,12 @@ final class PreviousPasswordsTests: XCTestCase {
         XCTAssertFalse(kept.contains { $0.hasPrefix("chrome-") }, "never-adopted Chrome values go first")
     }
 
-    func testACandidateStillExpiresAfterNinetyDays() {
+    /// The site may already hold it, and this may be the only copy: the 90 days do not remove it.
+    func testAWaitingCandidateIsKeptPastNinetyDays() {
         var entry = login("current")
         XCTAssertNotNil(PreviousPasswords.addCandidate("brand-new", on: &entry, now: now))
         XCTAssertNotNil(PreviousPasswords.candidate(of: entry, now: now.addingTimeInterval(89 * day)))
-        XCTAssertNil(PreviousPasswords.candidate(of: entry, now: now.addingTimeInterval(90 * day)))
+        XCTAssertEqual(PreviousPasswords.candidate(of: entry, now: now.addingTimeInterval(400 * day))?.value, "brand-new")
     }
 
     func testUsingTheCandidateMakesItTheSavedPasswordAndRetiresTheOldOne() throws {

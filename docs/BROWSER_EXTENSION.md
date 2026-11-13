@@ -164,6 +164,9 @@ browser and connection, from a page that site may fill (same site, no downgrade)
 unlocked and the account still has that site. It is used once; a newer one replaces it; locking deletes it. It holds
 no password.
 
+The extension reports for the newest page only: a tab that took an earlier reset fill stops sending `changed` once another
+tab takes a new one, since the app waits for one change and would name the newer account.
+
 The answer is always the same, matched or not, locked or not, with or without a `url`: it never says whether an account
 was waiting. It is never an `error`.
 

@@ -882,7 +882,7 @@ private struct PasswordReminderRow: View {
                     Spacer()
                     Button("Reset Password") { model.resetPassword() }
                         .controlSize(.small)
-                        .help("Opens the page where this password is changed.")
+                        .help("Opens the page where this password is changed. With the Chrome extension, a new password is filled in.")
                 }
                 if model.resetNotSaved {
                     Text("Couldn't save a new password. Nothing changed.")

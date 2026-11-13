@@ -344,6 +344,9 @@ export class FillController {
     // The newest fill decides: a plain one after it ends the wait for a submit.
     this.dropChange(tabId);
     if (fill.newPassword !== undefined) {
+      // The app waits for one change, the newest: a tab given a new password before this one says nothing any more,
+      // or its submit would be asked about under the newer account's name.
+      for (const other of [...this.changes.keys()]) this.dropChange(other);
       const changeExpiry = this.timers.setTimeout(() => this.dropChange(tabId), CHANGE_WATCH_MS);
       this.changes.set(tabId, { origin: fill.origin, expiry: changeExpiry });
     }
