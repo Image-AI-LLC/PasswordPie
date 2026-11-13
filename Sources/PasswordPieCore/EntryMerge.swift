@@ -11,6 +11,7 @@ public enum EntryMerge {
         key.caseInsensitiveCompare(keepSeparateKey) == .orderedSame
             || key.caseInsensitiveCompare(manifestKey) == .orderedSame
             || key.caseInsensitiveCompare(PreviousPasswords.key) == .orderedSame
+            || PasswordRotation.isKey(key)
     }
 
     public static func keepsSeparate(_ entry: VaultEntry) -> Bool {

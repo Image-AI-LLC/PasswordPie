@@ -24,6 +24,10 @@ struct EditorView: View {
     @State private var unnamedOpen = false
     @State private var revealed: Set<UUID> = []
     @State private var confirmRemoveAll = false
+    /// Days between password changes: 0 is Never, -1 is Custom with `customDays`.
+    @State private var changeEvery = 0
+    @State private var customDays = ""
+    @State private var resetLink = ""
     /// The row Add Website or Add Field just made, which takes the keyboard.
     @State private var added: UUID?
 
@@ -35,6 +39,7 @@ struct EditorView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     identity
                     mainCard
+                    reminderCard
                     otherFieldsCard
                     if !unnamed.isEmpty { unnamedFieldsCard }
                     notesCard
@@ -83,6 +88,10 @@ struct EditorView: View {
             let custom = EntryFields.custom(of: entry)
             fields = custom.filter { !EntryFields.isUnnamed($0.name) }
             unnamed = custom.filter { EntryFields.isUnnamed($0.name) }
+            let days = PasswordRotation.period(of: entry) ?? 0
+            changeEvery = days == 0 || PasswordRotation.presets.contains(days) ? days : -1
+            customDays = changeEvery == -1 ? String(days) : ""
+            resetLink = PasswordRotation.resetLink(of: entry)
             loaded = true
         }
     }
@@ -146,6 +155,47 @@ struct EditorView: View {
                 added = row.id
                 websites.append(row)
             }
+        }
+    }
+
+    /// How often this password has to change, and where. docs/UX.md, "A reminder to change a password".
+    private var reminderCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            EditorSectionLabel(title: "Password reminder")
+            EditorCard {
+                EditorRow(label: "Change every") {
+                    Picker("Change every", selection: $changeEvery) {
+                        Text("Never").tag(0)
+                        ForEach(PasswordRotation.presets, id: \.self) { days in
+                            Text(days == 365 ? "1 year" : "\(days) days").tag(days)
+                        }
+                        Text("Custom…").tag(-1)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .padding(.leading, 2)
+                    if changeEvery == -1 {
+                        EditorField(placeholder: "90", text: $customDays).frame(width: 56)
+                        Text("days").font(.system(size: 12)).foregroundStyle(Palette.secondaryText(dark: dark))
+                    }
+                    Spacer(minLength: 0)
+                }
+                if changeEvery != 0 {
+                    EditorDivider()
+                    EditorRow(label: "Reset link") {
+                        EditorField(placeholder: "The page where you change it", text: $resetLink)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The period the rows say: nil for Never, or for a Custom that is not a number of days.
+    private var chosenPeriod: Int? {
+        switch changeEvery {
+        case 0: return nil
+        case -1: return Int(customDays.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
+        default: return changeEvery
         }
     }
 
@@ -380,6 +430,8 @@ struct EditorView: View {
         entry.favorite = favorite
         EntryMerge.setKeepSeparate(keepSeparate, on: &entry)
         EntryFields.apply(websites: websites, custom: fields + unnamed, to: &entry)
+        PasswordRotation.setPeriod(chosenPeriod, on: &entry)
+        PasswordRotation.setResetLink(chosenPeriod == nil ? "" : resetLink, on: &entry)
         session.saveEditing(entry)
     }
 }

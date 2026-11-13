@@ -1563,6 +1563,18 @@ final class VaultSession: ObservableObject {
         openedFiles[fileIndex].vault.entries[slot] = stored
     }
 
+    /// Every write is where a changed password is noticed, whichever way it changed: the reminder's clock starts again.
+    /// See "A reminder to change a password" in docs/UX.md.
+    private func stampPasswordDates(path: String) {
+        guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
+        let now = Date()
+        for slot in openedFiles[index].vault.entries.indices
+        where openedFiles[index].vault.entries[slot].fields.contains(where: { PasswordRotation.isKey($0.key) }) {
+            let known = PreviousPasswords.passwordDate(of: openedFiles[index].vault.entries[slot], fallback: nil)
+            PasswordRotation.reconcile(&openedFiles[index].vault.entries[slot], known: known, now: now)
+        }
+    }
+
     @discardableResult
     private func save() -> Bool {
         persist(path: databaseURL.path)
@@ -1571,6 +1583,7 @@ final class VaultSession: ObservableObject {
     /// Writes one file. The merged list is never saved into a single database. Returns whether the file was written.
     @discardableResult
     private func persist(path: String) -> Bool {
+        stampPasswordDates(path: path)
         let written = write(path: path)
         #if PP_DIRECT
         // Nothing unsaved stays in memory, so a background Chrome write cannot carry a change the person was told had failed.

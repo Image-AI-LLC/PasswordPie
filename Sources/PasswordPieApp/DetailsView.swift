@@ -165,6 +165,8 @@ final class DetailsModel: ObservableObject {
     /// When Chrome updated the saved password, for the label. Nil means it stays plain.
     @Published private(set) var chromeUpdatedAt: Date?
     @Published private(set) var fromChrome = false
+    /// Days until the password should be changed (negative once overdue). Nil without a reminder.
+    @Published private(set) var changeInDays: Int?
     @Published var revealed: Set<String> = []
     @Published var optionHeld = false
     @Published var flashing = false
@@ -253,6 +255,7 @@ final class DetailsModel: ObservableObject {
     private func apply(_ entry: VaultEntry) {
         favorite = entry.favorite
         fields = Self.detailFields(of: entry)
+        changeInDays = PasswordRotation.daysLeft(of: entry, now: Date())
         #if PP_DIRECT
         previous = PreviousPasswords.items(of: entry, now: Date())
         #endif
@@ -415,6 +418,12 @@ final class DetailsModel: ObservableObject {
     }
 
     /// Runs the field's action. The popover then hides for copy and open; a pinned window never does.
+    /// Opens the reset link, or the account's website when it has none.
+    func resetPassword() {
+        guard let entry = session.entry(entryID) else { return }
+        session.openURL(of: entryID, website: PasswordRotation.resetAddress(of: entry))
+    }
+
     func perform(_ action: FieldAction, on field: DetailField) {
         switch action {
         case .copy:
@@ -532,6 +541,7 @@ struct DetailsView: View {
                     DetailRow(model: model, premium: model.session.premium, field: field, focused: model.isFocused(.field(field.id)))
                     if field.kind == .password {
                         StrengthRow(password: field.value)
+                        if let days = model.changeInDays { PasswordReminderRow(model: model, days: days) }
                         if model.updateFailed { UpdateFailedRow(model: model) }
                         if !model.previous.isEmpty { PreviousPasswordsSection(model: model) }
                     }
@@ -848,6 +858,28 @@ private struct PreviousPasswordRow: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(previousPasswordCaption(item))
+    }
+}
+
+/// When the password should be changed, and the button that opens the page to change it.
+private struct PasswordReminderRow: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var model: DetailsModel
+    var days: Int
+
+    var body: some View {
+        DetailChrome(label: "change password") {
+            HStack {
+                Text(PasswordRotation.phrase(daysLeft: days))
+                    .font(.system(size: 13))
+                    .foregroundStyle(days <= 0 ? Palette.error(dark: colorScheme == .dark) : Color.primary)
+                Spacer()
+                Button("Reset Password") { model.resetPassword() }
+                    .controlSize(.small)
+                    .help("Opens the page where this password is changed.")
+            }
+        }
+        .frame(minHeight: 30)
     }
 }
 
