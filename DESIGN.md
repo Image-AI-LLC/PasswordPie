@@ -348,8 +348,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `on-selection` title, symbol and tile (14 %) and its line at 85 % (78 % falls to 4.1:1). VoiceOver reads the title, then the line. The
   group and the rows go with the first entry, and the generator returns to its usual place. Searching an empty
   database still shows "No items found", and the browser's site section stays above everything.
-- **Details popover** — header, then one field per value: username, password (+ strength and previous passwords), website,
-  one-time password, custom fields, notes, tags. Pin opens that account in its own utility window and
+- **Details popover** — header, then one field per value: username, password (+ strength and previous passwords),
+  one-time password, websites, custom fields, notes, tags. Up and down walk the same order. Pin opens that account in its own utility window and
   hides the menu.
 - **Pinned window** — one window per account; pinning again brings it forward and leaves it in place. A
   new window starts at the top-right of the screen; each further one steps 28 pt down and left. Its level
@@ -382,20 +382,28 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   summary, `accent-text` Review and a `text-secondary` ×. It never takes the keyboard.
 - **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
   in the last 5 s.
-- **Locked one-time code** — no Premium, on both channels. A 11 pt `lock.fill` in `text-secondary` and "Included with
-  Premium" in `body` `text-secondary`, with a compact primary split action button, Upgrade, always visible at the right.
-  Return on the row runs Upgrade. The item's code is never computed.
+- **Locked one-time code** — no Premium, on both channels. In the details the row keeps the unlocked row's height (45 pt),
+  so it does not jump when Premium arrives, and takes a `field-surface` 55 % tint across its width (the focused
+  `brand-accent` 20 % fill wins). An 8 pt `lock.fill` in `accent-text` 85 % follows the label. Where the code would be: six
+  7 pt dots in `accent-text` 50 %, 4.7 pt apart in two groups of three with one empty slot between them (centres 11.7 pt
+  apart, 23.4 pt across the gap), the first centre 17.5 pt from the row's leading edge, and their centre halfway between
+  the label's baseline and the row's bottom edge (29.5 pt down a 45 pt row). No countdown pie and no text. A compact primary
+  split action button, Upgrade to unlock, is always visible 10 pt from the right, centred in the row. Clicking the row or
+  the button, or Return on the row, runs it. VoiceOver reads "Locked. Included with Premium." for the dots, not each dot.
+  The item's code is never computed and its period never read.
 - **QR scan button** — at the end of the editor's One-time password field: `qrcode.viewfinder` as a borderless menu
   button. A click scans the clipboard; its menu has Scan Clipboard and Choose Image…. The whole row takes a dropped image
   or image file, and ⌘V of an image in the field scans it. A failure is one `caption` line in `error` under the field; a
-  code that reads shows under it as the **One-time code**, or the **Locked one-time code** with Upgrade.
+  code that reads shows under it as the **One-time code**, or the **Locked one-time code**'s dots with Upgrade to unlock (no
+  tint).
 - **Add Two-Step Code window** — 380 pt, `window-surface`, 16 pt padding, floating level so it stays over the browser.
   Choosing: a 22 pt `qrcode` symbol in `brand-accent`, the issuer in `body` semibold, the account in `body`, "Scanned on
   host" in `caption` `text-secondary`; "Add to" in `caption` semibold `text-secondary`; then a 220 pt list of radio rows
   (title, and username · "has a code" in `caption` `text-secondary`), the page's site first, a plain search field with an ink 20 % radius 5
   hairline (no system focus ring), the search results, and New Item with the title it will get. Cancel and Add (`BrandPrimaryButtonStyle`, default). Add on an
   item with a code asks "Replace the existing code?" (Replace is destructive). Added: "Added to <title>", the **One-time
-  code** on an ink 5 % radius 8 well with a quiet Copy and a primary Done; locked, the row's Upgrade is primary and Done a
+  code** on an ink 5 % radius 8 well with a quiet Copy and a primary Done; locked, the **Locked one-time code**'s dots and
+  Upgrade to unlock, which is primary, and Done a
   plain system button. Expired: one `body` line and a primary Close. Never the system's blue default button. Locking
   closes it.
 - **Preferences > Database, key file and master password** — below Touch ID, each after a divider. "Key file": `body`
