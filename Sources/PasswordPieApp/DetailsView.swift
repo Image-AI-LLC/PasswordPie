@@ -36,7 +36,7 @@ enum FieldAction: Equatable, Hashable {
         case .largeType: "Large Type"
         case .openAndFill: "Open and Fill"
         case .open: "Open"
-        case .upgrade: "Upgrade"
+        case .upgrade: "Upgrade to unlock"
         }
     }
 }
@@ -296,12 +296,13 @@ final class DetailsModel: ObservableObject {
         var fields: [DetailField] = []
         if !entry.username.isEmpty { fields.append(DetailField(id: "username", kind: .username, label: "username", value: entry.username, secret: false)) }
         if !entry.password.isEmpty { fields.append(DetailField(id: "password", kind: .password, label: "password", value: entry.password, secret: true)) }
+        // Right under the password (and its strength), before the websites.
+        if OneTimeCodes.hasCode(entry) { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
         if !entry.url.isEmpty { fields.append(DetailField(id: "url", kind: .url, label: "website", value: entry.url, secret: false)) }
         let otherWebsites = EntryMerge.otherWebsites(entry)
         for website in otherWebsites {
             fields.append(DetailField(id: "custom:" + website.key, kind: .otherWebsite(website.key), label: "website", value: website.value, secret: false))
         }
-        if OneTimeCodes.hasCode(entry) { fields.append(DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)) }
         let handled: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
         for field in entry.fields where !handled.contains(field.key.lowercased()) && !otherWebsites.contains(field) && !field.value.isEmpty && !field.key.lowercased().hasPrefix("timeotp") && !EntryMerge.isReservedKey(field.key) {
             fields.append(DetailField(id: "custom:" + field.key, kind: .custom(field.key), label: field.key, value: field.value, secret: field.protected))
@@ -599,6 +600,8 @@ struct DetailsView: View {
 private struct DetailChrome<Content: View>: View {
     var label: String
     var highlighted = false
+    /// A fill under the row when it has no keyboard focus: the locked one-time code's.
+    var tint: Color? = nil
     /// After the label: where this value came from.
     var labelDetail: AnyView? = nil
     @ViewBuilder var content: Content
@@ -615,7 +618,7 @@ private struct DetailChrome<Content: View>: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
         .frame(minHeight: 38)
-        .background(highlighted ? Palette.brandAccent.opacity(0.2) : Color.clear)
+        .background(highlighted ? Palette.brandAccent.opacity(0.2) : tint ?? Color.clear)
         .overlay(alignment: .top) { Rectangle().fill(Color.primary.opacity(0.1)).frame(height: 0.5) }
     }
 }
@@ -632,8 +635,14 @@ private struct DetailRow: View {
     var body: some View {
         let control = fieldControl(field, revealed: model.revealed.contains(field.id), codeLocked: !premium.hasPremium)
         // Upgrade is how a locked row says what to do, so it does not wait for a hover.
-        let actionShown = fieldActionsStayVisible(model.presentation) || control.primary == .upgrade || hovering || (focused && model.flashing)
-        DetailChrome(label: field.label, highlighted: focused, labelDetail: updateLabel) { value }
+        let locked = control.primary == .upgrade
+        let actionShown = fieldActionsStayVisible(model.presentation) || locked || hovering || (focused && model.flashing)
+        DetailChrome(
+            label: field.label,
+            highlighted: focused,
+            tint: locked ? Palette.fieldSurface(dark: colorScheme == .dark).opacity(0.55) : nil,
+            labelDetail: locked ? lockMark : updateLabel
+        ) { value }
             .contentShape(Rectangle())
             .onTapGesture { model.perform(control.primary, on: field) }
             .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
@@ -645,6 +654,15 @@ private struct DetailRow: View {
                 }
             }
             .onHover { hovering = $0 }
+    }
+
+    /// The small lock after "one-time password" without Premium. The dots say it in words for VoiceOver.
+    private var lockMark: AnyView {
+        // A 9 pt font draws the glyph about 8 pt tall, as in the approved mockup.
+        AnyView(Image(systemName: "lock.fill")
+            .font(.system(size: 9))
+            .foregroundStyle(Palette.accentText(dark: colorScheme == .dark).opacity(0.85))
+            .accessibilityHidden(true))
     }
 
     /// `· [Chrome] updated 2 days ago`, only on the password and only for a Chrome update.
@@ -679,6 +697,7 @@ private struct DetailRow: View {
         SplitActionButton(
             title: control.primary.title,
             prominence: control.primary == .upgrade ? .primary : .quiet,
+            weight: control.primary == .upgrade ? .semibold : .regular,
             items: control.menu.map { item in
                 SplitActionButton.Item(title: item.title) { model.perform(item, on: field) }
             }
@@ -888,14 +907,41 @@ struct OneTimeCodeView: View {
                 }
             }
         case .locked:
-            HStack(spacing: 6) {
-                Image(systemName: "lock.fill").font(.system(size: 11)).accessibilityHidden(true)
-                Text("Included with Premium").font(.system(size: 13))
-            }
-            .foregroundStyle(Palette.secondaryText(dark: colorScheme == .dark))
+            LockedOneTimeCode()
         case .noCode:
             EmptyView()
         }
+    }
+}
+
+/// Six dots where the code would be, without Premium. It is given nothing about the code, so it cannot make one.
+/// An invisible code sizes it, so a row is exactly as tall as with a live code and does not jump when Premium arrives.
+struct LockedOneTimeCode: View {
+    static let accessibilityText = "Locked. Included with Premium."
+    static let diameter: CGFloat = 7
+    static let gap: CGFloat = 4.7
+
+    /// From the dots' centre down to the bottom of the code's line. A details row has 5 pt of padding under that line, so
+    /// the centre is 15.5 pt above the row's bottom edge: 29.5 pt down a 45 pt row, halfway between the label's baseline
+    /// and the bottom edge, and lower than the middle of a live code's digits.
+    static let centreAboveLineBottom: CGFloat = 10.5
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let ink = Palette.accentText(dark: colorScheme == .dark).opacity(0.5)
+        ZStack(alignment: .bottomLeading) {
+            Text(verbatim: "000 000").font(.system(size: 17, weight: .medium, design: .monospaced)).fixedSize().hidden()
+            HStack(spacing: Self.gap) {
+                ForEach(0..<3, id: \.self) { _ in Circle().fill(ink).frame(width: Self.diameter, height: Self.diameter) }
+                Color.clear.frame(width: Self.diameter, height: Self.diameter)
+                ForEach(3..<6, id: \.self) { _ in Circle().fill(ink).frame(width: Self.diameter, height: Self.diameter) }
+            }
+            .padding(.bottom, Self.centreAboveLineBottom - Self.diameter / 2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.accessibilityText)
+        .accessibilityAddTraits(.isStaticText)
     }
 }
 

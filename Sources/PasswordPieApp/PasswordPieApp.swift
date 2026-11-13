@@ -827,6 +827,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.panelController.menu.debugOpen(path: path.split(separator: "/").map(String.init))
             }
         }
+        // An `otpauth://` link arrives as if the browser extension scanned it on `PASSWORDPIE_SCAN_ORIGIN`; with
+        // `PASSWORDPIE_SCAN_ADD`, Add is pressed a second later, so the Added state can be captured.
+        if let link = env["PASSWORDPIE_SCAN"], case .scanned(let scanned) = OTPInputScanner.scan(text: link) {
+            otpScan.receive(scanned, origin: env["PASSWORDPIE_SCAN_ORIGIN"], browser: nil)
+            if env["PASSWORDPIE_SCAN_ADD"] != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.otpScan.add() }
+            }
+        }
     }
 
     private func statusSnapshot() -> [String: Any] {

@@ -382,15 +382,16 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   summary, `accent-text` Review and a `text-secondary` ×. It never takes the keyboard.
 - **One-time code** — grouped code in `code-lg` `accent-text` with a 14 pt countdown pie; both turn `error`
   in the last 5 s.
-- **Locked one-time code** — no Premium, on both channels. In the details the row keeps the unlocked row's height (45 pt),
-  so it does not jump when Premium arrives, and takes a `field-surface` 55 % tint across its width (the focused
-  `brand-accent` 20 % fill wins). An 8 pt `lock.fill` in `accent-text` 85 % follows the label. Where the code would be: six
-  7 pt dots in `accent-text` 50 %, 4.7 pt apart in two groups of three with one empty slot between them (centres 11.7 pt
-  apart, 23.4 pt across the gap), the first centre 17.5 pt from the row's leading edge, and their centre halfway between
-  the label's baseline and the row's bottom edge (29.5 pt down a 45 pt row). No countdown pie and no text. A compact primary
-  split action button, Upgrade to unlock, is always visible 10 pt from the right, centred in the row. Clicking the row or
-  the button, or Return on the row, runs it. VoiceOver reads "Locked. Included with Premium." for the dots, not each dot.
-  The item's code is never computed and its period never read.
+- **Locked one-time code** — no Premium, on both channels. In the details the row keeps the unlocked row's height (45
+  pt), so it does not jump when Premium arrives, and takes a `field-surface` 55 % tint across its width (the focused
+  `brand-accent` 20 % fill wins). A `lock.fill` about 8 pt tall (9 pt font) in `accent-text` 85 % follows the label.
+  Where the code would be: six 7 pt dots in `accent-text` 50 %, 4.7 pt apart in two groups of three with one empty slot
+  between them (centres 11.7 pt apart, 23.4 pt across the gap), the first centre 17.5 pt from the row's leading edge,
+  and their centre halfway between the label's baseline and the row's bottom edge (29.5 pt down a 45 pt row). No
+  countdown pie and no text. A compact primary split action button, Upgrade to unlock (label semibold), is always
+  visible 10 pt from the right, centred in the row. Clicking the row or the button, or Return on the row, runs it.
+  VoiceOver reads "Locked. Included with Premium." for the dots, not each dot. The item's code is never computed and its
+  period never read.
 - **QR scan button** — at the end of the editor's One-time password field: `qrcode.viewfinder` as a borderless menu
   button. A click scans the clipboard; its menu has Scan Clipboard and Choose Image…. The whole row takes a dropped image
   or image file, and ⌘V of an image in the field scans it. A failure is one `caption` line in `error` under the field; a

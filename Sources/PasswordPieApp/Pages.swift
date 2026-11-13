@@ -307,7 +307,7 @@ private struct OneTimeCodePreview: View {
             HStack(spacing: 8) {
                 OneTimeCodeView(access: access)
                 if access == .locked {
-                    SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
+                    SplitActionButton(title: FieldAction.upgrade.title, prominence: .primary, weight: .semibold, items: []) { session.requestPremium() }
                 }
             }
             .accessibilityElement(children: .combine)
