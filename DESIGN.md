@@ -403,6 +403,13 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   and Notes have a 11.5 pt medium `text-secondary` name over the card. Unnamed form fields is one folded row: a
   chevron, the name and the count; open, a small Remove All… button sits at its end and the rows follow.
   Behavior: docs/UX.md, "Edit every field of an item".
+- **Password reminder** — `error` is its only colour. In the menu, Passwords to Change is the first row: the
+  `clock.badge.exclamationmark.fill` symbol in `error`, the title, and the count in `error` `menu-item` 6 pt before
+  the arrow (`on-selection` on a selected row). A due account has a 6 pt `error` dot at the top right of its icon,
+  clear of the star and the Chrome badge at the bottom right. In the details, a 30 pt `change password` row under
+  strength: the phrase in `body` (`error` from the due day on) and a small Reset Password button at the end. In the
+  editor, a Password reminder card after the main one: Change every (a pop-up, and a 56 pt days field for Custom) and,
+  once a period is set, Reset link. Behavior: docs/UX.md, "A reminder to change a password".
 - **QR scan button** — at the end of the editor's One-time password field: `qrcode.viewfinder` as a borderless menu
   button. A click scans the clipboard; its menu has Scan Clipboard and Choose Image…. The whole row takes a dropped image
   or image file, and ⌘V of an image in the field scans it. A failure is one `caption` line in `error` under the field; a

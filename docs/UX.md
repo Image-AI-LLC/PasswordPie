@@ -941,3 +941,62 @@ under Credit Cards. Add "Cardholder name", "Expires" and "CVV" the same way.
 5. Edit an item with four `no_name_…` fields: under Other fields is one line, "Unnamed form fields 4". Open it,
    rename one to "Language" and Save. Edit again: Language is under Other fields, and the line says 3. Open it, press
    Remove All…, confirm, and Save.
+
+## A reminder to change a password
+
+**In one line:** tell PasswordPie how often an account's password has to change, and the account moves to the top of
+the menu when it is time, with a button that opens the page to change it.
+
+### The problem
+
+Work accounts, banks and school systems make you change the password every 60 or 90 days. You find out on the day it
+stops working, usually when you need to get in.
+
+### What happens now
+
+**Set it.** In the item editor, the **Password reminder** group has two rows:
+
+- **Change every**: Never (the default), 30, 60, 90 or 180 days, 1 year, or Custom with a number of days.
+- **Reset link**: the page where this account's password is changed. Optional; without it, the account's website is
+  used.
+
+**The clock.** The period counts from the day the password last changed. When you turn the reminder on, that is the
+day PasswordPie knows the password was set; when it does not know, the day you turned it on.
+
+**When it is due.** The menu gets a first row, **Passwords to Change**, with the number of accounts in red. It opens to
+the list of them, the longest overdue first. Each of those accounts also has a small red dot on its icon wherever it
+is listed. With nothing due, the row is not there.
+
+In the account's details, under the password's strength, a **change password** row says when: "in 12 days", "today" or
+"3 days ago" (in red once due). Its **Reset Password** button opens the reset link in the browser.
+
+**After you change it.** The clock starts again by itself, whichever way the new password arrived:
+
+- you typed or generated it in the editor,
+- Chrome saved the new password and PasswordPie took it ("The newest password wins"),
+- you restored a previous password,
+- another app changed the password in the database.
+
+The account leaves Passwords to Change, and the details say "in 90 days" again. There is nothing to tick off.
+
+### When it does not apply
+
+- Nothing reminds you unless you set a period on that account. There is no setting for all accounts.
+- No notification, no sound and no mark on the menu bar icon: the reminder is in the menu when you open it.
+- PasswordPie does not change the password on the website. Reset Password opens the page; you change it there.
+- Items in the Recycle Bin are never due.
+- A Chrome login has no reminder until it is saved to your database; setting a period in the editor saves it.
+- Splitting a merged item does not carry the reminder to the restored accounts.
+
+### Privacy
+
+The period, the link and the date live in the item, inside your database. Nothing is sent anywhere.
+
+### Demo script
+
+1. Edit an item "Payroll" and set Change every to 30 days and Reset link to `https://example.com/reset`. Save. Its
+   details show "change password · in 30 days".
+2. Set the Mac's date 31 days ahead and open the menu: the first row is Passwords to Change 1. Open it: Payroll, with a
+   red dot. Its details say "1 day ago" in red.
+3. Press Reset Password: the browser opens `https://example.com/reset`.
+4. Edit Payroll, press Generate, and Save. The row is gone from the menu and the details say "in 30 days".
