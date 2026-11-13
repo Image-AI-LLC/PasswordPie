@@ -143,7 +143,7 @@ struct OTPScanConfirmView: View {
                 if access.isAvailable {
                     SplitActionButton(title: "Copy", prominence: .quiet, items: []) { session.copy(.oneTimePassword, of: id) }
                 } else if access == .locked {
-                    SplitActionButton(title: "Upgrade", prominence: .primary, items: []) { session.requestPremium() }
+                    SplitActionButton(title: FieldAction.upgrade.title, prominence: .primary, weight: .semibold, items: []) { session.requestPremium() }
                 }
             }
             .padding(10)

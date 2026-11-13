@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 @testable import PasswordPieCore
 import XCTest
 @testable import PasswordPie
@@ -32,7 +33,7 @@ final class PremiumGateTests: XCTestCase {
 
     private func session(premium: Bool, entries: [VaultEntry] = [PremiumFixtures.login()]) async -> VaultSession {
         #if PP_DIRECT
-        if premium { secrets.values[.activation] = ActivationLink.token(in: PassKey.activationLink(expires: PremiumFixtures.now.addingTimeInterval(7 * 86400))) }
+        secrets.values[.activation] = premium ? ActivationLink.token(in: PassKey.activationLink(expires: PremiumFixtures.now.addingTimeInterval(7 * 86400))) : nil
         let store = PremiumStore.testing(secrets: secrets, now: { [unowned self] in self.clock })
         store.start()
         #else
@@ -221,7 +222,191 @@ final class PremiumGateTests: XCTestCase {
         let field = DetailField(id: "otp", kind: .oneTimePassword, label: "one-time password", value: "", secret: false)
         XCTAssertEqual(fieldControl(field, revealed: false, codeLocked: true), FieldControl(primary: .upgrade, menu: []))
         XCTAssertEqual(fieldControl(field, revealed: false, codeLocked: false), FieldControl(primary: .copy, menu: []))
-        XCTAssertEqual(FieldAction.upgrade.title, "Upgrade")
+        XCTAssertEqual(FieldAction.upgrade.title, "Upgrade to unlock")
+    }
+
+    /// The code sits right under the password, so it is next to what it goes with. Up and down walk the same order.
+    func testTheCodeRowComesRightAfterThePasswordBeforeTheWebsites() async throws {
+        var entry = PremiumFixtures.login()
+        entry.fields.append(VaultField(key: "URL (2)", value: "https://second.example"))
+        entry.fields.append(VaultField(key: "account id", value: "4821"))
+        entry.notes = "a note"
+        let kinds = DetailsModel.detailFields(of: entry).map(\.kind)
+        XCTAssertEqual(kinds, [.username, .password, .oneTimePassword, .url, .otherWebsite("URL (2)"), .custom("account id"), .notes])
+        let session = await session(premium: false, entries: [entry])
+        let model = try model(session)
+        XCTAssertEqual(model.focusedRow, .field("password"))
+        model.move(1)
+        XCTAssertEqual(model.focusedRow, .field("otp"))
+        model.move(1)
+        XCTAssertEqual(model.focusedRow, .field("url"))
+    }
+
+    func testEveryLockedCodeOffersTheSameUpgradeTitle() throws {
+        for file in try appFiles() {
+            XCTAssertFalse(file.text.contains(#"SplitActionButton(title: "Upgrade""#), "\(file.name) words Upgrade on its own")
+        }
+    }
+
+    /// The locked look carries nothing about the code: no countdown, no period, no settings, no code.
+    func testTheLockedLookNeverAsksForACode() throws {
+        let details = try XCTUnwrap(try appFiles().first { $0.name == "DetailsView.swift" }?.text)
+        let start = try XCTUnwrap(details.range(of: "struct LockedOneTimeCode: View {"))
+        let end = try XCTUnwrap(details.range(of: "\n}\n", range: start.upperBound..<details.endIndex))
+        let locked = String(details[start.lowerBound..<end.upperBound])
+        for word in ["OneTimeCodes", "CountdownPie", "TimelineView", "period", "settings"] {
+            XCTAssertFalse(locked.contains(word), "the locked look reads \(word)")
+        }
+        XCTAssertEqual(locked.components(separatedBy: "Included with Premium").count, 2, "said once, to VoiceOver only")
+        XCTAssertTrue(locked.contains("static let accessibilityText = \"Locked. Included with Premium.\""))
+        XCTAssertTrue(squeezed(details).contains("case.locked:LockedOneTimeCode()"), "OneTimeCodeView draws the locked look for .locked")
+    }
+
+    /// The dots say nothing, so the row says in words that the code is locked and comes with Premium: one element with
+    /// that label, its dots not read one by one, and the lock after the label hidden. SwiftUI builds no accessibility
+    /// tree offscreen, so this reads the view's source; the PR's check reads the running app's tree.
+    func testVoiceOverHearsThatTheCodeIsLockedAndIncludedWithPremium() throws {
+        XCTAssertEqual(LockedOneTimeCode.accessibilityText, "Locked. Included with Premium.")
+        let details = try XCTUnwrap(try appFiles().first { $0.name == "DetailsView.swift" }?.text)
+        let start = try XCTUnwrap(details.range(of: "struct LockedOneTimeCode: View {"))
+        let end = try XCTUnwrap(details.range(of: "\n}\n", range: start.upperBound..<details.endIndex))
+        let locked = String(details[start.lowerBound..<end.upperBound])
+        XCTAssertTrue(squeezed(locked).contains(".accessibilityElement(children:.ignore)"))
+        XCTAssertTrue(squeezed(locked).contains(".accessibilityLabel(Self.accessibilityText)"))
+        let lockMark = try XCTUnwrap(details.range(of: "private var lockMark: AnyView {"))
+        let lockEnd = try XCTUnwrap(details.range(of: "\n    }\n", range: lockMark.upperBound..<details.endIndex))
+        XCTAssertTrue(details[lockMark.lowerBound..<lockEnd.upperBound].contains(".accessibilityHidden(true)"))
+    }
+
+    /// Source text without whitespace, so formatting never decides a test.
+    private func squeezed(_ text: String) -> String {
+        text.filter { !$0.isWhitespace }
+    }
+
+    // MARK: The locked row as drawn
+
+    private struct Drawn {
+        var height: CGFloat
+        var bitmap: NSBitmapImageRep
+        var scale: CGFloat
+    }
+
+    /// The real details of an item with only a code, so the code's row is the only row under the header.
+    private func drawDetails(premium: Bool, dark: Bool) async throws -> Drawn {
+        var entry = VaultEntry()
+        entry.title = "Bank"
+        entry.otp = PremiumFixtures.login().otp
+        // A new database each time: one that exists already unlocks asynchronously, and saving would race it.
+        setenv("PASSWORDPIE_DB", directory.appendingPathComponent("draw-\(UUID().uuidString).kdbx").path, 1)
+        let session = await session(premium: premium, entries: [entry])
+        XCTAssertFalse(session.locked)
+        let model = try model(session)
+        model.focusedRow = .previousHeader // no row has the keyboard, so the tint shows
+        var fitted: CGFloat = 0
+        let host = NSHostingView(rootView: DetailsView(model: model) { fitted = $0 })
+        host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        host.frame = CGRect(x: 0, y: 0, width: 400, height: 300)
+        for _ in 0..<10 {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        if let dir = ProcessInfo.processInfo.environment["PP_TEST_DUMP"] {
+            try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("details-\(premium ? "premium" : "free")-\(dark ? "dark" : "light").png"))
+        }
+        return Drawn(height: fitted, bitmap: bitmap, scale: CGFloat(bitmap.pixelsWide) / host.bounds.width)
+    }
+
+    private func pixel(_ drawn: Drawn, x: CGFloat, y: CGFloat) -> NSColor? {
+        drawn.bitmap.colorAt(x: Int(x * drawn.scale), y: Int(y * drawn.scale))?.usingColorSpace(.sRGB)
+    }
+
+    /// Rows of the tint, read down the right edge where nothing else is drawn: top and bottom in points.
+    private func tintedRows(_ drawn: Drawn) -> ClosedRange<CGFloat>? {
+        var rows: [CGFloat] = []
+        for py in 0..<drawn.bitmap.pixelsHigh {
+            let y = CGFloat(py) / drawn.scale
+            if let color = pixel(drawn, x: 396, y: y), color.alphaComponent > 0.4 { rows.append(y) }
+        }
+        guard let first = rows.first, let last = rows.last else { return nil }
+        return first...(last + 1 / drawn.scale)
+    }
+
+    /// Pixels in `rect` (points) that `matches`, as points.
+    private func points(_ drawn: Drawn, in rect: CGRect, _ matches: (NSColor) -> Bool) -> [CGPoint] {
+        var found: [CGPoint] = []
+        for py in Int(rect.minY * drawn.scale)..<Int(rect.maxY * drawn.scale) {
+            for px in Int(rect.minX * drawn.scale)..<Int(rect.maxX * drawn.scale) {
+                guard let color = drawn.bitmap.colorAt(x: px, y: py)?.usingColorSpace(.sRGB), matches(color) else { continue }
+                found.append(CGPoint(x: (CGFloat(px) + 0.5) / drawn.scale, y: (CGFloat(py) + 0.5) / drawn.scale))
+            }
+        }
+        return found
+    }
+
+    private func isOrange(_ color: NSColor) -> Bool {
+        color.alphaComponent > 0.6 && color.redComponent - color.blueComponent > 0.2
+    }
+
+    func testTheLockedRowIsAsTallAsTheUnlockedOne() async throws {
+        for dark in [true, false] {
+            let locked = try await drawDetails(premium: false, dark: dark)
+            let unlocked = try await drawDetails(premium: true, dark: dark)
+            XCTAssertGreaterThan(locked.height, 0)
+            XCTAssertEqual(locked.height, unlocked.height, accuracy: 0.5, "the row does not jump when Premium arrives")
+            let tint = try XCTUnwrap(tintedRows(locked), "the locked row is tinted across its width")
+            XCTAssertEqual(tint.upperBound - tint.lowerBound, 45, accuracy: 1.5)
+            XCTAssertNil(tintedRows(unlocked), "the unlocked row keeps its look")
+        }
+    }
+
+    /// The owner's note: the dots sat too close to the label and too far from the bottom edge.
+    func testTheDotsSitWhereTheMockupPutsThem() async throws {
+        for dark in [true, false] {
+            let drawn = try await drawDetails(premium: false, dark: dark)
+            let row = try XCTUnwrap(tintedRows(drawn))
+            let below = CGRect(x: 0, y: row.lowerBound + 19, width: 120, height: row.upperBound - row.lowerBound - 19)
+            let dots = points(drawn, in: below, isOrange)
+            XCTAssertFalse(dots.isEmpty)
+            let xs = dots.map(\.x), ys = dots.map(\.y)
+            let top = try XCTUnwrap(ys.min()), bottom = try XCTUnwrap(ys.max())
+            XCTAssertEqual((top + bottom) / 2 - row.lowerBound, 29.5, accuracy: 0.5, "halfway between the label's baseline and the row's bottom")
+            XCTAssertEqual(bottom - top, 7, accuracy: 1.5, "7 pt dots")
+            // Columns with ink, grouped into dots.
+            let columns = Set(xs.map { ($0 * drawn.scale).rounded(.down) }).sorted()
+            var runs: [[CGFloat]] = []
+            for column in columns {
+                if let last = runs.last?.last, column - last <= 1 { runs[runs.count - 1].append(column) } else { runs.append([column]) }
+            }
+            let centres = runs.map { (($0.first! + $0.last! + 1) / 2) / drawn.scale }
+            XCTAssertEqual(centres.count, 6, "six dots: \(centres)")
+            guard centres.count == 6 else { continue }
+            for (centre, expected) in zip(centres, [17.5, 29.2, 40.9, 64.3, 76.0, 87.7]) {
+                XCTAssertEqual(centre, expected, accuracy: 1)
+            }
+        }
+    }
+
+    func testUpgradeToUnlockSitsAtTheRightCentredInTheRow() async throws {
+        let drawn = try await drawDetails(premium: false, dark: true)
+        let row = try XCTUnwrap(tintedRows(drawn))
+        let button = points(drawn, in: CGRect(x: 200, y: row.lowerBound, width: 200, height: row.upperBound - row.lowerBound)) { color in
+            abs(color.redComponent - 0xEE / 255.0) < 0.03 && abs(color.greenComponent - 0x8C / 255.0) < 0.03 && abs(color.blueComponent - 0x32 / 255.0) < 0.03
+        }
+        let right = try XCTUnwrap(button.map(\.x).max()), top = try XCTUnwrap(button.map(\.y).min()), bottom = try XCTUnwrap(button.map(\.y).max())
+        XCTAssertEqual(400 - right, 10, accuracy: 1.5)
+        XCTAssertEqual(bottom - top, 20, accuracy: 1.5)
+        XCTAssertEqual((top + bottom) / 2, (row.lowerBound + row.upperBound) / 2, accuracy: 1)
+    }
+
+    func testALockFollowsTheLabel() async throws {
+        let drawn = try await drawDetails(premium: false, dark: true)
+        let row = try XCTUnwrap(tintedRows(drawn))
+        let lock = points(drawn, in: CGRect(x: 80, y: row.lowerBound + 2, width: 60, height: 15), isOrange)
+        XCTAssertFalse(lock.isEmpty, "an orange lock after \"one-time password\"")
+        let height = (lock.map(\.y).max() ?? 0) - (lock.map(\.y).min() ?? 0)
+        XCTAssertLessThanOrEqual(height, 10, "a small lock")
     }
 
     func testBeingLockedOnlyChangesTheCodeRow() {

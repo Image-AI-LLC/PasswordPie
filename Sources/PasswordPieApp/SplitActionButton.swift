@@ -67,6 +67,8 @@ struct SplitActionButton: View {
     var title: String
     var size: Size = .compact
     var prominence: Prominence = .quiet
+    /// Semibold only for Upgrade to unlock, the one word a locked code row has.
+    var weight: Font.Weight = .regular
     var items: [Item] = []
     var action: () -> Void
 
@@ -75,7 +77,7 @@ struct SplitActionButton: View {
         HStack(spacing: 0) {
             Button(action: action) {
                 Text(title)
-                    .font(.system(size: size.fontSize))
+                    .font(.system(size: size.fontSize, weight: weight))
                     .foregroundStyle(colors.label)
                     .padding(.horizontal, size.labelPadding)
                     .frame(height: size.height)

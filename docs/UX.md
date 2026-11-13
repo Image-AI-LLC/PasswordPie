@@ -78,21 +78,23 @@ thing worth paying for. Everything else, including storing the secret itself, st
 For a while the browser extension had an account of its own: you signed in to it, and it carried Premium to the app.
 That put a sign-in between a click on the toolbar button and your passwords. The extension is a bridge between the
 browser and the app, and nothing more. Whether you have Premium is the app's business alone: it knows, it shows Upgrade
-on the code's row when you do not, and it sends you to the right place to buy.
+to unlock on the code's row when you do not, and it sends you to the right place to buy.
 
 ### What happens now
 
 The free version does everything except make a code: search, copy, fill, edit, import, Touch ID, pinned windows.
 
-An item with a two-step code still says so. Its "one-time password" row shows a lock, "Included with Premium", and an
-Upgrade button. Upgrade opens a small Premium window.
+An item with a two-step code still says so. Its "one-time password" row sits under the password and its strength bar,
+with a small lock after its name, six dots where the code would be, and an **Upgrade to unlock** button. The row is as
+tall as a live code's, so nothing moves when Premium arrives. Clicking the row or the button opens a small Premium
+window. VoiceOver reads the row as locked and included with Premium.
 
 Where Premium comes from depends on where the app came from.
 
 | | App Store app | Downloaded app |
 |---|---|---|
 | Premium comes from | A purchase on your Apple Account, or activation from passwordpie.com | Activation from passwordpie.com, where you buy it |
-| Upgrade, on a code's row, opens | The plans, bought through Apple | The Premium window, whose **Get Premium** opens passwordpie.com |
+| Upgrade to unlock, on a code's row, opens | The plans, bought through Apple | The Premium window, whose **Get Premium** opens passwordpie.com |
 | Signing in | Never. There is no account in this version. | Only on passwordpie.com, to buy and to press Activate. Never in the app or the browser extension. |
 | What the app sends over the network | Nothing | Nothing |
 
@@ -144,7 +146,7 @@ downloaded app says which: "This activation link has run out." or "This activati
 The downloaded app has no sign-in either, and it cannot sell through Apple. Premium is bought on passwordpie.com and
 reaches this Mac by activation, the same one as above:
 
-1. On a locked code's row, press **Upgrade**. The Premium window opens. **Get Premium** opens passwordpie.com to buy,
+1. On a locked code's row, press **Upgrade to unlock**. The Premium window opens. **Get Premium** opens passwordpie.com to buy,
    once or yearly; **Redeem a Key** opens passwordpie.com/redeem.
 2. After the payment or the key, the page shows **Activate**. Press it and allow the browser to open PasswordPie.
 3. The Premium window says Premium is on, and until when. The codes are unlocked, in the app and in the browser.
@@ -223,7 +225,7 @@ Manage Subscription. If you hold both plans, it reminds you that the yearly one 
 
 Use a database with one login that has a two-step code. For the App Store app, a sandbox Apple Account.
 
-1. Press the menu shortcut, search for the login, and press → to open its details. The row shows the lock and Upgrade.
+1. Press the menu shortcut, search for the login, and press → to open its details. The row shows the lock, six dots and Upgrade to unlock.
 2. Copy something else to the clipboard. Press ⌥⌘C. The Premium window opens with the plans, and no sign-in anywhere.
    Paste: your clipboard is unchanged.
 3. Pin the login with ⌘O. Buy Lifetime. The window closes, and the pinned window now shows a live code with its countdown.
@@ -441,8 +443,8 @@ passwordpie.com**.
 | ⌥Return (Open and Fill) | Opens the website in a new tab and fills it | The same |
 
 Return fills from the account's details too. Press → to see the username and password, then Return: with the username or
-password selected it fills, exactly as Return on the account's row does. On the other fields of the details (a website,
-the one-time password, notes, your own fields) Return keeps doing what that field's button does: open, or copy.
+password selected it fills, exactly as Return on the account's row does. On the other fields of the details (the one-time
+password, a website, notes, your own fields) Return keeps doing what that field's button does: open, or copy.
 
 A sign-in that asks for the username first and the password on the next step gets both: the username now, and the password
 when its field appears, within 30 seconds.
@@ -723,7 +725,7 @@ the current code shows under it. The button's menu also has **Choose Image…**.
 onto the row, or paste it into the field with ⌘V. A copied `otpauth://` link works the same way.
 
 Scanning and saving the secret is free. Seeing the code needs Premium: without it, the window and the editor show the
-code row locked, "Included with Premium", as an item's details do.
+code row locked, six dots and **Upgrade to unlock**, as an item's details do.
 
 ### Replacing a code
 
