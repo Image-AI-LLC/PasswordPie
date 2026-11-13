@@ -122,17 +122,22 @@ public enum LegacyMigration {
         return outcomes
     }
 
-    /// Preferences, then the keychain items of the databases those preferences name. False when it ran before.
+    /// Preferences, then the keychain items of the databases those preferences name. `defaultDatabasePath` stands in when
+    /// no database was ever chosen: earlier builds saved `databasePath` only on a change. False when it ran before.
+    ///
+    /// One marker for every build flavour: a debug build, which shares the installed app's preferences but keeps Premium
+    /// under `.account.dev`, can run it first on a development Mac and leave `.account` uncopied. Accepted (dev Macs only).
     @discardableResult
     public static func runOnce(
         defaults: UserDefaults = .standard,
         legacyPreferences: [String: Any]?,
         keychain: LegacyKeychain = LoginKeychain(),
-        services: Services
+        services: Services,
+        defaultDatabasePath: String? = nil
     ) -> Bool {
         guard !defaults.bool(forKey: doneKey) else { return false }
         migratePreferences(from: legacyPreferences, into: defaults)
-        let paths = databasePaths(current: defaults.string(forKey: "databasePath"), remembered: defaults.stringArray(forKey: "databasePaths"))
+        let paths = databasePaths(current: defaults.string(forKey: "databasePath") ?? defaultDatabasePath, remembered: defaults.stringArray(forKey: "databasePaths"))
         _ = migrateKeychain(keychainItems(databasePaths: paths, services: services), keychain: keychain)
         defaults.set(true, forKey: doneKey)
         return true

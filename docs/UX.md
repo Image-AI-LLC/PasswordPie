@@ -791,6 +791,7 @@ the version you have and with the next one.
 - **Accessibility access**, at the first Fill: macOS asks again. In System Settings, PasswordPie may be listed twice;
   turn on the one that is off. The other one can be removed with −.
 - **The Safari extension**: turn PasswordPie on again in Safari > Settings > Extensions.
+- **AutoFill**, if you turned PasswordPie on in System Settings > General > AutoFill & Passwords: turn it on again there.
 - **Premium**: press Activate in your account settings on passwordpie.com again.
 
 Nothing asks about what the old version kept in the keychain: it is left alone. One prompt can come from Chrome, not

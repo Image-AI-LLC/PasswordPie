@@ -45,6 +45,7 @@ reads a preference; marker `legacyNamespaceMigrated`):
 | Touch ID secret, remembered key file, Premium activation (login keychain) | Only when readable without a dialog. The old items' access lists name the old signature, so in practice no: the lock screen asks for the master password once, and that unlock turns Touch ID back on (a Touch ID flag with no secret turns itself off quietly). A key file is chosen again on the lock screen; Premium is activated again from passwordpie.com |
 | Accessibility access (Fill by typing, the URL read) | No: macOS asks again at the first Fill. System Settings may list PasswordPie twice; the new one is the one that is off |
 | Safari extension | No: Safari lists it as new; turn it on again in Safari's settings |
+| AutoFill provider (`.autofill`) | No: a new provider to macOS; turned on again in System Settings > AutoFill & Passwords where it was on |
 | Chrome extension | Yes: the app installs the old host name too (BROWSER_EXTENSION.md, "Host manifests") |
 | Site icon cache | No: the extension sends icons again as sites are visited |
 | Access to Chrome Safe Storage (Chrome passwords, when on) | No: that item's access list names the old signature, so macOS asks once; Always Allow ends it |

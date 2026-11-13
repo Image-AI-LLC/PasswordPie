@@ -33,7 +33,8 @@ enum PasswordPieMain {
                 keyFile: VaultSession.keyFileService,
                 premium: PremiumChannel.keychainService,
                 premiumAccounts: [PremiumSecret.activation.rawValue]
-            )
+            ),
+            defaultDatabasePath: VaultSession.defaultDatabaseURL.path
         )
         #endif
     }

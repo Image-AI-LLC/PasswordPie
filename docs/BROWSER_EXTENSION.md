@@ -26,7 +26,8 @@ Firefox.
 The extension connects with `connectNative('com.passwordpie')` from 0.5.0. Until 2026-11-13 everything was named
 `com.oldcai.passwordpie`, and the store extension up to 0.4.0 still connects to that name. So at every launch the app
 writes two manifests, `com.passwordpie.json` and `com.oldcai.passwordpie.json`, both naming the same
-`PasswordPieBrowserHost` and the same `allowed_origins` (`BridgeConstants.nativeHostNames`). Chrome starts the same host
+`PasswordPieBrowserHost` and the same `allowed_origins` (`BridgeConstants.chromeExtensionIDs`). The names are
+`BridgeConstants.nativeHostNames`. Chrome starts the same host
 for either name; the host does not care which one.
 
 The legacy one is transitional: remove `legacyNativeHostName` (and its manifest) once the store's live version is 0.5.0

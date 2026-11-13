@@ -207,6 +207,13 @@ final class LegacyMigrationRunTests: XCTestCase {
         XCTAssertEqual(keychain.reads.count, readsBefore)
     }
 
+    func testTheDefaultDatabaseCountsWhenNoneWasEverChosen() {
+        let keychain = FakeKeychain()
+        keychain.put("com.oldcai.passwordpie", "/default.kdbx", "master")
+        LegacyMigration.runOnce(defaults: defaults, legacyPreferences: ["searchAllFields": true], keychain: keychain, services: services, defaultDatabasePath: "/default.kdbx")
+        XCTAssertEqual(keychain.item("com.passwordpie", "/default.kdbx"), Data("master".utf8))
+    }
+
     func testAnUnreadableKeychainStillFinishesAndIsNotRetried() {
         let keychain = FakeKeychain()
         keychain.unreadable["com.oldcai.passwordpie|/a.kdbx"] = errSecInteractionNotAllowed
@@ -222,7 +229,9 @@ final class LegacyMigrationRunTests: XCTestCase {
     }
 }
 
-/// The real login keychain, under test-only services, read with keychain UI turned off like the app does.
+/// The real login keychain, under test-only services, read with keychain UI turned off like the app does. An item this
+/// process wrote is readable and copied; one another program wrote (here `/usr/bin/security`, the only app on its access
+/// list) is what an upgrade meets in practice: unreadable, no dialog, nothing copied.
 final class LoginKeychainMigrationTests: XCTestCase {
     private var newService = ""
     private var account = ""
@@ -251,6 +260,30 @@ final class LoginKeychainMigrationTests: XCTestCase {
 
         XCTAssertEqual(LegacyMigration.migrateKeychain([item], keychain: LoginKeychain())[item], .copied)
         XCTAssertEqual(TouchIDSecretStore(service: newService).load(account: account).secret, Data("päss".utf8))
+    }
+
+    func testAnItemOfAnotherProgramIsLeftWithoutADialog() throws {
+        try requireKeychain()
+        let legacyService = try XCTUnwrap(AppNamespace.legacyName(for: newService))
+        try security(["add-generic-password", "-s", legacyService, "-a", account, "-w", "not-a-secret"])
+        defer { try? security(["delete-generic-password", "-s", legacyService, "-a", account]) }
+        let item = LegacyKeychainItem(service: newService, account: account)
+
+        guard case .unreadable = LegacyMigration.migrateKeychain([item], keychain: LoginKeychain())[item] else {
+            return XCTFail("an item on another program's access list must read as unreadable")
+        }
+        XCTAssertEqual(TouchIDSecretStore(service: newService).load(account: account).status, errSecItemNotFound)
+    }
+
+    private func security(_ arguments: [String]) throws {
+        let tool = Process()
+        tool.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        tool.arguments = arguments
+        tool.standardOutput = FileHandle.nullDevice
+        tool.standardError = FileHandle.nullDevice
+        try tool.run()
+        tool.waitUntilExit()
+        guard tool.terminationStatus == 0 else { throw XCTSkip("security \(arguments[0]) failed (\(tool.terminationStatus))") }
     }
 
     func testAMissingItemIsAbsent() throws {
