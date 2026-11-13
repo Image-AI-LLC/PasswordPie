@@ -8,7 +8,7 @@
 // The pages are a sign-in for Fernway, a made-up team workspace. The name, the leaf mark and the colours are invented
 // for these pages and copy no real site; the video serves them as https://fernway.example (a reserved domain).
 //
-// - /login: email and password, then /login/verify: six code boxes, then /home, "Welcome back". Any email and password
+// - /login: email and password, then /login/verify: six code boxes, then /home, "Welcome back". Any username and password
 //   work.
 //   The two-step secret is JBSWY3DPEHPK3PXP (otpauth://totp/Demo:ada?secret=JBSWY3DPEHPK3PXP&issuer=Demo).
 // - /demo/login and /demo/code are the same two pages under their old addresses.
@@ -98,7 +98,7 @@ const page = (title, content) => `<!doctype html><html lang="en"><head><meta cha
 const BRAND = `<aside class="brand"><div class="logo">${LEAF}Fernway</div>
 <p>Plans, notes and files for small teams.</p></aside>`;
 
-const LOGIN = (action) => page('Sign in · Fernway', `${BRAND}<main><form class="card" method="post" action="${action}">
+const LOGIN = (action) => page('Sign in · Fernway', `${BRAND}<main><form class="card" method="post" action="${action}" novalidate>
   <h1>Sign in to Fernway</h1><p class="sub">Welcome back. Pick up where your team left off.</p>
   <label for="email">Email</label>
   <input id="email" name="username" type="email" autocomplete="username">

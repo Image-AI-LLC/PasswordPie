@@ -105,9 +105,13 @@ function startRecording(file) {
 }
 
 async function stopRecording({ proc }) {
-  const done = new Promise((r) => proc.on('exit', r));
+  if (proc.exitCode !== null || proc.signalCode !== null) {
+    throw new Error(`recorder exited ${proc.exitCode ?? proc.signalCode} before it was stopped`);
+  }
+  const done = new Promise((r) => proc.once('exit', (code, signal) => r({ code, signal })));
   proc.kill('SIGINT');
-  await done;
+  const { code, signal } = await done;
+  if (code !== 0) throw new Error(`recorder exited ${code ?? signal}`);
 }
 
 const nearestRank = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)];
