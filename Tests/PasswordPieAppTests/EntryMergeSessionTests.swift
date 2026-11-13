@@ -91,11 +91,35 @@ final class EntryMergeSessionTests: XCTestCase {
         XCTAssertEqual(saved.entries.filter(\.trashed).count, 1)
     }
 
-    func testProtectedMergeFieldsStayMasked() {
-        let secret = VaultField(key: "PIN", value: "1234", protected: true)
-        let plain = VaultField(key: "Title (2)", value: "GitHub", protected: false)
-        XCTAssertFalse(mergedExtraFieldText(secret).contains("1234"))
-        XCTAssertEqual(mergedExtraFieldText(plain), "GitHub")
+    /// The editor's rows: a merged item's extra fields can be removed, and a protected one stays protected.
+    func testEditorRemovesAMergedFieldAndAddsAWebsite() {
+        let session = unlockedSession()
+        var first = login("GitHub")
+        first.fields.append(VaultField(key: "PIN", value: "1234", protected: true))
+        session.saveEditing(first)
+        var copy = login("GitHub copy")
+        copy.fields.append(VaultField(key: "no_name_eeaae", value: "Buy"))
+        session.saveEditing(copy)
+        let merged = session.entries.filter { !$0.trashed }
+        XCTAssertEqual(merged.count, 1)
+
+        session.edit(merged[0].id)
+        var draft = session.editing!
+        let rows = EntryFields.custom(of: draft)
+        XCTAssertEqual(rows.first { $0.name == "PIN" }?.protected, true)
+        XCTAssertTrue(rows.contains { $0.name == "no_name_eeaae" })
+        EntryFields.apply(
+            websites: [EditableField(value: "https://gist.github.com")],
+            custom: rows.filter { $0.name == "PIN" },
+            to: &draft
+        )
+        session.saveEditing(draft)
+
+        let saved = session.entries.filter { !$0.trashed }
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(EntryFields.custom(of: saved[0]).map(\.name), ["PIN"])
+        XCTAssertEqual(entryWebsites(saved[0]), ["https://github.com/login", "https://gist.github.com"])
+        XCTAssertEqual(EntryMerge.partCount(saved[0]), 2)
     }
 
     func testSplitUsesTheEditedRowWhenAnotherRowSharesItsIdentifier() async throws {

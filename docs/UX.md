@@ -665,7 +665,8 @@ The menu of an empty database (nothing outside the Recycle Bin) is:
     macOS for the Chrome key, and you should see why first. With sync on, Chrome's passwords show up in search next to
     your own, read from Chrome's files on this Mac, and Chrome is never changed.
   - **New Item…** — "A login, password or secure note". Opens the editor, as New Item in the gear menu. The editor has
-    no card or identity fields, so the line names only what it can make.
+    no card or identity form (a card is fields you add yourself: "Edit every field of an item"), so the line names
+    only what it makes directly.
 - A separator, then **Password Generator**, last. Resting the pointer on it opens the generator after 0.2 s, like any
   submenu.
 
@@ -874,3 +875,69 @@ list in Preferences forgets it too; the file you saved stays where it is.
 4. On PasswordPie's lock screen, click × next to the key file's name. Type the password: the window shakes, "Incorrect
    password." The password alone no longer opens it.
 5. Choose Key File…, pick the file in Documents, and unlock. The name is back for the next time.
+
+## Edit every field of an item
+
+**In one line:** the editor shows everything an item holds: add a second website, and rename, change or delete
+any other field, including the ones an import brought in.
+
+### The problem
+
+The editor had one Website box and no rows for anything else. An account that works on two sites (a shop and its
+checkout domain) could only get its second website from an automatic merge or from Chrome. Fields from an import or a
+merge (`no_name_eeaae`, `Group (2)`, a second title) showed in the details and, on a merged item, as a read-only list
+in the editor. There was no way to fix or delete them.
+
+### What happens now
+
+The editor is one sheet: the site icon, the title and a star for Favorite at the top, then rows with the name on the
+left and the value beside it.
+
+**Websites.** Under the last Website row is **Add Website**. Press it for one more row; each website ends with a **−**
+that removes it. Every website counts the same: search finds the item by any of them, and Fill offers the item on any
+of them. Websites that came from a merge, from Chrome or from an import are rows here too.
+
+- Remove or clear the first website and the next one takes its place.
+- An empty row is dropped when you save.
+
+**Other fields.** Every field without a row of its own is listed under **Other fields**: its name on the left, its
+value on the right, and a **−** that deletes it. Both the name and the value can be changed. A protected field shows
+dots; the eye in its row shows the value. **Add Field** at the end adds an empty row: type a name and a value.
+
+- A row with no value is dropped when you save. A value with no name is saved as "Field".
+- A name another field already has gets a number: a second "PIN" is saved as "PIN (2)".
+- Nothing changes until Save. Cancel keeps the item as it was.
+
+**Unnamed form fields.** Some imports save every input of a sign-in form, and give the ones without a name a made-up
+one such as `no_name_eeaae`. These are kept apart, in one folded line under Other fields: "Unnamed form fields" and how
+many. Open it to see them. **Remove All…** deletes them together, after asking; **−** deletes one. Give one a real
+name and, from the next time you open the editor, it is listed with the other fields.
+
+**Merging.** The last group has **Merge with matching accounts**, on by default: accounts with the same website,
+username and password become one item. Turn it off to keep this item on its own. A merged item says "Merged from 2
+accounts" there, with **Split…**.
+
+**A card.** PasswordPie sorts items by the fields they hold. A new item with a field named **Card number** is listed
+under Credit Cards. Add "Cardholder name", "Expires" and "CVV" the same way.
+
+### When it does not apply
+
+- A merged item's **Split** restores the accounts from before the merge, with the fields they had then. A field you
+  deleted from the merged item comes back in the account it came from.
+- Chrome is never changed. Editing a Chrome login's websites saves a copy in your database, as any other edit of it.
+- The one-time password, previous passwords and PasswordPie's own bookkeeping are not in the list; they have their
+  own rows or none.
+- There is no card form and no card filling in the browser: a card is fields you name yourself.
+
+### Demo script
+
+1. Open an item for `https://store.steampowered.com` and choose Edit. Press Add Website, type
+   `https://checkout.steampowered.com/login/`, and Save. The details show two websites. Open the checkout page in
+   Chrome and open PasswordPie: the item is offered.
+2. Edit it again and press − on the second website. Save: one website.
+3. Edit an imported item with a field `no_name_eeaae`. Press − on that row and Save: the details no longer show it.
+4. Choose New Item…, title it "Visa", press Add Field, name it "Card number" and type a number. Save: the item is
+   under Credit Cards.
+5. Edit an item with four `no_name_…` fields: under Other fields is one line, "Unnamed form fields 4". Open it,
+   rename one to "Language" and Save. Edit again: Language is under Other fields, and the line says 3. Open it, press
+   Remove All…, confirm, and Save.
