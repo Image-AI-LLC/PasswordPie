@@ -339,8 +339,20 @@ final class MenuListView: NSView {
             drawMark(on: row, icon: iconRect, selected: selected)
         }
         let textColor: NSColor = selected ? MenuPalette.selectionInk : MenuPalette.text
-        let reserved: CGFloat = hasArrow ? 28 : 10
+        // Passwords to Change says how many, in red, before its arrow.
+        let countText = row.count > 0 ? String(row.count) : ""
+        let countWidth = countText.isEmpty ? 0 : ceil(Self.textWidth(countText, MenuMetrics.font)) + 6
+        let reserved: CGFloat = (hasArrow ? 28 : 10) + countWidth
         let available = rect.width - MenuMetrics.titleX - reserved
+        if !countText.isEmpty {
+            drawText(
+                countText,
+                in: rect,
+                x: rect.width - reserved,
+                color: selected ? MenuPalette.selectionInk : MenuPalette.error,
+                width: countWidth
+            )
+        }
         let titleWidth = min(ceil(Self.textWidth(row.title, MenuMetrics.font)), available)
         drawText(row.title, in: rect, x: MenuMetrics.titleX, color: textColor, width: titleWidth, truncation: .byTruncatingMiddle)
         if !row.username.isEmpty, available - titleWidth > 8 {
@@ -399,6 +411,12 @@ final class MenuListView: NSView {
     /// A favorite keeps its star where it has always been. See `iconMark`.
     private func drawMark(on row: MenuRow, icon iconRect: NSRect, selected: Bool) {
         guard let id = row.entryID else { return }
+        if row.due {
+            // Top right, away from the star and the Chrome badge at the bottom right.
+            let dot = NSRect(x: iconRect.maxX - 4, y: iconRect.minY - 2, width: 6, height: 6)
+            (selected ? MenuPalette.selectionInk : MenuPalette.error).setFill()
+            NSBezierPath(ovalIn: dot).fill()
+        }
         switch iconMark(favorite: row.favorite, fromChrome: MenuIcons.chromeAccounts.contains(id)) {
         case .favoriteStar:
             guard let star = selected ? MenuIcons.selectedFavoriteBadge : MenuIcons.favoriteBadge else { return }
@@ -459,6 +477,7 @@ enum MenuIcons {
         let tint: NSColor
         switch row.icon {
         case .favorites: name = "star.fill"; tint = MenuPalette.favorite
+        case .passwordsToChange: name = "clock.badge.exclamationmark.fill"; tint = MenuPalette.error
         case .generator: name = "key.fill"; tint = MenuPalette.neutralIcon
         case .folders, .folder: name = "folder.fill"; tint = MenuPalette.folder
         case .tags, .tag: name = "tag.fill"; tint = MenuPalette.tag

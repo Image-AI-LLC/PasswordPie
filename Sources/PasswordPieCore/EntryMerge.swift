@@ -11,6 +11,7 @@ public enum EntryMerge {
         key.caseInsensitiveCompare(keepSeparateKey) == .orderedSame
             || key.caseInsensitiveCompare(manifestKey) == .orderedSame
             || key.caseInsensitiveCompare(PreviousPasswords.key) == .orderedSame
+            || PasswordRotation.isKey(key)
     }
 
     public static func keepsSeparate(_ entry: VaultEntry) -> Bool {
@@ -90,6 +91,12 @@ public enum EntryMerge {
                 }
                 if recorded || alreadyKept {
                     result[index].trashed = true
+                    // The reminder is not a field a part carries: the survivor takes it when it has none.
+                    if PasswordRotation.period(of: entry) == nil, PasswordRotation.period(of: other) != nil {
+                        entry.fields.removeAll { PasswordRotation.isKey($0.key) }
+                        entry.fields.append(contentsOf: other.fields.filter { PasswordRotation.isKey($0.key) })
+                        changed = true
+                    }
                     #if PP_DIRECT
                     if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
                     #endif

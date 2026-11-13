@@ -359,6 +359,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         lockModel.turned = false
         lockModel.open = false
         if !session.locked {
+            session.refreshDueReminders()
             if let recalled { menu.restore(recalled.place) } else { menu.reset() }
         }
         applyLayout(locked: session.locked, animated: growing)

@@ -31,7 +31,7 @@ public enum MenuAction: Equatable, Sendable {
 public struct MenuRow: Equatable, Sendable {
     /// What the app draws in front of rows that are not entries or categories.
     public enum Icon: Equatable, Sendable {
-        case favorites, generator, folders, folder, tags, tag
+        case favorites, generator, folders, folder, tags, tag, passwordsToChange
         case importPasswords, syncChrome, newItem
     }
 
@@ -60,6 +60,10 @@ public struct MenuRow: Equatable, Sendable {
     public var siteHost: String?
     /// A second line under the title. Only the empty database's action rows have one; it makes them two-line rows.
     public var detail: String
+    /// Shown in red after the title: how many accounts Passwords to Change holds.
+    public var count: Int
+    /// The account's password is due for a change: a red dot on its icon.
+    public var due: Bool
 
     public init(
         kind: Kind,
@@ -70,8 +74,12 @@ public struct MenuRow: Equatable, Sendable {
         favorite: Bool = false,
         username: String = "",
         siteHost: String? = nil,
-        detail: String = ""
+        detail: String = "",
+        count: Int = 0,
+        due: Bool = false
     ) {
+        self.count = count
+        self.due = due
         self.kind = kind
         self.title = title
         self.children = children
@@ -114,11 +122,23 @@ public enum MenuBuilder {
         entries: [VaultEntry],
         sources: [UUID: String] = [:],
         categoryLimit: Int = MenuBuilder.categoryLimit,
-        channel: AppChannel = .current
+        channel: AppChannel = .current,
+        now: Date = Date()
     ) -> [MenuRow] {
         let visible = entries.filter { !$0.trashed }
         guard !visible.isEmpty else { return emptyDatabase(channel: channel) }
         var rows: [MenuRow] = []
+
+        let due = PasswordRotation.due(in: visible, now: now)
+        if !due.isEmpty {
+            rows.append(MenuRow(
+                kind: .submenu,
+                title: "Passwords to Change",
+                children: entryRows(due, sources: sources, alreadySorted: true, now: now),
+                icon: .passwordsToChange,
+                count: due.count
+            ))
+        }
 
         let favorites = visible.filter(\.favorite)
         if !favorites.isEmpty {
@@ -229,7 +249,7 @@ public enum MenuBuilder {
     }
 
     /// Rows for a list of entries; `alreadySorted` keeps the caller's order (search results sort favorites first).
-    static func entryRows(_ entries: [VaultEntry], sources: [UUID: String] = [:], alreadySorted: Bool = false) -> [MenuRow] {
+    static func entryRows(_ entries: [VaultEntry], sources: [UUID: String] = [:], alreadySorted: Bool = false, now: Date = Date()) -> [MenuRow] {
         let sorted = alreadySorted ? entries : sortedForMenu(entries)
         let details = rowDetails(sorted, sources: sources)
         return sorted.indices.map { index in
@@ -241,7 +261,8 @@ public enum MenuBuilder {
                 category: entry.category,
                 favorite: entry.favorite,
                 username: details[index],
-                siteHost: websiteHost(of: entry)
+                siteHost: websiteHost(of: entry),
+                due: PasswordRotation.isDue(entry, now: now)
             )
         }
     }

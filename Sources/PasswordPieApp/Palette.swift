@@ -88,6 +88,7 @@ enum MenuPalette {
     static let tileHues: [CGFloat] = [14, 28, 42, 95, 168, 345].map { $0 / 360 }
 
     static let favorite = NSColor.palette(light: 0xF4B400, dark: 0xF4B400)
+    static let error = NSColor.palette(light: 0xAA3027, dark: 0xFFA396)
     static let folder = NSColor.palette(light: 0xD18A32, dark: 0xE2A052)
     static let tag = NSColor.palette(light: 0x6F9A58, dark: 0x8DB877)
     static let neutralIcon = NSColor.palette(light: 0x8B7A69, dark: 0xB3A493)
