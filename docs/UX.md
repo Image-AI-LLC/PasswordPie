@@ -981,11 +981,36 @@ In the account's details, under the password's strength, a **change password** r
 
 The account leaves Passwords to Change, and the details say "in 90 days" again. There is nothing to tick off.
 
+### Reset Password makes the new password for you
+
+In the version downloaded from passwordpie.com, **Reset Password** does more than open the page.
+
+1. PasswordPie generates a new password and keeps it with the account as a **new password, not used yet**. The saved
+   password does not change: Return, Copy and Fill still give the one the site knows.
+2. The reset page opens in the browser. With the Chrome extension, the page's fields fill in: the current password
+   where the page asks for it, and the new password in both the new and the confirm box. Nothing is submitted; you
+   press the site's own button.
+3. When the page has taken the form, PasswordPie asks, over the browser: **"Did example.com accept the new
+   password?"** with **Use New Password** and **Not Yet**.
+4. **Use New Password** makes it the saved password. The old one goes to previous passwords, and the reminder's clock
+   starts again. **Not Yet** changes nothing.
+
+The new password waits in the account's **previous passwords**, marked `new · not used yet`, with **Use** and **Copy**.
+That is also the way to finish by hand: when there is no extension, when the site rejected the password and you tried
+again, or when the question did not come up.
+
+- Press Reset Password again while a new password is waiting and the same one is filled; a second is not generated.
+- The site refused the password (too long, a character it does not allow)? Choose Not Yet, change the waiting password
+  in the editor's Password row, or type one on the site and let Chrome save it: "The newest password wins".
+- The question comes only for a page on the account's site, within 10 minutes of Reset Password, once.
+- PasswordPie never presses the site's button and never decides by itself that the password changed.
+
 ### When it does not apply
 
 - Nothing reminds you unless you set a period on that account. There is no setting for all accounts.
 - No notification, no sound and no mark on the menu bar icon: the reminder is in the menu when you open it.
-- PasswordPie does not change the password on the website. Reset Password opens the page; you change it there.
+- PasswordPie does not change the password on the website. Reset Password opens the page and fills it; you submit it.
+- The App Store version and Safari only open the page: no new password is generated or filled there.
 - Items in the Recycle Bin are never due.
 - A Chrome login has no reminder until it is saved to your database; setting a period in the editor saves it.
 - Splitting a merged item does not carry the reminder to the restored accounts.
@@ -1002,3 +1027,8 @@ The period, the link and the date live in the item, inside your database. Nothin
    red dot. Its details say "1 day ago" in red.
 3. Press Reset Password: the browser opens `https://example.com/reset`.
 4. Edit Payroll, press Generate, and Save. The row is gone from the menu and the details say "in 30 days".
+5. With the demo pages (`node extension/dev/mock-site.mjs`) and an item "Demo" (website `http://localhost:8787`, reset
+   link `http://localhost:8787/change-password`): press Reset Password. The page opens with the current, new and
+   confirm boxes filled. Open the item's previous passwords: one row, `new · not used yet`.
+6. Press the page's Change button. PasswordPie asks whether the site accepted it. Choose Use New Password: the details
+   show the new password as saved, the old one under previous passwords, and "in 30 days".
