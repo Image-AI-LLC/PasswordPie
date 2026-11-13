@@ -132,8 +132,8 @@ function settle(times, clip, crop) {
   cut('quick.mp4', quick.mov, r0, duration, HALF);
   T.race = {
     duration, realtime, ff, lead,
-    // Left timer: from the click in the email field to the last key of the password.
-    typingMs: typing.typeEnd - typing.click,
+    // Left timer: from the first key typed to the last key of the password (the click into the field comes before).
+    typingMs: typing.typeEnd - typing.typeStart,
     typingKeys: typing.keys,
     typingAvgGapMs: (typing.typeEnd - typing.typeStart) / (typing.keys - 1),
     // Right timer: from ⌘\ to the username and password in the form.
@@ -144,7 +144,7 @@ function settle(times, clip, crop) {
   };
   const pie = settle({ hotkey: T.race.pieHotkeyAt, ret: T.race.pieReturnAt, filled: T.race.pieFilledAt }, 'quick.mp4', HALF_FIELD);
   Object.assign(T.race, { pieHotkeyAt: pie.hotkey, pieReturnAt: pie.ret, pieFilledAt: pie.filled, pieShift: pie.shift,
-    typingClickAt: lead });
+    typingFirstKeyAt: lead + (typing.typeStart - typing.click) / 1000 });
 }
 
 const m = JSON.parse(readFileSync(path.join(dir, '../measurements.json'), 'utf8'));

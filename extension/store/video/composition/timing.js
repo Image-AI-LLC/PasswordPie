@@ -31,7 +31,7 @@ window.PP = {
     "realtime": 3.6,
     "ff": 4,
     "lead": 0.4,
-    "typingMs": 12310.800048828125,
+    "typingMs": 11683.699951171875,
     "typingKeys": 39,
     "typingAvgGapMs": 307.46578818873354,
     "pieMs": 1025.699951171875,
@@ -39,7 +39,7 @@ window.PP = {
     "pieReturnAt": 0.9540669023437499,
     "pieFilledAt": 1.416667,
     "pieShift": -0.00903295117187497,
-    "typingClickAt": 0.4
+    "typingFirstKeyAt": 1.02710009765625
   },
   "measured": {
     "runs": 25,

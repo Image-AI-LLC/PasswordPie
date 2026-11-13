@@ -186,7 +186,7 @@
   key('#k-hot4', S4 + R.pieHotkeyAt);
   key('#k-ret4', S4 + R.pieReturnAt);
   const typingEnd = R.typingMs / 1000;
-  const leftDoneAt = R.realtime + (typingEnd - (R.realtime - R.typingClickAt)) / R.ff;
+  const leftDoneAt = R.realtime + (typingEnd - (R.realtime - R.typingFirstKeyAt)) / R.ff;
   const pxPerSecond = 820 / typingEnd;
   const left = { v: 0 }, right = { v: 0 };
   const showL = () => { document.getElementById('t-left').textContent = `${left.v.toFixed(1)} s`;
@@ -195,7 +195,7 @@
     document.getElementById('bar-right').style.width = `${Math.max(right.v * pxPerSecond, 0)}px`; };
   tl.set(left, { v: 0, onUpdate: showL }, S4);
   tl.set(right, { v: 0, onUpdate: showR }, S4);
-  tl.to(left, { v: R.realtime - R.typingClickAt, duration: R.realtime - R.typingClickAt, ease: 'none', onUpdate: showL }, S4 + R.typingClickAt);
+  tl.to(left, { v: R.realtime - R.typingFirstKeyAt, duration: R.realtime - R.typingFirstKeyAt, ease: 'none', onUpdate: showL }, S4 + R.typingFirstKeyAt);
   tl.to(left, { v: typingEnd, duration: leftDoneAt - R.realtime, ease: 'none', onUpdate: showL }, S4 + R.realtime);
   tl.to(right, { v: R.pieMs / 1000, duration: R.pieFilledAt - R.pieHotkeyAt, ease: 'none', onUpdate: showR }, S4 + R.pieHotkeyAt);
   tl.fromTo('#ff-chip', { opacity: 0 }, { opacity: 1, duration: 0.15 }, S4 + R.realtime);

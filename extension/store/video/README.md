@@ -15,7 +15,7 @@ with one login added for Fernway; no real account is shown.
 | 0–4.2 s | "⌘\\, then Return: filled in under half a second." ⌘\, the panel with FERNWAY.EXAMPLE on top, Return, filled. Real time. |
 | 4.2–9.2 s | The same take again, 4× slower. A large counter runs from Return to the frame the fields fill in and stops on the measured median, 448 ms; beside it the run count, p90 and the machine. |
 | 9.2–14.1 s | From Return: filled, Sign in, the two-step code fills on the next page (Premium), Verify, home. Real time. |
-| 14.1–21.6 s | Filling a sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (12.3 s; sped up 4× after 3.6 s, marked) and PasswordPie (⌘\, Return, filled: 1.0 s), with bars on one scale. |
+| 14.1–21.6 s | Filling a sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s from the first key to the last; sped up 4× after 3.6 s, marked) and PasswordPie (⌘\, Return, filled: 1.0 s), with bars on one scale. |
 | 21.6–25.5 s | End card: PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com. |
 
 These are the five scenes of the storyboard the video was asked for. Scene 4 times both sides from the first key, not
