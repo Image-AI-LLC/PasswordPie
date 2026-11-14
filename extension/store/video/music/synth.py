@@ -69,7 +69,7 @@ def plan_from(timing: object) -> Plan:
     def scene(name: str) -> float:
         return number(timing, 'scenes', name)
 
-    sections = (scene('live'), scene('slow'), scene('twostep'), scene('race'))
+    sections = (scene('live'), scene('twostep'), scene('race'))
     end_card = scene('end')
     beat = scene('beat')
     if not 0.4 <= beat <= 0.6:
@@ -85,7 +85,6 @@ def plan_from(timing: object) -> Plan:
         end_card=end_card,
         fills=(
             scene('live') + number(timing, 'live', 'filled'),  # filled, in real time
-            scene('slow') + number(timing, 'slow', 'filled'),  # the same fill, slowed down
             scene('twostep') + number(timing, 'twostep', 'code'),  # the two-step code
             scene('race') + number(timing, 'race', 'pieFilledAt'),  # side by side
         ),
@@ -146,7 +145,7 @@ def kick() -> Samples:
 
 HP_HAT = butter(4, 7000, 'highpass', fs=SR, output='sos')
 BP_SNAP = butter(2, [1400, 4200], 'bandpass', fs=SR, output='sos')
-BP_CLAP = butter(2, [900, 3600], 'bandpass', fs=SR, output='sos')
+BP_CLAP = butter(2, [800, 2400], 'bandpass', fs=SR, output='sos')  # no higher: white noise up there hisses
 BP_RISE = butter(2, [700, 3200], 'bandpass', fs=SR, output='sos')
 HP_CRASH = butter(2, 4500, 'highpass', fs=SR, output='sos')
 
@@ -166,7 +165,7 @@ def snap(rng: np.random.Generator) -> Samples:
 def clap(rng: np.random.Generator) -> Samples:
     """Three quick bursts of noise and a short tail, as hands never land together."""
     x = t(0.22)
-    env = sum(np.where(x >= d, np.exp(-(x - d) / 0.006), 0.0) for d in (0.0, 0.011, 0.023)) * 0.6 + np.where(x >= 0.03, np.exp(-(x - 0.03) / 0.055), 0.0)
+    env = sum(np.where(x >= d, np.exp(-(x - d) / 0.006), 0.0) for d in (0.0, 0.011, 0.023)) * 0.6 + np.where(x >= 0.03, np.exp(-(x - 0.03) / 0.038), 0.0)
     out: Samples = sosfilt(BP_CLAP, rng.standard_normal(len(x))) * env
     return out
 
@@ -187,7 +186,7 @@ def chime(midi: float, decay: float) -> Samples:
 
 # The chime at a fill: A5 then D6, an octave under where a bare sine turns piercing, and under the drums in level.
 # (midi, decay, seconds after the fill, gain, pan)
-CHIME_NOTES: tuple[tuple[int, float, float, float, float], ...] = ((81, 0.14, 0.0, 0.07, -0.1), (86, 0.2, 0.07, 0.08, 0.1))
+CHIME_NOTES: tuple[tuple[int, float, float, float, float], ...] = ((81, 0.14, 0.0, 0.085, -0.1), (86, 0.2, 0.07, 0.098, 0.1))
 
 
 def riser(rng: np.random.Generator, length: float) -> Samples:
@@ -201,7 +200,7 @@ A: Chord = (57, 61, 64)
 Bm: Chord = (59, 62, 66)
 G: Chord = (55, 59, 62)
 ROOT: dict[Chord, int] = {D: 38, A: 33, Bm: 35, G: 31}
-CHORDS: list[Chord] = [D, Bm, G, A]  # one a scene, in turn; the end card comes home to D
+CHORDS: list[Chord] = [D, G, A, Bm]  # one a scene, in turn; the end card comes home to D
 # The plucked figure, in sixteenths of a bar: off the beat more often than on it, under the drums.
 FIGURE = [0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1]
 
@@ -255,8 +254,8 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
             # The clap has a snare's body under it and a room around it.
             body = clap(rng)
             place(drums, body, at, 0.24, -0.1)
-            place(drums, snap(rng), at, 0.05, 0.05)
-            place(drumwet, body, at, 0.2, 0.2)
+            place(drums, snap(rng), at, 0.03, 0.05)
+            place(drumwet, body, at, 0.16, 0.2)
         # The sixteenths off the eighth (the 2nd and 4th of a beat) come late, for swing, and no two hats are equally
         # loud: a rise through the bar, the off-beat eighth on top, and a little chance.
         lift = 0.8 + 0.2 * in_bar / (BEATS_IN_A_BAR - 1)

@@ -26,7 +26,8 @@
   /* Marks: the orange ring on what PasswordPie filled, the key that was pressed, and the speed when it is not real time. */
   .ring { position: absolute; border: 4px solid var(--accent); border-radius: 12px; opacity: 0; }
   .key { position: absolute; left: 960px; top: 950px; transform: translateX(-50%); display: flex; align-items: baseline; gap: 14px;
-    padding: 12px 26px; border-radius: 16px; background: var(--text); color: var(--surface); opacity: 0; white-space: nowrap; }
+    padding: 12px 26px; border-radius: 16px; background: var(--text); color: var(--surface); opacity: 0; white-space: nowrap;
+    box-shadow: 0 0 0 3px var(--surface); }
   .key b { font-size: 42px; font-weight: 600; }
   .key span { font-size: 28px; color: #D4C4B2; }
   .key.small { padding: 8px 18px; border-radius: 12px; transform: none; }
@@ -34,15 +35,16 @@
   .chip { position: absolute; padding: 8px 16px; border-radius: 10px; background: var(--text); color: var(--surface);
     font-size: 26px; font-weight: 700; opacity: 0; }
 
-  /* Scene 2: the measured time is the picture. */
-  #h2 .big { font-size: 172px; font-weight: 700; letter-spacing: -6px; line-height: 1; font-variant-numeric: tabular-nums; }
-  #h2 .big small { font-size: 64px; letter-spacing: 0; margin-left: 10px; color: var(--text2); }
-  #h2 .side { text-align: right; }
-  #h2 .side div { font-size: 40px; font-weight: 700; letter-spacing: -.6px; }
-  #h2 .side p { margin-top: 10px; }
-  #h2 .side p.small { margin-top: 4px; font-size: 24px; }
+  /* Scene 1, beside the headline: the time from Return to filled, counted as it happens. */
+  .meter { display: flex; align-items: center; gap: 36px; }
+  .meter .big { font-size: 172px; font-weight: 700; letter-spacing: -6px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .meter .big small { font-size: 64px; letter-spacing: 0; margin-left: 10px; color: var(--text2); }
+  .meter .side { text-align: right; }
+  .meter .side div { font-size: 34px; font-weight: 700; letter-spacing: -.5px; }
+  .meter .side p { margin-top: 8px; font-size: 26px; }
+  .meter .side p.small { margin-top: 4px; font-size: 22px; }
 
-  /* Scene 4: same page, two ways, timed from the first key. */
+  /* Scene 3: same page, two ways, timed from the first key. */
   .half { position: absolute; top: 236px; width: 820px; height: 514px; border-radius: 12px; overflow: hidden; opacity: 0;
     box-shadow: 0 20px 56px rgba(48,42,36,.15), 0 0 0 1px rgba(48,42,36,.10); background: #fff; }
   .half video { position: absolute; left: 0; top: 0; width: 820px; height: 514px; }
@@ -81,20 +83,18 @@
 </style>
 </head>
 <body>
-<div id="stage" data-composition-id="root" data-start="0" data-duration="12" data-width="1920" data-height="1080">
+<div id="stage" data-composition-id="root" data-start="0" data-duration="11" data-width="1920" data-height="1080">
 
-  <div class="head" id="h1"><div><h1>⌘\, then Return: filled in under half a second.</h1>
-    <p>Real time. PasswordPie for Mac, with its Chrome extension.</p></div></div>
-  <div class="head" id="h2"><div class="big"><span id="count">0</span><small>ms</small></div>
-    <div class="side"><div>Return → both fields filled</div><p id="h2-note"></p><p class="small" id="h2-machine">MacBook Air (M2) · macOS 27 · Chrome 157</p></div></div>
+  <div class="head" id="h1"><div><h1>⌘\, then Return.</h1><p>In real time: nothing sped up.</p></div>
+    <div class="meter"><div class="side"><div>Return → both fields filled</div><p id="meter-note"></p>
+      <p class="small">MacBook Air (M2) · macOS 27 · Chrome 157</p></div>
+      <div class="big"><span id="count">0</span><small>ms</small></div></div></div>
   <div class="head" id="h3"><div><h1>Two-step code? Filled on the next page.</h1><p>With PasswordPie Premium.</p></div></div>
   <div class="head" id="h4"><div><h1>The whole sign-in, from the first key.</h1><p>The same page, typed by hand and with PasswordPie.</p></div></div>
 
   <div id="card">
     <video id="v-live" data-start="0.5" data-duration="3" data-track-index="1" src="clips/live.mp4" muted playsinline></video>
-    <video id="v-slow" data-start="3.5" data-duration="2" data-track-index="2" src="clips/slow.mp4" muted playsinline></video>
-    <video id="v-two" data-start="5.5" data-duration="1.5" data-track-index="3" src="clips/twostep.mp4" muted playsinline></video>
-    <div class="chip" id="slow-chip" style="right: 22px; top: 78px;"></div>
+    <video id="v-two" data-start="3.5" data-duration="2.5" data-track-index="2" src="clips/twostep.mp4" muted playsinline></video>
   </div>
   <!-- Canvas pixels of the email and password fields and the six code boxes in the card. -->
   <div class="ring" id="ring-email" style="left: 1003px; top: 522px; width: 467px; height: 60px;"></div>
@@ -103,20 +103,19 @@
 
   <div class="key" id="k-hot"><b>⌘\</b></div>
   <div class="key" id="k-ret"><b>return</b></div>
-  <div class="key" id="k-ret2"><b>return</b></div>
   <div class="key" id="k-sign"><b>return</b><span>Sign in</span></div>
 
   <div class="half" id="left">
-    <video id="v-typing" data-start="7" data-duration="3" data-track-index="4" src="clips/typing.mp4" muted playsinline></video>
+    <video id="v-typing" data-start="6" data-duration="3" data-track-index="3" src="clips/typing.mp4" muted playsinline></video>
     <div class="chip" id="ff-chip" style="right: 16px; top: 16px;"></div>
   </div>
   <div class="half" id="right">
-    <video id="v-quick" data-start="7" data-duration="3" data-track-index="5" src="clips/quick.mp4" muted playsinline></video>
+    <video id="v-quick" data-start="6" data-duration="3" data-track-index="4" src="clips/quick.mp4" muted playsinline></video>
     <!-- The email and password fields in this half: the card's rings through the half's crop and scale. -->
     <div class="ring right" style="left: 373px; top: 216px; width: 430px; height: 55px;"></div>
     <div class="ring right" style="left: 373px; top: 318px; width: 430px; height: 55px;"></div>
-    <div class="key small" id="k-hot4" style="left: 16px; top: 440px;"><b>⌘\</b></div>
-    <div class="key small" id="k-ret4" style="left: 16px; top: 440px;"><b>return</b></div>
+    <div class="key small" id="k-hot4" style="left: 184px; top: 440px;"><b>⌘\</b></div>
+    <div class="key small" id="k-ret4" style="left: 184px; top: 440px;"><b>return</b></div>
   </div>
   <div class="under" id="under-left"><div class="row"><div><h2>Typing it</h2><p id="typing-note"></p></div>
     <div class="t" id="t-left">0.0 s</div></div><div class="track"><div class="bar" id="bar-left"></div></div></div>
@@ -134,7 +133,7 @@
       <div class="claim">From Return to a filled sign-in</div>
       <div class="runs" id="end-runs"></div>
     </div>
-    <div class="note">Real screen recordings. Slowed-down and sped-up parts are marked.</div>
+    <div class="note">Real screen recordings. The sped-up typing is marked.</div>
   </div>
 
   <img id="cover" src="cover-1080p.png" alt="">
@@ -147,7 +146,7 @@
   const T = window.PP;
   const tl = gsap.timeline({ paused: true });
   // When each scene starts: every one on a beat of the music, which is written to the same numbers.
-  const { live: S1, slow: S2, twostep: S3, race: S4, end: S5 } = T.scenes;
+  const { live: S1, twostep: S2, race: S3, end: S4 } = T.scenes;
   // A key cap shows a moment before the press it stands for, so it is read with what the press does.
   const LEAD = 0.1;
 
@@ -165,47 +164,41 @@
     hide(ids, until);
   };
   const median = Math.round(T.measured.medianMs);
-  tl.set('#slow-chip', { textContent: `Replay, ${T.slow.factor}× slower` }, 0);
   tl.set('#ff-chip', { textContent: `${T.race.ff}× speed` }, 0);
   tl.set('#typing-note', { textContent: `About 40 words a minute, shown ${T.race.ff}× faster` }, 0);
-  tl.set('#h2-note', { textContent: `Median of ${T.measured.runs} runs · 90% within ${Math.round(T.measured.p90Ms)} ms` }, 0);
+  tl.set('#meter-note', { textContent: `Median of ${T.measured.runs} runs · 90% within ${Math.round(T.measured.p90Ms)} ms` }, 0);
   tl.set('#end-ms', { textContent: String(median) }, 0);
   tl.set('#end-runs', { textContent: `Median of ${T.measured.runs} runs on a MacBook Air (M2)` }, 0);
 
-  // 0. The cover is the first frame, so the video starts as the picture that was clicked. Scene 1 is ready under
-  //    it; the cover dissolves over the end of its beat and is gone when scene 1 starts.
+  // 0. The cover is the first frame, whole, so the video starts as the picture that was clicked. It is cut, not
+  //    dissolved, to scene 1 on the first beat: two full pictures over one another look like a ghost.
   show(['#h1', '#card'], 0);
-  tl.to('#cover', { opacity: 0, duration: 0.15, ease: 'none' }, S1 - 0.15);
+  hide('#cover', S1);
 
-  // 1. Real time: the page, ⌘\, the panel for two beats, Return, filled on the sixth beat.
+  // 1. Real time: the page, ⌘\, the panel for two beats, Return, filled on the sixth beat. The counter starts at
+  //    Return and stops on the frame the fields fill in, on the measured median (this take's own time is within a
+  //    frame of it: see ../README.md).
   key('#k-hot', S1 + T.live.hotkey);
   key('#k-ret', S1 + T.live.ret);
-  ring(['#ring-email', '#ring-pass'], S1 + T.live.filled, S2);
-
-  // 2. The same fill again, slower. The counter runs from Return to the frame the fields fill in, and stops on the
-  //    measured median.
-  hide('#h1', S2);
-  show(['#h2', '#slow-chip'], S2);
-  key('#k-ret2', S2 + T.slow.ret);
   const count = { v: 0 };
   const showCount = () => { document.getElementById('count').textContent = String(Math.round(count.v)); };
-  tl.set(count, { v: 0, onUpdate: showCount }, S2);
-  tl.to(count, { v: median, duration: T.slow.filled - T.slow.ret, ease: 'none', onUpdate: showCount }, S2 + T.slow.ret);
-  tl.to('#count', { color: '#A65312', duration: 0.12 }, S2 + T.slow.filled);
-  ring(['#ring-email', '#ring-pass'], S2 + T.slow.filled, S3);
+  tl.set(count, { v: 0, onUpdate: showCount }, 0);
+  tl.to(count, { v: median, duration: T.live.filled - T.live.ret, ease: 'none', onUpdate: showCount }, S1 + T.live.ret);
+  tl.to('#count', { color: '#A65312', duration: 0.12 }, S1 + T.live.filled);
+  ring(['#ring-email', '#ring-pass'], S1 + T.live.filled, S2);
 
-  // 3. Two-step, in real time: Sign in, and the code fills on the next page, on the scene's second beat.
-  hide(['#h2', '#slow-chip'], S3);
-  show('#h3', S3);
-  key('#k-sign', S3 + T.twostep.submit);
-  ring('#ring-code', S3 + T.twostep.code, S4);
+  // 2. Two-step, in real time: the form fills, Sign in, and the code fills on the next page, on the fourth beat.
+  hide('#h1', S2);
+  show('#h3', S2);
+  key('#k-sign', S2 + T.twostep.submit);
+  ring('#ring-code', S2 + T.twostep.code, S3);
 
-  // 4. Side by side. Both timers start at the first key, at the same moment; the bars share one scale.
-  hide(['#h3', '#card'], S4);
-  show(['#h4', '#left', '#right', '.under', '#ff-chip'], S4);
+  // 3. Side by side. Both timers start at the first key, at the same moment; the bars share one scale.
+  hide(['#h3', '#card'], S3);
+  show(['#h4', '#left', '#right', '.under', '#ff-chip'], S3);
   const R = T.race;
-  key('#k-hot4', S4 + R.pieHotkeyAt);
-  key('#k-ret4', S4 + R.pieReturnAt);
+  key('#k-hot4', S3 + R.pieHotkeyAt);
+  key('#k-ret4', S3 + R.pieReturnAt);
   const typingEnd = R.typingMs / 1000;
   const pxPerSecond = 820 / typingEnd;
   const left = { v: 0 }, right = { v: 0 };
@@ -213,16 +206,16 @@
     document.getElementById('bar-left').style.width = `${left.v * pxPerSecond}px`; };
   const showR = () => { document.getElementById('t-right').textContent = `${right.v.toFixed(1)} s`;
     document.getElementById('bar-right').style.width = `${Math.max(right.v * pxPerSecond, 0)}px`; };
-  tl.set(left, { v: 0, onUpdate: showL }, S4);
-  tl.set(right, { v: 0, onUpdate: showR }, S4);
+  tl.set(left, { v: 0, onUpdate: showL }, S3);
+  tl.set(right, { v: 0, onUpdate: showR }, S3);
   // The left side's seconds go by `ff` times as fast as the video's, as its picture does.
-  tl.to(left, { v: typingEnd, duration: R.typingDoneAt - R.typingFirstKeyAt, ease: 'none', onUpdate: showL }, S4 + R.typingFirstKeyAt);
-  tl.to(right, { v: R.pieMs / 1000, duration: R.pieFilledAt - R.pieHotkeyAt, ease: 'none', onUpdate: showR }, S4 + R.pieHotkeyAt);
-  tl.fromTo('.ring.right', { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.15, ease: 'back.out(2)' }, S4 + R.pieFilledAt);
+  tl.to(left, { v: typingEnd, duration: R.typingDoneAt - R.typingFirstKeyAt, ease: 'none', onUpdate: showL }, S3 + R.typingFirstKeyAt);
+  tl.to(right, { v: R.pieMs / 1000, duration: R.pieFilledAt - R.pieHotkeyAt, ease: 'none', onUpdate: showR }, S3 + R.pieHotkeyAt);
+  tl.fromTo('.ring.right', { opacity: 0, scale: 1.06 }, { opacity: 1, scale: 1, duration: 0.15, ease: 'back.out(2)' }, S3 + R.pieFilledAt);
 
-  // 5. End card, whole on its beat. YouTube takes a thumbnail from 7/8 of the way through: this.
-  hide(['#h4', '#left', '#right', '.under'], S5);
-  show('#end', S5);
+  // 4. End card, whole on its beat. YouTube takes a thumbnail from 7/8 of the way through: this.
+  hide(['#h4', '#left', '#right', '.under'], S4);
+  show('#end', S4);
 
   window.__timelines = window.__timelines || {};
   window.__timelines.root = tl;

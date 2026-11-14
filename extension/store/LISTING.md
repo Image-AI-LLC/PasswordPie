@@ -70,7 +70,7 @@ Source code: https://github.com/Image-AI-LLC/PasswordPie
 
 ## Promo video
 
-The store's "Global promo video" field takes a YouTube link. The file is `video/passwordpie-fill-1080p.mp4` (12 s,
+The store's "Global promo video" field takes a YouTube link. The file is `video/passwordpie-fill-1080p.mp4` (11 s,
 1920x1080, 60 fps, cut to the beat of its music: synthesised for this video, no samples, nothing to license); how it is made and
 measured is in [video/README.md](video/README.md). Upload it to YouTube as Public or Unlisted (the store needs a link
 anyone can open), not made for kids, then paste the link here and in the dashboard.
@@ -88,9 +88,9 @@ anyone can open), not made for kids, then paste the link here and in the dashboa
 ```text
 PasswordPie is a password manager for Mac that keeps your passwords in your own KeePass file. With its Chrome extension, press ⌘\ on a sign-in page and Return: the username and password are in the form in under half a second.
 
-What you see is a real screen recording at real speed, except the parts marked as slowed down or sped up:
+What you see is a real screen recording at real speed, except the typing, which is marked as sped up:
 • ⌘\ opens PasswordPie with the accounts for the site you are on at the top. Return fills the form. PasswordPie never presses Sign in for you.
-• The same fill again, 3× slower: 448 ms from Return to both fields filled, the median of 25 runs (90% within 464 ms) on a MacBook Air (M2) with macOS 27 and Chrome 157.
+• From Return to both fields filled: 448 ms, the median of 25 runs (90% within 464 ms) on a MacBook Air (M2) with macOS 27 and Chrome 157.
 • With PasswordPie Premium, the two-step code fills itself on the next page.
 • The whole sign-in, typed by hand at about 40 words a minute (shown 6× faster), next to PasswordPie in real time.
 

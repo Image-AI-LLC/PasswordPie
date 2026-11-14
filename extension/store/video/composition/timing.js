@@ -4,11 +4,10 @@ window.PP = {
     "beat": 0.5,
     "cover": 0,
     "live": 0.5,
-    "slow": 3.5,
-    "twostep": 5.5,
-    "race": 7,
-    "end": 10,
-    "duration": 12
+    "twostep": 3.5,
+    "race": 6,
+    "end": 9,
+    "duration": 11
   },
   "live": {
     "duration": 3,
@@ -19,20 +18,15 @@ window.PP = {
     "measuredMs": 451.60009765625,
     "shift": 0
   },
-  "slow": {
-    "duration": 2,
-    "factor": 3,
-    "ret": 0.1451997070312494,
-    "filled": 1.5,
-    "measuredMs": 451.60009765625,
-    "shift": 0
-  },
   "twostep": {
-    "duration": 1.5,
-    "submit": 0.42940014648437463,
-    "page": 0.4666669999999997,
-    "code": 0.5,
-    "codeNoted": 0.5024001464843746
+    "duration": 2.5,
+    "ret": -0.05149975585937516,
+    "filled": 0.4,
+    "submit": 1.4294001464843746,
+    "page": 1.4666669999999997,
+    "code": 1.5,
+    "codeNoted": 1.5024001464843746,
+    "shift": 1.1102230246251565e-16
   },
   "race": {
     "duration": 3,

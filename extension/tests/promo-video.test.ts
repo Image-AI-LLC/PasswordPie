@@ -16,12 +16,11 @@ const timingFile = path.join(video, 'composition/timing.js');
 const read = (file: string): string => readFileSync(path.join(video, file), 'utf8');
 
 interface Timing {
-  live: { duration: number; panel: number; ret: number; filled: number };
-  slow: { duration: number; factor: number; ret: number; filled: number; measuredMs: number };
-  twostep: { duration: number; submit: number; code: number };
+  live: { duration: number; panel: number; ret: number; filled: number; measuredMs: number };
+  twostep: { duration: number; filled: number; submit: number; code: number };
   race: { duration: number; ff: number; pieFilledAt: number; typingFirstKeyAt: number; typingDoneAt: number; typingMs: number; pieHotkeyAt: number };
   measured: { runs: number; medianMs: number; p90Ms: number; machine: string; chrome: string };
-  scenes: { beat: number; cover: number; live: number; slow: number; twostep: number; race: number; end: number; duration: number };
+  scenes: { beat: number; cover: number; live: number; twostep: number; race: number; end: number; duration: number };
 }
 const timingText = readFileSync(timingFile, 'utf8');
 const timing = JSON.parse(timingText.slice(timingText.indexOf('{'), timingText.lastIndexOf('}') + 1)) as Timing;
@@ -44,7 +43,6 @@ describe('promo video: one timing for the picture and the music', () => {
     const start = (id: string): number => Number(new RegExp(`id="${id}" data-start="([\\d.]+)"`).exec(html)?.[1]);
     const s = timing.scenes;
     expect(start('v-live')).toBe(s.live);
-    expect(start('v-slow')).toBe(s.slow);
     expect(start('v-two')).toBe(s.twostep);
     expect(start('v-typing')).toBe(s.race);
     expect(start('v-quick')).toBe(s.race);
@@ -63,8 +61,10 @@ describe('promo video: one timing for the picture and the music', () => {
     expect(s.live).toBeLessThanOrEqual(0.6);
     // The first scene takes its time: the panel is on screen for two beats at least before Return.
     expect(timing.live.ret - timing.live.panel).toBeGreaterThanOrEqual(2 * s.beat);
-    expect(s.slow - s.live).toBeCloseTo(timing.live.duration, 9);
-    expect(s.twostep - s.slow).toBeCloseTo(timing.slow.duration, 9);
+    // The two-step scene has time for its headline, and holds the filled code for a beat or more.
+    expect(s.race - s.twostep).toBeGreaterThanOrEqual(2.5);
+    expect(timing.twostep.duration - timing.twostep.code).toBeGreaterThanOrEqual(s.beat);
+    expect(s.twostep - s.live).toBeCloseTo(timing.live.duration, 9);
     expect(s.race - s.twostep).toBeCloseTo(timing.twostep.duration, 9);
     expect(s.end - s.race).toBeCloseTo(timing.race.duration, 9);
     // The end card: 1.7 s at least, and on screen at 7/8 of the video, where YouTube takes a thumbnail from.
@@ -78,20 +78,29 @@ describe('promo video: one timing for the picture and the music', () => {
     expect(60 / beat).toBeGreaterThanOrEqual(120);
     expect(60 / beat).toBeLessThanOrEqual(128);
     const offBeat = (t: number): number => Math.abs((t - s.live) / beat - Math.round((t - s.live) / beat)) * beat;
-    for (const start of [s.live, s.slow, s.twostep, s.race, s.end]) expect(offBeat(start), `scene at ${start} s`).toBeLessThan(1e-6);
-    for (const fill of [s.live + timing.live.filled, s.slow + timing.slow.filled, s.twostep + timing.twostep.code, s.race + timing.race.pieFilledAt]) {
+    for (const start of [s.live, s.twostep, s.race, s.end]) expect(offBeat(start), `scene at ${start} s`).toBeLessThan(1e-6);
+    for (const fill of [s.live + timing.live.filled, s.twostep + timing.twostep.code, s.race + timing.race.pieFilledAt]) {
       expect(offBeat(fill), `fill at ${fill.toFixed(3)} s`).toBeLessThanOrEqual(FRAME);
     }
   });
 
-  it('says how much slower or faster the parts not in real time are, and keeps their clocks true', () => {
+  it('counts Return to filled in real time, and stops on the measured median, within a frame of this take', () => {
     const html = read('composition/index.html');
-    // The labels are written from the data the clips were cut with.
-    expect(html).toContain('`Replay, ${T.slow.factor}× slower`');
+    // The counter runs for as long as this take took from Return to filled, to the median of the measured runs.
+    expect(html).toContain("tl.to(count, { v: median, duration: T.live.filled - T.live.ret, ease: 'none', onUpdate: showCount }, S1 + T.live.ret);");
+    expect(html).toContain('const median = Math.round(T.measured.medianMs);');
+    // The take's own time, by the page's clock and by the frames of the clip, is less than a frame from the median.
+    expect(Math.abs(timing.live.measuredMs - timing.measured.medianMs)).toBeLessThan(1000 * FRAME);
+    expect(Math.abs((timing.live.filled - timing.live.ret) * 1000 - timing.live.measuredMs)).toBeLessThan(1000 * FRAME);
+    expect(timing.live.measuredMs).toBeLessThan(500);
+  });
+
+  it('says how much faster the typing is shown, and keeps its clock true', () => {
+    const html = read('composition/index.html');
+    // The label is written from the number the clip was cut with, and nothing else is slowed down or sped up.
     expect(html).toContain('`${T.race.ff}× speed`');
     expect(html).not.toMatch(/\d× (slower|speed|faster)/);
-    // Slow motion: Return to filled takes `factor` times what it took.
-    expect((timing.slow.filled - timing.slow.ret) / timing.slow.factor * 1000).toBeCloseTo(timing.slow.measuredMs, 0);
+    expect(html).not.toContain('slower');
     // Side by side: both start at the same moment, and the typing runs `ff` times as fast as it was typed.
     expect(timing.race.typingFirstKeyAt).toBe(timing.race.pieHotkeyAt);
     expect((timing.race.typingDoneAt - timing.race.typingFirstKeyAt) * timing.race.ff * 1000).toBeCloseTo(timing.race.typingMs, 3);
@@ -103,12 +112,11 @@ describe('promo video: one timing for the picture and the music', () => {
     const s = timing.scenes;
     expect(p.fills).toEqual([
       s.live + timing.live.filled,
-      s.slow + timing.slow.filled,
       s.twostep + timing.twostep.code,
       s.race + timing.race.pieFilledAt,
     ]);
     // The drums come in with the first scene, each scene starts a section, and the last hit is the end card.
-    expect(p.sections).toEqual([s.live, s.slow, s.twostep, s.race]);
+    expect(p.sections).toEqual([s.live, s.twostep, s.race]);
     expect(p.end_card).toBe(s.end);
     expect(p.duration).toBe(s.duration);
     expect(p.beat).toBe(s.beat);
@@ -123,7 +131,7 @@ describe('promo video: one timing for the picture and the music', () => {
       const slower = beat * 1.1;
       const s = moved.scenes;
       const beats = (t: number): number => Math.round((t - timing.scenes.live) / beat);
-      [s.slow, s.twostep, s.race, s.end] = [s.slow, s.twostep, s.race, s.end].map((t) => s.live + beats(t) * slower) as [number, number, number, number];
+      [s.twostep, s.race, s.end] = [s.twostep, s.race, s.end].map((t) => s.live + beats(t) * slower) as [number, number, number];
       s.beat = slower;
       s.duration = s.end + 2;
       moved.live.filled += 0.25;
@@ -131,11 +139,11 @@ describe('promo video: one timing for the picture and the music', () => {
       writeFileSync(file, `// moved\nwindow.PP = ${JSON.stringify(moved, null, 2)};\n`);
       const [was, now] = [plan(), plan(file)];
       expect(now.beat).toBeCloseTo(slower, 9);
-      expect(now.sections).toEqual([s.live, s.slow, s.twostep, s.race]);
+      expect(now.sections).toEqual([s.live, s.twostep, s.race]);
       expect(now.end_card).toBe(s.end);
       expect(now.duration).toBe(s.duration);
       expect(now.fills[0]).toBeCloseTo(was.fills[0]! + 0.25, 9);
-      expect(now.fills[3]).toBeCloseTo(s.race + timing.race.pieFilledAt, 9);
+      expect(now.fills[2]).toBeCloseTo(s.race + timing.race.pieFilledAt, 9);
       // A scene that starts off the beat is refused, not played out of time.
       moved.scenes.twostep += 0.1;
       writeFileSync(file, `// off the beat\nwindow.PP = ${JSON.stringify(moved, null, 2)};\n`);
@@ -176,8 +184,9 @@ describe.skipIf(!ffmpeg)('promo video: the finished file', () => {
 
   /** How alike a frame of the video (at `seconds`) and the cover are: SSIM, 1 = the same picture. */
   const likeCover = (seconds: number): number => {
-    const log = ffmpegLog(['-ss', seconds.toFixed(4), '-i', mp4, '-i', cover, '-frames:v', '1',
-      '-lavfi', '[0:v]scale=1280:720:flags=area,format=gbrp[a];[1:v]format=gbrp[b];[a][b]ssim']);
+    // The frame by its number: a seek to a time can land a frame off.
+    const log = ffmpegLog(['-i', mp4, '-i', cover, '-frames:v', '1',
+      '-lavfi', `[0:v]select='eq(n,${Math.round(seconds * 60)})',scale=1280:720:flags=area,format=gbrp[a];[1:v]format=gbrp[b];[a][b]ssim`]);
     return Number(/SSIM .*All:([\d.]+)/.exec(log)?.[1]);
   };
 
@@ -190,27 +199,26 @@ describe.skipIf(!ffmpeg)('promo video: the finished file', () => {
     expect(Number(a.start_time)).toBe(0);
   });
 
-  it('opens on the cover, and has left it by the first scene', () => {
+  it('opens on the whole cover and cuts from it to the first scene on the first beat', () => {
     expect(likeCover(0)).toBeGreaterThan(0.97);
-    expect(likeCover(timing.scenes.live - 0.2)).toBeGreaterThan(0.97);
-    // The same measure tells the cover from the rest of the video.
+    // Whole until its last frame: no dissolve with the scene under it.
+    expect(likeCover(timing.scenes.live - FRAME)).toBeGreaterThan(0.97);
     expect(likeCover(timing.scenes.live)).toBeLessThan(0.8);
     expect(likeCover(timing.scenes.end + 1)).toBeLessThan(0.8);
   });
 
   it('cuts on the beat: a scene is all there on its first frame, and was not there the frame before', () => {
-    // The part of the picture each scene brings and then leaves alone: its headline (for the slow motion the
-    // lines beside the counter, which runs), and for the end card everything.
-    const [headline, beside, all] = ['900:170:180:20', '640:170:1100:20', '1920:1080:0:0'];
+    // The part of the picture each scene brings and then leaves alone: its headline, and for the end card everything.
+    const [headline, all] = ['620:170:180:20', '1920:1080:0:0'];
     const s = timing.scenes;
     const alike = (crop: string, a: number, b: number): number => {
       const log = ffmpegLog(['-ss', a.toFixed(4), '-i', mp4, '-ss', b.toFixed(4), '-i', mp4, '-frames:v', '1',
         '-lavfi', `[0:v]crop=${crop}[a];[1:v]crop=${crop}[b];[a][b]ssim`]);
       return Number(/SSIM .*All:([\d.]+)/.exec(log)?.[1]);
     };
-    for (const [crop, start] of [[headline, s.live], [beside, s.slow], [headline, s.twostep], [headline, s.race], [all, s.end]] as const) {
+    for (const [crop, start] of [[headline, s.live], [headline, s.twostep], [headline, s.race], [all, s.end]] as const) {
       expect(alike(crop, start, start + 0.3), `scene at ${start} s, on its first frame`).toBeGreaterThan(0.99);
-      if (start > s.live) expect(alike(crop, start - FRAME, start + 0.3), `scene at ${start} s, the frame before`).toBeLessThan(0.9);
+      expect(alike(crop, start - FRAME, start + 0.3), `scene at ${start} s, the frame before`).toBeLessThan(0.9);
     }
   });
 
@@ -251,7 +259,7 @@ describe.skipIf(!ffmpeg)('promo video: the finished file', () => {
     // of the two-step code: where the page with the code in them replaces the sign-in page.
     const [card, half, code] = ['300:24:1036:544', '260:20:1406:476', '440:60:1015:583'];
     const s = timing.scenes;
-    for (const [crop, at] of [[card, s.live + timing.live.filled], [card, s.slow + timing.slow.filled], [code, s.twostep + timing.twostep.code],
+    for (const [crop, at] of [[card, s.live + timing.live.filled], [card, s.twostep + timing.twostep.filled], [code, s.twostep + timing.twostep.code],
       [half, s.race + timing.race.pieFilledAt]] as const) {
       expect(Math.abs(changesAt(crop, at) - at), `fill at ${at.toFixed(3)} s`).toBeLessThanOrEqual(FRAME + 1e-3);
     }
@@ -261,8 +269,7 @@ describe.skipIf(!ffmpeg)('promo video: the finished file', () => {
     const run = spawnSync('uv', ['run', '-q', path.join(video, 'music/check.py'), mp4], { encoding: 'utf8' });
     const heard = JSON.parse(run.stdout) as { seconds: number; cues: { at: number; heard: number }[]; lufs: number; truePeak: number; problems: string[] };
     const s = timing.scenes;
-    expect(heard.cues.map((c) => c.at)).toEqual([s.live + timing.live.filled, s.slow + timing.slow.filled,
-      s.twostep + timing.twostep.code, s.race + timing.race.pieFilledAt]);
+    expect(heard.cues.map((c) => c.at)).toEqual([s.live + timing.live.filled, s.twostep + timing.twostep.code, s.race + timing.race.pieFilledAt]);
     for (const c of heard.cues) expect(Math.abs(c.heard - c.at), `cue at ${c.at.toFixed(3)} s, heard at ${c.heard.toFixed(3)} s`).toBeLessThanOrEqual(FRAME);
     expect(Math.abs(heard.lufs + 16)).toBeLessThanOrEqual(0.5);
     expect(heard.truePeak).toBeLessThanOrEqual(-1.5);
