@@ -97,6 +97,26 @@ final class BridgeChangeTests: XCTestCase {
         XCTAssertNil(other.pending.change)
     }
 
+    func testAResetLinkOnAnotherDomainGetsTheNewPasswordAndTheQuestion() {
+        var entry = login()
+        let link = "https://accounts.example-id.net/password"
+        PasswordRotation.setResetLink(link, on: &entry)
+        var state = BridgeState()
+        state.pending.set(PendingFill(entryID: entry.id, browser: .chrome, website: link, created: start, newPassword: "brand-new")!)
+        let page = request(#"{"type":"tab","id":7,"url":"https://accounts.example-id.net/password"}"#)
+        let fill = object(state.handle(page, from: .chrome, locked: false, now: start) { _ in entry })["fill"] as? [String: Any]
+        XCTAssertEqual(fill?["password"] as? String, "hunter2")
+        XCTAssertEqual(fill?["newPassword"] as? String, "brand-new")
+
+        var reported: [UUID] = []
+        // The account's website is not the site that got the new password.
+        _ = state.handle(changed, from: .chrome, locked: false, now: start + 5, changed: { reported.append($0) }) { _ in entry }
+        XCTAssertTrue(reported.isEmpty)
+        let sent = request(#"{"type":"changed","id":8,"url":"https://accounts.example-id.net/"}"#)
+        _ = state.handle(sent, from: .chrome, locked: false, now: start + 6, changed: { reported.append($0) }) { _ in entry }
+        XCTAssertEqual(reported, [entry.id])
+    }
+
     func testChangedReportsTheAccountOnce() {
         let entry = login()
         var state = armed(entry)

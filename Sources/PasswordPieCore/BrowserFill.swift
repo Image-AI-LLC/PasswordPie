@@ -266,6 +266,21 @@ public func entryWebsites(_ entry: VaultEntry) -> [String] {
     ([entry.url] + EntryMerge.otherWebsites(entry).map(\.value)).filter { !$0.isEmpty }
 }
 
+/// The addresses whose sites the entry may fill: its websites, then its reset link. The page where a password is changed
+/// asks for the same account, often on another domain. An `http` reset link is left out on a site the entry has an
+/// `https` website for, so it never undoes "No downgrade". See "The reset link's site is the account's site too" in
+/// docs/UX.md.
+public func entryFillSites(_ entry: VaultEntry) -> [String] {
+    let websites = entryWebsites(entry)
+    let link = PasswordRotation.resetLink(of: entry)
+    guard !link.isEmpty, let site = BrowserSite(url: link) else { return websites }
+    if site.scheme == "http", !site.isLoopback,
+       websites.contains(where: { website in BrowserSite(url: website).map { $0.scheme == "https" && $0.key == site.key } == true }) {
+        return websites
+    }
+    return websites + [link]
+}
+
 /// One account the user picked to fill, waiting for the extension to ask for it.
 public struct PendingFill: Equatable, Sendable {
     public let entryID: UUID
@@ -622,7 +637,7 @@ public struct BridgeState: Sendable {
             guard !locked,
                   let fill = pending.take(browser: browser, link: link, focused: links.focused(peer), pageURL: url, now: now),
                   let account = entry(fill.entryID),
-                  entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) else {
+                  entryFillSites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) else {
                 var answer = BridgeResponse(type: "tab", id: request.id)
                 if !locked, let code = pending.takeAnnouncement(browser: browser, link: link, page: page, now: now) {
                     let left = PendingFillStore.codeLifetime - now.timeIntervalSince(code.created)
@@ -654,7 +669,7 @@ public struct BridgeState: Sendable {
             if !locked, let page = BrowserSite(url: url),
                let change = pending.takeChange(browser: browser, link: link, pageURL: url, now: now),
                let account = entry(change.entryID),
-               entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) {
+               entryFillSites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) {
                 changed?(account.id)
             }
             return BridgeResponse(type: "changed", id: request.id, version: BridgeResponse.protocolVersion)
@@ -663,7 +678,7 @@ public struct BridgeState: Sendable {
             guard !locked, let page = BrowserSite(url: url),
                   let wanted = pending.takeCode(browser: browser, link: link, pageURL: url, now: now),
                   let account = entry(wanted.entryID),
-                  entryWebsites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
+                  entryFillSites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
                   OneTimeCodes.hasCode(account) else {
                 return BridgeResponse(type: "code", id: request.id)
             }
@@ -703,13 +718,14 @@ public struct BridgeState: Sendable {
 
 /// The accounts for the page the browser is on, for the top of the panel.
 public enum SiteSuggestions {
-    /// Entries with a website on the page's site that may fill it. Favorites first, then the most recently used, then title.
+    /// Entries with a website or a reset link on the page's site that may fill it. Favorites first, then the most recently
+    /// used, then title.
     public static func entries(_ entries: [VaultEntry], pageURL: String, lastUsed: [UUID: Date] = [:]) -> [VaultEntry] {
         guard let page = BrowserSite(url: pageURL) else { return [] }
         let needle = page.key
         let found = entries.filter { entry in
             guard !entry.trashed else { return false }
-            return entryWebsites(entry).contains { website in
+            return entryFillSites(entry).contains { website in
                 // A cheap substring test first: thousands of entries, one parse each only when it could match.
                 // An IPv6 key (`::1:3000`) never appears in the text as written (`[::1]:3000`), so those skip the shortcut.
                 guard !website.allSatisfy(\.isASCII) || page.host.contains(":") || website.lowercased().contains(needle) else { return false }
@@ -729,10 +745,11 @@ public enum SiteSuggestions {
         }.map(\.entry)
     }
 
-    /// The entry's website that may fill `pageURL`: the main one when it can, otherwise the first other website that can.
+    /// The entry's address that may fill `pageURL`: the main website when it can, otherwise the first other website that
+    /// can, otherwise its reset link.
     public static func matchingWebsite(of entry: VaultEntry, pageURL: String) -> String? {
         guard let page = BrowserSite(url: pageURL) else { return nil }
-        return entryWebsites(entry).first { BrowserSite(url: $0)?.allowsFill(on: page) == true }
+        return entryFillSites(entry).first { BrowserSite(url: $0)?.allowsFill(on: page) == true }
     }
 }
 

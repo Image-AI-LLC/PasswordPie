@@ -73,7 +73,7 @@ A Safari Web Extension can only message the native side when the extension asks;
 So credentials only ever travel as the answer to a request the extension made:
 
 1. The user picks an account and presses Return. The app records one **pending fill**: entry id, target browser, target
-   site (eTLD+1 of the entry website that matched), created at, and for Chrome the connection of the profile in front
+   site (eTLD+1 of the entry website that matched, or of its reset link), created at, and for Chrome the connection of the profile in front
    (see "Chrome profiles"). It expires after 30 s. Whether the app opened a new tab makes no difference: any tab of that
    browser, in that profile, on that site may take it.
 2. The app hides the panel (focus goes back to the browser) or opens the login URL in that browser
@@ -134,8 +134,8 @@ extension never submits the form and never presses the site's button. See `chang
 
 Sent when a frame of the fill's origin shows an empty code field, at most once per fill. `url` is that frame's origin,
 written as in `tab`. The app answers a code only when the vault is unlocked, the pending code is for this browser and
-the URL's site (same rules as a fill: eTLD+1, no downgrade), it is less than 30 s old, the account still has that website
-and a code, and this Mac has Premium (ACCOUNTS.md, "Who decides"). The request carries nothing about Premium, and any
+the URL's site (same rules as a fill: eTLD+1, no downgrade), it is less than 30 s old, the account still has that site
+(a website or its reset link) and a code, and this Mac has Premium (ACCOUNTS.md, "Who decides"). The request carries nothing about Premium, and any
 other field in it is ignored.
 `expiresIn` is the seconds left in the code's time step. The pending code is used up by the answer either way.
 `premium: false` means everything matched but there is no Premium: no code was computed, and the extension shows its
@@ -223,7 +223,7 @@ The app then keeps that one scan in memory for 2 minutes (a newer one replaces i
 locked, and shows the Add Two-Step Code window. It writes the database only when the person presses Add there. The
 secret is never logged, and the scan never reaches disk except as the item's `otp` field after Add.
 
-After Add, if the item has a website on the scanned page's site (same rules as a fill), the app keeps a **pending code** for
+After Add, if the item may fill the scanned page (same rules as a fill), the app keeps a **pending code** for
 that browser and site, for 30 seconds, and pokes. The next `tab` report from that site gets:
 
     ← {"type":"tab","id":9,"expectCode":{"origin":"https://example.com","expiresIn":28}}
@@ -314,11 +314,16 @@ All in `PasswordPieCore`, with tests:
   `alice.github.io` and `bob.github.io` are not. Hosts with no public suffix (`localhost`, an IP address, `intranet`)
   match only themselves exactly, port included.
 - **No downgrade.** An https entry does not fill an http page, except for `localhost` and `127.0.0.1`.
+- **The reset link is a site of the account.** An account's sites are its websites and its reset link
+  (`entryFillSites`), under the two rules above: the page where the password is changed asks for the same credentials,
+  often on another domain. The person typed that link into the item, as they typed the website. An `http` reset link
+  on a site where the account has an `https` website is left out, so a reset link never undoes "No downgrade". Search,
+  icons, Chrome logins, merging and the item a scanned code is offered for use the websites only.
 - **Fresh and once.** A pending fill is used by the first matching report and then deleted. After 30 s it is deleted
   unused. Locking the vault deletes it. A new pick replaces it.
 - **A new password only to the account's own site.** Reset Password hands the new password to the bridge only when the
-  reset address is on a site of the account under the two rules above, and only for Chrome with an extension that
-  speaks for the profile. Otherwise the page just opens. The new password is never typed by keystrokes, and a new
+  reset address is on a site of the account under the rules above (its reset link's site, or without a reset link its
+  website's), and only for Chrome with an extension that speaks for the profile. Otherwise the page just opens. The new password is never typed by keystrokes, and a new
   password that has become the saved one since the pick is left out.
 - **The profile in front.** A pick made over Chrome is for the connection of the profile in front, and no other
   connection may take it, whatever site its tab is on. A two-step code goes to the connection that took the fill, and

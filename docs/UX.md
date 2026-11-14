@@ -425,6 +425,8 @@ With the PasswordPie extension in Chrome or Safari:
 1. Press `⌘\` on a sign-in page. Above the usual menu, a group named after the site (`GITHUB.COM`) lists the accounts for
    that site, the first one selected. Accounts count as the same site when their website shares the domain you would
    register: `github.com`, `www.github.com` and `gist.github.com` are one site; `alice.github.io` and `bob.github.io` are two.
+   An account's reset link counts as one of its websites here: on the page where you change the password, the account
+   is listed and fills too ("A reminder to change a password").
 2. Press Return. The panel closes and the username and password appear in the form. The page does not submit.
 
 Typing in the search box works as always: the first letter replaces the site group with search results.
@@ -962,6 +964,17 @@ stops working, usually when you need to get in.
 - **Reset link**: the page where this account's password is changed. Optional; without it, the account's website is
   used.
 
+**The reset link's site is the account's site too.** Many services change the password on another domain than the one
+you sign in to: the website is `app.example.com`, the reset link is `https://accounts.example-id.net/password`. That
+page asks for the same username and password, so PasswordPie treats it as a site of the account: on any page of
+`example-id.net` the account is in the group at the top of the menu, Return fills it, and the two-step code follows.
+Only the site counts, as for a website; the rest of the link is where Reset Password goes. Return on another site
+still opens the account's website, never the reset link.
+
+- One thing a reset link does not do: lower `https` to `http`. An account whose website is `https://example.com` does
+  not fill `http://example.com`, whatever its reset link says.
+- Search does not look in the reset link, and the item's icon comes from its website.
+
 **The clock.** The period counts from the day the password last changed. When you turn the reminder on, that is the
 day PasswordPie knows the password was set; when it does not know, the day you turned it on.
 
@@ -989,7 +1002,8 @@ In the version downloaded from passwordpie.com, **Reset Password** does more tha
    password does not change: Return, Copy and Fill still give the one the site knows.
 2. The reset page opens in the browser. With the Chrome extension, the page's fields fill in: the current password
    where the page asks for it, and the new password in both the new and the confirm box. Nothing is submitted; you
-   press the site's own button.
+   press the site's own button. This is so on another domain than the account's website too: the reset link is yours,
+   typed into the item, and its site is the account's.
 3. When the page has taken the form, PasswordPie asks, over the browser: **"Did example.com accept the new
    password?"** with **Use New Password** and **Not Yet**.
 4. **Use New Password** makes it the saved password. The old one goes to previous passwords, and the reminder's clock
@@ -1006,7 +1020,7 @@ again, or when the question did not come up.
   must not answer it.
 - The site refused the password (too long, a character it does not allow)? Choose Not Yet, change the waiting password
   in the editor's Password row, or type one on the site and let Chrome save it: "The newest password wins".
-- The question comes only for a page on the account's site, within 10 minutes of Reset Password, once.
+- The question comes only for a page on the site Reset Password opened, within 10 minutes of Reset Password, once.
 - Reset Password for two accounts on one site, with both pages open: only the newest page is asked about. Finish the
   other with Use.
 - PasswordPie never presses the site's button and never decides by itself that the password changed.
@@ -1038,6 +1052,9 @@ The period, the link and the date live in the item, inside your database. Nothin
    confirm boxes filled. Open the item's previous passwords: one row, `new · not used yet`.
 6. Press the page's Change button. PasswordPie asks whether the site accepted it. Choose Use New Password: the details
    show the new password as saved, the old one under previous passwords, and "in 30 days".
+7. Another domain: edit "Demo" so its website is `https://example.com` and the reset link stays
+   `http://localhost:8787/change-password`. Open `http://localhost:8787` and press `⌘\`: Demo is at the top, under
+   `LOCALHOST:8787`, and Return fills the sign-in form. Reset Password still fills the change page.
 
 ## Updates that install themselves
 

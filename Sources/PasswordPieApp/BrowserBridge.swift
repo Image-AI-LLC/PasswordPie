@@ -17,8 +17,7 @@ enum BrowserFillPlan: Equatable {
 /// Return and ⇧Return fill this tab when it is the account's site, otherwise a new tab; ⌥Return always opens a new tab.
 /// `pageURL` is the browser's current tab, or nil when it is not known.
 func browserFillPlan(entry: VaultEntry, mode: FillMode, preferredWebsite: String?, pageURL: String?) -> BrowserFillPlan {
-    let websites = entryWebsites(entry).filter { webURL($0) != nil }
-    guard mode != .open, !websites.isEmpty else { return .keystrokes }
+    guard mode != .open else { return .keystrokes }
     if mode != .openAndFill, let pageURL {
         if let preferredWebsite, BrowserSite.allowsFill(entryWebsite: preferredWebsite, pageURL: pageURL) {
             return .thisTab(website: preferredWebsite)
@@ -27,8 +26,10 @@ func browserFillPlan(entry: VaultEntry, mode: FillMode, preferredWebsite: String
             return .thisTab(website: website)
         }
     }
-    let website = [preferredWebsite, entry.url].compactMap { $0 }.first { webURL($0) != nil } ?? websites[0]
-    guard let url = webURL(website) else { return .keystrokes }
+    // A new tab opens a website of the account, never its reset link.
+    let websites = entryWebsites(entry).filter { webURL($0) != nil }
+    guard let website = [preferredWebsite, entry.url].compactMap({ $0 }).first(where: { webURL($0) != nil }) ?? websites.first,
+          let url = webURL(website) else { return .keystrokes }
     return .newTab(website: website, url: url)
 }
 
@@ -399,7 +400,7 @@ final class BrowserBridge: ObservableObject {
     func expectScannedCode(entryID: UUID, browser: BridgeBrowser, origin: String) {
         let link = scanLinks[browser] ?? 0
         guard let entry = session.entry(entryID), let page = BrowserSite(url: origin),
-              entryWebsites(entry).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
+              entryFillSites(entry).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
               state.expectCode(afterScanOf: entryID, browser: browser, link: link, pageURL: origin, now: now()) else { return }
         poke(browser, link: link)
     }
@@ -548,7 +549,7 @@ final class BrowserBridge: ObservableObject {
     /// before there was anything to fill.
     func openReset(_ entry: VaultEntry, address: String, newPassword: String, front: FrontApp?) -> Bool {
         guard Self.chromeSupported, !newPassword.isEmpty, let url = webURL(address),
-              entryWebsites(entry).contains(where: { BrowserSite.allowsFill(entryWebsite: $0, pageURL: address) }) else { return false }
+              entryFillSites(entry).contains(where: { BrowserSite.allowsFill(entryWebsite: $0, pageURL: address) }) else { return false }
         var browser = Self.browser(forBundleID: front?.bundleID)
         var browserApp = front?.bundleURL
         if browser == nil, let app = defaultBrowser(url) {
