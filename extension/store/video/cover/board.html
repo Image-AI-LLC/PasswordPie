@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- A picture the way the Chrome Web Store shows a promo video before it plays: the 16:9 YouTube thumbnail in a 16:10
+     frame (black bars above and below), the store's play button over the centre, and beside it the 112 px picture
+     of the strip under the carousel. One row per ?img=FILE or ?img=FILE|LABEL. Rendered by ../render-cover.mjs board. -->
+<html lang="en"><head><meta charset="utf-8"><title>Promo video in the store</title><style>
+body { margin:0; width:1040px; background:#fff; font-family:-apple-system,sans-serif; color:#444; }
+.row { display:flex; align-items:center; gap:36px; padding:26px 30px; border-bottom:1px solid #e3e3e3; }
+.big { flex:none; position:relative; width:740px; height:462px; background:#000; border-radius:8px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+.big img { position:absolute; left:0; top:23px; width:740px; height:416px; }
+.play { position:absolute; left:335px; top:196px; width:70px; height:70px; border-radius:50%; background:rgba(95,99,104,.88); }
+.play::after { content:""; position:absolute; left:27px; top:20px; border-left:24px solid #fff; border-top:15px solid transparent; border-bottom:15px solid transparent; }
+.side { display:flex; flex-direction:column; gap:14px; font-size:15px; line-height:20px; }
+.small { flex:none; position:relative; width:112px; height:70px; background:#000; border-radius:6px; overflow:hidden; outline:3px solid #1a56db; outline-offset:2px; }
+.small img { position:absolute; left:0; top:3.5px; width:112px; height:63px; }
+</style></head><body><script>
+for (const value of new URLSearchParams(location.search).getAll('img')) {
+  const [src, label = ''] = value.split('|');
+  const row = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'row' }));
+  row.innerHTML = '<div class="big"><img alt=""><i class="play"></i></div><div class="side"><div class="small"><img alt=""></div><span></span></div>';
+  for (const img of row.querySelectorAll('img')) img.src = src;
+  row.querySelector('span').textContent = label;
+}
+</script></body></html>

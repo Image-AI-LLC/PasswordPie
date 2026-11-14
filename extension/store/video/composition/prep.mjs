@@ -1,5 +1,5 @@
 // Cuts the recorded takes (../takes) into the clips the composition plays, and writes timing.js: when each key was
-// pressed and when each field filled, in clip time. Needs ffmpeg. Run from anywhere: node prep.mjs
+// pressed and when each field filled, in clip time, and when each scene starts. Needs ffmpeg. Run from anywhere: node prep.mjs
 //
 // The takes' event times are epoch ms from the recorder and the page. They are put on the video's clock by finding
 // the frame where the username first shows in the form (a jump in the email field's brightness) and lining it up with
@@ -26,8 +26,8 @@ function constantRate(name) {
 const take = (name) => ({ ...JSON.parse(readFileSync(path.join(takes, `${name}.json`), 'utf8')), mov: constantRate(name) });
 
 /** Seconds into the video of the first frame where the email field changes brightness by > 5. `crop` is the field
- * in that video's pixels (default: a take, 2560x1440). */
-function fieldShows(mov, crop = '500:40:1500:625') {
+ * in that video's pixels (default: a take, 2560x1440); `from`: look only from there on, and compare with that frame. */
+function fieldShows(mov, crop = '500:40:1500:625', from = 0) {
   const out = execFileSync('ffmpeg', ['-v', 'error', '-i', mov, '-vf',
     `crop=${crop},signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-`, '-f', 'null', '-'], { encoding: 'utf8' });
   let t = 0;
@@ -36,7 +36,7 @@ function fieldShows(mov, crop = '500:40:1500:625') {
     const pts = /pts_time:([\d.]+)/.exec(line);
     if (pts) { t = Number(pts[1]); continue; }
     const y = /YAVG=([\d.]+)/.exec(line);
-    if (!y) continue;
+    if (!y || t < from) continue;
     if (first === undefined) first = Number(y[1]);
     else if (Math.abs(Number(y[1]) - first) > 5) return t;
   }
@@ -65,15 +65,25 @@ const HALF = 'crop=1460:915:680:200,scale=820:514:flags=lanczos';
 // Every clip is padded with its last frame to exactly `duration`.
 // (A frame count, not -t: with these sources -t stops a few frames short.)
 const frames = (seconds) => ['-frames:v', String(Math.round(seconds * 60))];
+// Where a cut starts, for ffmpeg: half a frame early, so the frame that starts at `from` is the first one kept
+// (rounded to four places, `from` itself can fall just after it, and the cut would start a frame late).
+const seek = (from) => (from - 0.5 / 60).toFixed(4);
 function cut(out, mov, from, duration, vf) {
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', from.toFixed(4), '-i', mov,
-    '-vf', `tpad=stop_mode=clone:stop_duration=10,fps=60,${vf}`, ...frames(duration), ...ENC, path.join(clips, out)]);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', seek(from), '-i', mov,
+    '-vf', `tpad=stop_mode=clone:stop_duration=10,fps=60,setpts=PTS-STARTPTS,${vf}`, ...frames(duration), ...ENC, path.join(clips, out)]);
+  startsAtZero(out);
 }
 
 const T = {};
 // The email field in a clip: the take's field (1500,625 500x40) through the CARD or HALF crop and scale.
 const CARD_FIELD = '300:24:856:334';
 const HALF_FIELD = '260:20:406:240';
+/** A clip that does not start at 0 is played that much late by the renderer, whatever ffmpeg measures in it. */
+function startsAtZero(clip) {
+  const startsAt = Number(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=start_time', '-of', 'csv=p=0',
+    path.join(clips, clip)], { encoding: 'utf8' }));
+  if (startsAt !== 0) throw new Error(`${clip} starts at ${startsAt} s, not 0`);
+}
 /** Seeking in a variable-frame-rate take lands a few frames early: move a clip's times to where its fill really is. */
 function settle(times, clip, crop) {
   const shift = fieldShows(path.join(clips, clip), crop) - times.filled;
@@ -83,73 +93,85 @@ function settle(times, clip, crop) {
   return times;
 }
 
-// 1. Real time: ⌘\, the panel, Return, filled.
+// The video is cut to a beat: 120 a minute, so a beat is 0.5 s, 30 frames. A scene starts on a beat, and its clip
+// is cut so that what it is about (the form fills, the code fills) lands on a beat too: only where a clip starts
+// is chosen. Nothing marked as real time is sped up, slowed down or thinned out.
+// The composition (index.html), the music (../music/synth.py) and the tests take the scene starts from here.
+const BEAT = 0.5;
+T.scenes = { beat: BEAT, cover: 0, live: 1 * BEAT, twostep: 7 * BEAT, race: 12 * BEAT, end: 18 * BEAT, duration: 22 * BEAT };
+const lasts = (scene, next) => T.scenes[next] - T.scenes[scene];
+// A form fills on the fourth beat of its scene (the sixth of the first scene, which takes its time: the panel is on
+// screen for two beats before Return), and so does the two-step code.
+const FILL_AT = 3 * BEAT;
+const FIRST_FILL_AT = 5 * BEAT;
+
+// 1. Real time, the fill take: the page, ⌘\, the panel with the account on top for more than a second, Return, filled.
 {
-  const start = fill.v(fill.hotkey) - 0.5;
-  cut('live.mp4', fill.mov, start, 3.6, CARD);
-  T.live = settle({ duration: 3.6, hotkey: fill.v(fill.hotkey) - start, ret: fill.v(fill.ret) - start, filled: fill.v(fill.filled) - start,
-    measuredMs: fill.filled - fill.ret }, 'live.mp4', CARD_FIELD);
+  const duration = lasts('live', 'twostep');
+  const start = fill.v(fill.filled) - FIRST_FILL_AT;
+  cut('live.mp4', fill.mov, start, duration, CARD);
+  T.live = settle({ duration, hotkey: fill.v(fill.hotkey) - start, panel: fill.v(fill.panel) - start, ret: fill.v(fill.ret) - start,
+    filled: fill.v(fill.filled) - start, measuredMs: fill.filled - fill.ret }, 'live.mp4', CARD_FIELD);
 }
 
-// 2. The same take, four times slower, from just before Return to just after the fill.
+// 2. Two-step, in real time, from just after Return: the form fills, Sign in, and the code fills itself on the next
+//    page. What comes after (Verify, home) is left out. The code is where it shows: the next page comes up with its
+//    six boxes empty, and two frames later they are filled; that second frame is the one put on the beat.
 {
-  const slow = 4;
-  const start = fill.v(fill.ret) - 0.35;
-  const span = 1.25;
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', start.toFixed(4), '-i', fill.mov,
-    '-vf', `tpad=stop_mode=clone:stop_duration=10,fps=60,setpts=${slow}*PTS,fps=60,${CARD}`, ...frames(span * slow),
-    ...ENC, path.join(clips, 'slow.mp4')]);
-  T.slow = settle({ duration: span * slow, factor: slow, ret: (fill.v(fill.ret) - start) * slow, filled: (fill.v(fill.filled) - start) * slow },
-    'slow.mp4', CARD_FIELD);
-}
-
-// 3. Two-step, from just before Return: fill, Sign in, the code fills on the next page, Verify, home.
-{
-  const start = twostep.v(twostep.ret) - 0.7;
-  const duration = 4.8;
+  const duration = lasts('twostep', 'race');
+  const CODE_BOXES = '722:98:1370:692';
+  const pageShows = fieldShows(twostep.mov, CODE_BOXES, twostep.v(twostep.submit));
+  const codeShows = fieldShows(twostep.mov, CODE_BOXES, pageShows);
+  if (Math.abs(codeShows - twostep.v(twostep.code)) > 2 / 60) throw new Error(`the code shows ${(codeShows - twostep.v(twostep.code)).toFixed(3)} s from where the page noted it`);
+  const start = codeShows - FILL_AT;
   cut('twostep.mp4', twostep.mov, start, duration, CARD);
   const at = (ms) => twostep.v(ms) - start;
-  T.twostep = settle({ duration, hotkey: at(twostep.hotkey), ret: at(twostep.ret), filled: at(twostep.filled), submit: at(twostep.submit),
-    code: at(twostep.code), verify: at(twostep.verify), home: at(twostep.home) }, 'twostep.mp4', CARD_FIELD);
+  T.twostep = settle({ duration, ret: at(twostep.ret), filled: at(twostep.filled), submit: at(twostep.submit), page: pageShows - start,
+    code: codeShows - start, codeNoted: at(twostep.code) }, 'twostep.mp4', CARD_FIELD);
 }
 
-// 4. Side by side. Left: typing, real time for 3.6 s, then 4x until the last key, then held. Right: PasswordPie.
+// 3. Side by side, both from the first key at the same moment. Right: PasswordPie in real time (the quick take:
+//    one second from ⌘\ to filled). Left: typing, `ff` times faster all the way, then held on its last frame.
 {
-  const duration = 7.4;
-  const realtime = 3.6;
-  const ff = 4;
-  const lead = 0.4;
-  const l0 = typing.v(typing.click) - lead;
-  const lEnd = typing.v(typing.typeEnd) + 0.15;
-  const fast = (lEnd - (l0 + realtime)) / ff;
-  const hold = duration - realtime - fast;
-  if (hold < 0.8) throw new Error(`typing take too long for the side-by-side: ${fast.toFixed(2)} s at ${ff}x`);
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-ss', l0.toFixed(4), '-t', (lEnd - l0).toFixed(4), '-i', typing.mov, '-filter_complex',
-    `[0:v]tpad=stop_mode=clone:stop_duration=1,fps=60,trim=0:${(lEnd - l0).toFixed(4)},${HALF},split[a][b];[a]trim=0:${realtime},setpts=PTS-STARTPTS[a1];` +
-    `[b]trim=${realtime},setpts=(PTS-STARTPTS)/${ff},fps=60,tpad=stop_mode=clone:stop_duration=${(hold + 1).toFixed(4)}[b1];[a1][b1]concat=n=2:v=1[v]`,
-    '-map', '[v]', ...frames(duration), ...ENC, path.join(clips, 'typing.mp4')]);
-  const r0 = quick.v(quick.hotkey) - lead;
+  const duration = lasts('race', 'end');
+  const ff = 6;
+  const r0 = quick.v(quick.filled) - FILL_AT;
   cut('quick.mp4', quick.mov, r0, duration, HALF);
+  const pie = settle({ hotkey: quick.v(quick.hotkey) - r0, ret: quick.v(quick.ret) - r0, filled: quick.v(quick.filled) - r0 }, 'quick.mp4', HALF_FIELD);
+  // The typing take from `ff` times as long before its first key as the right side has before ⌘\. The take starts
+  // 1.8 s before the first key; where that is not enough, its first frame (the page, untouched) is held.
+  const l0 = typing.v(typing.typeStart) - pie.hotkey * ff;
+  const held = Math.max(0, -l0);
+  const lEnd = typing.v(typing.typeEnd) + 0.15;
+  const typed = (typing.typeEnd - typing.typeStart) / 1000;
+  if (pie.hotkey + typed / ff > duration - 0.4) throw new Error(`typing at ${ff}x does not end in time for the side-by-side`);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', typing.mov, '-vf',
+    `fps=60,tpad=start_mode=clone:start_duration=${held.toFixed(4)},trim=${Math.max(0, l0).toFixed(4)}:${(held + lEnd).toFixed(4)},` +
+    `setpts=(PTS-STARTPTS)/${ff},fps=60,tpad=stop_mode=clone:stop_duration=${duration},${HALF}`,
+    ...frames(duration), ...ENC, path.join(clips, 'typing.mp4')]);
+  startsAtZero('typing.mp4');
   T.race = {
-    duration, realtime, ff, lead,
+    duration, ff,
     // Left timer: from the first key typed to the last key of the password (the click into the field comes before).
     typingMs: typing.typeEnd - typing.typeStart,
     typingKeys: typing.keys,
     typingAvgGapMs: (typing.typeEnd - typing.typeStart) / (typing.keys - 1),
+    typingFirstKeyAt: pie.hotkey,
+    typingDoneAt: pie.hotkey + typed / ff,
+    typingHeld: held / ff,
     // Right timer: from ⌘\ to the username and password in the form.
     pieMs: quick.filled - quick.hotkey,
-    pieHotkeyAt: quick.v(quick.hotkey) - r0,
-    pieReturnAt: quick.v(quick.ret) - r0,
-    pieFilledAt: quick.v(quick.filled) - r0,
+    pieHotkeyAt: pie.hotkey, pieReturnAt: pie.ret, pieFilledAt: pie.filled, pieShift: pie.shift,
   };
-  const pie = settle({ hotkey: T.race.pieHotkeyAt, ret: T.race.pieReturnAt, filled: T.race.pieFilledAt }, 'quick.mp4', HALF_FIELD);
-  Object.assign(T.race, { pieHotkeyAt: pie.hotkey, pieReturnAt: pie.ret, pieFilledAt: pie.filled, pieShift: pie.shift,
-    typingFirstKeyAt: lead + (typing.typeStart - typing.click) / 1000 });
+}
+
+for (const [scene, at, beat] of [['live', T.live.filled, FIRST_FILL_AT], ['twostep', T.twostep.code, FILL_AT], ['race', T.race.pieFilledAt, FILL_AT]]) {
+  if (Math.abs(at - beat) > 1 / 60 + 1e-6) throw new Error(`${scene}: fills at ${at.toFixed(3)} s of its scene, not on the beat at ${beat} s`);
 }
 
 const m = JSON.parse(readFileSync(path.join(dir, '../measurements.json'), 'utf8'));
 T.measured = { runs: m.fill.n, medianMs: m.fill.median, p90Ms: m.fill.p90, machine: m.machine, chrome: m.chrome };
 T.offsets = { fill: fill.offset, quick: quick.offset, twostep: twostep.offset };
 
-writeFileSync(path.join(dir, 'timing.js'), `// Written by prep.mjs from ../takes and ../measurements.json. Times in seconds of each clip.\nwindow.PP = ${JSON.stringify(T, null, 2)};\n`);
+writeFileSync(path.join(dir, 'timing.js'), `// Written by prep.mjs from ../takes and ../measurements.json. Times in seconds of each clip; scenes in seconds of the video.\nwindow.PP = ${JSON.stringify(T, null, 2)};\n`);
 console.log(JSON.stringify(T, null, 2));

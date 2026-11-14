@@ -1,45 +1,47 @@
-// Written by prep.mjs from ../takes and ../measurements.json. Times in seconds of each clip.
+// Written by prep.mjs from ../takes and ../measurements.json. Times in seconds of each clip; scenes in seconds of the video.
 window.PP = {
-  "live": {
-    "duration": 3.6,
-    "hotkey": 0.49803295117187485,
-    "ret": 1.7817329023437498,
-    "filled": 2.233333,
-    "measuredMs": 451.60009765625,
-    "shift": -0.001967048828125151
+  "scenes": {
+    "beat": 0.5,
+    "cover": 0,
+    "live": 0.5,
+    "twostep": 3.5,
+    "race": 6,
+    "end": 9,
+    "duration": 11
   },
-  "slow": {
-    "duration": 5,
-    "factor": 4,
-    "ret": 1.3935996093749994,
-    "filled": 3.2,
-    "shift": -0.0064003906250009734
+  "live": {
+    "duration": 3,
+    "hotkey": 0.7646999511718748,
+    "panel": 0.8964999999999999,
+    "ret": 2.04839990234375,
+    "filled": 2.5,
+    "measuredMs": 451.60009765625,
+    "shift": 0
   },
   "twostep": {
-    "duration": 4.8,
-    "hotkey": -0.40909985351562517,
-    "ret": 0.6985002441406247,
-    "filled": 1.15,
-    "submit": 2.179400146484375,
-    "code": 2.2524001464843746,
-    "verify": 3.7393000488281247,
-    "home": 3.7929001464843752,
-    "shift": -0.0014997558593752292
+    "duration": 2.5,
+    "ret": -0.05149975585937516,
+    "filled": 0.4,
+    "submit": 1.4294001464843746,
+    "page": 1.4666669999999997,
+    "code": 1.5,
+    "codeNoted": 1.5024001464843746,
+    "shift": 1.1102230246251565e-16
   },
   "race": {
-    "duration": 7.4,
-    "realtime": 3.6,
-    "ff": 4,
-    "lead": 0.4,
+    "duration": 3,
+    "ff": 6,
     "typingMs": 11683.699951171875,
     "typingKeys": 39,
     "typingAvgGapMs": 307.46578818873354,
+    "typingFirstKeyAt": 0.47430004882812504,
+    "typingDoneAt": 2.421583374023437,
+    "typingHeld": 0.1490667317708334,
     "pieMs": 1025.699951171875,
-    "pieHotkeyAt": 0.39096704882812505,
-    "pieReturnAt": 0.9540669023437499,
-    "pieFilledAt": 1.416667,
-    "pieShift": -0.00903295117187497,
-    "typingFirstKeyAt": 1.02710009765625
+    "pieHotkeyAt": 0.47430004882812504,
+    "pieReturnAt": 1.03739990234375,
+    "pieFilledAt": 1.5,
+    "pieShift": 0
   },
   "measured": {
     "runs": 25,
