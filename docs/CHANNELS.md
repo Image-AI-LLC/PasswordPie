@@ -71,7 +71,14 @@ Before the build:
 
 Then:
 
-    NOTARY_ENV=<file with APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID> Scripts/release-direct.sh
+    Scripts/release-direct.sh
+
+Notarization signs in with the notarytool keychain profile `passwordpie-notary` (another name: `NOTARY_PROFILE`), so
+nobody types the app-specific password for a release and it is on no command line while the script waits for Apple.
+On a Mac that has no such profile yet, give the script the credentials once, as
+`NOTARY_ENV=<file with APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID>` or in the environment: it stores them as the profile
+and uses that from then on. `Scripts/release-direct.sh --check` only signs in and says whether it works. The keychain
+is locked to an SSH session, so run the script from a terminal of the logged-in desktop.
 
 It runs `make dist-direct`, notarizes and staples the app, then wraps it in `build/direct/PasswordPie-<version>.dmg`
 (with an Applications shortcut), signs, notarizes and staples the DMG, and checks both with `spctl`. Attach the DMG and
