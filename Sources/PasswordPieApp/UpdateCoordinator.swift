@@ -16,6 +16,8 @@ final class UpdateCoordinator: ObservableObject {
         var check: (@escaping (UpdateOutcome?) -> Void) -> Void
         /// Starts `PasswordPieUpdater install`, which waits for this app to exit. False when it could not be started.
         var install: (_ staged: String, _ relaunch: Bool) -> Bool
+        /// True while the staged app is still in the updater's cache: a later check may have thrown it away.
+        var stagedExists: (_ path: String) -> Bool
         var quit: () -> Void
         /// The vault is locked and no PasswordPie window is open.
         var isIdle: () -> Bool
@@ -102,7 +104,7 @@ final class UpdateCoordinator: ObservableObject {
 
     private func finish(_ outcome: UpdateOutcome?) {
         guard let outcome else {
-            state = .failed("The updater did not answer.")
+            fail("The updater did not answer.")
             return
         }
         switch outcome.status {
@@ -112,7 +114,7 @@ final class UpdateCoordinator: ObservableObject {
             state = .idle
         case .staged:
             guard let version = outcome.version, let path = outcome.path else {
-                state = .failed("The updater did not answer.")
+                fail("The updater did not answer.")
                 return
             }
             answered()
@@ -128,7 +130,18 @@ final class UpdateCoordinator: ObservableObject {
             forgetStaged()
             state = .unavailable
         case .failed:
-            state = .failed(outcome.message ?? "The update check failed.")
+            fail(outcome.message ?? "The update check failed.")
+        }
+    }
+
+    /// A failed check does not take back an update that is already waiting: it stays ready to install. Unless that
+    /// check emptied the cache for a newer release before it failed: then nothing waits any more.
+    private func fail(_ message: String) {
+        if let version = environment.defaults.string(forKey: Key.stagedVersion), let path = stagedPath, environment.stagedExists(path) {
+            state = .ready(version)
+        } else {
+            forgetStaged()
+            state = .failed(message)
         }
     }
 
@@ -250,6 +263,7 @@ extension UpdateCoordinator.Environment {
                 process.standardOutput = FileHandle.nullDevice
                 return (try? process.run()) != nil
             },
+            stagedExists: { FileManager.default.fileExists(atPath: $0) },
             quit: { NSApp.terminate(nil) },
             isIdle: isIdle
         )

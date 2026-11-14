@@ -199,9 +199,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     #if PP_DIRECT
     /// Nothing an update's restart would interrupt: the vault is locked, nobody is typing on the lock screen, no window
-    /// of ours is open and no scanned code waits for an unlock.
+    /// of ours is open, no scanned code waits for an unlock, and no alert or file chooser is up and no Touch ID prompt is showing.
     private var isIdleForUpdate: Bool {
-        guard session.locked, !session.unlocking, !panelController.isVisible, !otpScan.isWaiting, pinnedAccounts.isEmpty else { return false }
+        guard session.locked, !session.unlocking, !panelController.isVisible, !otpScan.isWaiting, pinnedAccounts.isEmpty,
+              NSApp.modalWindow == nil, !session.touchIDBusy else { return false }
         let windows = [editorWindow, preferencesWindow, aboutWindow, chromeReviewWindow, paywallWindow, scanWindow, passwordChangeWindow, largeTypeWindow]
         return !windows.contains { $0?.isVisible == true }
     }

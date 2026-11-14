@@ -14,6 +14,7 @@ final class UpdateCoordinatorTests: XCTestCase {
     private var installs: [(path: String, relaunch: Bool)] = []
     private var installStarts = true
     private var quits = 0
+    private var stagedOnDisk = true
     private let day: TimeInterval = 24 * 60 * 60
 
     override func setUp() {
@@ -36,6 +37,7 @@ final class UpdateCoordinatorTests: XCTestCase {
                 self.installs.append((path, relaunch))
                 return self.installStarts
             },
+            stagedExists: { [unowned self] _ in self.stagedOnDisk },
             quit: { [unowned self] in self.quits += 1 },
             isIdle: { [unowned self] in self.idle }
         ))
@@ -218,6 +220,37 @@ final class UpdateCoordinatorTests: XCTestCase {
         updates.checkNow()
         checks[1](UpdateOutcome(.upToDate, version: "0.2.0"))
         XCTAssertEqual(updates.state, .idle)
+        XCTAssertFalse(coordinator().installAtLaunch())
+    }
+
+    func testAFailedCheckKeepsAStagedUpdateWaiting() {
+        idle = false
+        let updates = coordinator()
+        updates.tick()
+        checks[0](staged)
+        updates.checkNow()
+        checks[1](UpdateOutcome(.failed, message: "GitHub did not answer."))
+        XCTAssertEqual(updates.state, .ready("0.3.0"))
+        idle = true
+        updates.installIfIdle()
+        XCTAssertEqual(installs.map(\.path), [staged.path])
+    }
+
+    func testAFailedCheckThatThrewTheStagedCopyAwayLeavesNothingWaiting() {
+        idle = false
+        let updates = coordinator()
+        updates.tick()
+        checks[0](staged)
+        // A newer release was found, the cache emptied for it, and its download failed.
+        updates.checkNow()
+        stagedOnDisk = false
+        checks[1](UpdateOutcome(.failed, message: "The download failed."))
+        XCTAssertEqual(updates.state, .failed("The download failed."))
+        idle = true
+        updates.installIfIdle()
+        updates.restartToUpdate()
+        XCTAssertTrue(installs.isEmpty)
+        XCTAssertEqual(quits, 0)
         XCTAssertFalse(coordinator().installAtLaunch())
     }
 
