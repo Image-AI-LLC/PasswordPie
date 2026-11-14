@@ -80,7 +80,10 @@ anyone can open), not made for kids, then paste the link here and in the dashboa
   phone number; until then choose the third of the frames YouTube offers, the end card, which is laid out for it.
   `video/store-board.png` shows each choice as the store would.
 
-- **YouTube URL:** _(not uploaded yet)_
+- **YouTube URL:** https://www.youtube.com/watch?v=ROUwm3C5Ekk (the 8.8 s cut, public since 2026-11-14; its thumbnail is
+  the end card, picked from YouTube's frames, as the channel is not phone-verified). Not in the dashboard yet: until it
+  is submitted and through review, the store shows the first cut, https://www.youtube.com/watch?v=E6M0nd_NERg (25.5 s,
+  no sound), which becomes private once the new link is live.
 - **Title:** PasswordPie for Chrome: a sign-in filled in under half a second | Password Manager for Mac
 
 ### Description
