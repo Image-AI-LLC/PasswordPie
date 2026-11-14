@@ -14,7 +14,7 @@ enum AboutCopy {
     static func versionLabel(short: String?, build: String?) -> String {
         let short = short?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let build = build?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if short.isEmpty { return "Version 0.1.0" }
+        if short.isEmpty { return "Version 0.2.0" }
         if build.isEmpty || build == short { return "Version \(short)" }
         return "Version \(short) (\(build))"
     }
