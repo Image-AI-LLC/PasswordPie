@@ -147,8 +147,19 @@ start. The app forgets the staged path before it hands it to the updater, so an 
 not on every start; the next weekly check stages it again.
 
 Nothing changes in how a release is made: the updater reads the same GitHub release, and needs the tag `v<version>` and
-the asset `PasswordPie-<version>.dmg`. Versions before the first one with the updater (0.2.0 and earlier) are updated by
-hand.
+the asset `PasswordPie-<version>.dmg`.
+
+The first version with the updater is 0.2.0, build 3: About says "Version 0.2.0 (3)". Two older downloads have none and
+are replaced by hand, by downloading the current version once:
+
+- **0.1.0.**
+- **The first 0.2.0 (build 2)**, public from 2026-11-14 until it was withdrawn on 2026-11-15. It carries the same
+  version number, so nothing but the build tells them apart: About says "Version 0.2.0 (2)", and Preferences has no
+  Updates section. The updater could not reach it in any case, since that copy has no updater to run.
+
+A release that replaces a published one under the same version, as build 3 did, reaches nobody who already has that
+version: the updater compares `CFBundleShortVersionString`, not the build. Raise the version instead whenever the
+replaced copy has an updater.
 
 Check the store build has no updater, and the direct build's app still links no networking of its own:
 

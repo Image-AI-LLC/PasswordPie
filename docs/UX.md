@@ -1095,8 +1095,11 @@ With Update automatically off, a version that Check Now downloaded waits for Res
   opens the releases page in your browser.
 - **A build you made yourself** (`make install`): it is not signed as a release, so the updater leaves it alone and
   asks GitHub nothing.
-- **PasswordPie 0.2.0 and earlier** have no updater. Download the next version by hand once; it updates itself from
-  then on.
+- **PasswordPie 0.1.0** has no updater. Download the current version by hand once; it updates itself from then on.
+- **The first PasswordPie 0.2.0**, downloaded on 2026-11-14 or 15, has no updater either, and it carries the same
+  version number as the 0.2.0 that has one. Open Preferences: if there is no Updates section, or About says
+  "Version 0.2.0 (2)", download 0.2.0 again from passwordpie.com and replace the app in Applications. The one with the
+  updater says "Version 0.2.0 (3)".
 - **Going back to an older version** is never done by the updater, whatever GitHub answers.
 
 ### Privacy
