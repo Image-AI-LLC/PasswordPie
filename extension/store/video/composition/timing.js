@@ -1,20 +1,22 @@
 // Written by prep.mjs from ../takes and ../measurements.json. Times in seconds of each clip; scenes in seconds of the video.
 window.PP = {
   "scenes": {
+    "beat": 0.5,
     "cover": 0,
     "live": 0.5,
-    "slow": 2.5,
-    "twostep": 4.5,
-    "race": 6,
-    "end": 9,
-    "duration": 11
+    "slow": 3.5,
+    "twostep": 5.5,
+    "race": 7,
+    "end": 10,
+    "duration": 12
   },
   "live": {
-    "duration": 2,
-    "hotkey": 0.47430004882812504,
-    "ret": 1.03739990234375,
-    "filled": 1.5,
-    "measuredMs": 462.60009765625,
+    "duration": 3,
+    "hotkey": 0.7646999511718748,
+    "panel": 0.8964999999999999,
+    "ret": 2.04839990234375,
+    "filled": 2.5,
+    "measuredMs": 451.60009765625,
     "shift": 0
   },
   "slow": {

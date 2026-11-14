@@ -7,7 +7,7 @@
 //   6. music/check.py listens to the result: every cue within a frame of its fill, loudness and true peak as wanted
 // Needs ffmpeg, uv, and what README.md ("Recording it again") sets up: PUPPETEER and HYPERFRAMES. Headless throughout.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -31,7 +31,10 @@ const loudness = Number(/I:\s+(-?[\d.]+) LUFS/.exec(meter.slice(meter.lastIndexO
 if (!Number.isFinite(loudness)) throw new Error('could not measure the loudness of the music');
 const gain = TARGET_LUFS - loudness;
 console.log(`music at ${loudness} LUFS: ${gain.toFixed(2)} dB to ${TARGET_LUFS}`);
+// The finished file replaces the one in the repo only once it has passed the check.
+const candidate = path.join(work, 'candidate.mp4');
 run('ffmpeg', ['-v', 'error', '-y', '-i', silent, '-i', wav, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy',
-  '-af', `volume=${gain.toFixed(2)}dB`, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out]);
-run('uv', ['run', '-q', 'music/check.py', out]);
+  '-af', `volume=${gain.toFixed(2)}dB`, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', candidate]);
+run('uv', ['run', '-q', 'music/check.py', candidate]);
+renameSync(candidate, out);
 console.log(out);

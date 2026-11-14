@@ -98,22 +98,24 @@ function settle(times, clip, crop) {
 // is chosen. Nothing marked as real time is sped up, slowed down or thinned out.
 // The composition (index.html), the music (../music/synth.py) and the tests take the scene starts from here.
 const BEAT = 0.5;
-T.scenes = { cover: 0, live: 1 * BEAT, slow: 5 * BEAT, twostep: 9 * BEAT, race: 12 * BEAT, end: 18 * BEAT, duration: 22 * BEAT };
+T.scenes = { beat: BEAT, cover: 0, live: 1 * BEAT, slow: 7 * BEAT, twostep: 11 * BEAT, race: 14 * BEAT, end: 20 * BEAT, duration: 24 * BEAT };
 const lasts = (scene, next) => T.scenes[next] - T.scenes[scene];
-// A form fills on the fourth beat of its scene; the two-step code, which comes right after Sign in, on the second.
+// A form fills on the fourth beat of its scene (the sixth of the first scene, which takes its time: the panel is on
+// screen for two beats before Return); the two-step code, which comes right after Sign in, on the second.
 const FILL_AT = 3 * BEAT;
+const FIRST_FILL_AT = 5 * BEAT;
 const CODE_AT = 1 * BEAT;
 
-// 1. Real time, the quick take: ⌘\, the panel, Return, filled, one second from the first key.
+// 1. Real time, the fill take: the page, ⌘\, the panel with the account on top for more than a second, Return, filled.
 {
   const duration = lasts('live', 'slow');
-  const start = quick.v(quick.filled) - FILL_AT;
-  cut('live.mp4', quick.mov, start, duration, CARD);
-  T.live = settle({ duration, hotkey: quick.v(quick.hotkey) - start, ret: quick.v(quick.ret) - start, filled: quick.v(quick.filled) - start,
-    measuredMs: quick.filled - quick.ret }, 'live.mp4', CARD_FIELD);
+  const start = fill.v(fill.filled) - FIRST_FILL_AT;
+  cut('live.mp4', fill.mov, start, duration, CARD);
+  T.live = settle({ duration, hotkey: fill.v(fill.hotkey) - start, panel: fill.v(fill.panel) - start, ret: fill.v(fill.ret) - start,
+    filled: fill.v(fill.filled) - start, measuredMs: fill.filled - fill.ret }, 'live.mp4', CARD_FIELD);
 }
 
-// 2. A fill three times slower (the fill take), from just before Return to just after the fields fill in.
+// 2. The same take again, three times slower, from just before Return to just after the fields fill in.
 {
   const slow = 3;
   const duration = lasts('slow', 'twostep');
@@ -143,8 +145,8 @@ const CODE_AT = 1 * BEAT;
   T.twostep = { duration, submit: at(twostep.submit), page: pageShows - start, code: codeShows - start, codeNoted: at(twostep.code) };
 }
 
-// 4. Side by side, both from the first key at the same moment. Right: PasswordPie in real time (the quick take
-//    again, closer in). Left: typing, `ff` times faster all the way, then held on its last frame.
+// 4. Side by side, both from the first key at the same moment. Right: PasswordPie in real time (the quick take:
+//    one second from ⌘\ to filled). Left: typing, `ff` times faster all the way, then held on its last frame.
 {
   const duration = lasts('race', 'end');
   const ff = 6;
@@ -178,7 +180,7 @@ const CODE_AT = 1 * BEAT;
   };
 }
 
-for (const [scene, at, beat] of [['live', T.live.filled, FILL_AT], ['slow', T.slow.filled, FILL_AT], ['twostep', T.twostep.code, CODE_AT], ['race', T.race.pieFilledAt, FILL_AT]]) {
+for (const [scene, at, beat] of [['live', T.live.filled, FIRST_FILL_AT], ['slow', T.slow.filled, FILL_AT], ['twostep', T.twostep.code, CODE_AT], ['race', T.race.pieFilledAt, FILL_AT]]) {
   if (Math.abs(at - beat) > 1 / 60 + 1e-6) throw new Error(`${scene}: fills at ${at.toFixed(3)} s of its scene, not on the beat at ${beat} s`);
 }
 

@@ -32,13 +32,8 @@ Samples = npt.NDArray[np.float64]
 
 SR = 48000
 BEATS_IN_A_BAR = 4
+SWING = 0.14  # how late the off sixteenths come, as a part of a sixteenth
 DEFAULT_TIMING = Path(__file__).resolve().parent.parent / 'composition' / 'timing.js'
-
-
-@dataclass(frozen=True)
-class Cue:
-    at: float  # seconds into the video
-    chime: bool = True  # False: a single soft tick
 
 
 @dataclass(frozen=True)
@@ -49,7 +44,7 @@ class Plan:
     beat: float  # the scenes are cut to it; the tempo is 60 / beat
     sections: tuple[float, ...]  # where each scene after the cover starts: the drums come in at the first
     end_card: float  # the last hit; the drums stop here
-    cues: tuple[Cue, ...]
+    fills: tuple[float, ...]  # a chime on each: the moments a form, or the two-step code, fills in
 
 
 def number(data: object, *path: str) -> float:
@@ -76,10 +71,9 @@ def plan_from(timing: object) -> Plan:
 
     sections = (scene('live'), scene('slow'), scene('twostep'), scene('race'))
     end_card = scene('end')
-    # The first scene is one bar long: that is the tempo. Every other scene has to start on one of its beats.
-    beat = (sections[1] - sections[0]) / BEATS_IN_A_BAR
+    beat = scene('beat')
     if not 0.4 <= beat <= 0.6:
-        raise ValueError(f'the first scene gives {60 / beat:.0f} beats a minute: the music is written for 100 to 150')
+        raise ValueError(f'{60 / beat:.0f} beats a minute: the music is written for 100 to 150')
     for start in (*sections, end_card):
         beats = (start - sections[0]) / beat
         if abs(beats - round(beats)) > 1e-6:
@@ -89,11 +83,11 @@ def plan_from(timing: object) -> Plan:
         beat=beat,
         sections=sections,
         end_card=end_card,
-        cues=(
-            Cue(scene('live') + number(timing, 'live', 'filled'), True),  # filled, in real time
-            Cue(scene('slow') + number(timing, 'slow', 'filled'), True),  # a fill, slowed down
-            Cue(scene('twostep') + number(timing, 'twostep', 'code'), True),  # the two-step code
-            Cue(scene('race') + number(timing, 'race', 'pieFilledAt'), True),  # side by side
+        fills=(
+            scene('live') + number(timing, 'live', 'filled'),  # filled, in real time
+            scene('slow') + number(timing, 'slow', 'filled'),  # the same fill, slowed down
+            scene('twostep') + number(timing, 'twostep', 'code'),  # the two-step code
+            scene('race') + number(timing, 'race', 'pieFilledAt'),  # side by side
         ),
     )
 
@@ -184,19 +178,16 @@ def crash(rng: np.random.Generator) -> Samples:
 
 
 def chime(midi: float, decay: float) -> Samples:
-    x = t(0.5)
+    """A soft mallet note: a sine with a little of its octave and of the octave below, and an attack slow enough not to click."""
+    x = t(0.6)
     f = hz(midi)
-    s = np.sin(2 * np.pi * f * x) + 0.12 * np.sin(2 * np.pi * 2.76 * f * x) * np.exp(-x / 0.03)
-    return s * np.exp(-x / decay) * np.minimum(1, x / 0.0015)
+    s = np.sin(2 * np.pi * f * x) + 0.22 * np.sin(2 * np.pi * 2 * f * x) * np.exp(-x / 0.05) + 0.3 * np.sin(np.pi * f * x) * np.exp(-x / 0.12)
+    return s * np.exp(-x / decay) * np.minimum(1, x / 0.004)
 
 
-def tick() -> Samples:
-    x = t(0.15)
-    return (np.sin(2 * np.pi * 1320 * x) + 0.6 * np.sin(2 * np.pi * 1980 * x)) * np.exp(-x / 0.02) * np.minimum(1, x / 0.0005)
-
-
-# The chime at a fill: A6 then D7, short and glassy. (midi, decay, seconds after the fill, gain, pan)
-CHIME_NOTES: tuple[tuple[int, float, float, float, float], ...] = ((93, 0.10, 0.0, 0.12, -0.1), (98, 0.16, 0.07, 0.135, 0.1))
+# The chime at a fill: A5 then D6, an octave under where a bare sine turns piercing, and under the drums in level.
+# (midi, decay, seconds after the fill, gain, pan)
+CHIME_NOTES: tuple[tuple[int, float, float, float, float], ...] = ((81, 0.14, 0.0, 0.07, -0.1), (86, 0.2, 0.07, 0.08, 0.1))
 
 
 def riser(rng: np.random.Generator, length: float) -> Samples:
@@ -261,15 +252,21 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
         # Drums: a kick on every beat, a clap on two and four, hats in sixteenths with the off-beat accented.
         place(drums, kick(), at, 0.5)
         if in_bar % 2 == 1:
+            # The clap has a snare's body under it and a room around it.
             body = clap(rng)
-            place(drums, body, at, 0.3, -0.1)
-            place(drumwet, body, at, 0.1, 0.2)
+            place(drums, body, at, 0.24, -0.1)
+            place(drums, snap(rng), at, 0.05, 0.05)
+            place(drumwet, body, at, 0.2, 0.2)
+        # The sixteenths off the eighth (the 2nd and 4th of a beat) come late, for swing, and no two hats are equally
+        # loud: a rise through the bar, the off-beat eighth on top, and a little chance.
+        lift = 0.8 + 0.2 * in_bar / (BEATS_IN_A_BAR - 1)
         for i in range(4):
             if i == 2 and last_of_scene:
                 place(drums, hat(rng, 0.09), at + i * s16, 0.085, 0.25)  # open, into the next scene
                 continue
-            gain = (0.045, 0.03, 0.085, 0.036)[i] * rng.uniform(0.85, 1.0)
-            place(drums, hat(rng), at + i * s16, gain, 0.25 if i % 2 == 0 else -0.2)
+            late = SWING * s16 if i % 2 else 0.0
+            gain = (0.05, 0.02, 0.085, 0.032)[i] * lift * rng.uniform(0.7, 1.0)
+            place(drums, hat(rng, 0.02 + 0.012 * rng.uniform()), at + i * s16 + late + rng.uniform(-0.002, 0.002), gain, 0.25 if i % 2 == 0 else -0.2)
 
         # Bass in eighths: the root, up an octave on the last off-beat of the bar.
         place(bassbus, bass(root, beat * 0.42), at, 0.3)
@@ -304,12 +301,9 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
     for n in D:
         place(padbus, pad(n, dur - plan.end_card, 0.0), plan.end_card, 0.03)
 
-    for c in plan.cues:
-        if not c.chime:
-            place(cue, tick(), c.at, 0.12)
-            continue
+    for at in plan.fills:
         for midi, decay, after, gain, pan in CHIME_NOTES:
-            place(cue, chime(midi, decay), c.at + after, gain, pan)
+            place(cue, chime(midi, decay), at + after, gain, pan)
 
     # --- reverb, master ---
     ir_len = int(SR * 1.1)
@@ -328,11 +322,11 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
     tonal = bassbus + wet + reverb(wet) * (0.4 if variant == 'bright' else 0.6)
     # What has a pitch steps back 3 dB under each cue; the drums play through it.
     duck = np.ones(n_samples)
-    for c in plan.cues:
-        x = np.arange(n_samples) / SR - c.at
+    for at in plan.fills:
+        x = np.arange(n_samples) / SR - at
         dip = np.where(x < 0, np.clip(1 + x / 0.04, 0, 1), np.exp(-np.maximum(x - 0.18, 0) / 0.18))
         duck = np.minimum(duck, 1 - (1 - 10 ** (-3 / 20)) * dip)
-    mix = drums + drumwet + reverb(drumwet) * 0.3 + tonal * duck[:, None] + cue + reverb(cue) * 0.35
+    mix = drums + drumwet + reverb(drumwet) * 0.45 + tonal * duck[:, None] + cue + reverb(cue) * 0.35
 
     if variant == 'soft':  # the same piece, darker and quieter on top
         mix = sosfilt(butter(2, 5200, 'lowpass', fs=SR, output='sos'), mix, axis=0)

@@ -1,6 +1,6 @@
 # Store promo video
 
-`passwordpie-fill-1080p.mp4`: 11 seconds, 1920x1080, 60 fps, H.264, with music (AAC stereo, -16 LUFS). For the Chrome
+`passwordpie-fill-1080p.mp4`: 12 seconds, 1920x1080, 60 fps, H.264, with music (AAC stereo, -16 LUFS). For the Chrome
 Web Store's "Global promo video", which takes a YouTube link (title and description in [../LISTING.md](../LISTING.md),
 "Promo video"). `cover.jpg` is the thumbnail (1280x720), and the video's first frame is the same picture.
 
@@ -11,21 +11,22 @@ replay and the sped-up typing say on screen how much slower or faster they are. 
 workspace made up for these pages, served as `https://fernway.example` (a reserved domain), so no real site or brand
 appears. The vault is the marketing demo vault with one login added for Fernway; no real account is shown.
 
-It is cut to a beat: 120 a minute, so a beat is half a second, 30 frames. Each scene starts on a beat, and what it is
-about lands on one too.
+It is cut to a beat: 120 a minute, so a beat is half a second, 30 frames. Each scene starts on a beat with a hard cut
+(on its first frame it is all there), and what it is about lands on a beat too.
 
 | Time | Beats | Scene |
 |---|---|---|
-| 0–0.5 s | 1 | The cover: 448 ms, "From Return to a filled sign-in", the Return key and the two filled fields. It is the first frame, so the video starts as the thumbnail that was clicked, and lifts away as scene 1 comes in. |
-| 0.5–2.5 s | 4 | "⌘\\, Return: filled." ⌘\\, the panel with FERNWAY.EXAMPLE on top, Return, filled at 2.0 s. Real time: 1.0 s from ⌘\\ to filled. |
-| 2.5–4.5 s | 4 | A fill 3× slower (marked). A large counter runs from Return to the frame the fields fill in, at 4.0 s, and stops on the measured median, 448 ms; beside it the run count, p90 and the machine. |
-| 4.5–6.0 s | 3 | "Two-step code? Filled on the next page." The filled form, Sign in, and the code fills itself on the next page at 5.0 s (Premium). Real time. |
-| 6.0–9.0 s | 6 | The whole sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s; shown 6× faster, marked) and PasswordPie in real time (⌘\\, Return, filled at 7.5 s: 1.0 s), with bars on one scale. PasswordPie is done while the typing, six times faster than it was, still has a second to go. |
-| 9.0–11.0 s | 4 | End card: on the left PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com; on the right 448 ms, from Return to a filled sign-in. |
+| 0–0.5 s | 1 | The cover: 448 ms, "From Return to a filled sign-in", the Return key and the two filled fields. It is the first frame, so the video starts as the thumbnail that was clicked; it dissolves over the end of its beat. |
+| 0.5–3.5 s | 6 | "⌘\\, then Return: filled in under half a second." The page, ⌘\\, the panel with FERNWAY.EXAMPLE on top for more than two beats, Return, filled at 3.0 s. Real time. |
+| 3.5–5.5 s | 4 | The same fill again, 3× slower (marked "Replay, 3× slower"). A large counter runs from Return to the frame the fields fill in, at 5.0 s, and stops on the measured median, 448 ms; beside it the run count, p90 and the machine. |
+| 5.5–7.0 s | 3 | "Two-step code? Filled on the next page." The filled form, Sign in, and the code fills itself on the next page at 6.0 s (Premium). Real time. |
+| 7.0–10.0 s | 6 | The whole sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s; shown 6× faster, marked) and PasswordPie in real time (⌘\\, Return, filled at 8.5 s: 1.0 s), with bars on one scale. PasswordPie is done while the typing, six times faster than it was, still has a second to go. |
+| 10.0–12.0 s | 4 | End card: on the left PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com; on the right 448 ms, from Return to a filled sign-in. |
 
-- Scenes 1 and 4 are the `quick` take (in scene 4 closer in), scene 2 is the `fill` take, scene 3 the `twostep` take
-  from just before Sign in: the same fill once more and the pause before Sign in are left out, and so are Verify and
-  the page after it.
+- Scenes 1 and 2 are the `fill` take, where the panel stays open 1.15 s before Return, long enough to see what
+  PasswordPie looks like. Scene 3 is the `twostep` take from just before Sign in: the same fill once more and the
+  pause before Sign in are left out, and so are Verify and the page after it. The PasswordPie half of scene 4 is the
+  `quick` take: ⌘\\ to filled in 1.0 s.
 - Scene 4 times both sides from the first key, not from Return, so its 1.0 s includes opening the panel and a person's
   0.3 s before Return. Both sides start at the same moment. The typing take begins 1.8 s before its first key, so at
   6× its first frame, the untouched page, is held for 0.15 s. The typing in it is synthetic: keys sent one at a time
@@ -42,9 +43,10 @@ play button (about a tenth of the width) over its centre, and about 112 px wide 
   a gap where the play button lands. `render-cover.mjs` renders it twice: `cover.jpg` to upload as the thumbnail, and
   at 1.5x as the video's first frame.
 - YouTube takes a custom thumbnail only from a channel with a verified phone number. Without one it offers three frames
-  of the video, from about 1/8, 3/8 and 7/8 of its length: 1.4 s (scene 1, the panel open), 4.1 s (scene 2, just
-  filled) and 9.6 s (the end card). The end card is laid out to be that thumbnail: brand on the left, the number on the
-  right, nothing under the play button, and everything in place by 9.5 s. Pick the third one.
+  of the video, from about 1/8, 3/8 and 7/8 of its length: 1.5 s (scene 1, the panel open), 4.5 s (scene 2, the
+  counter running) and 10.5 s (the end card). The end card is laid out to be that thumbnail: brand on the left, the
+  number on the right, nothing under the play button, and it does not move, so any frame of it will do. Pick the
+  third one.
 
 ## Sound
 
@@ -53,11 +55,13 @@ drums are in front: a kick on every beat, a clap on two and four, sixteenth-note
 bass line in eighths; a pad and a plucked figure stay behind them. It reads `composition/timing.js` for when things
 happen and keeps no moment of the video itself:
 
-- the tempo is the beat the scenes are cut to (the first scene is one bar), and a scene that does not start on a beat
-  is refused;
+- the tempo is the beat the scenes are cut to, and a scene that does not start on a beat is refused;
 - each scene starts a new chord (D, B minor, G, A), with the bar counted from where the scene starts;
-- a two-note chime sounds on the frame each form fills (2.0, 4.0, 5.0 and 7.5 s), each on a beat with the clap or the
-  kick, and what has a pitch steps back 3 dB under it;
+- a two-note chime sounds on the frame each form fills (3.0, 5.0, 6.0 and 8.5 s), each on a beat with the clap or the
+  kick, and what has a pitch steps back 3 dB under it. The chime is a soft mallet note (A5, D6) under the drums in
+  level: an octave higher, as a bare sine, it was piercing;
+- the hats are not a machine: the off sixteenths come a little late (swing), and their loudness rises through the bar
+  with some chance in it; the clap has a snare's body under it and a room around it;
 - two taps over the cover lead into the first beat; a roll leads into the end card, where one hit lands, the drums
   stop, and a D chord on bells dies away before the video ends.
 
@@ -172,6 +176,10 @@ Things that bit:
   form and every take after it fails.
 - The video's first frame is what a click on the thumbnail turns into. A fade-in from an empty screen there makes
   the start look like a jump, and YouTube may also show that frame while the video loads.
+- A dissolve across a beat reads as a cut that comes late (or early, when it starts before the beat). Scenes cut
+  hard on the beat; only the cover dissolves, and it has finished when scene 1 starts.
+- A first scene that is over in a second is not seen: the panel was on screen 0.3 s before Return. It now has two
+  beats.
 - YouTube picks its thumbnail candidates from fixed places in the video; an animation still running there (the first
   version's end card was still building up at 7/8) gives a half-drawn thumbnail.
 - A clip whose first frame is not at time 0 (a seek that lands between two frames, or `setpts` after one) is played

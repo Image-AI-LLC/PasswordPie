@@ -5,7 +5,7 @@
 # ///
 """Listens to the finished video: is each cue where the timing data says the form fills, and is it loud enough?
 
-Finds every chime and tick of synth.py in the video's decoded sound track (as a player would hear it) by matching
+Finds every chime of synth.py in the video's decoded sound track (as a player would hear it) by matching
 the cue's own waveform, and measures loudness and true peak with ffmpeg's EBU R128 meter. Prints JSON; exits 1 when
 a cue is more than a frame from its moment, or the loudness or the peak is outside what the video is made to.
 
@@ -24,14 +24,14 @@ import numpy as np
 from scipy.signal import butter, fftconvolve, hilbert, sosfiltfilt
 
 import synth
-from synth import SR, Cue, Samples
+from synth import SR, Samples
 
 FRAME = 1 / 60
 TARGET_LUFS = -16.0
 LUFS_TOLERANCE = 0.5
 MAX_TRUE_PEAK = -1.5
-# Where the cues sound and most of the music does not.
-BAND = butter(4, [1200, 4000], 'bandpass', fs=SR, output='sos')
+# Where the chime sounds and the drums and the bass mostly do not.
+BAND = butter(4, [700, 2600], 'bandpass', fs=SR, output='sos')
 
 
 def decode(video: Path) -> Samples:
@@ -42,10 +42,9 @@ def decode(video: Path) -> Samples:
     return stereo.mean(axis=1)
 
 
-def waveform(cue: Cue) -> Samples:
-    if not cue.chime:
-        return synth.tick()
-    out = np.zeros(int(SR * 0.6))
+def waveform() -> Samples:
+    """The chime as synth.py plays it at a fill."""
+    out = np.zeros(int(SR * 0.7))
     for midi, decay, after, gain, _pan in synth.CHIME_NOTES:
         note = synth.chime(midi, decay) * gain
         i = int(round(after * SR))
@@ -53,11 +52,11 @@ def waveform(cue: Cue) -> Samples:
     return out
 
 
-def heard_at(track: Samples, cue: Cue) -> float:
-    """Seconds into the track where this cue starts, looked for within 0.15 s of where it should be."""
+def heard_at(track: Samples, at: float) -> float:
+    """Seconds into the track where the chime that belongs at `at` starts, looked for within 0.15 s of it."""
     before = 0.15
-    template = sosfiltfilt(BAND, waveform(cue))
-    start = int(round((cue.at - before) * SR))
+    template = sosfiltfilt(BAND, waveform())
+    start = int(round((at - before) * SR))
     window = track[max(start, 0) : start + len(template) + int(2 * before * SR)]
     match = fftconvolve(sosfiltfilt(BAND, window), template[::-1], mode='valid')
     lag = int(np.argmax(np.abs(hilbert(match))))
@@ -85,7 +84,7 @@ def main() -> None:
     timing: Path = args.timing
     plan = synth.plan_from(synth.read_timing(timing))
     track = decode(video)
-    cues = [{'at': c.at, 'chime': c.chime, 'heard': heard_at(track, c)} for c in plan.cues]
+    cues = [{'at': at, 'heard': heard_at(track, at)} for at in plan.fills]
     lufs, true_peak = loudness(video)
     problems = [f'cue at {c["at"]:.3f} s is heard at {c["heard"]:.3f} s' for c in cues if abs(float(c['heard']) - float(c['at'])) > FRAME]
     if abs(lufs - TARGET_LUFS) > LUFS_TOLERANCE:
