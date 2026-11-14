@@ -49,7 +49,6 @@ function onVideoClock(t, offset) {
   return { ...t, offset: off, v: (ms) => (ms - t.recordingStarted) / 1000 + off };
 }
 
-const fill = onVideoClock(take('fill'));
 const quick = onVideoClock(take('quick'));
 const twostep = onVideoClock(take('twostep'));
 // The typing take has no fill to line up with: use the quick take's offset (same session, same recorder).
@@ -93,48 +92,45 @@ function settle(times, clip, crop) {
   return times;
 }
 
-// The video is cut to a beat: 120 a minute, so a beat is 0.5 s, 30 frames. A scene starts on a beat, and its clip
-// is cut so that what it is about (the form fills, the code fills) lands on a beat too: only where a clip starts
-// is chosen. Nothing marked as real time is sped up, slowed down or thinned out.
+// The video is cut to a beat. In the two-step take the form fills and, on the next page, the code fills 66 frames
+// (1.1 s) later: with a beat of 33 frames, 0.55 s (109 a minute), both land on a beat, two beats apart, in one
+// stretch of real time. A scene starts on a beat, and its clip is cut so that what it is about lands on a beat too:
+// only where a clip starts is chosen. Nothing marked as real time is sped up, slowed down or thinned out.
 // The composition (index.html), the music (../music/synth.py) and the tests take the scene starts from here.
-const BEAT = 0.5;
-T.scenes = { beat: BEAT, cover: 0, live: 1 * BEAT, twostep: 7 * BEAT, race: 12 * BEAT, end: 18 * BEAT, duration: 22 * BEAT };
+const FRAMES_IN_A_BEAT = 33;
+const beats = (n) => n * FRAMES_IN_A_BEAT / 60;
+const BEAT = beats(1);
+T.scenes = { beat: BEAT, cover: 0, demo: beats(1), race: beats(7), end: beats(11), duration: beats(15) };
 const lasts = (scene, next) => T.scenes[next] - T.scenes[scene];
-// A form fills on the fourth beat of its scene (the sixth of the first scene, which takes its time: the panel is on
-// screen for two beats before Return), and so does the two-step code.
-const FILL_AT = 3 * BEAT;
-const FIRST_FILL_AT = 5 * BEAT;
+// The form fills on the fourth beat of the demo and the code on the sixth; side by side, on the third.
+const DEMO_FILL_AT = beats(3);
+const DEMO_CODE_AT = beats(5);
+const FILL_AT = beats(2);
 
-// 1. Real time, the fill take: the page, ⌘\, the panel with the account on top for more than a second, Return, filled.
+// 1. One stretch of the two-step take in real time, cut only at its start and end: the page, ⌘\, the panel, Return,
+//    the form fills, Return (Sign in), and the code fills itself on the next page. What comes after (Verify, home)
+//    is left out. The code is where it shows: the next page comes up with its six boxes empty, and two frames later
+//    they are filled; that second frame is the one on the beat.
 {
-  const duration = lasts('live', 'twostep');
-  const start = fill.v(fill.filled) - FIRST_FILL_AT;
-  cut('live.mp4', fill.mov, start, duration, CARD);
-  T.live = settle({ duration, hotkey: fill.v(fill.hotkey) - start, panel: fill.v(fill.panel) - start, ret: fill.v(fill.ret) - start,
-    filled: fill.v(fill.filled) - start, measuredMs: fill.filled - fill.ret }, 'live.mp4', CARD_FIELD);
-}
-
-// 2. Two-step, in real time, from just after Return: the form fills, Sign in, and the code fills itself on the next
-//    page. What comes after (Verify, home) is left out. The code is where it shows: the next page comes up with its
-//    six boxes empty, and two frames later they are filled; that second frame is the one put on the beat.
-{
-  const duration = lasts('twostep', 'race');
+  const duration = lasts('demo', 'race');
   const CODE_BOXES = '722:98:1370:692';
   const pageShows = fieldShows(twostep.mov, CODE_BOXES, twostep.v(twostep.submit));
   const codeShows = fieldShows(twostep.mov, CODE_BOXES, pageShows);
   if (Math.abs(codeShows - twostep.v(twostep.code)) > 2 / 60) throw new Error(`the code shows ${(codeShows - twostep.v(twostep.code)).toFixed(3)} s from where the page noted it`);
-  const start = codeShows - FILL_AT;
-  cut('twostep.mp4', twostep.mov, start, duration, CARD);
+  const start = twostep.v(twostep.filled) - DEMO_FILL_AT;
+  cut('demo.mp4', twostep.mov, start, duration, CARD);
   const at = (ms) => twostep.v(ms) - start;
-  T.twostep = settle({ duration, ret: at(twostep.ret), filled: at(twostep.filled), submit: at(twostep.submit), page: pageShows - start,
-    code: codeShows - start, codeNoted: at(twostep.code) }, 'twostep.mp4', CARD_FIELD);
+  T.demo = settle({ duration, hotkey: at(twostep.hotkey), panel: at(twostep.panel), ret: at(twostep.ret), filled: at(twostep.filled),
+    submit: at(twostep.submit), page: pageShows - start, code: codeShows - start, codeNoted: at(twostep.code),
+    measuredMs: twostep.filled - twostep.ret }, 'demo.mp4', CARD_FIELD);
+  if (T.demo.hotkey < 0) throw new Error('the demo starts after ⌘\\');
 }
 
-// 3. Side by side, both from the first key at the same moment. Right: PasswordPie in real time (the quick take:
+// 2. Side by side, both from the first key at the same moment. Right: PasswordPie in real time (the quick take:
 //    one second from ⌘\ to filled). Left: typing, `ff` times faster all the way, then held on its last frame.
 {
   const duration = lasts('race', 'end');
-  const ff = 6;
+  const ff = 7;
   const r0 = quick.v(quick.filled) - FILL_AT;
   cut('quick.mp4', quick.mov, r0, duration, HALF);
   const pie = settle({ hotkey: quick.v(quick.hotkey) - r0, ret: quick.v(quick.ret) - r0, filled: quick.v(quick.filled) - r0 }, 'quick.mp4', HALF_FIELD);
@@ -165,13 +161,13 @@ const FIRST_FILL_AT = 5 * BEAT;
   };
 }
 
-for (const [scene, at, beat] of [['live', T.live.filled, FIRST_FILL_AT], ['twostep', T.twostep.code, FILL_AT], ['race', T.race.pieFilledAt, FILL_AT]]) {
-  if (Math.abs(at - beat) > 1 / 60 + 1e-6) throw new Error(`${scene}: fills at ${at.toFixed(3)} s of its scene, not on the beat at ${beat} s`);
+for (const [what, at, beat] of [['demo: the form', T.demo.filled, DEMO_FILL_AT], ['demo: the code', T.demo.code, DEMO_CODE_AT], ['race', T.race.pieFilledAt, FILL_AT]]) {
+  if (Math.abs(at - beat) > 1 / 60 + 1e-6) throw new Error(`${what} fills at ${at.toFixed(3)} s of its scene, not on the beat at ${beat} s`);
 }
 
 const m = JSON.parse(readFileSync(path.join(dir, '../measurements.json'), 'utf8'));
-T.measured = { runs: m.fill.n, medianMs: m.fill.median, p90Ms: m.fill.p90, machine: m.machine, chrome: m.chrome };
-T.offsets = { fill: fill.offset, quick: quick.offset, twostep: twostep.offset };
+T.measured = { runs: m.fill.n, medianMs: m.fill.median, p90Ms: m.fill.p90, maxMs: m.fill.max, machine: m.machine, chrome: m.chrome };
+T.offsets = { quick: quick.offset, twostep: twostep.offset };
 
 writeFileSync(path.join(dir, 'timing.js'), `// Written by prep.mjs from ../takes and ../measurements.json. Times in seconds of each clip; scenes in seconds of the video.\nwindow.PP = ${JSON.stringify(T, null, 2)};\n`);
 console.log(JSON.stringify(T, null, 2));
