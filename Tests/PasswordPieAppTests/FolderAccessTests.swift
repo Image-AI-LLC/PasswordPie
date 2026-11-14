@@ -163,3 +163,33 @@ final class FolderAccessSymlinkTests: XCTestCase {
         XCTAssertTrue(folders.isUsable(real.appendingPathComponent("Passwords.kdbx")))
     }
 }
+
+final class FolderAccessPruneSymlinkTests: XCTestCase {
+    /// The list keeps the path as chosen (through a link); the bookmark key is the real folder. Pruning must still match.
+    func testPruningKeepsAFolderListedThroughASymlink() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("prune-\(UUID().uuidString)").resolvingSymlinksInPath()
+        let real = root.appendingPathComponent("CloudStorage/Dropbox")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("Dropbox")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "FolderAccessPruneSymlinkTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var stopped: [String] = []
+        let system = FolderAccess.System(
+            makeBookmark: { Data($0.path.utf8) },
+            resolveBookmark: { FolderAccess.Resolved(url: URL(fileURLWithPath: String(decoding: $0, as: UTF8.self)), stale: false) },
+            startAccessing: { _ in true },
+            stopAccessing: { stopped.append($0.path) },
+            askForFolder: { _ in link }
+        )
+        let folders = FolderAccess(sandboxed: true, defaults: defaults, ownFolder: "/Container/Data", system: system)
+        let database = link.appendingPathComponent("Passwords.kdbx")
+        XCTAssertTrue(folders.ensure(database))
+        folders.prune(keeping: [database.path])
+        XCTAssertEqual(folders.bookmarks.count, 1)
+        XCTAssertTrue(stopped.isEmpty)
+        XCTAssertTrue(folders.isUsable(database))
+    }
+}

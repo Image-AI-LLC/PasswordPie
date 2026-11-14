@@ -94,7 +94,9 @@ final class FolderAccess {
     /// Forgets the folders no database in the list needs any more.
     func prune(keeping databases: [String]) {
         guard sandboxed else { return }
-        let needed = Set(FolderGrants.stillNeeded(Array(bookmarks.keys), by: databases))
+        // The keys are real folders (symbolic links resolved), so the databases are resolved the same way.
+        let real = databases.map { Self.realItem(URL(fileURLWithPath: $0)) }
+        let needed = Set(FolderGrants.stillNeeded(Array(bookmarks.keys), by: real))
         for path in bookmarks.keys where !needed.contains(path) {
             if let url = started.removeValue(forKey: path) { system.stopAccessing(url) }
             bookmarks.removeValue(forKey: path)

@@ -43,7 +43,10 @@ find_profile() {
     [[ -f "$file" ]] || continue
     [[ "$(profile_value "$file" Entitlements:com.apple.application-identifier)" == "$wanted" ]] || continue
     profile_value "$file" ProvisionedDevices >/dev/null && continue   # a development profile
-    check_profile "$file" "$1" 2>/dev/null && { echo "$file"; return; }
+    # check_profile exits through fail(); the subshell confines that to this candidate, and the if keeps the status 0.
+    # A rejected candidate's reason goes to stderr, so "no profile" is never said when one was found but refused.
+    if reason=$( ( check_profile "$file" "$1" ) 2>&1 ); then echo "$file"; return; fi
+    echo "release-mas: skipped $file: ${reason#release-mas: }" >&2
   done
 }
 
