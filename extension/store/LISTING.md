@@ -50,6 +50,10 @@ TWO-STEP CODES
 • With Premium in the PasswordPie app, the two-step code fills itself on the next page after the password.
 • Setting up two-step sign-in? Right-click the QR code the site shows and choose Scan QR code with PasswordPie. PasswordPie asks which account to add it to.
 
+CHANGING A PASSWORD
+• Press Reset Password on an account in PasswordPie. It makes the new password, opens the site's change-password page and fills in the current password and the new one.
+• You press the site's own button. PasswordPie then asks whether the site accepted the new password, and saves it only when you say yes.
+
 NO ACCOUNT, NO SIGN-IN
 • The extension has no account and nothing to sign in to. Click its toolbar button and PasswordPie opens.
 
@@ -117,7 +121,7 @@ Fill the username, password and two-step code that the user picks in the Passwor
 **nativeMessaging**
 
 ```text
-The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.passwordpie). It sends the origin of the active tab (such as https://example.com) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. It is not used for anything else.
+The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.passwordpie). It sends the origin of the active tab (such as https://example.com) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. After the user presses Reset Password in the app, it also receives the new password the app made for the change-password form, and tells the app the page's origin once that form is submitted. It is not used for anything else.
 ```
 
 **webNavigation**
@@ -141,7 +145,7 @@ Adds two lines to the right-click menu of the extension's toolbar button (Scan Q
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any website, and the user decides which ones by the accounts in their own password database. Host access lets the background read the URL of the active tab (only its origin goes to the PasswordPie app, to find that site's accounts) and lets the content script find and fill the username and password fields on the page the user asked to fill. When the app has an account for the site but no icon, the background asks the top frame for the icon links the page declares (<link rel=icon>) and fetches that icon without cookies. When the user chooses a Scan QR code line in a right-click menu, the top frame reads the pictures on screen that could be a QR code and, if none reads, the background takes one picture of the visible tab (tabs.captureVisibleTab); the code is decoded in the extension and its otpauth:// link goes only to the PasswordPie app on the same Mac. Otherwise the content script reads nothing until the user picks an account, and it never submits the form.
+Sign-in pages can be on any site; the user's database decides which. Host access lets the background read the active tab's URL (only its origin goes to the PasswordPie app, to find that site's accounts) and lets the content script find and fill the sign-in fields of the page the user asked to fill. After Reset Password in the app, it fills the site's change-password form (current and new password) and notices when the user submits it. If the app has an account for the site but no icon, the background asks the top frame for the page's icon links and fetches the icon without cookies. When the user chooses Scan QR code in a right-click menu, the top frame reads on-screen pictures that could be a QR code and, if none reads, the background takes one picture of the visible tab (tabs.captureVisibleTab); the code is decoded in the extension and only its otpauth:// link goes to the app. Otherwise the content script reads nothing until the user picks an account, and it never submits a form.
 ```
 
 ### Remote code
@@ -156,7 +160,8 @@ All JavaScript is bundled in the package, including the jsQR decoder. The extens
 
 Collected and handled only on the user's Mac, never sent to the developer or a server:
 
-- **Authentication information:** the username and password the user picks in the PasswordPie app, put into the page.
+- **Authentication information:** the username and password the user picks in the PasswordPie app, put into the page;
+  and, after Reset Password in the app, the new password the app made, put into the site's change-password form.
 - **Web history:** the origin of the active tab, sent to the PasswordPie app on the same Mac to list that site's accounts.
 - **Website content:** the site's icon, sent to the PasswordPie app on the same Mac when it has an account for that
   site but no icon for it; and, only when the user chooses Scan, the two-step QR code shown on the page, decoded in the
@@ -175,7 +180,7 @@ for purposes unrelated to the single purpose, not used to determine creditworthi
 
 - **Visibility:** Public
 - **Regions:** all
-- **Publishing:** deferred. Submit with "publish automatically after review" turned **off**: the direct-download app
-  released before the store ID was added cannot connect to the store build, so the listing goes live together with the
-  app release that trusts it. Steps in [docs/BROWSER_EXTENSION.md](../../docs/BROWSER_EXTENSION.md), "Releasing the
+- **Publishing:** automatic after review, since the direct download (0.2.0 on) trusts the store extension. Turn
+  "publish automatically after review" **off** for an update that needs a newer app than the released one, and publish
+  by hand once that app is out. Steps in [docs/BROWSER_EXTENSION.md](../../docs/BROWSER_EXTENSION.md), "Releasing the
   Chrome extension".
