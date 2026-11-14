@@ -137,9 +137,11 @@ both extensions; the App Store category; and `pkgutil --check-signature` names t
 `upload`. That signs in as the Apple ID in Xcode > Settings > Accounts, so no password is typed or passed; if Xcode's
 session has run out, sign in there again. Apple processes the build for a few minutes before it shows under TestFlight.
 
-**Export compliance.** `ITSAppUsesNonExemptEncryption` is YES in `Info.plist`: the app implements standard algorithms
-(AES, ChaCha20, Twofish, Argon2) to protect the user's own database, besides Apple's. App Store Connect asks the
-remaining questions for each build ([APP_STORE_LISTING.md](APP_STORE_LISTING.md), "Export compliance").
+**Export compliance.** `Info.plist` leaves out `ITSAppUsesNonExemptEncryption`: the app implements standard algorithms
+(AES, ChaCha20, Twofish, Argon2) to protect the user's own database, besides Apple's, so NO would be wrong, and YES makes
+App Store Connect refuse the upload without an export compliance code. Answer the questions for each build in App
+Store Connect ([APP_STORE_LISTING.md](APP_STORE_LISTING.md), "Export compliance"). Every extension needs a
+`CFBundleDisplayName` too, or the upload is refused (`AppStoreInfoPlistTests`).
 
 **Testing before upload.** A package signed for the App Store does not launch on a Mac: Apple signs it again. Test
 with `make mas-dev` (sandboxed, development signature; the AutoFill extension's restricted entitlement is stripped
