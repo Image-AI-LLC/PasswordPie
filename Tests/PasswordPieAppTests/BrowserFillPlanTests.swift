@@ -53,6 +53,24 @@ final class BrowserFillPlanTests: XCTestCase {
         XCTAssertEqual(plan, .newTab(website: "https://acme.atlassian.net", url: URL(string: "https://acme.atlassian.net")!))
     }
 
+    func testTheResetLinksSiteFillsThisTabAndNeverOpensTheResetLink() {
+        var entry = login("https://app.example.com")
+        PasswordRotation.setResetLink("https://accounts.example-id.net/password", on: &entry)
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://login.example-id.net/signin"),
+                       .thisTab(website: "https://accounts.example-id.net/password"))
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://example.org/"),
+                       .newTab(website: "https://app.example.com", url: URL(string: "https://app.example.com")!))
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .openAndFill, preferredWebsite: nil, pageURL: "https://login.example-id.net/signin"),
+                       .newTab(website: "https://app.example.com", url: URL(string: "https://app.example.com")!))
+
+        // An account with a reset link and no website: this tab on that site, keystrokes anywhere else.
+        var bare = login("")
+        PasswordRotation.setResetLink("https://accounts.example-id.net/password", on: &bare)
+        XCTAssertEqual(browserFillPlan(entry: bare, mode: .fill, preferredWebsite: nil, pageURL: "https://accounts.example-id.net/"),
+                       .thisTab(website: "https://accounts.example-id.net/password"))
+        XCTAssertEqual(browserFillPlan(entry: bare, mode: .fill, preferredWebsite: nil, pageURL: "https://example.org/"), .keystrokes)
+    }
+
     func testNoWebsiteMeansKeystrokes() {
         var note = VaultEntry()
         note.password = "x"

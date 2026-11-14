@@ -221,17 +221,34 @@ final class PasswordResetSessionTests: XCTestCase {
         XCTAssertEqual(presented, 2)
     }
 
-    func testAResetLinkOnAnotherSiteOnlyOpensThePage() throws {
+    func testAResetLinkOnAnotherDomainFillsThere() throws {
         let id = try payroll(resetLink: "https://accounts.example.net/reset")
         let bridge = bridge(for: id)
         try send(bridge, ["type": "tab", "id": 1, "url": "https://news.example.org/", "focused": true])
 
         XCTAssertEqual(session.resetPassword(id), .ready)
 
+        let candidate = try XCTUnwrap(PreviousPasswords.candidate(of: try stored(id), now: Date()))
+        XCTAssertTrue(pages.isEmpty)
+        XCTAssertEqual(opened.map(\.url.absoluteString), ["https://accounts.example.net/reset"])
+        // The new password is for the page Reset Password opened, not for the account's website.
+        XCTAssertNil(try send(bridge, ["type": "tab", "id": 2, "url": "https://example.com/", "focused": true])["fill"])
+        let fill = try XCTUnwrap(try send(bridge, ["type": "tab", "id": 3, "url": "https://accounts.example.net/reset", "focused": true])["fill"] as? [String: Any])
+        XCTAssertEqual(fill["origin"] as? String, "https://accounts.example.net")
+        XCTAssertEqual(fill["password"] as? String, "first")
+        XCTAssertEqual(fill["newPassword"] as? String, candidate.value)
+    }
+
+    func testAnHTTPResetLinkOnAnHTTPSSiteOnlyOpensThePage() throws {
+        let id = try payroll(resetLink: "http://example.com/account/password")
+        let bridge = bridge(for: id)
+        try send(bridge, ["type": "tab", "id": 1, "url": "https://news.example.org/", "focused": true])
+
+        XCTAssertEqual(session.resetPassword(id), .ready)
+
         XCTAssertTrue(opened.isEmpty)
-        XCTAssertEqual(pages.map(\.absoluteString), ["https://accounts.example.net/reset"])
-        XCTAssertNil(try send(bridge, ["type": "tab", "id": 2, "url": "https://accounts.example.net/", "focused": true])["fill"])
-        XCTAssertNil(try send(bridge, ["type": "tab", "id": 3, "url": "https://example.com/", "focused": true])["fill"])
+        XCTAssertEqual(pages.map(\.absoluteString), ["http://example.com/account/password"])
+        XCTAssertNil(try send(bridge, ["type": "tab", "id": 2, "url": "http://example.com/account/password", "focused": true])["fill"])
     }
 
     func testWithoutAnExtensionForTheProfileInFrontThePageOnlyOpens() throws {

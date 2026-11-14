@@ -119,7 +119,8 @@ public struct SiteIconLedger: Sendable {
         guard let page = BrowserSite(url: pageURL), SiteIconRules.isPublicSite(page.host) else { return false }
         if let last = lastAsked[page.key], now.timeIntervalSince(last) < Self.askAgainAfter, now >= last { return false }
         let missing = SiteSuggestions.entries(entries, pageURL: pageURL).contains { entry in
-            guard let website = SiteSuggestions.matchingWebsite(of: entry, pageURL: pageURL),
+            // An icon is looked up under a website's host, so a page that only the reset link matches is not asked for.
+            guard let website = entryWebsites(entry).first(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }),
                   let host = websiteHost(forWebsite: website) else { return false }
             return !SiteIconRules.lookupHosts(forHost: host).isEmpty && !hasIcon(host)
         }

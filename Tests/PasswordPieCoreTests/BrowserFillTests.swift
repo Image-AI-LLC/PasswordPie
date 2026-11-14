@@ -254,6 +254,17 @@ final class BridgeHandlerTests: XCTestCase {
         XCTAssertEqual((answer["fill"] as? [String: Any])?["origin"] as? String, "https://github.enterprise.example")
     }
 
+    func testTheResetLinksSiteOfTheEntryCounts() {
+        var entry = login("https://app.example.com")
+        PasswordRotation.setResetLink("https://accounts.example-id.net/password", on: &entry)
+        var state = BridgeState()
+        state.pending.set(PendingFill(entryID: entry.id, browser: .chrome, website: "https://accounts.example-id.net/password", created: start)!)
+        let tab = request(#"{"type":"tab","id":7,"url":"https://login.example-id.net/signin"}"#)
+        let fill = object(state.handle(tab, from: .chrome, locked: false, now: start) { _ in entry })["fill"] as? [String: Any]
+        XCTAssertEqual(fill?["origin"] as? String, "https://login.example-id.net")
+        XCTAssertEqual(fill?["password"] as? String, "hunter2")
+    }
+
     func testShowIsAnsweredAndCarriesNothing() {
         for locked in [false, true] {
             var state = BridgeState()
@@ -512,6 +523,39 @@ final class SiteSuggestionTests: XCTestCase {
         XCTAssertEqual(found.map(\.id), [jira.id])
         XCTAssertEqual(SiteSuggestions.matchingWebsite(of: jira, pageURL: "https://acme.atlassian.net/login"), "https://acme.atlassian.net")
         XCTAssertNil(SiteSuggestions.matchingWebsite(of: jira, pageURL: "https://example.com"))
+    }
+
+    func testTheResetLinksSiteIsASiteOfTheAccount() {
+        var app = entry("App", "https://app.example.com")
+        PasswordRotation.setResetLink("https://accounts.example-id.net/password", on: &app)
+        let other = entry("Other", "https://other.example.org")
+        XCTAssertEqual(entryWebsites(app), ["https://app.example.com"], "the reset link is not a website")
+        XCTAssertEqual(entryFillSites(app), ["https://app.example.com", "https://accounts.example-id.net/password"])
+        XCTAssertEqual(SiteSuggestions.entries([other, app], pageURL: "https://login.example-id.net/signin").map(\.id), [app.id])
+        XCTAssertEqual(SiteSuggestions.matchingWebsite(of: app, pageURL: "https://login.example-id.net/signin"), "https://accounts.example-id.net/password")
+        XCTAssertEqual(SiteSuggestions.matchingWebsite(of: app, pageURL: "https://app.example.com/"), "https://app.example.com")
+        XCTAssertTrue(SiteSuggestions.entries([app], pageURL: "https://example-id.net.evil.example/").isEmpty)
+    }
+
+    func testAResetLinkNeverLowersHTTPSToHTTP() {
+        var bank = entry("Bank", "https://bank.example.com")
+        PasswordRotation.setResetLink("http://bank.example.com/reset", on: &bank)
+        XCTAssertEqual(entryFillSites(bank), ["https://bank.example.com"])
+        XCTAssertTrue(SiteSuggestions.entries([bank], pageURL: "http://bank.example.com/reset").isEmpty)
+
+        // On a site the account has no https website for, the link is what the person typed.
+        var router = entry("Router", "https://vendor.example.com")
+        PasswordRotation.setResetLink("http://router.example/password", on: &router)
+        XCTAssertEqual(SiteSuggestions.entries([router], pageURL: "http://router.example/").map(\.id), [router.id])
+        var local = entry("Demo", "https://example.com")
+        PasswordRotation.setResetLink("http://localhost:8787/change-password", on: &local)
+        XCTAssertEqual(SiteSuggestions.entries([local], pageURL: "http://localhost:8787/").map(\.id), [local.id])
+    }
+
+    func testAResetLinkThatIsNotAWebAddressAddsNothing() {
+        var app = entry("App", "https://app.example.com")
+        PasswordRotation.setResetLink("Settings > Security", on: &app)
+        XCTAssertEqual(entryFillSites(app), ["https://app.example.com"])
     }
 
     func testIPv6WithAPort() {
