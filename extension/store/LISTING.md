@@ -70,10 +70,15 @@ Source code: https://github.com/Image-AI-LLC/PasswordPie
 
 ## Promo video
 
-The store's "Global promo video" field takes a YouTube link. The file is `video/passwordpie-fill-1080p.mp4` (25.5 s,
-1920x1080, 60 fps, no sound) with `video/cover.jpg` as its thumbnail; how it is made and measured is in
-[video/README.md](video/README.md). Upload it to YouTube as Public or Unlisted (the store needs a link anyone can open),
-not made for kids, then paste the link here and in the dashboard.
+The store's "Global promo video" field takes a YouTube link. The file is `video/passwordpie-fill-1080p.mp4` (11 s,
+1920x1080, 60 fps, cut to the beat of its music: synthesised for this video, no samples, nothing to license); how it is made and
+measured is in [video/README.md](video/README.md). Upload it to YouTube as Public or Unlisted (the store needs a link
+anyone can open), not made for kids, then paste the link here and in the dashboard.
+
+- **Thumbnail:** the store shows the YouTube thumbnail with its play button over the centre. Upload `video/cover.jpg`
+  (1280x720; the video's first frame is the same picture) as the custom thumbnail. That needs a channel with a verified
+  phone number; until then choose the third of the frames YouTube offers, the end card, which is laid out for it.
+  `video/store-board.png` shows each choice as the store would.
 
 - **YouTube URL:** _(not uploaded yet)_
 - **Title:** PasswordPie for Chrome: a sign-in filled in under half a second | Password Manager for Mac
@@ -85,9 +90,9 @@ PasswordPie is a password manager for Mac that keeps your passwords in your own 
 
 What you see is a real screen recording at real speed, except the parts marked as slowed down or sped up:
 • ⌘\ opens PasswordPie with the accounts for the site you are on at the top. Return fills the form. PasswordPie never presses Sign in for you.
-• The same fill, 4× slower: 448 ms from Return to both fields filled, the median of 25 runs (90% within 464 ms) on a MacBook Air (M2) with macOS 27 and Chrome 157.
+• A fill, 3× slower: 448 ms from Return to both fields filled, the median of 25 runs (90% within 464 ms) on a MacBook Air (M2) with macOS 27 and Chrome 157.
 • With PasswordPie Premium, the two-step code fills itself on the next page.
-• The whole sign-in, typed by hand at about 40 words a minute, next to PasswordPie.
+• The whole sign-in, typed by hand at about 40 words a minute (shown 6× faster), next to PasswordPie in real time.
 
 The site in the video is a made-up demo site, and the account is a demo account.
 
