@@ -381,4 +381,98 @@ final class BackgroundSaveTests: XCTestCase {
         XCTAssertEqual(try savedEntries().first?.favorite, true)
     }
     #endif
+
+    // MARK: Scanned codes and lock, saves waiting their turn
+
+    private func scan(_ issuer: String, secret: String = "JBSWY3DPEHPK3PXP") throws -> ScannedOTP {
+        try OTPAuthImport.parse("otpauth://totp/\(issuer):ada@example.com?secret=\(secret)&issuer=\(issuer)").get()
+    }
+
+    func testAddingACodeToAnItemMovedToTrashLeavesItInTheTrashAndKeepsTheScan() async throws {
+        let session = unlockedSession()
+        let bank = try await saved("Bank", in: session)
+        let model = OTPScanModel(session: session)
+        model.receive(try scan("Example"), origin: "https://example.com", browser: nil)
+        model.target = .entry(bank.id)
+        session.edit(bank.id)
+
+        session.deleteEditing()
+        model.add()
+        await settle(session)
+
+        let disk = try savedEntries()
+        XCTAssertEqual(disk.map(\.trashed), [true])
+        XCTAssertEqual(disk.map(\.otp), [""])
+        XCTAssertEqual(model.phase, .failed(VaultSession.itemGoneText))
+        XCTAssertNotNil(model.scan)
+    }
+
+    func testAddingACodeAfterAnEditorSaveKeepsTheEditAndAddsTheCode() async throws {
+        let session = unlockedSession()
+        let bank = try await saved("Bank", in: session)
+        let model = OTPScanModel(session: session)
+        model.receive(try scan("Example"), origin: "https://example.com", browser: nil)
+        model.target = .entry(bank.id)
+        session.edit(bank.id)
+        var draft = try XCTUnwrap(session.editing)
+        draft.password = "new-password"
+
+        session.saveEditing(draft)
+        model.add()
+        await settle(session)
+
+        let disk = try savedEntries()
+        XCTAssertEqual(disk.map(\.password), ["new-password"])
+        XCTAssertEqual(disk.map { !$0.otp.isEmpty }, [true])
+        XCTAssertEqual(model.phase, .added(bank.id))
+    }
+
+    func testLockingWithSavesWaitingTellsEachOneAndTheLockScreenSaysSo() async throws {
+        let session = unlockedSession()
+        let bank = try await saved("Bank", in: session)
+        let model = OTPScanModel(session: session)
+        model.receive(try scan("Example"), origin: "https://example.com", browser: nil)
+        model.target = .newItem
+        var starAgain: Bool?
+        session.toggleFavorite(bank.id)
+        session.toggleFavorite(bank.id) { starAgain = $0 }
+        session.edit(bank.id)
+        var draft = try XCTUnwrap(session.editing)
+        draft.password = "typed-new"
+        session.saveEditing(draft)
+        model.add()
+
+        session.lock()
+
+        XCTAssertEqual(session.message, VaultSession.lockedBeforeSaveText)
+        XCTAssertEqual(model.phase, .failed(VaultSession.lockedBeforeSaveText))
+        XCTAssertNotNil(model.scan)
+        XCTAssertEqual(starAgain, false)
+        XCTAssertFalse(session.editorSaving)
+        await settle(session)
+        let disk = try savedEntries()
+        XCTAssertEqual(disk.map(\.favorite), [true], "the save being written still finished")
+        XCTAssertEqual(disk.map(\.password), ["secret"])
+    }
+
+    func testASecondScanAddedWhileTheFirstIsBeingWrittenEndsAddedForTheSecond() async throws {
+        let session = unlockedSession()
+        let model = OTPScanModel(session: session)
+        var filled: [UUID] = []
+        model.codeAdded = { id, _, _ in filled.append(id) }
+
+        model.receive(try scan("One"), origin: "https://one.example", browser: .chrome)
+        model.target = .newItem
+        model.add()
+        model.receive(try scan("Two", secret: "KRSXG5CTMVRXEZLU"), origin: "https://two.example", browser: .chrome)
+        model.target = .newItem
+        model.add()
+        await settle(session)
+
+        let disk = try savedEntries()
+        guard case .added(let id) = model.phase else { return XCTFail("phase is \(model.phase)") }
+        XCTAssertEqual(disk.first { $0.id == id }?.title, "Two")
+        XCTAssertEqual(filled, [id])
+        XCTAssertEqual(disk.map(\.title).sorted(), ["One", "Two"])
+    }
 }

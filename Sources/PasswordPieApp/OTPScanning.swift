@@ -200,36 +200,47 @@ final class OTPScanModel: ObservableObject {
 
     func add() {
         guard isWaiting, let scan, !session.locked, let target else { return }
-        var entry: VaultEntry
+        var created = VaultEntry()
+        var existing: UUID?
         switch target {
         case .entry(let id):
-            guard let stored = session.storedEntry(id) else { return }
+            guard session.storedEntry(id) != nil else { return }
             if phase != .confirmReplace, targetHasCode {
                 phase = .confirmReplace
                 return
             }
-            entry = stored
+            existing = id
         case .newItem:
-            entry = VaultEntry()
-            entry.title = newItemTitle
-            entry.username = scan.otp.account
-            entry.url = scan.origin ?? ""
+            created.title = newItemTitle
+            created.username = scan.otp.account
+            created.url = scan.origin ?? ""
+            created.otp = scan.otp.uri
         }
-        // The previous value of the field goes into the item's KDBX history when the file is written.
-        entry.otp = scan.otp.uri
+        let savedIn = existing ?? created.id
+        saves += 1
+        let mine = saves
         phase = .saving
-        session.storeEntry(entry) { [weak self] saved in
+        let finish: (Bool) -> Void = { [weak self] saved in
             // A newer scan, or a lock, took this one's place while the file was written.
-            guard let self, self.phase == .saving else { return }
+            guard let self, self.phase == .saving, self.saves == mine else { return }
             guard saved else {
                 self.phase = .failed(self.session.message.isEmpty ? VaultSession.saveFailedText : self.session.message)
                 return
             }
             self.clearScan()
-            self.phase = .added(entry.id)
-            if let browser = scan.browser, let origin = scan.origin { self.codeAdded(entry.id, browser, origin) }
+            self.phase = .added(savedIn)
+            if let browser = scan.browser, let origin = scan.origin { self.codeAdded(savedIn, browser, origin) }
+        }
+        // The previous value of the field goes into the item's KDBX history when the file is written.
+        if let existing {
+            session.storeScannedCode(scan.otp.uri, in: existing, then: finish)
+        } else {
+            session.storeEntry(created, then: finish)
         }
     }
+
+    /// Counts Add presses that reached the file queue, so a save's answer is only taken by the Add that asked for it.
+    private var saves = 0
 
     /// Back from "Replace the existing code?" to the list.
     func keepChoosing() {

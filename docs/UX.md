@@ -758,6 +758,7 @@ item's history in the database file, where KeePassXC and other KeePass apps show
 | Google Authenticator's export | "This is a Google Authenticator export. Scan the QR code the website shows instead." |
 | A damaged secret, or unusual settings | One line saying which: the secret, the number of digits (6 to 8), the time step, or the algorithm (SHA1, SHA256, SHA512) |
 | Two minutes passed before Add | "This scan has expired. Scan the QR code again." |
+| The item was moved to the trash or removed before the code was saved | "That item is no longer in the database. Choose another." The scan stays. |
 | PasswordPie is not running | The extension starts it, as a click on its toolbar button does |
 
 ### Demo script
@@ -1154,6 +1155,9 @@ Changes made one after another are written one after another, in the order you m
 **Lock while saving.** It locks at once. The save still finishes behind the lock screen, and the file is whole either
 way: the old one or the new one, never half of each. Unlock again straight away and PasswordPie waits for that save
 before it opens the file, so what you see is what was saved.
+
+A change still waiting for its turn when you lock is not written. The lock screen says "PasswordPie locked before a
+change was saved. It was not saved." A scanned code you were adding stays, and comes back after you unlock.
 
 ### When something goes wrong
 

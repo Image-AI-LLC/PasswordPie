@@ -317,6 +317,8 @@ final class VaultSession: ObservableObject {
     private var settleWaiters: [() -> Void] = []
     static let saveFailedText = "The database could not be saved."
     static let saveBusyText = "Another change is still being saved. Try again in a moment."
+    static let lockedBeforeSaveText = "PasswordPie locked before a change was saved. It was not saved."
+    static let itemGoneText = "That item is no longer in the database. Choose another."
     private let clipboard: ClipboardGuard
     /// Who has Premium. Changes without a relaunch, and it is never written to the database or to disk.
     let premium: PremiumStore
@@ -697,12 +699,17 @@ final class VaultSession: ObservableObject {
         confirmDraft = ""
         editing = nil
         // A save still being written finishes on its own. Its result is dropped: nothing of this session is left to update.
+        // A save still waiting for its turn cannot be written: the files it changes went with the session. Each is told.
+        let waiting = queuedWrites
         queuedWrites = []
+        let unsaved = waiting.isEmpty ? "" : Self.lockedBeforeSaveText
+        message = unsaved
+        for save in waiting { save.done(unsaved) }
         editorSaving = false
         editorError = ""
         locked = true
         creating = !FileManager.default.fileExists(atPath: databaseURL.path)
-        message = ""
+        message = unsaved
         importStatus = ""
         importStatusIsError = false
         databaseUsesKeyFile = false
@@ -1164,6 +1171,22 @@ final class VaultSession: ObservableObject {
     /// another item is open in it. `done` gets false when the file could not be written; `message` then says why.
     func storeEntry(_ entry: VaultEntry, then done: @escaping (Bool) -> Void = { _ in }) {
         enqueueWrite({ [weak self] in self?.placeStored(entry) }, done: { done($0 == nil) })
+    }
+
+    /// Puts a scanned code in a stored item. The item is read when it is this save's turn, so a save still being written
+    /// for it (an edit, the star, Move to Trash) is kept. `done` gets false when the item is gone by then.
+    func storeScannedCode(_ otp: String, in id: UUID, then done: @escaping (Bool) -> Void = { _ in }) {
+        var found = false
+        enqueueWrite({ [weak self] in
+            guard let self else { return nil }
+            guard var entry = self.storedEntry(id) else {
+                self.reportSaveFailure(Self.itemGoneText)
+                return nil
+            }
+            found = true
+            entry.otp = otp
+            return self.placeStored(entry)
+        }, done: { done(found && $0 == nil) })
     }
 
     /// Puts one item, new or changed, into its file in memory, and names that file. A Chrome draft may reuse the row of
