@@ -1,6 +1,9 @@
 import AppKit
 import PasswordPieCore
 import SwiftUI
+#if PP_DIRECT
+import PasswordPieUpdate
+#endif
 
 /// A section other parts of the app open Preferences at.
 enum PreferencesSection: Hashable {
@@ -22,6 +25,10 @@ struct PreferencesView: View {
     @ObservedObject var navigator: PreferencesNavigator
     /// The browser extensions' state, for "Browser extensions". Nil leaves the section out.
     var bridge: BrowserBridge?
+    #if PP_DIRECT
+    /// The downloaded app's updater, for "Updates". Nil leaves the section out.
+    var updates: UpdateCoordinator?
+    #endif
     @StateObject private var recorder = ShortcutRecorder()
     @Environment(\.colorScheme) private var colorScheme
 
@@ -62,6 +69,9 @@ struct PreferencesView: View {
                 #if PP_DIRECT
                 section("Chrome") { chromeSync }
                     .id(PreferencesSection.chrome)
+                if let updates {
+                    section("Updates") { UpdatesSection(updates: updates) }
+                }
                 #endif
             }
             .padding(24)
@@ -625,3 +635,59 @@ struct BrowserExtensionsSection: View {
         }
     }
 }
+
+#if PP_DIRECT
+/// "Updates" in Preferences, downloaded app only. See "Updates that install themselves" in docs/UX.md.
+struct UpdatesSection: View {
+    @ObservedObject var updates: UpdateCoordinator
+    @Environment(\.colorScheme) private var colorScheme
+
+    static let detail = "Once a week, a separate updater asks GitHub for a newer PasswordPie, checks that it is signed by Image AI, LLC and notarized by Apple, and installs it while PasswordPie is locked. PasswordPie itself never connects to the network."
+
+    private var failed: Bool {
+        if case .failed = updates.state { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Update automatically").fontWeight(.medium)
+                    Text(Self.detail)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Toggle("Update automatically", isOn: $updates.automatic)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(updates.state == .unavailable)
+                    .accessibilityLabel("Update automatically")
+                    .accessibilityHint(Self.detail)
+            }
+            HStack(spacing: 10) {
+                Text(updates.statusLine)
+                    .font(.system(size: 11))
+                    .foregroundStyle(failed ? Palette.error(dark: colorScheme == .dark) : Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                switch updates.state {
+                case .ready:
+                    Button("Restart to Update") { updates.restartToUpdate() }
+                case .available:
+                    Button("Download…") { NSWorkspace.shared.open(ReleaseFeed.releasesPage) }
+                default:
+                    EmptyView()
+                }
+                if updates.state != .unavailable {
+                    Button(updates.state == .checking ? "Checking…" : "Check Now") { updates.checkNow() }
+                        .disabled(updates.state == .checking)
+                }
+            }
+        }
+        .controlSize(.regular)
+    }
+}
+#endif

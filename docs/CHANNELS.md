@@ -12,7 +12,8 @@ App Store builds do not contain direct-only code.
 | Live read of Chrome's password store | yes (Preferences > Chrome) | **not compiled in** |
 | Two-step codes (Premium) | an activation from passwordpie.com, where Premium is bought. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
 | Two-step codes in the browser (Premium) | the app has Premium ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
-| Network from the app | **none** of its own (see "Network" below) | **none**: no `URLSession`, no `network.client` entitlement |
+| Network from the app | **none** of its own; the separate updater asks GitHub for a newer version once a week (see "Network" and "Updates" below) | **none**: no `URLSession`, no `network.client` entitlement |
+| Updates | `PasswordPieUpdater`, inside the app: weekly, from GitHub releases | the App Store; the updater is **not in the bundle** |
 | Extension toolbar button | Opens PasswordPie. No popup, no account, no request to the site. Right-click: Scan QR code on this page, and in Chrome Open passwordpie.com | The same Safari build as the direct channel's: no line that opens the site |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
@@ -83,7 +84,9 @@ is locked to an SSH session, so run the script from a terminal of the logged-in 
 It runs `make dist-direct`, notarizes and staples the app, then wraps it in `build/direct/PasswordPie-<version>.dmg`
 (with an Applications shortcut), signs, notarizes and staples the DMG, and checks both with `spctl`. Attach the DMG and
 its `.sha256` to a GitHub release tagged `v<version>`; passwordpie.com links to
-`releases/latest/download/PasswordPie.dmg`, so upload a copy under that name too.
+`releases/latest/download/PasswordPie.dmg`, so upload a copy under that name too. Installed copies read the tag and
+download `PasswordPie-<version>.dmg` within a week of the release being published (see "Updates"), so publish the
+release only once that asset is attached.
 
 Direct builds trust the Chrome Web Store extension's ID (`BridgeConstants.chromeExtensionID`). Releases made before it
 was added cannot connect to the store extension. The Chrome extension itself ships through the Chrome Web Store: see
@@ -98,10 +101,12 @@ every other target here.
 ## Network
 
 Neither channel's app opens a network connection of its own. `NetworkSourceTests` fails if any file under `Sources/`
-(the app, its core, the bridge, the Chrome host, the Safari and AutoFill extensions) names `URLSession`, `URLRequest`,
-`ASWebAuthenticationSession`, `NWConnection` or another networking API (`Network`, `WebKit`, BSD inet sockets), except
-files on its allow-list, and the allow-list is empty. No entitlement file asks for `network.client`. Every
-`Data(contentsOf:)` in the sources reads a file URL (checked by reading them; the test does not prove it).
+(the app, its core, the bridge, the update library, the Chrome host, the Safari and AutoFill extensions) names
+`URLSession`, `URLRequest`, `ASWebAuthenticationSession`, `NWConnection` or another networking API (`Network`, `WebKit`,
+BSD inet sockets), except files on its allow-list. The allow-list has one file: `GitHubTransport.swift`, in the updater
+(`Sources/PasswordPieUpdater`), a separate executable that only the direct channel's bundle contains (see "Updates"). No
+entitlement file asks for `network.client`. Every `Data(contentsOf:)` in the sources reads a file URL (checked by reading
+them; the test does not prove it).
 
 What remains, none of it a connection the app makes:
 
@@ -111,10 +116,45 @@ What remains, none of it a connection the app makes:
   Chrome host and the Safari extension relay frames to that socket and nothing else. The extension itself asks
   passwordpie.com nothing: it has no account. Its one kind of request is the icon of a site you have an account for,
   fetched from where the page says it is (BROWSER_EXTENSION.md, "Site icons").
+- **The updater**, direct channel only: `PasswordPieUpdater` asks `api.github.com` for the latest release once a week
+  and downloads its disk image from GitHub when it is newer. It is another process, with none of the database code.
 - **macOS.** The system may check the app's signature and notarization, and Safari, Chrome and Passwords do their own
   networking. None of it is PasswordPie's code.
 
-Site icons come bundled or from the extension (BROWSER_EXTENSION.md, "Site icons"); there is no update check.
+Site icons come bundled or from the extension (BROWSER_EXTENSION.md, "Site icons"); the app fetches none.
+
+## Updates
+
+Direct channel only; the user's side is "Updates that install themselves" in [UX.md](UX.md).
+
+`Contents/MacOS/PasswordPieUpdater` is its own executable (`Sources/PasswordPieUpdater`, signed as
+`com.passwordpie.updater`). It links `PasswordPieUpdate` and nothing else of ours: no core, no bridge. The app
+(`UpdateCoordinator`, behind `#if PP_DIRECT`) starts it and reads one JSON line from its standard output.
+
+| Command | What it does |
+|---|---|
+| `PasswordPieUpdater check` | Refuses unless the app around it is a Developer ID build of our team (so `make install` builds never ask GitHub). Reads `api.github.com/repos/Image-AI-LLC/PasswordPie/releases/latest`; when the tag is a higher version and the release has `PasswordPie-<version>.dmg`, downloads it to `~/Library/Caches/com.passwordpie.updater`, checks the disk image's signature, mounts it read-only without showing it, copies `PasswordPie.app` out and checks the copy. Prints `upToDate`, `staged` (with the path), `available` (newer, but this copy cannot be replaced), `notEligible` or `failed`. |
+| `PasswordPieUpdater install <staged app> <pid> [relaunch]` | Waits for the app (`pid`) to exit, checks the staged app again, swaps it with the app around the updater by two renames on the same volume (the old app is put back if the second fails), and with `relaunch` opens the app again, whether or not the swap worked. |
+
+What a download must pass (`ReleasePolicy`): a valid signature, checked strictly and with nested code, that satisfies
+`anchor apple generic`, Developer ID Application, team `2S468LUF8V` and `notarized`; for the app, also identifier
+`com.passwordpie` and a `CFBundleShortVersionString` higher than the installed one. The check does not depend on GitHub
+being honest: a release someone else put there fails the signature, and an old release of ours fails the version.
+
+The app decides when: `UpdateSchedule` says a check is due 7 days after the last one that got an answer, and 1 day after
+one that failed. A staged update is installed when the vault is locked and no window is open, at quit, or at the next
+start. The app forgets the staged path before it hands it to the updater, so an install that fails is tried once and
+not on every start; the next weekly check stages it again.
+
+Nothing changes in how a release is made: the updater reads the same GitHub release, and needs the tag `v<version>` and
+the asset `PasswordPie-<version>.dmg`. Versions before the first one with the updater (0.2.0 and earlier) are updated by
+hand.
+
+Check the store build has no updater, and the direct build's app still links no networking of its own:
+
+    ls build/mas/PasswordPie.app/Contents/MacOS                                   # expect PasswordPie only
+    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e api.github.com -e PasswordPieUpdater -e updateAutomatically   # expect 0
+    nm -u build/direct/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -i -e URLSession -e CFNetwork   # expect 0
 
 ## Direct-only code
 
