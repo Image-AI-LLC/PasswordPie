@@ -5,7 +5,7 @@ App Store builds do not contain direct-only code.
 
 | | Direct (default) | App Store |
 |---|---|---|
-| Build | `swift build` / `make install` / `make dist-direct` | `PP_MAS=1 swift build` / `make mas-dev` |
+| Build | `swift build` / `make install` / `make dist-direct` | `PP_MAS=1 swift build` / `make mas-dev` / `make dist-mas` |
 | Swift flag | `PP_DIRECT` defined | not defined |
 | Sandbox | no (hardened runtime, notarized) | yes (`Entitlements/mas.entitlements`) |
 | Import CSV from Chrome / Apple Passwords | yes | yes |
@@ -98,6 +98,56 @@ universal build needs an x86_64 argon2 first.
 The AutoFill extension's restricted entitlement is stripped unless `APP_PROFILE` and `APPEX_PROFILE` are passed, as with
 every other target here.
 
+## Releasing the App Store build
+
+The App Store build is the same source with `PP_MAS=1`. Its App Store Connect record is for the bundle ID
+`com.passwordpie` (the record made for 0.1.0 is locked to v0.1.0's old bundle ID and cannot take it). What goes into
+each field of the listing, the review notes and the in-app purchases is in [APP_STORE_LISTING.md](APP_STORE_LISTING.md).
+
+Once, on the developer site (team `2S468LUF8V`):
+
+| App ID | Capabilities | Mac App Store distribution profile |
+|---|---|---|
+| `com.passwordpie` | In-App Purchase, App Groups (`2S468LUF8V.com.passwordpie`), AutoFill Credential Provider | PasswordPie Mac App Store |
+| `com.passwordpie.autofill` | AutoFill Credential Provider | PasswordPie AutoFill Mac App Store |
+| `com.passwordpie.safari` | App Groups (`2S468LUF8V.com.passwordpie`) | PasswordPie Safari Mac App Store |
+
+The profiles are made for the "3rd Party Mac Developer Application" (Mac App Distribution) certificate, and the package
+is signed with "3rd Party Mac Developer Installer". Install the profiles (double-click), or pass them as
+`MAS_APP_PROFILE`, `MAS_AUTOFILL_PROFILE` and `MAS_SAFARI_PROFILE`.
+
+Before the build: the same version steps as the direct download (both channels share the three `Info.plist` files). A
+build number can be uploaded only once per version, so raise `CFBundleVersion` if this version was uploaded already.
+
+Then:
+
+    Scripts/release-mas.sh            # build/mas-dist/PasswordPie-<version>-<build>.pkg, checked
+    Scripts/release-mas.sh --upload   # the same, then sent to App Store Connect
+
+It finds the three profiles and checks each one: a distribution profile, for its bundle ID and team, not expired, made
+for the certificate in the keychain, and the AutoFill one with its capability. Then `make dist-mas` builds with
+`PP_MAS=1`, signs the Safari extension, the AutoFill extension and the app with their entitlements plus
+`com.apple.application-identifier` and `com.apple.developer.team-identifier`, embeds each profile, and runs
+`productbuild`. The script then checks the package and stops at the first failure: every bundle sandboxed, signed with
+the App Store certificate and carrying its profile; no `network.client`; `Contents/MacOS` holds only `PasswordPie` (no
+updater, no Chrome host); the `strings` checks at the top of this file and in "Updates"; the versions of the app and
+both extensions; the App Store category; and `pkgutil --check-signature` names the installer certificate.
+
+`--upload` wraps the signed app in an `.xcarchive` and gives it to `xcodebuild -exportArchive` with the destination
+`upload`. That signs in as the Apple ID in Xcode > Settings > Accounts, so no password is typed or passed; if Xcode's
+session has run out, sign in there again. Apple processes the build for a few minutes before it shows under TestFlight.
+
+**Export compliance.** `ITSAppUsesNonExemptEncryption` is YES in `Info.plist`: the app implements standard algorithms
+(AES, ChaCha20, Twofish, Argon2) to protect the user's own database, besides Apple's. App Store Connect asks the
+remaining questions for each build ([APP_STORE_LISTING.md](APP_STORE_LISTING.md), "Export compliance").
+
+**Testing before upload.** A package signed for the App Store does not launch on a Mac: Apple signs it again. Test
+with `make mas-dev` (sandboxed, development signature; the AutoFill extension's restricted entitlement is stripped
+unless `APP_PROFILE` and `APPEX_PROFILE` name macOS development profiles), or install the uploaded build from
+TestFlight. Its first launch copies the direct build's preferences into the sandbox container (the same bundle ID), so
+the lock screen shows the direct build's database; unlocking it asks for its folder first (UX.md, "The App Store app
+asks once for a database's folder"). Use a demo database: never unlock a real vault with a test build.
+
 ## Network
 
 Neither channel's app opens a network connection of its own. `NetworkSourceTests` fails if any file under `Sources/`
@@ -178,9 +228,13 @@ and older ones move to the protected `PasswordPie.PreviousPasswords` field; see 
 
 ## What was verified for the App Store channel (dev-signed, `make mas-dev`)
 
-- Builds, signs with the sandbox entitlement, launches, and creates its container data folder. No sandbox denials in the log.
+- Builds, signs with the sandbox entitlement, launches, and creates its container data folder.
 - Reading Chrome's folder is denied in the sandbox (this is why live read is direct-only).
 - The legacy keychain (what Touch ID unlock and remembered key files use) works inside the sandbox: add, read, delete.
+- New Database… in a folder the app has no access to shows the folder panel in that folder; Cancel keeps the current
+  database and writes nothing (2026-11-15).
+- With the direct build's Chrome host still installed, the host connects to the store build's socket and the store
+  build refuses it: its peer check cannot read the host (`deny file-read-data` in the sandbox log, about once a second).
 
 ## Key files in the sandbox
 
@@ -193,22 +247,22 @@ keychain, never the original path, so neither channel needs a security-scoped bo
 deletes the item; Remove Key File deletes it too, and so does removing the database from the list in Preferences. The Touch ID secret (`com.passwordpie`) holds only the master
 password; a KeePass 1 key file that older builds put inside it is still read, and removed on Forget Key File.
 
-## Open items before an App Store submission
+## Before an App Store submission
 
-These could not be verified without a Distribution certificate and provisioning profile, or need design work:
+What used to block a store build, and where each one stands:
 
-1. **Remember the database across launches.** `databasePath` is a plain path in UserDefaults. Sandbox needs a
-   security-scoped bookmark (`files.bookmarks.app-scope` is already in the entitlements, the code is not written).
-2. **Import of non-KDBX databases writes a sibling `.kdbx`** next to the source file. The sandbox only grants the chosen
-   file, not its folder, so this needs a save panel.
-3. **Auto-fill / auto-type** uses `AXIsProcessTrusted` and `CGEventPost`. It was not confirmed that a sandboxed app can
-   be granted Accessibility; test with a real store-signed build, and decide whether the store channel ships without it.
-4. **Touch ID keychain.** The data-protection keychain (`kSecUseDataProtectionKeychain`) returns -34018 without a
-   provisioning profile. With a profile the store channel can use the biometric access control the comment in
-   `TouchIDSecretStore.swift` describes.
-5. **In-app purchase.** Built: see "Premium" below. What is left is in App Store Connect, under "Before Premium can be
-   sold".
-6. **Site-ranking data licence.** See `Scripts/gen_domain_ranks.py` and the note in the delivery report.
+1. **Remembering a database across launches, and saving it.** Done: the folder is asked for once and kept as a
+   security-scoped bookmark (`FolderAccess`, `FolderGrants`; UX.md, "The App Store app asks once for a database's
+   folder"). A save writes beside the database (`.snapshot`, a temporary file), which the file alone does not allow.
+2. **An imported CSV, 1Password, Bitwarden, Proton Pass or KeePass 1 file is saved as a sibling `.kdbx`.** Done by 1:
+   the folder holding the import is allowed when it is opened.
+3. **Fill by typing and the browser URL read** use `AXIsProcessTrusted`, `CGEventPost` and the Accessibility API. A
+   sandboxed app can be granted Accessibility; not yet confirmed on a store build. If it does not work, the store build
+   hides Fill by typing; filling in Safari goes through the extension and needs no Accessibility.
+4. **Touch ID.** Works in the sandbox with the legacy keychain, as above. The data-protection keychain is not needed.
+5. **In-app purchase.** Built: see "Premium". What is left is in App Store Connect, under "Before Premium can be sold".
+6. **Site-ranking data.** The Majestic Million is CC BY 3.0, which allows commercial use with attribution; About and the
+   README credit it.
 
 ## Premium
 
@@ -332,7 +386,8 @@ Run > Options > StoreKit Configuration. Launching the built `.app` directly talk
 
 These are in App Store Connect and the Apple Developer site, and cannot be done from this repo.
 
-1. Check that In-App Purchase is on for the App ID `com.passwordpie`.
+1. Check that In-App Purchase is on for the App ID `com.passwordpie` (with the other capabilities in "Releasing the
+   App Store build").
 2. Sign the Paid Apps agreement, and fill in the bank and tax details. Until they are active, products do not load.
 3. Create the non-consumable `com.passwordpie.premium.lifetime`. Base price US$29 in the United States storefront.
 4. Create a subscription group, such as "PasswordPie Premium". Add the auto-renewable subscription
@@ -344,10 +399,11 @@ These are in App Store Connect and the Apple Developer site, and cannot be done 
    Before a release, check the site signs with its private half: sign in on passwordpie.com with an account that has
    Premium, press Activate, and the app shows Premium (the link is from `/api/premium/activation`;
    `/api/premium/entitlement` carries no token). It needs a production account with Premium: nothing public proves it.
-8. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac. **Buy and restore with it on a `make mas-dev` build, to prove StoreKit works without `network.client`** (see Signing).
-9. Upload a build, then attach both products to the app version for review. A product's first review has to go with a version.
-10. Review notes: the app has no account and needs no login. Say that a customer who bought Premium on passwordpie.com can
-   activate it from the website through the `passwordpie://activate` link (guideline 3.1.3(b); the same plans are sold
-   here), and include a working activation link for the reviewer.
+8. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac. **Buy and restore with it on a `make mas-dev` build or the TestFlight build, to prove StoreKit works without `network.client`** (see Signing).
+9. Upload a build (`Scripts/release-mas.sh --upload`, "Releasing the App Store build"), then attach both products to the app version for review. A product's first review has to go with a version.
+10. Review notes: the text is in [APP_STORE_LISTING.md](APP_STORE_LISTING.md), "App Review notes". Replace its placeholder
+   with a working activation link for the reviewer (`/api/premium/activation`, or `Scripts/mint-activation-link.mjs`
+   only for a debug build: release builds trust the site's key alone).
 11. Answer **Data Not Collected** in App Privacy.
-12. Put the terms link in the app description or the EULA field, as guideline 3.1.2 asks. The privacy policy URL goes in the App Privacy section.
+12. The terms link is at the end of the description in [APP_STORE_LISTING.md](APP_STORE_LISTING.md), as guideline 3.1.2
+   asks. The privacy policy URL goes in the App Privacy section.

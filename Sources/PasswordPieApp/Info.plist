@@ -30,6 +30,14 @@
       </array>
     </dict>
   </array>
+  <!-- The App Store requires a category (docs/APP_STORE_LISTING.md). -->
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
+  <!-- The app implements standard algorithms itself (AES, ChaCha20, Twofish, Argon2) to encrypt the user's own database,
+       besides Apple's. That is not the exemption for "only Apple's encryption", so the answer is YES and App Store
+       Connect asks the export compliance questions (docs/CHANNELS.md, "Releasing the App Store build"). -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <true/>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>
