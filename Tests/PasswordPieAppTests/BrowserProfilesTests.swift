@@ -75,7 +75,7 @@ final class BrowserProfilesTests: XCTestCase {
 
     /// An unlocked database with one GitHub login, and a bridge that records what it would send and open.
     private func bridge() -> (BrowserBridge, VaultEntry) {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

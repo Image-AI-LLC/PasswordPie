@@ -21,7 +21,7 @@ final class EntryMergeSessionTests: XCTestCase {
     }
 
     private func unlockedSession() -> VaultSession {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"
@@ -74,7 +74,7 @@ final class EntryMergeSessionTests: XCTestCase {
         let url = directory.appendingPathComponent("test.kdbx")
         try KDBX.save(vault: &vault, password: "pw").write(to: url)
 
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         XCTAssertFalse(session.creating)
         session.passwordDraft = "pw"
@@ -140,7 +140,7 @@ final class EntryMergeSessionTests: XCTestCase {
         let url = directory.appendingPathComponent("test.kdbx")
         try KDBX.save(vault: &vault, password: "pw").write(to: url)
 
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.unlock()

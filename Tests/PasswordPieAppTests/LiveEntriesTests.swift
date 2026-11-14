@@ -25,7 +25,7 @@ final class LiveEntriesTests: XCTestCase {
     }
 
     private func unlockedSession() -> VaultSession {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

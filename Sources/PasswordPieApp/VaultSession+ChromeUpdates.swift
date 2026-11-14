@@ -3,7 +3,7 @@ import PasswordPieCore
 
 #if PP_DIRECT
 /// Everything a write needs, with nothing tied to the main actor. A background update runs it off the main thread, because deriving
-/// the key can take seconds. Restore runs it in place, like every other save the person asked for.
+/// the key can take seconds. Restore still runs it in place.
 private struct ChromeWrite: Sendable {
     var path: String
     var url: URL
@@ -77,7 +77,8 @@ extension VaultSession {
         // No rows means nothing has been read since unlocking, which says nothing about a batch that is waiting.
         guard !locked, chromeSyncEnabled, !chromeAwaitingSiblings, !chromeRows.isEmpty else { return }
         let now = chromeClock()
-        if chromeWriteInFlight {
+        // One file write at a time. A save the person asked for goes first, and this runs again when it has been written.
+        if chromeWriteInFlight || savesPending {
             chromeReconcileAgain = true
             return
         }
@@ -103,7 +104,7 @@ extension VaultSession {
 
     /// `Try Again`. A file that changed on disk is read again first, because the write would be refused forever otherwise.
     func retryChromeUpdates() {
-        guard !chromeWriteInFlight else { return }
+        guard !chromeWriteInFlight, !savesPending else { return }
         let generation = catalogGeneration
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -135,7 +136,7 @@ extension VaultSession {
     }
 
     private func decideChromeBatch(kind: PreviousPasswords.EventKind) {
-        guard !chromeWriteInFlight else { return }
+        guard !chromeWriteInFlight, !savesPending else { return }
         chromeBatchError = ""
         let now = chromeClock()
         let plan = chromePlan(now: now)
@@ -186,7 +187,7 @@ extension VaultSession {
         if let waiting { return .waiting(waiting) }
         // Not in a file that can be written (a Chrome login, a CSV), or its record is from a newer version: no new password.
         // A Chrome update being written right now is different: the account could have had one, and did not get it.
-        guard reached else { return chromeWriteInFlight && storedEntry(id) != nil ? .failed : .unavailable }
+        guard reached else { return (chromeWriteInFlight || savesPending) && storedEntry(id) != nil ? .failed : .unavailable }
         guard let added else { return .unavailable }
         return written ? .waiting(added) : .failed
     }
@@ -208,7 +209,7 @@ extension VaultSession {
 
     /// A change the person just asked for, written before anything else happens. Nothing is published unless the file was replaced.
     private func transact(_ id: UUID, _ change: (inout VaultEntry) -> Bool) -> Bool {
-        guard !chromeWriteInFlight, let path = listPaths[id], let slot = listSlots[id], let origin = listOrigins[id],
+        guard !chromeWriteInFlight, !savesPending, let path = listPaths[id], let slot = listSlots[id], let origin = listOrigins[id],
               let index = openedFiles.firstIndex(where: { $0.url.path == path }),
               VaultFormat.writesKDBX(openedFiles[index].url),
               openedFiles[index].vault.entries.indices.contains(slot),
@@ -268,10 +269,9 @@ extension VaultSession {
             guard let self else { return }
             self.chromeWriteInFlight = false
             done(succeeded)
-            if overtaken || self.chromeReconcileAgain {
-                self.chromeReconcileAgain = false
-                self.reconcileChromeUpdates()
-            }
+            if overtaken { self.chromeReconcileAgain = true }
+            // Saves that waited for this write go first. With none left, it reconciles again if that was asked for.
+            self.runQueuedWrites()
         }
     }
 

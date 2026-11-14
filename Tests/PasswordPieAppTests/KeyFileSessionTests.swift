@@ -429,7 +429,7 @@ final class KeyFileSessionTests: XCTestCase {
     // MARK: Helpers
 
     private func makeSession() -> VaultSession {
-        let session = VaultSession(keyFileMemory: keychain)
+        let session = VaultSession(keyFileMemory: keychain, writes: .inline)
         session.keyFilePrompts = prompts
         session.restore()
         return session

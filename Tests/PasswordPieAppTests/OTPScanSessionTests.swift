@@ -34,7 +34,7 @@ final class OTPScanSessionTests: XCTestCase {
         let store = PremiumStore(backend: FakePremiumBackend(), secrets: FakeSecrets(), verify: PassKey.verifyActivation, now: { PremiumFixtures.now })
         #endif
         await store.refresh()
-        let session = VaultSession(premium: store, pasteboard: FakePasteboard())
+        let session = VaultSession(premium: store, pasteboard: FakePasteboard(), writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

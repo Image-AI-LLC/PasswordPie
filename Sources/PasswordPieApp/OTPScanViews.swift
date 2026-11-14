@@ -15,7 +15,7 @@ struct OTPScanConfirmView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             switch model.phase {
-            case .choosing, .confirmReplace, .failed:
+            case .choosing, .confirmReplace, .failed, .saving:
                 if let scan = model.scan { choosing(scan) } else { expired }
             case .added(let id):
                 added(id)
@@ -91,11 +91,13 @@ struct OTPScanConfirmView: View {
                 close()
             }
             .keyboardShortcut(.cancelAction)
-            Button("Add") { model.add() }
+            Button(model.phase == .saving ? "Adding…" : "Add") { model.add() }
                 .buttonStyle(BrandPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(model.target == nil)
         }
+        // The file is being written. Cancel could not take it back.
+        .disabled(model.phase == .saving)
     }
 
     private func row(_ entry: VaultEntry) -> some View {

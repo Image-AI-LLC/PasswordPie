@@ -208,7 +208,7 @@ final class LockSceneTests: XCTestCase {
 
     private func openPanel(show: Bool = true,
                            scene: LockScene = LockScene(settle: 0.01, fadeStart: 0.05, fadeDuration: 0.02)) -> (VaultSession, PanelController) {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

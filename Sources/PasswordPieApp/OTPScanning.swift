@@ -111,6 +111,8 @@ final class OTPScanModel: ObservableObject {
         case choosing
         /// Add was pressed on an item that already has a code.
         case confirmReplace
+        /// Add was pressed and the file is being written. The scan stays until it has been.
+        case saving
         /// Saved in this item. The scan itself is gone.
         case added(UUID)
         case expired
@@ -215,13 +217,18 @@ final class OTPScanModel: ObservableObject {
         }
         // The previous value of the field goes into the item's KDBX history when the file is written.
         entry.otp = scan.otp.uri
-        guard session.storeEntry(entry) else {
-            phase = .failed(session.message.isEmpty ? "The database could not be saved." : session.message)
-            return
+        phase = .saving
+        session.storeEntry(entry) { [weak self] saved in
+            // A newer scan, or a lock, took this one's place while the file was written.
+            guard let self, self.phase == .saving else { return }
+            guard saved else {
+                self.phase = .failed(self.session.message.isEmpty ? VaultSession.saveFailedText : self.session.message)
+                return
+            }
+            self.clearScan()
+            self.phase = .added(entry.id)
+            if let browser = scan.browser, let origin = scan.origin { self.codeAdded(entry.id, browser, origin) }
         }
-        clearScan()
-        phase = .added(entry.id)
-        if let browser = scan.browser, let origin = scan.origin { codeAdded(entry.id, browser, origin) }
     }
 
     /// Back from "Replace the existing code?" to the list.
@@ -235,9 +242,11 @@ final class OTPScanModel: ObservableObject {
         phase = .idle
     }
 
-    /// Drops a scan older than 2 minutes. Called by the timer, and before anything uses the scan.
+    /// Drops a scan older than 2 minutes. Called by the timer, and before anything uses the scan. Not one that is being
+    /// saved: Add was pressed in time.
     @discardableResult
     func expireIfNeeded() -> Bool {
+        guard phase != .saving else { return false }
         guard let scan, now().timeIntervalSince(scan.received) >= Self.lifetime else { return false }
         clearScan()
         phase = .expired

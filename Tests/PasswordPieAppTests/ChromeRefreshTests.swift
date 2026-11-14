@@ -30,7 +30,7 @@ final class ChromeRefreshTests: XCTestCase {
     }
 
     private func unlockedSession() -> VaultSession {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"
@@ -40,7 +40,7 @@ final class ChromeRefreshTests: XCTestCase {
 
     func testUnlockPublishesTheChromeSwitchBeforeThePanelReacts() {
         UserDefaults.standard.set(true, forKey: "chromeSyncEnabled")
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         var enabledWhenUnlocked: Bool?
         let cancellable = session.$locked.dropFirst().sink { locked in
@@ -56,7 +56,7 @@ final class ChromeRefreshTests: XCTestCase {
     func testUnlockDoesNotReadChromeUntilThePanelIsShown() async {
         UserDefaults.standard.set(true, forKey: "chromeSyncEnabled")
         let script = ChromeScript()
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.chromeSource = script.source()
         session.restore()
         session.passwordDraft = "pw"
@@ -183,7 +183,7 @@ final class ChromeRefreshTests: XCTestCase {
 
     func testShowingALockedPanelDoesNotReadChrome() async {
         UserDefaults.standard.set(true, forKey: "chromeSyncEnabled")
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         let script = ChromeScript()
         session.chromeSource = script.source()
         session.chromeSyncEnabled = true

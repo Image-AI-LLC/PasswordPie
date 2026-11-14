@@ -29,7 +29,7 @@ final class ChromeUpdateSessionTests: XCTestCase {
     private let clockOffset: TimeInterval = 3_600
 
     private func session() -> VaultSession {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

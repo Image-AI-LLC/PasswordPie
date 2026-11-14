@@ -34,7 +34,7 @@ final class PasswordResetSessionTests: XCTestCase {
 
     /// An unlocked database with one account that has a reminder and a reset link. Pages it would open are recorded.
     private func payroll(resetLink link: String? = nil) throws -> UUID {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

@@ -44,7 +44,7 @@ final class MenuHoverTests: XCTestCase {
     /// A session on a new database, with `entries` saved into it, and a controller whose root list lives in a window
     /// (a popover needs its row to be in one).
     private func makeMenu(entries: [VaultEntry] = []) -> (VaultSession, MenuController, Host) {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"
