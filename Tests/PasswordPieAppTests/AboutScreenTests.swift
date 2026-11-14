@@ -34,8 +34,27 @@ final class AboutScreenTests: XCTestCase {
         XCTAssertEqual(AboutCopy.versionLabel(short: "0.1.0", build: "1"), "Version 0.1.0 (1)")
         XCTAssertEqual(AboutCopy.versionLabel(short: "0.1.0", build: "0.1.0"), "Version 0.1.0")
         XCTAssertEqual(AboutCopy.versionLabel(short: " 2.0 ", build: "  "), "Version 2.0")
-        XCTAssertEqual(AboutCopy.versionLabel(short: nil, build: "9"), "Version 0.1.0")
-        XCTAssertEqual(AboutCopy.versionLabel(short: "", build: "9"), "Version 0.1.0")
+        XCTAssertEqual(AboutCopy.versionLabel(short: nil, build: "9"), "Version 0.2.0")
+        XCTAssertEqual(AboutCopy.versionLabel(short: "", build: "9"), "Version 0.2.0")
+    }
+
+    /// The app and its two extensions are one release: macOS and the stores expect the same version and build in all
+    /// three, and the label a build without an Info.plist shows (`swift run`) is that version too.
+    func testTheAppAndItsExtensionsCarryOneVersion() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        var versions: [String: String] = [:]
+        var builds: [String: String] = [:]
+        for target in ["PasswordPieApp", "PasswordPieAutoFill", "PasswordPieSafari"] {
+            let data = try Data(contentsOf: sources.appendingPathComponent("\(target)/Info.plist"))
+            let plist = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
+            versions[target] = try XCTUnwrap(plist["CFBundleShortVersionString"] as? String)
+            builds[target] = try XCTUnwrap(plist["CFBundleVersion"] as? String)
+        }
+        XCTAssertEqual(Set(versions.values).count, 1, "CFBundleShortVersionString differs: \(versions)")
+        XCTAssertEqual(Set(builds.values).count, 1, "CFBundleVersion differs: \(builds)")
+        XCTAssertEqual(AboutCopy.versionLabel(short: nil, build: nil), "Version \(try XCTUnwrap(versions["PasswordPieApp"]))")
     }
 
     func testAboutViewUsesTheSharedCreditAndPreferencesDoesNot() throws {

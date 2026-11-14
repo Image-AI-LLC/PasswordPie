@@ -495,8 +495,9 @@ The listing text, privacy answers, promo tile and screenshots are in `extension/
 is the Image AI, LLC account in the Chrome Web Store developer dashboard.
 
 1. Raise `version` in `extension/manifest.ts`; the store needs a higher version for every upload.
-   0.5.0 connects to `com.passwordpie`, which only apps from the rename on install: publish it after that direct release
-   is out.
+   From 0.5.0 it connects to `com.passwordpie`, which only apps from the rename on (direct 0.2.0) install. 0.5.0 went
+   live in the store before that release was out, so until 0.2.0 the store extension could not reach the released app
+   (v0.1.0 has no bridge at all).
 2. `cd extension && pnpm test && pnpm zip:chrome-store`. Upload
    `.output/passwordpie-extension-<version>-chrome-store.zip` under Package, and submit for review.
 3. Leave "publish automatically after review" off when the update needs a newer app, such as a new message the released
