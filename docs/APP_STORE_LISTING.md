@@ -18,8 +18,12 @@ PasswordPie: Password Manager
 
 ### Subtitle
 
+App Store search reads the name, subtitle and keywords together, so none repeats a word from another (2026-11-15:
+the user asked for search words in the name). The name carries "Password Manager", the subtitle "KeePass", "vault"
+and "2FA codes"; `password manager for mac` needs no "Mac": the store is Mac only (`~/projects/PasswordPie/docs/KEYWORDS.md`).
+
 ```text
-KeePass files, in the menu bar
+KeePass Vault & 2FA Codes
 ```
 
 - **Bundle ID:** `com.passwordpie`
@@ -110,7 +114,7 @@ Comma-separated, no space after a comma. No word from the app name (PasswordPie,
 subtitle, and no other company's product name.
 
 ```text
-kdbx,2fa,totp,otp,authenticator,two-factor,generator,vault,menubar,login,local,secure,touch id
+kdbx,totp,otp,authenticator,two-factor,generator,menubar,login,safari,autofill,local,secure,touch id
 ```
 
 ### What's New
