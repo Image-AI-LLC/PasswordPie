@@ -23,8 +23,17 @@ APPEX_PROFILE ?=
 ents = $(if $(and $(APP_PROFILE),$(APPEX_PROFILE)),$(1),build/noprofile/$(notdir $(1)))
 MAS_DIR := build/mas
 DIRECT_DIR := build/direct
+# App Store channel for upload (docs/CHANNELS.md, "Releasing the App Store build"): the Mac App Store certificates and one
+# Mac App Store distribution profile per bundle (the app, AutoFill, Safari). Scripts/release-mas.sh passes them.
+TEAM := 2S468LUF8V
+MAS_DIST_DIR := build/mas-dist
+MAS_SIGN ?= 3rd Party Mac Developer Application: Image AI, LLC ($(TEAM))
+MAS_INSTALLER ?= 3rd Party Mac Developer Installer: Image AI, LLC ($(TEAM))
+MAS_APP_PROFILE ?=
+MAS_AUTOFILL_PROFILE ?=
+MAS_SAFARI_PROFILE ?=
 
-.PHONY: build extension extension-mas install icon site-icons mas-dev dist-direct clean-channels
+.PHONY: build extension extension-mas install icon site-icons mas-dev dist-mas dist-direct clean-channels
 
 build/noprofile/%.entitlements: Entitlements/%.entitlements
 	mkdir -p build/noprofile
@@ -93,6 +102,35 @@ mas-dev: extension-mas $(call ents,Entitlements/mas.entitlements) $(call ents,En
 	$(call assemble_app,$$(PP_MAS=1 swift build -c release --scratch-path .build-mas --show-bin-path),$(MAS_DIR)/$(APP))
 	$(call sign_app,$(MAS_DIR)/$(APP),--sign "$(SIGN_ID)",$(call ents,Entitlements/mas.entitlements))
 	@codesign -d --entitlements :- "$(MAS_DIR)/$(APP)" 2>/dev/null | grep -q "app-sandbox" && echo "Built sandboxed $(MAS_DIR)/$(APP)"
+
+# App Store channel for upload: sandboxed, no PP_DIRECT code, each bundle signed with the Mac App Store certificate, its
+# distribution profile embedded and its application identifier added to its entitlements; then the installer package
+# App Store Connect takes. Use Scripts/release-mas.sh, which also checks the package and can upload it.
+dist-mas: extension-mas
+	@test -n "$(MAS_APP_PROFILE)" -a -n "$(MAS_AUTOFILL_PROFILE)" -a -n "$(MAS_SAFARI_PROFILE)" || \
+		{ echo "dist-mas needs MAS_APP_PROFILE, MAS_AUTOFILL_PROFILE and MAS_SAFARI_PROFILE (Mac App Store distribution profiles)"; exit 1; }
+	PP_MAS=1 swift build -c release --scratch-path .build-mas
+	$(call assemble_app,$$(PP_MAS=1 swift build -c release --scratch-path .build-mas --show-bin-path),$(MAS_DIST_DIR)/$(APP))
+	cp "$(MAS_APP_PROFILE)" "$(MAS_DIST_DIR)/$(APP)/Contents/embedded.provisionprofile"
+	cp "$(MAS_AUTOFILL_PROFILE)" "$(MAS_DIST_DIR)/$(APP)/Contents/PlugIns/$(APPEX)/Contents/embedded.provisionprofile"
+	cp "$(MAS_SAFARI_PROFILE)" "$(MAS_DIST_DIR)/$(APP)/Contents/PlugIns/$(SAFARI_APPEX)/Contents/embedded.provisionprofile"
+	mkdir -p $(MAS_DIST_DIR)/entitlements
+	$(call store_entitlements,Entitlements/mas.entitlements,com.passwordpie,app)
+	$(call store_entitlements,Entitlements/autofill-extension.entitlements,com.passwordpie.autofill,autofill)
+	$(call store_entitlements,Entitlements/safari-extension.entitlements,com.passwordpie.safari,safari)
+	codesign --force --sign "$(MAS_SIGN)" --entitlements $(MAS_DIST_DIR)/entitlements/safari.entitlements "$(MAS_DIST_DIR)/$(APP)/Contents/PlugIns/$(SAFARI_APPEX)"
+	codesign --force --sign "$(MAS_SIGN)" --entitlements $(MAS_DIST_DIR)/entitlements/autofill.entitlements "$(MAS_DIST_DIR)/$(APP)/Contents/PlugIns/$(APPEX)"
+	codesign --force --sign "$(MAS_SIGN)" --entitlements $(MAS_DIST_DIR)/entitlements/app.entitlements "$(MAS_DIST_DIR)/$(APP)"
+	rm -f "$(MAS_DIST_DIR)/PasswordPie.pkg"
+	productbuild --component "$(MAS_DIST_DIR)/$(APP)" /Applications --sign "$(MAS_INSTALLER)" "$(MAS_DIST_DIR)/PasswordPie.pkg"
+	@echo "Built $(MAS_DIST_DIR)/PasswordPie.pkg"
+
+# store_entitlements <source> <bundle id> <name>: the source entitlements plus the application identifier and team that
+# App Store signing needs. They must match the embedded profile.
+define store_entitlements
+	cp "$(1)" "$(MAS_DIST_DIR)/entitlements/$(3).entitlements"
+	/usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string $(TEAM).$(2)" -c "Add :com.apple.developer.team-identifier string $(TEAM)" "$(MAS_DIST_DIR)/entitlements/$(3).entitlements"
+endef
 
 # Direct channel for download: Developer ID, hardened runtime, zipped for notarization.
 # For a release, use Scripts/release-direct.sh (notarizes, staples and builds the DMG). By hand:

@@ -1115,3 +1115,42 @@ version number of yours, and no statistics. Turn Update automatically off and th
    ready. It installs the next time PasswordPie is locked."
 3. Close Preferences and press ⌘L in the menu. A second later, open About: the version is the new one.
 4. In a firewall's connection list: `PasswordPieUpdater` → `api.github.com`, and no line for `PasswordPie`.
+
+## The App Store app asks once for a database's folder
+
+**In one line:** in the App Store app, the first time you open or create a database outside PasswordPie's own folder,
+it asks you to allow the folder that holds it; after that the database opens at every start, as in the download.
+
+### The problem
+
+The App Store app runs in Apple's sandbox. Choosing a file in an Open or Save panel lets the app use that one file, and
+only until it quits. PasswordPie needs more than the file: every save first keeps the previous version beside the
+database (`.snapshot`) and writes the new one to a temporary file in the same folder, and an imported CSV, 1Password,
+Bitwarden or Proton Pass file is saved as a new `.kdbx` next to it. With only the file, the first save failed, and the
+next start could not open the database at all.
+
+### What happens now
+
+- **The database PasswordPie makes for you** lives in the app's own folder and never asks.
+- **Open Database… or New Database…** in a folder PasswordPie cannot use yet shows a second panel, already in that
+  folder: *"PasswordPie keeps the previous version of “Passwords.kdbx” beside it, so a save can always be undone.
+  Allow access to the folder “Dropbox” to open this database."* Its button is **Allow**. Choosing that folder, or any
+  folder above it, opens the database. Cancel leaves the current database open and says the other one needs its folder.
+- PasswordPie keeps a security-scoped bookmark of each folder you allowed, and opens them again at every start, so the
+  databases listed in Preferences open without asking. A bookmark that no longer resolves (the folder was moved or
+  deleted) is dropped, and the next unlock of a database there asks again.
+- Allowing a folder lets PasswordPie read and write the files in it and below it, nothing else. Removing the last
+  database in a folder from the list in Preferences forgets that folder.
+- Importing a Chrome or Apple Passwords CSV still asks only for the CSV, and deleting it afterwards needs nothing more.
+  Key files are read once, when chosen (see "A key file that stays on this Mac").
+
+The download from passwordpie.com is not sandboxed and never shows the folder panel.
+
+### Demo script
+
+1. In the App Store app, choose Open Database… and pick a `.kdbx` in `~/Documents`. The second panel opens in
+   `~/Documents` with Allow. Choose Allow and unlock.
+2. Add an item. `Passwords.kdbx.snapshot` appears beside the database.
+3. Quit PasswordPie and start it again. The lock screen shows the same database; unlock it without any panel.
+4. Choose Open Database… again, pick a file in `~/Desktop`, and choose Cancel in the second panel. The first database
+   stays open, with a message that the other one needs its folder.
