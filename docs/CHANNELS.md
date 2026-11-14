@@ -56,6 +56,21 @@ socket in the old App Group container are never read by the new build.
 
 ## Releasing the direct download
 
+Before the build:
+
+1. Raise `CFBundleShortVersionString` and `CFBundleVersion` in the three `Info.plist` files (the app, AutoFill, Safari)
+   and the version About falls back to (`AboutCopy.versionLabel`). `AboutScreenTests` fails if they disagree.
+2. `swift test` and `cd extension && pnpm test`, in a terminal of the logged-in Mac session: over SSH the login
+   keychain is out of reach and the keychain tests skip or fail.
+3. The checks at the top of this file (`make dist-direct`, `make mas-dev`, then the `strings` / `otool` lines).
+4. The release build trusts the site's key and not the test key. `swift test` cannot show it (tests are debug builds):
+   link a few lines that print `EntitlementToken.trustedKeys.count` (expect 1) and
+   `EntitlementToken.verifyActivation` of a `Scripts/mint-activation-link.mjs` token (expect nil) against the release
+   `PasswordPieCore.o`.
+5. The site signs with the private half of `EntitlementToken.publicKey`: see step 7 of "Before Premium can be sold".
+
+Then:
+
     NOTARY_ENV=<file with APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID> Scripts/release-direct.sh
 
 It runs `make dist-direct`, notarizes and staples the app, then wraps it in `build/direct/PasswordPie-<version>.dmg`
@@ -268,7 +283,9 @@ These are in App Store Connect and the Apple Developer site, and cannot be done 
 6. Leave Billing Grace Period off. Codes lock at `expirationDate`, so a grace period would charge people for days they
    cannot use. Turning it on needs a code change first.
 7. `EntitlementToken.publicKey` holds passwordpie.com's production public key (`kid: pp-1`, from passwordpie.com#8).
-   Before a release, check the site signs with its private half (a token from `/api/premium/entitlement` verifies).
+   Before a release, check the site signs with its private half: sign in on passwordpie.com with an account that has
+   Premium, press Activate, and the app shows Premium (the link is from `/api/premium/activation`;
+   `/api/premium/entitlement` carries no token). It needs a production account with Premium: nothing public proves it.
 8. Create a sandbox tester under Users and Access > Sandbox, and sign in with it under System Settings > App Store on the test Mac. **Buy and restore with it on a `make mas-dev` build, to prove StoreKit works without `network.client`** (see Signing).
 9. Upload a build, then attach both products to the app version for review. A product's first review has to go with a version.
 10. Review notes: the app has no account and needs no login. Say that a customer who bought Premium on passwordpie.com can
