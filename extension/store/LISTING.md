@@ -82,8 +82,9 @@ anyone can open), not made for kids, then paste the link here and in the dashboa
   `video/store-board.png` shows each choice as the store would.
 
 - **YouTube URL:** https://www.youtube.com/watch?v=ROUwm3C5Ekk (the 8.8 s cut, public since 2026-11-14; its thumbnail is
-  `video/cover.jpg`). Submitted to the store on 2026-11-14, to publish automatically after review. Until then the store shows the first cut, https://www.youtube.com/watch?v=E6M0nd_NERg (25.5 s, no sound),
-  which becomes private once the new link is live.
+  `video/cover.jpg`). Submitted to the store on 2026-11-14, to publish automatically after review. Until then the
+  store shows the first cut, https://www.youtube.com/watch?v=E6M0nd_NERg (25.5 s, no sound), which becomes private once
+  the new link is live.
 - **Title:** PasswordPie for Chrome: a sign-in filled in under half a second | Password Manager for Mac
 
 ### Description
