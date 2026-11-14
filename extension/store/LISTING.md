@@ -77,12 +77,12 @@ anyone can open), not made for kids, then paste the link here and in the dashboa
 
 - **Thumbnail:** the store shows the YouTube thumbnail with its play button over the centre. Upload `video/cover.jpg`
   (1280x720; the video's first frame is the same picture) as the custom thumbnail. That needs a channel with a verified
-  phone number; until then choose the third of the frames YouTube offers, the end card, which is laid out for it.
+  phone number, which this one has had since 2026-11-14. On a channel without one, choose the third of the frames
+  YouTube offers, the end card, which is laid out for it.
   `video/store-board.png` shows each choice as the store would.
 
 - **YouTube URL:** https://www.youtube.com/watch?v=ROUwm3C5Ekk (the 8.8 s cut, public since 2026-11-14; its thumbnail is
-  the end card, picked from YouTube's frames). Submitted to the store on 2026-11-14, to publish automatically after
-  review. Until then the store shows the first cut, https://www.youtube.com/watch?v=E6M0nd_NERg (25.5 s, no sound),
+  `video/cover.jpg`). Submitted to the store on 2026-11-14, to publish automatically after review. Until then the store shows the first cut, https://www.youtube.com/watch?v=E6M0nd_NERg (25.5 s, no sound),
   which becomes private once the new link is live.
 - **Title:** PasswordPie for Chrome: a sign-in filled in under half a second | Password Manager for Mac
 
