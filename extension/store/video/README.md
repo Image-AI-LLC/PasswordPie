@@ -24,8 +24,8 @@ It is cut to a beat: 120 a minute, so a beat is half a second, 30 frames. Each s
 
 - **The counter.** It runs in real time, for as long as this take took from Return to filled, and stops on the median
   of the 25 measured runs, 448 ms (447.7), the number the cover and the listing give. This take's own time is 451.6 ms
-  by the page's clock: 3.9 ms more, less than a quarter of a frame (16.7 ms). By frames the clip shows Return to filled
-  as 451.6 ms too (27 frames and a bit). The first version's slow-motion counter stopped on the median the same way.
+  by the page's clock: 3.9 ms more, less than a quarter of a frame (16.7 ms). The first version's slow-motion counter
+  stopped on the median the same way.
 - Scene 1 is the `fill` take, where the panel stays open 1.15 s before Return, long enough to see what PasswordPie
   looks like. Scene 2 is the `twostep` take from 0.05 s after its Return; Verify and the page after it are left out.
   The PasswordPie half of scene 3 is the `quick` take: ⌘\\ to filled in 1.0 s.
@@ -64,7 +64,8 @@ happen and keeps no moment of the video itself:
   and what has a pitch steps back 3 dB under it. The chime is a soft mallet note (A5, D6) under the drums in
   level: an octave higher, as a bare sine, it was piercing;
 - the hats are not a machine: the off sixteenths come a little late (swing), and their loudness rises through the bar
-  with some chance in it; the clap has a snare's body under it and a room around it, and no noise above 2.4 kHz, where it hissed;
+  with some chance in it; the clap has a snare's body under it and a room around it, and its noise is band-limited to 0.8–2.4 kHz with a
+  short tail: wider and longer, it hissed;
 - two taps over the cover lead into the first beat; a roll leads into the end card, where one hit lands, the drums
   stop, and a D chord on bells dies away before the video ends.
 

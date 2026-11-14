@@ -3,8 +3,8 @@
 //                                               composition/cover-1080p.png (the same page at 1.5x: the video's first frame)
 //   node render-cover.mjs board OUT.png IMG…    the pictures as the Chrome Web Store shows a video before it plays
 //                                               (cover/board.html); IMG is a file, or FILE=LABEL
-// Needs ffmpeg and puppeteer: PUPPETEER is the path of puppeteer-core's module (see README.md), or puppeteer is on
-// NODE_PATH. Headless; uses the installed Chrome, or the browser at CHROME_BIN.
+// Needs ffmpeg and puppeteer: PUPPETEER is the path of puppeteer-core's module (see README.md); without it the
+// `puppeteer` package has to resolve from here. Headless; uses the installed Chrome, or the browser at CHROME_BIN.
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';

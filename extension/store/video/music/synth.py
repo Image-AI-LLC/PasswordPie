@@ -145,7 +145,7 @@ def kick() -> Samples:
 
 HP_HAT = butter(4, 7000, 'highpass', fs=SR, output='sos')
 BP_SNAP = butter(2, [1400, 4200], 'bandpass', fs=SR, output='sos')
-BP_CLAP = butter(2, [800, 2400], 'bandpass', fs=SR, output='sos')  # no higher: white noise up there hisses
+BP_CLAP = butter(2, [800, 2400], 'bandpass', fs=SR, output='sos')  # the upper edge is low: white noise above it hisses
 BP_RISE = butter(2, [700, 3200], 'bandpass', fs=SR, output='sos')
 HP_CRASH = butter(2, 4500, 'highpass', fs=SR, output='sos')
 
