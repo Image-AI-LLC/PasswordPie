@@ -7,6 +7,8 @@ import PackageDescription
 /// so that code is not in the store binary at all.
 let storeBuild = ProcessInfo.processInfo.environment["PP_MAS"] == "1"
 let channelSettings: [SwiftSetting] = storeBuild ? [] : [.define("PP_DIRECT")]
+/// The App Store app links nothing of the updater: the App Store updates it.
+let updateLibrary: [Target.Dependency] = storeBuild ? [] : ["PasswordPieUpdate"]
 
 let package = Package(
     name: "PasswordPie",
@@ -15,7 +17,8 @@ let package = Package(
         .executable(name: "PasswordPie", targets: ["PasswordPie"]),
         .executable(name: "PasswordPieAutoFill", targets: ["PasswordPieAutoFill"]),
         .executable(name: "PasswordPieSafari", targets: ["PasswordPieSafari"]),
-        .executable(name: "PasswordPieBrowserHost", targets: ["PasswordPieBrowserHost"])
+        .executable(name: "PasswordPieBrowserHost", targets: ["PasswordPieBrowserHost"]),
+        .executable(name: "PasswordPieUpdater", targets: ["PasswordPieUpdater"])
     ],
     targets: [
         .target(
@@ -48,9 +51,24 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [.linkedFramework("Security")]
         ),
+        // What an update is and whether one may be installed: versions, GitHub's release answer, the signature policy, the
+        // swap. Foundation and Security only, and no networking API: the app links it for the schedule and the outcome.
+        .target(
+            name: "PasswordPieUpdate",
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("Security")]
+        ),
+        // The updater (Contents/MacOS/PasswordPieUpdater), the only code here that opens a network connection. Direct
+        // channel only: `make mas-dev` does not put it in the bundle. It links none of the database code.
+        .executableTarget(
+            name: "PasswordPieUpdater",
+            dependencies: ["PasswordPieUpdate"],
+            path: "Sources/PasswordPieUpdater",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "PasswordPie",
-            dependencies: ["PasswordPieCore", "PasswordPieBridge"],
+            dependencies: ["PasswordPieCore", "PasswordPieBridge"] + updateLibrary,
             path: "Sources/PasswordPieApp",
             exclude: ["Info.plist"],
             swiftSettings: [.swiftLanguageMode(.v5)] + channelSettings,
@@ -115,6 +133,11 @@ let package = Package(
         .testTarget(
             name: "PasswordPieBridgeTests",
             dependencies: ["PasswordPieBridge"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "PasswordPieUpdateTests",
+            dependencies: ["PasswordPieUpdate", "PasswordPieUpdater", "PasswordPieBridge"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

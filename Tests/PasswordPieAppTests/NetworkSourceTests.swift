@@ -3,11 +3,14 @@ import XCTest
 
 /// What the app's own code can do on the network: docs/CHANNELS.md, "Network". Every target under `Sources/` goes into
 /// `PasswordPie.app` (the app, its core, the bridge, the Chrome host, the Safari and AutoFill extensions), and none may
-/// name a networking API unless the file is on the allow-list below, with the reason. The list is empty: the app signs
-/// in to nothing, asks no site for Premium, checks for no updates and fetches no icons.
+/// name a networking API unless the file is on the allow-list below, with the reason. The app signs in to nothing, asks
+/// no site for Premium and fetches no icons. The one file listed is in the updater, a separate executable that only the
+/// direct channel's bundle contains.
 final class NetworkSourceTests: XCTestCase {
     /// File name → why it may reach the network. Adding a line here means updating "Network" in docs/CHANNELS.md first.
-    private let allowed: [String: String] = [:]
+    private let allowed: [String: String] = [
+        "GitHubTransport.swift": "the updater asks GitHub for the latest release and downloads it (docs/CHANNELS.md, \"Updates\")",
+    ]
 
     private let networking = try! NSRegularExpression(pattern: #"""
         \b(URLSession|URLRequest|NSURLConnection|NWConnection|NWListener|NWBrowser|NWPathMonitor|NWEndpoint|ASWebAuthenticationSession|WKWebView|CFNetwork|CFStream\w*|CFSocket\w*|SocketPort|SCNetworkReachability\w*|AF_INET6?|PF_INET6?|sockaddr_in6?|getaddrinfo|gethostbyname)\b|import\s+(Network|WebKit|FoundationNetworking)\b
@@ -35,6 +38,21 @@ final class NetworkSourceTests: XCTestCase {
             reaching[file.lastPathComponent] = String(text[range])
         }
         XCTAssertEqual(Set(reaching.keys), Set(allowed.keys), "networking outside the allow-list: \(reaching)")
+    }
+
+    /// The allow-listed file is in the updater, and nothing the app links is: not the app, its core, the bridge, or the
+    /// update library it shares with the updater.
+    func testOnlyTheUpdaterExecutableMayReachTheNetwork() throws {
+        for name in allowed.keys {
+            let places = try swiftFiles().filter { $0.lastPathComponent == name }.map { $0.deletingLastPathComponent().lastPathComponent }
+            XCTAssertEqual(places, ["PasswordPieUpdater"], name)
+        }
+        let manifest = try String(contentsOf: sources.deletingLastPathComponent().appendingPathComponent("Package.swift"), encoding: .utf8)
+        XCTAssertEqual(manifest.components(separatedBy: "\"PasswordPieUpdater\"").count - 1, 4,
+                       "named by its product, its target and the update tests only: no other target depends on the updater")
+        // The Makefile puts the updater in the direct bundle only: the same flag as the Chrome host.
+        let makefile = try String(contentsOf: sources.deletingLastPathComponent().appendingPathComponent("Makefile"), encoding: .utf8)
+        XCTAssertTrue(makefile.contains(#"$(if $(3),cp "$(1)/$(UPDATER)" "$(2)/Contents/MacOS/$(UPDATER)")"#))
     }
 
     func testThePatternCatchesWhatItIsFor() {

@@ -87,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     #if PP_DIRECT
     private var passwordChangeWindow: NSWindow?
     private(set) var passwordChange: PasswordChangeModel!
+    private(set) var updates: UpdateCoordinator!
     #endif
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
@@ -126,6 +127,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        #if PP_DIRECT
+        updates = UpdateCoordinator(environment: .live(isIdle: { [weak self] in self?.isIdleForUpdate ?? false }))
+        // An update that was waiting goes in before anything shows; the updater starts the new version.
+        if updates.installAtLaunch() { exit(0) }
+        #endif
         session = VaultSession()
         session.restore()
         autoLock = AutoLockMonitor(settings: session.autoLock) { [weak self] in
@@ -178,8 +184,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.refreshPinnedEntry(entries)
             }
             .store(in: &cancellables)
+        #if PP_DIRECT
+        // A waiting update goes in once the vault is locked and the lock scene (1.2 s) is over.
+        session.$locked
+            .removeDuplicates()
+            .filter { $0 }
+            .delay(for: .seconds(3), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updates.installIfIdle() }
+            .store(in: &cancellables)
+        updates.start()
+        #endif
         applyDebugHooks()
     }
+
+    #if PP_DIRECT
+    /// Nothing an update's restart would interrupt: the vault is locked, nobody is typing on the lock screen, no window
+    /// of ours is open, no scanned code waits for an unlock, and no alert or file chooser is up and no Touch ID prompt is showing.
+    private var isIdleForUpdate: Bool {
+        guard session.locked, !session.unlocking, !panelController.isVisible, !otpScan.isWaiting, pinnedAccounts.isEmpty,
+              NSApp.modalWindow == nil, !session.touchIDBusy else { return false }
+        let windows = [editorWindow, preferencesWindow, aboutWindow, chromeReviewWindow, paywallWindow, scanWindow, passwordChangeWindow, largeTypeWindow]
+        return !windows.contains { $0?.isVisible == true }
+    }
+    #endif
 
     // MARK: Apple Passwords hand-off
 
@@ -200,6 +227,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         session.flushClipboard()
+        #if PP_DIRECT
+        updates.appWillTerminate()
+        #endif
     }
 
     // MARK: Panel
@@ -388,6 +418,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         editorWindow?.makeKeyAndOrderFront(nil)
     }
 
+    private var preferencesView: PreferencesView {
+        var view = PreferencesView(session: session, navigator: preferencesNavigator, bridge: bridge)
+        #if PP_DIRECT
+        view.updates = updates
+        #endif
+        return view
+    }
+
     /// Opens Preferences; with `section`, scrolled to it.
     func showPreferences(at section: PreferencesSection? = nil) {
         preferencesNavigator.target = section
@@ -397,7 +435,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.title = "PasswordPie Preferences"
             window.applyWarmTitlebar()
             window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: PreferencesView(session: session, navigator: preferencesNavigator, bridge: bridge))
+            window.contentView = NSHostingView(rootView: preferencesView)
             window.setContentSize(NSSize(width: 560, height: 800))
             window.contentMinSize = NSSize(width: 560, height: 480)
             if let screen = NSScreen.main {

@@ -96,7 +96,7 @@ Where Premium comes from depends on where the app came from.
 | Premium comes from | A purchase on your Apple Account, or activation from passwordpie.com | Activation from passwordpie.com, where you buy it |
 | Upgrade to unlock, on a code's row, opens | The plans, bought through Apple | The Premium window, whose **Get Premium** opens passwordpie.com |
 | Signing in | Never. There is no account in this version. | Only on passwordpie.com, to buy and to press Activate. Never in the app or the browser extension. |
-| What the app sends over the network | Nothing | Nothing |
+| What the app sends over the network | Nothing | Nothing. Its separate updater asks GitHub for a newer version once a week: see [Updates that install themselves](#updates-that-install-themselves) |
 
 | Plan | What you pay |
 |---|---|
@@ -1038,3 +1038,77 @@ The period, the link and the date live in the item, inside your database. Nothin
    confirm boxes filled. Open the item's previous passwords: one row, `new · not used yet`.
 6. Press the page's Change button. PasswordPie asks whether the site accepted it. Choose Use New Password: the details
    show the new password as saved, the old one under previous passwords, and "in 30 days".
+
+## Updates that install themselves
+
+**In one line:** the downloaded app keeps itself current. Once a week a small, separate updater asks GitHub for a
+newer PasswordPie, checks that it is really ours, and installs it while PasswordPie is locked.
+
+The App Store app has none of this: the App Store updates it.
+
+### The problem
+
+A new version only reached people who went back to the website and dragged the app to Applications again. A password
+manager that stays on an old version keeps its old bugs. The usual answer, an updater inside the app, would end the
+promise that the app holding your passwords never opens a network connection.
+
+### What happens now
+
+| When | What happens |
+|---|---|
+| Once a week, while PasswordPie runs | The updater asks GitHub which version is the latest. That is the whole request: no account, no identifier, nothing about your Mac or your database. |
+| There is a newer version | The updater downloads its disk image and checks it: signed by Image AI, LLC with Apple's Developer ID, notarized by Apple, the same app, and a higher version than the one installed. A download that fails any of these is thrown away. |
+| The next time PasswordPie is locked with none of its windows open | PasswordPie restarts as the new version. It takes about a second and it comes back locked, as it was. |
+| You quit PasswordPie first | The new version is installed then. It does not start again by itself. |
+| PasswordPie starts with an update waiting | It installs it first, then starts. |
+| The check fails (offline, GitHub down) | Nothing shows. It tries again a day later. |
+
+It never restarts while the database is unlocked, while you are typing on the lock screen, or while Preferences or
+another PasswordPie window is open. Nothing is asked and nothing is shown: the version in About is how you can tell.
+
+### Two programs, one of them online
+
+The updater is its own small program inside the app, `PasswordPieUpdater`. It holds none of the code that reads your
+database, it is never given a password, and it is the only part of PasswordPie that can open a network connection. It
+talks to GitHub and nothing else. PasswordPie starts it, reads one line back (up to date, ready, or failed), and that is
+all that passes between them. A firewall such as Little Snitch shows `PasswordPieUpdater` connecting to GitHub once a
+week, and never `PasswordPie`.
+
+### Preferences
+
+**Updates** in Preferences, in the downloaded app only:
+
+| | |
+|---|---|
+| **Update automatically** | On by default. Off: nothing is asked of GitHub until you press Check Now. |
+| The line under it | The installed version and when it last checked. With an update waiting: "PasswordPie 0.3.0 is ready. It installs the next time PasswordPie is locked." |
+| **Check Now** | Asks now. A newer version is downloaded and checked the same way. |
+| **Restart to Update** | Shown while an update waits. Installs it now, even with the database unlocked; PasswordPie comes back locked. |
+
+With Update automatically off, a version that Check Now downloaded waits for Restart to Update.
+
+### When it does not apply
+
+- **The App Store app.** There is no updater in it and no Updates section.
+- **A copy that cannot be replaced**: PasswordPie run from the disk image or from Downloads without being moved, or
+  kept in a folder you cannot write to. Preferences says "PasswordPie 0.3.0 is available" with **Download…**, which
+  opens the releases page in your browser.
+- **A build you made yourself** (`make install`): it is not signed as a release, so the updater leaves it alone and
+  asks GitHub nothing.
+- **PasswordPie 0.2.0 and earlier** have no updater. Download the next version by hand once; it updates itself from
+  then on.
+- **Going back to an older version** is never done by the updater, whatever GitHub answers.
+
+### Privacy
+
+One request a week to `api.github.com`, which sees what any website sees: your IP address and the name
+`PasswordPie-Updater`. A download, when there is one, comes from GitHub's release files. No cookie, no identifier, no
+version number of yours, and no statistics. Turn Update automatically off and there is no request at all.
+
+### Demo script
+
+1. Open Preferences. Updates says the installed version and "Checked today".
+2. Press Check Now with a newer release published: the line changes to "Checking…", then to "PasswordPie 0.3.0 is
+   ready. It installs the next time PasswordPie is locked."
+3. Close Preferences and press ⌘L in the menu. A second later, open About: the version is the new one.
+4. In a firewall's connection list: `PasswordPieUpdater` → `api.github.com`, and no line for `PasswordPie`.
