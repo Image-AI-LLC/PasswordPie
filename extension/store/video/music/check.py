@@ -3,11 +3,12 @@
 # requires-python = ">=3.11"
 # dependencies = ["numpy>=2,<3", "scipy>=1.11,<2"]
 # ///
-"""Listens to the finished video: is each cue where the timing data says the form fills, and is it loud enough?
+"""Listens to the finished video: is each sound of the interface where the timing data says it happens, and is it loud enough?
 
-Finds every chime of synth.py in the video's decoded sound track (as a player would hear it) by matching
-the cue's own waveform, and measures loudness and true peak with ffmpeg's EBU R128 meter. Prints JSON; exits 1 when
-a cue is more than a frame from its moment, or the loudness or the peak is outside what the video is made to.
+Finds every pop (a form fills) and every key click of synth.py in the video's decoded sound track (as a player would
+hear it) by matching the sound's own waveform, and measures loudness and true peak with ffmpeg's EBU R128 meter.
+Prints JSON; exits 1 when a pop or a click is more than a frame from its moment, or the loudness or the peak is
+outside what the video is made to.
 
 usage: check.py VIDEO [--timing timing.js]
 """
@@ -30,8 +31,9 @@ FRAME = 1 / 60
 TARGET_LUFS = -16.0
 LUFS_TOLERANCE = 0.5
 MAX_TRUE_PEAK = -1.5
-# Where the chime sounds and the drums and the bass mostly do not.
-BAND = butter(4, [700, 2600], 'bandpass', fs=SR, output='sos')
+# Where each sound is and the rest of the music mostly is not.
+POP_BAND = butter(4, [280, 1000], 'bandpass', fs=SR, output='sos')
+CLICK_BAND = butter(4, [1100, 3400], 'bandpass', fs=SR, output='sos')
 
 
 def decode(video: Path) -> Samples:
@@ -42,23 +44,13 @@ def decode(video: Path) -> Samples:
     return stereo.mean(axis=1)
 
 
-def waveform() -> Samples:
-    """The chime as synth.py plays it at a fill."""
-    out = np.zeros(int(SR * 0.7))
-    for midi, decay, after, gain, _pan in synth.CHIME_NOTES:
-        note = synth.chime(midi, decay) * gain
-        i = int(round(after * SR))
-        out[i : i + len(note)] += note[: len(out) - i]
-    return out
-
-
-def heard_at(track: Samples, at: float) -> float:
-    """Seconds into the track where the chime that belongs at `at` starts, looked for within 0.15 s of it."""
+def heard_at(track: Samples, at: float, sound: Samples, band: Samples) -> float:
+    """Seconds into the track where the `sound` that belongs at `at` starts, looked for within 0.15 s of it."""
     before = 0.15
-    template = sosfiltfilt(BAND, waveform())
+    template = sosfiltfilt(band, np.concatenate([sound, np.zeros(int(SR * 0.05))]))
     start = int(round((at - before) * SR))
     window = track[max(start, 0) : start + len(template) + int(2 * before * SR)]
-    match = fftconvolve(sosfiltfilt(BAND, window), template[::-1], mode='valid')
+    match = fftconvolve(sosfiltfilt(band, window), template[::-1], mode='valid')
     lag = int(np.argmax(np.abs(hilbert(match))))
     return (max(start, 0) + lag) / SR
 
@@ -84,14 +76,16 @@ def main() -> None:
     timing: Path = args.timing
     plan = synth.plan_from(synth.read_timing(timing))
     track = decode(video)
-    cues = [{'at': at, 'heard': heard_at(track, at)} for at in plan.fills]
+    cues = [{'at': at, 'heard': heard_at(track, at, synth.pop(), POP_BAND)} for at in plan.fills]
+    clicks = [{'at': at, 'heard': heard_at(track, at, synth.click(), CLICK_BAND)} for at in plan.clicks]
     lufs, true_peak = loudness(video)
-    problems = [f'cue at {c["at"]:.3f} s is heard at {c["heard"]:.3f} s' for c in cues if abs(float(c['heard']) - float(c['at'])) > FRAME]
+    problems = [f'{what} at {c["at"]:.3f} s is heard at {c["heard"]:.3f} s' for what, found in (('pop', cues), ('click', clicks))
+                for c in found if abs(c['heard'] - c['at']) > FRAME]
     if abs(lufs - TARGET_LUFS) > LUFS_TOLERANCE:
         problems.append(f'loudness {lufs} LUFS, wanted {TARGET_LUFS} ± {LUFS_TOLERANCE}')
     if true_peak > MAX_TRUE_PEAK:
         problems.append(f'true peak {true_peak} dBFS, over {MAX_TRUE_PEAK}')
-    print(json.dumps({'seconds': len(track) / SR, 'cues': cues, 'lufs': lufs, 'truePeak': true_peak, 'problems': problems}, indent=2))
+    print(json.dumps({'seconds': len(track) / SR, 'cues': cues, 'clicks': clicks, 'lufs': lufs, 'truePeak': true_peak, 'problems': problems}, indent=2))
     if problems:
         sys.exit(1)
 

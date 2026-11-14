@@ -4,7 +4,7 @@
 //   3. HyperFrames renders the picture
 //   4. music/synth.py plays the music to timing.js
 //   5. ffmpeg sets the music to -16 LUFS and puts it under the picture
-//   6. music/check.py listens to the result: every cue within a frame of its fill, loudness and true peak as wanted
+//   6. music/check.py listens to the result: every pop within a frame of its fill and every click of its key press, loudness and true peak as wanted
 // Needs ffmpeg, uv, and what README.md ("Recording it again") sets up: PUPPETEER and HYPERFRAMES. Headless throughout.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, renameSync } from 'node:fs';

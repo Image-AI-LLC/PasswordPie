@@ -2,8 +2,8 @@
 <!-- Cover of the store promo video, designed at 1280x720: the YouTube thumbnail (../cover.jpg) and, at 1.5x, the
      video's first frame. Rendered by ../render-cover.mjs.
      The Chrome Web Store shows it letterboxed with its play button over the centre (about 122 px across here) and,
-     in the strip below, about 112 px wide (board.html lays a picture out that way). So: the number is the picture,
-     and the line from the Return key to the filled fields leaves a socket for the play button. The fields are pixels
+     in the strip below, about 112 px wide (board.html lays a picture out that way). So: the claim is the picture
+     (under half a second: every measured run was; a resting heartbeat takes 0.6 to 1 s), and the line from the Return key to the filled fields leaves a socket for the play button. The fields are pixels
      of ../takes/fill.mov (filled.png, cut by render-cover.mjs), not a redraw. The numbers are those of
      ../measurements.json; extension/tests/promo-video.test.ts fails when they part. Colours from DESIGN.md. -->
 <html lang="en"><head><meta charset="utf-8"><title>PasswordPie promo video cover</title><style>
@@ -15,9 +15,10 @@ body { position:relative; background:var(--surface); color:var(--text); -webkit-
 .lockup { position:absolute; display:flex; align-items:center; gap:12px; }
 .lockup b { font-family:"SF Pro Rounded", ui-rounded, -apple-system, sans-serif; font-weight:700; letter-spacing:-.3px; }
 .key { display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; font-weight:600; }
-.num { left:55px; top:6px; font-size:310px; font-weight:800; letter-spacing:-11px; line-height:1; color:var(--accent-text); font-variant-numeric:tabular-nums; white-space:nowrap; }
-.unit { left:652px; top:20px; font-size:118px; line-height:1; font-weight:300; letter-spacing:-2px; color:var(--accent-text); }
-.claim { left:660px; top:248px; font-size:36px; line-height:1; font-weight:600; letter-spacing:-.6px; white-space:nowrap; }
+.num { left:50px; top:36px; font-size:276px; font-weight:800; letter-spacing:-9px; line-height:1; color:var(--accent-text); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.unit { left:644px; top:45px; font-size:118px; line-height:1; font-weight:300; letter-spacing:-2px; color:var(--accent-text); }
+.claim { left:660px; top:193px; font-size:35px; line-height:46px; font-weight:600; letter-spacing:-.6px; white-space:nowrap; }
+.claim i { font-style:normal; color:var(--accent-text); }
 .key { position:absolute; left:64px; top:329px; height:62px; padding:0 26px; border-radius:10px; background:var(--text); color:var(--surface); font-size:32px; }
 .span { top:358.5px; height:3px; background:var(--accent-text); }
 .brace { left:824px; top:304px; width:12px; height:170px; box-sizing:border-box; border:3px solid var(--accent-text); border-right:0; }
@@ -30,8 +31,8 @@ body { position:relative; background:var(--surface); color:var(--text); -webkit-
 .foot b { font-weight:600; color:var(--text); }
 .lockup { right:64px; top:623px; gap:8px; } .lockup img { width:28px; height:28px; } .lockup b { font-size:24px; }
 </style></head><body>
-<div class="abs num">448</div><div class="abs unit">ms</div>
-<div class="abs claim">From Return to a filled sign-in</div>
+<div class="abs num">&lt;0.5</div><div class="abs unit">s</div>
+<div class="abs claim">From Return to a filled sign-in.<br><i>A heartbeat takes longer.</i></div>
 <span class="key">return</span>
 <div class="abs span" style="left:204px;width:340px"></div>
 <div class="abs span" style="left:736px;width:90px"></div>
@@ -39,6 +40,6 @@ body { position:relative; background:var(--surface); color:var(--text); -webkit-
 <div class="f" style="--fy:602;top:310px"></div>
 <div class="f" style="--fy:782;top:405px"></div>
 <div class="abs hair"></div>
-<div class="abs foot">Median of 25 runs · <b>90% within 464 ms</b> · MacBook Air (M2), Chrome 157</div>
+<div class="abs foot">Median 448 ms of 25 runs · <b>slowest 482 ms</b> · MacBook Air (M2), Chrome 157</div>
 <div class="lockup"><img src="../composition/mark-orange.svg" alt=""><b>PasswordPie</b></div>
 </body></html>

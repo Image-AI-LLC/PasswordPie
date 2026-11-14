@@ -1,40 +1,47 @@
 # Store promo video
 
-`passwordpie-fill-1080p.mp4`: 11 seconds, 1920x1080, 60 fps, H.264, with music (AAC stereo, -16 LUFS). For the Chrome
-Web Store's "Global promo video", which takes a YouTube link (title and description in [../LISTING.md](../LISTING.md),
-"Promo video"). `cover.jpg` is the thumbnail (1280x720), and the video's first frame is the same picture.
+`passwordpie-fill-1080p.mp4`: 9 seconds (8.8), 1920x1080, 60 fps, H.264, with music (AAC stereo, -16 LUFS). For the
+Chrome Web Store's "Global promo video", which takes a YouTube link (title and description in
+[../LISTING.md](../LISTING.md), "Promo video"). `cover.jpg` is the thumbnail (1280x720), and the video's first frame
+is the same picture.
 
 Everything in it is a real screen recording of the app built by `make install`, the unpacked extension from this repo
-and the demo sign-in pages in [../../dev/mock-site.mjs](../../dev/mock-site.mjs). Scenes 1 and 2 and the PasswordPie
-half of scene 3 play at real speed, every frame of the recording, cut only at their start and end. The sped-up typing
-says on screen how much faster it is. The demo site is Fernway, a team
-workspace made up for these pages, served as `https://fernway.example` (a reserved domain), so no real site or brand
-appears. The vault is the marketing demo vault with one login added for Fernway; no real account is shown.
+and the demo sign-in pages in [../../dev/mock-site.mjs](../../dev/mock-site.mjs). The demo (⌘\ to the two-step code)
+is one stretch of one take at real speed, every frame of the recording, cut only at its start and end; so is the
+PasswordPie half of the side-by-side. The sped-up typing says on screen how much faster it is. The demo site is
+Fernway, a team workspace made up for these pages, served as `https://fernway.example` (a reserved domain), so no
+real site or brand appears. The vault is the marketing demo vault with one login added for Fernway; no real account
+is shown.
 
-It is cut to a beat: 120 a minute, so a beat is half a second, 30 frames. Each scene starts on a beat with a hard cut
-(on its first frame it is all there), and what it is about lands on a beat too.
+What it says about speed is **<0.5 s**, in seconds wherever it is big (the cover, the counter, the end card), with
+"A heartbeat takes longer." beside it on the cover and the end card. Every one of the 25 measured runs was under 500 ms (the slowest 482 ms), and
+a heart at rest beats once in 0.6 to 1 s. (Not "faster than a blink": a blink takes 0.1 to 0.4 s.) The median,
+448 ms, is in the small print of the cover and of the end card, and nowhere else. A three-digit number of milliseconds did not read as fast.
+
+It is cut to a beat the recording sets. In the two-step take the form fills and, on the next page, the code fills
+66 frames (1.1 s) later; with a beat of 33 frames (0.55 s, 109 a minute) both land on a beat, two beats apart, with
+nothing stretched. Each scene starts on a beat with a hard cut (on its first frame it is all there).
 
 | Time | Beats | Scene |
 |---|---|---|
-| 0–0.5 s | 1 | The cover: 448 ms, "From Return to a filled sign-in", the Return key and the two filled fields. It is the first frame, whole, so the video starts as the thumbnail that was clicked; scene 1 cuts in on the first beat. |
-| 0.5–3.5 s | 6 | "⌘\\, then Return." The page, ⌘\\, the panel with FERNWAY.EXAMPLE on top for more than two beats, Return, filled at 3.0 s. Real time. Beside the headline a counter runs from Return and stops on the frame the fields fill in, on 448 ms, with the run count, p90 and the machine. |
-| 3.5–6.0 s | 5 | "Two-step code? Filled on the next page." From just after Return: the form fills, Sign in, and the code fills itself on the next page at 5.0 s (Premium). Real time. |
-| 6.0–9.0 s | 6 | The whole sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s; shown 6× faster, marked) and PasswordPie in real time (⌘\\, Return, filled at 7.5 s: 1.0 s), with bars on one scale. PasswordPie is done while the typing, six times faster than it was, still has a second to go. |
-| 9.0–11.0 s | 4 | End card: on the left PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com; on the right 448 ms, from Return to a filled sign-in. |
+| 0–0.55 s | 1 | The cover: <0.5 s, "From Return to a filled sign-in. A heartbeat takes longer.", the Return key and the two filled fields. It is the first frame, whole, so the video starts as the thumbnail that was clicked; the demo cuts in on the first beat. |
+| 0.55–4.4 s | 7 | "⌘\\, then Return." One stretch of real time: the page, ⌘\\, the panel with FERNWAY.EXAMPLE on top, Return, filled at 2.2 s, Return (Sign in), and the two-step code fills itself on the next page at 3.3 s (Premium; a label beside it says so) and stays for two beats. From the cut to the code: 2.75 s. Beside the headline a counter runs from Return and stops on the frame the fields fill in, on 0.45 s; the only words with it are "Return → both fields filled". |
+| 4.4–6.6 s | 4 | The whole sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s; shown 7× faster, marked) and PasswordPie in real time (⌘\\, Return, filled at 5.5 s: 1.0 s), with bars on one scale. PasswordPie is done while the typing, seven times faster than it was, has a third still to go. |
+| 6.6–8.8 s | 4 | End card: on the left PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com; on the right <0.5 s, from Return to a filled sign-in, a heartbeat takes longer. |
 
 - **The counter.** It runs in real time, for as long as this take took from Return to filled, and stops on the median
-  of the 25 measured runs, 448 ms (447.7), the number the cover and the listing give. This take's own time is 451.6 ms
-  by the page's clock: 3.9 ms more, less than a quarter of a frame (16.7 ms). The first version's slow-motion counter
-  stopped on the median the same way.
-- Scene 1 is the `fill` take, where the panel stays open 1.15 s before Return, long enough to see what PasswordPie
-  looks like. Scene 2 is the `twostep` take from 0.05 s after its Return; Verify and the page after it are left out.
-  The PasswordPie half of scene 3 is the `quick` take: ⌘\\ to filled in 1.0 s.
-- Scene 3 times both sides from the first key, not from Return, so its 1.0 s includes opening the panel and a person's
-  0.3 s before Return. Both sides start at the same moment. The typing take begins 1.8 s before its first key, so at
-  6× its first frame, the untouched page, is held for 0.15 s. The typing in it is synthetic: keys sent one at a time
-  with gaps between 60% and 140% of 300 ms (a fixed sequence), 307 ms on average in this take.
-- The first version (#52) was 25.5 s, with the waits left in, a slow-motion replay of the fill, and no sound. The
-  replay is gone: the same page twice in a row read as a repeat, and most of it showed an empty form.
+  of the 25 measured runs in seconds, 0.45 (447.7 ms), the number the cover's small print and the listing give. This
+  take's own time is 451.5 ms by the page's clock: 3.8 ms more, less than a quarter of a frame (16.7 ms).
+- The demo is the `twostep` take from 0.09 s before ⌘\ to 1.1 s after the code (half that was too short to see that
+  the page had changed and filled itself); Verify and the page after it are
+  left out. The panel is open 0.97 s before Return, as it was. The PasswordPie half of the side-by-side is the
+  `quick` take: ⌘\ to filled in 1.0 s. The `fill` take is now only where the cover's two fields come from.
+- The side-by-side times both sides from the first key, not from Return, so its 1.0 s includes opening the panel and
+  a person's 0.3 s before Return. Both sides start at the same moment. The typing in it is synthetic: keys sent one
+  at a time with gaps between 60% and 140% of 300 ms (a fixed sequence), 307 ms on average in this take.
+- Earlier versions: the first (#52) was 25.5 s, with the waits left in, a slow-motion replay of the fill, and no
+  sound. The second (#56) was 11 s at 120 a minute, said "448 ms", and showed the fill and the two-step code as two
+  scenes from two takes (5.5 s for what is now 3.85 s).
 
 ## Cover and thumbnail
 
@@ -42,35 +49,43 @@ The store shows the video's YouTube thumbnail before it plays: the 16:9 picture 
 play button (about a tenth of the width) over its centre, and about 112 px wide in the strip under the carousel.
 `store-board.png` lays four frames of the video out that way.
 
-- `cover/cover.html` is drawn for that: the number is the picture, and the line from the Return key to the fields leaves
+- `cover/cover.html` is drawn for that: the claim is the picture, and the line from the Return key to the fields leaves
   a gap where the play button lands. `render-cover.mjs` renders it twice: `cover.jpg` to upload as the thumbnail, and
   at 1.5x as the video's first frame.
 - YouTube takes a custom thumbnail only from a channel with a verified phone number. Without one it offers three frames
-  of the video, from about 1/8, 3/8 and 7/8 of its length: 1.4 s (scene 1, the panel open), 4.1 s (scene 2, the
-  form filled) and 9.6 s (the end card). The end card is laid out to be that thumbnail: brand on the left, the
-  number on the right, nothing under the play button, and it does not move, so any frame of it will do. Pick the
+  of the video, from about 1/8, 3/8 and 7/8 of its length: 1.1 s (the demo, the panel open), 3.3 s (the demo, the
+  code filling in) and 7.7 s (the end card). The end card is laid out to be that thumbnail: brand on the left, the
+  claim on the right, nothing under the play button, and it does not move, so any frame of it will do. Pick the
   third one.
 
 ## Sound
 
 `music/synth.py` makes the music: sine waves and noise from a fixed seed, no samples and no third-party audio. The
-drums are in front: a kick on every beat, a clap on two and four, sixteenth-note hats with the off-beat accented and a
-bass line in eighths; a pad and a plucked figure stay behind them. It reads `composition/timing.js` for when things
+drums are in front: a kick on every beat, a snare on two and four, sixteenth-note hats with the off-beat accented and
+a bass line in eighths; a pad and a plucked figure stay behind them. It reads `composition/timing.js` for when things
 happen and keeps no moment of the video itself:
 
 - the tempo is the beat the scenes are cut to, and a scene that does not start on a beat is refused;
-- each scene starts a new chord (D, G, A), with the bar counted from where the scene starts;
-- a two-note chime sounds on the frame each form or code fills (3.0, 5.0 and 7.5 s), each on a beat with the clap,
-  and what has a pitch steps back 3 dB under it. The chime is a soft mallet note (A5, D6) under the drums in
-  level: an octave higher, as a bare sine, it was piercing;
-- the hats are not a machine: the off sixteenths come a little late (swing), and their loudness rises through the bar
-  with some chance in it; the clap has a snare's body under it and a room around it, and its noise is band-limited to 0.8–2.4 kHz with a
-  short tail: wider and longer, it hissed;
+- each scene starts a new chord (D, G), with the bar counted from where the scene starts;
+- what the interface does sounds like an interface, not like the tune: a key cap's click (a few ms of noise on a
+  short thud, no pitch) at each ⌘\ and Return, and a soft pop (a sine sliding up from 330 to 660 Hz in a few
+  hundredths of a second, never resting on a note) on the frame each form or code fills (2.2, 3.3 and 5.5 s), each
+  on a beat. Both are dry, in the middle and in front: all of the music, the drums too, steps back 4 dB for a tenth
+  of a second under each (a click that lands on a drum hit was not heard otherwise), and what has a pitch 3 dB more
+  under a pop. Before, a two-note chime
+  marked the fills: it sounded like one more instrument, and higher up, as a bare sine, it was piercing;
+- the drums are played by a hand: the hats' off sixteenths come late (swing), each hat is a few ms early or late
+  and no two are equally loud; the snare comes 3 to 9 ms behind the beat, softer on two than on four; the kick is
+  harder on the one. No two bars are alike: each is played a little harder than the one before, up to the end
+  card, and has its own extras (a soft kick before the three or before the one, a ghost note on the snare). The
+  hats are noise between 6 and 10.5 kHz and nothing above: with everything above 7 kHz they sounded like sand. The
+  end card's crash stops at 10.5 kHz too. The snare is a drum head (two modes falling in pitch) with short, dark
+  wires: its noise falls off above 1.5 kHz. Brighter or longer, it hissed;
 - two taps over the cover lead into the first beat; a roll leads into the end card, where one hit lands, the drums
   stop, and a D chord on bells dies away before the video ends.
 
 `build.mjs` turns it down by one fixed gain to -16 LUFS (true peak about -5 dBFS; no compressor or limiter) and puts
-it under the picture. `music/check.py VIDEO` listens to a finished file: where each cue is, loudness, true peak.
+it under the picture. `music/check.py VIDEO` listens to a finished file: where each pop and each click is, loudness, true peak.
 
 ## Files
 
@@ -78,7 +93,7 @@ it under the picture. `music/check.py VIDEO` listens to a finished file: where e
   (as from the keyboard), waiting for the panel, and the recorder (ScreenCaptureKit, only the windows of the recording
   Chrome and PasswordPie: no menu bar, notifications or other apps can get into a take).
 - `chrome.mjs`: the Chrome used for recording, with its own profile and the unpacked extension.
-- `takes/`: the four takes the video is cut from (`.mov`, variable frame rate, 2560x1440) and what happened when, in
+- `takes/`: the four takes the video and the cover are cut from (`.mov`, variable frame rate, 2560x1440) and what happened when, in
   epoch ms (`.json`). `measurements.json`: the 25 measured fills.
 - `composition/`: the HyperFrames project. `prep.mjs` cuts `takes/` into `clips/` and writes `timing.js` (when each
   key and fill happens in its clip, and when each scene starts in the video); `index.html` is the picture.
@@ -181,11 +196,11 @@ Things that bit:
 - The video's first frame is what a click on the thumbnail turns into. A fade-in from an empty screen there makes
   the start look like a jump, and YouTube may also show that frame while the video loads.
 - A dissolve across a beat reads as a cut that comes late (or early, when it starts before the beat), and a
-  dissolve between two full pictures (the cover and scene 1) reads as a ghost. Every scene cuts hard on the beat.
+  dissolve between two full pictures (the cover and the demo) reads as a ghost. Every scene cuts hard on the beat.
 - A key cap is dark: over the demo site's dark sidebar it was not seen. Key caps sit over the page and have a light
   edge.
-- A first scene that is over in a second is not seen: the panel was on screen 0.3 s before Return. It now has two
-  beats.
+- A first scene that is over in a second is not seen: the panel was on screen 0.3 s before Return. It needs the
+  second it has in the take.
 - YouTube picks its thumbnail candidates from fixed places in the video; an animation still running there (the first
   version's end card was still building up at 7/8) gives a half-drawn thumbnail.
 - A clip whose first frame is not at time 0 (a seek that lands between two frames, or `setpts` after one) is played

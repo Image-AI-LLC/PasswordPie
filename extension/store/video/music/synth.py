@@ -7,11 +7,12 @@
 
 Everything is generated here from sine waves and noise: no samples, no third-party audio.
 
-The drums are in front: a kick on every beat, a clap on two and four, sixteenth-note hats with accents and a bass
+The drums are in front: a kick on every beat, a snare on two and four, sixteenth-note hats with accents and a bass
 line in eighths; the pad stays behind them. When things happen comes from the video's own timing data
 (../composition/timing.js, written by prep.mjs), not from numbers kept here: the tempo is the beat the scenes are cut
-to, each scene starts a new chord with the bar counted from it, a two-note chime marks each moment a form fills, and
-the last hit, where the drums stop, is the end card.
+to, each scene starts a new chord with the bar counted from it, and the last hit, where the drums stop, is the end
+card. What the interface does is heard as an interface, not as part of the tune: a key cap's click at each key press
+(Command-backslash, Return) and a soft pop at each moment a form, or the two-step code, fills in.
 
 usage: synth.py OUT.wav [--timing timing.js] [--variant bright|soft]
        synth.py --plan  [--timing timing.js]      prints the moments it would play to, as JSON
@@ -44,7 +45,8 @@ class Plan:
     beat: float  # the scenes are cut to it; the tempo is 60 / beat
     sections: tuple[float, ...]  # where each scene after the cover starts: the drums come in at the first
     end_card: float  # the last hit; the drums stop here
-    fills: tuple[float, ...]  # a chime on each: the moments a form, or the two-step code, fills in
+    fills: tuple[float, ...]  # a pop on each: the moments a form, or the two-step code, fills in
+    clicks: tuple[float, ...]  # a key cap's click on each: the key presses
 
 
 def number(data: object, *path: str) -> float:
@@ -69,7 +71,7 @@ def plan_from(timing: object) -> Plan:
     def scene(name: str) -> float:
         return number(timing, 'scenes', name)
 
-    sections = (scene('live'), scene('twostep'), scene('race'))
+    sections = (scene('demo'), scene('race'))
     end_card = scene('end')
     beat = scene('beat')
     if not 0.4 <= beat <= 0.6:
@@ -84,9 +86,16 @@ def plan_from(timing: object) -> Plan:
         sections=sections,
         end_card=end_card,
         fills=(
-            scene('live') + number(timing, 'live', 'filled'),  # filled, in real time
-            scene('twostep') + number(timing, 'twostep', 'code'),  # the two-step code
+            scene('demo') + number(timing, 'demo', 'filled'),  # filled, in real time
+            scene('demo') + number(timing, 'demo', 'code'),  # the two-step code, in the same stretch
             scene('race') + number(timing, 'race', 'pieFilledAt'),  # side by side
+        ),
+        clicks=(
+            scene('demo') + number(timing, 'demo', 'hotkey'),  # Command-backslash
+            scene('demo') + number(timing, 'demo', 'ret'),  # Return: fill
+            scene('demo') + number(timing, 'demo', 'submit'),  # Return: Sign in
+            scene('race') + number(timing, 'race', 'pieHotkeyAt'),
+            scene('race') + number(timing, 'race', 'pieReturnAt'),
         ),
     )
 
@@ -143,16 +152,18 @@ def kick() -> Samples:
     return s * np.exp(-x / 0.11) * np.minimum(1, x / 0.001)
 
 
-HP_HAT = butter(4, 7000, 'highpass', fs=SR, output='sos')
+BP_HAT = butter(3, [6000, 10500], 'bandpass', fs=SR, output='sos')  # nothing above: white noise up there is sand
 BP_SNAP = butter(2, [1400, 4200], 'bandpass', fs=SR, output='sos')
-BP_CLAP = butter(2, [800, 2400], 'bandpass', fs=SR, output='sos')  # the upper edge is low: white noise above it hisses
+BP_SNARE = butter(2, [500, 2000], 'bandpass', fs=SR, output='sos')  # the upper edge is low: noise above it hisses
+LP_SNARE = butter(1, 1500, 'lowpass', fs=SR, output='sos')
+BP_TICK = butter(2, [1100, 3200], 'bandpass', fs=SR, output='sos')
 BP_RISE = butter(2, [700, 3200], 'bandpass', fs=SR, output='sos')
-HP_CRASH = butter(2, 4500, 'highpass', fs=SR, output='sos')
+BP_CRASH = butter(3, [4500, 10500], 'bandpass', fs=SR, output='sos')  # same as the hats: nothing above
 
 
 def hat(rng: np.random.Generator, decay: float = 0.028) -> Samples:
     x = t(0.12)
-    return sosfilt(HP_HAT, rng.standard_normal(len(x))) * np.exp(-x / decay)
+    return 1.5 * sosfilt(BP_HAT, rng.standard_normal(len(x))) * np.exp(-x / decay)
 
 
 def snap(rng: np.random.Generator) -> Samples:
@@ -162,31 +173,47 @@ def snap(rng: np.random.Generator) -> Samples:
     return 0.6 * n + body
 
 
-def clap(rng: np.random.Generator) -> Samples:
-    """Three quick bursts of noise and a short tail, as hands never land together."""
-    x = t(0.22)
-    env = sum(np.where(x >= d, np.exp(-(x - d) / 0.006), 0.0) for d in (0.0, 0.011, 0.023)) * 0.6 + np.where(x >= 0.03, np.exp(-(x - 0.03) / 0.038), 0.0)
-    out: Samples = sosfilt(BP_CLAP, rng.standard_normal(len(x))) * env
+def snare(rng: np.random.Generator) -> Samples:
+    """A drum more than a burst of noise: two modes of the head falling in pitch, and wires that are darkened (noise
+    falling off above 1.5 kHz, none above 2 kHz to speak of) and short. Brighter or longer, the noise hisses."""
+    x = t(0.2)
+    head = np.sin(2 * np.pi * np.cumsum(182 + 60 * np.exp(-x / 0.012)) / SR) * np.exp(-x / 0.055)
+    head += 0.45 * np.sin(2 * np.pi * np.cumsum(331 + 40 * np.exp(-x / 0.01)) / SR) * np.exp(-x / 0.03)
+    wires = sosfilt(BP_SNARE, sosfilt(LP_SNARE, rng.standard_normal(len(x)))) * np.exp(-x / 0.045)
+    out: Samples = (0.55 * head + 1.3 * wires) * np.minimum(1, x / 0.0008)
     return out
 
 
 def crash(rng: np.random.Generator) -> Samples:
     x = t(1.6)
-    out: Samples = sosfilt(HP_CRASH, rng.standard_normal(len(x))) * np.exp(-x / 0.45) * np.minimum(1, x / 0.002)
+    out: Samples = sosfilt(BP_CRASH, rng.standard_normal(len(x))) * np.exp(-x / 0.45) * np.minimum(1, x / 0.002)
     return out
 
 
-def chime(midi: float, decay: float) -> Samples:
-    """A soft mallet note: a sine with a little of its octave and of the octave below, and an attack slow enough not to click."""
-    x = t(0.6)
-    f = hz(midi)
-    s = np.sin(2 * np.pi * f * x) + 0.22 * np.sin(2 * np.pi * 2 * f * x) * np.exp(-x / 0.05) + 0.3 * np.sin(np.pi * f * x) * np.exp(-x / 0.12)
-    return s * np.exp(-x / decay) * np.minimum(1, x / 0.004)
+def click() -> Samples:
+    """A key cap going down: a tick (a few ms of noise, 1 to 3 kHz) on a short thud. No pitch, and the same every
+    time, so check.py can find it: its noise has a seed of its own."""
+    x = t(0.06)
+    tick = sosfilt(BP_TICK, np.random.default_rng(11).standard_normal(len(x))) * np.exp(-x / 0.0035)
+    thud = np.sin(2 * np.pi * np.cumsum(150 + 170 * np.exp(-x / 0.004)) / SR) * np.exp(-x / 0.011)
+    out: Samples = (tick + 0.8 * thud) * np.minimum(1, x / 0.0004)
+    return out
 
 
-# The chime at a fill: A5 then D6, an octave under where a bare sine turns piercing, and under the drums in level.
-# (midi, decay, seconds after the fill, gain, pan)
-CHIME_NOTES: tuple[tuple[int, float, float, float, float], ...] = ((81, 0.14, 0.0, 0.085, -0.1), (86, 0.2, 0.07, 0.098, 0.1))
+def pop() -> Samples:
+    """A soft pop, as a bubble: a sine that slides up from 330 to 660 Hz in a few hundredths of a second and is gone.
+    It never rests on a note, so it is not heard as one of the tune's, and it stays under 1 kHz: not sharp."""
+    x = t(0.16)
+    f = 660 - 330 * np.exp(-x / 0.022)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    out: Samples = (np.sin(ph) + 0.2 * np.sin(2 * ph)) * np.exp(-x / 0.032) * np.minimum(1, x / 0.0025)
+    return out
+
+
+POP_GAIN = 0.34
+CLICK_GAIN = 0.36
+# The music steps back under each of them: this much, from a few ms before to a tenth of a second after.
+DUCK_DB = 4.0
 
 
 def riser(rng: np.random.Generator, length: float) -> Samples:
@@ -238,7 +265,7 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
     # Over the cover, before the first beat: a swell and two taps into the downbeat.
     place(wet, riser(rng, first), 0.0, 0.03)
     place(drumwet, snap(rng), first - 2 * s16, 0.05, -0.15)
-    place(drumwet, snap(rng), first - s16, 0.08, 0.15)
+    place(drumwet, snap(rng), first - s16 + 0.004, 0.08, 0.15)
 
     for k in range(n_beats):
         at = first + k * beat
@@ -248,24 +275,40 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
         root = ROOT[chord]
         last_of_scene = k + 1 == n_beats or section(k + 1) != sec
 
-        # Drums: a kick on every beat, a clap on two and four, hats in sixteenths with the off-beat accented.
-        place(drums, kick(), at, 0.5)
+        # Drums, played by a hand and not by a grid, and no two bars alike. A kick on every beat (the one of a bar
+        # harder), a snare on two and four that comes a few ms late and is never twice as loud (four harder than
+        # two). Each bar is played a little harder than the one before, up to the end card, and has its own extras:
+        # a soft kick before the three, or before the one, or a ghost note on the snare before the four.
+        bar = (k - starts[sec]) // BEATS_IN_A_BAR + sum((starts[i + 1] - starts[i] + BEATS_IN_A_BAR - 1) // BEATS_IN_A_BAR for i in range(sec))
+        if in_bar == 0 or k == starts[sec]:
+            push = 0.8 + 0.2 * min(1.0, k / max(1, n_beats - BEATS_IN_A_BAR))  # how hard this bar is played
+            extras = (bar % 3, rng.uniform() < 0.6)
+        place(drums, kick(), at + rng.uniform(-0.0015, 0.0015), (0.52 if in_bar == 0 else 0.44) * push * rng.uniform(0.92, 1.0))
+        if in_bar == 1 and extras[0] != 1:
+            place(drums, kick(), at + 3 * s16 + SWING * s16, 0.2 * push * rng.uniform(0.75, 1.0))
+        if in_bar == 3 and extras[0] == 1:
+            place(drums, kick(), at + 2 * s16, 0.24 * push * rng.uniform(0.8, 1.0))
+        if in_bar == 2 and extras[1]:
+            place(drums, snare(rng), at + 3 * s16 + SWING * s16 + rng.uniform(0.0, 0.004), 0.07 * push, -0.1)  # a ghost note
         if in_bar % 2 == 1:
-            # The clap has a snare's body under it and a room around it.
-            body = clap(rng)
-            place(drums, body, at, 0.24, -0.1)
-            place(drums, snap(rng), at, 0.03, 0.05)
-            place(drumwet, body, at, 0.16, 0.2)
-        # The sixteenths off the eighth (the 2nd and 4th of a beat) come late, for swing, and no two hats are equally
-        # loud: a rise through the bar, the off-beat eighth on top, and a little chance.
-        lift = 0.8 + 0.2 * in_bar / (BEATS_IN_A_BAR - 1)
+            hit = snare(rng)
+            late = rng.uniform(0.003, 0.009)
+            vel = (0.72 if in_bar == 1 else 1.0) * push * rng.uniform(0.84, 1.0)
+            place(drums, hit, at + late, 0.3 * vel, -0.1)
+            place(drums, snap(rng), at + late, 0.02 * vel, 0.05)
+            place(drumwet, hit, at + late, 0.09 * vel, 0.2)
+        # Hats in sixteenths. The ones off the eighth (the 2nd and 4th of a beat) come late, for swing; each is a few
+        # ms early or late besides, and no two are equally loud: a rise through the bar, the off-beat eighth on top,
+        # and a hand that sometimes barely touches.
+        lift = (0.7 + 0.3 * in_bar / (BEATS_IN_A_BAR - 1)) * push
         for i in range(4):
             if i == 2 and last_of_scene:
-                place(drums, hat(rng, 0.09), at + i * s16, 0.085, 0.25)  # open, into the next scene
+                place(drums, hat(rng, 0.09), at + i * s16 + rng.uniform(-0.002, 0.003), 0.085, 0.25)  # open, into the next scene
                 continue
             late = SWING * s16 if i % 2 else 0.0
-            gain = (0.05, 0.02, 0.085, 0.032)[i] * lift * rng.uniform(0.7, 1.0)
-            place(drums, hat(rng, 0.02 + 0.012 * rng.uniform()), at + i * s16 + late + rng.uniform(-0.002, 0.002), gain, 0.25 if i % 2 == 0 else -0.2)
+            touch = rng.uniform(0.3, 0.55) if i % 2 and rng.uniform() < 0.3 else rng.uniform(0.62, 1.0)
+            gain = (0.05, 0.02, 0.085, 0.032)[i] * lift * touch
+            place(drums, hat(rng, 0.018 + 0.016 * rng.uniform()), at + i * s16 + late + rng.uniform(-0.004, 0.005), gain, 0.25 if i % 2 == 0 else -0.2)
 
         # Bass in eighths: the root, up an octave on the last off-beat of the bar.
         place(bassbus, bass(root, beat * 0.42), at, 0.3)
@@ -301,8 +344,9 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
         place(padbus, pad(n, dur - plan.end_card, 0.0), plan.end_card, 0.03)
 
     for at in plan.fills:
-        for midi, decay, after, gain, pan in CHIME_NOTES:
-            place(cue, chime(midi, decay), at + after, gain, pan)
+        place(cue, pop(), at, POP_GAIN)
+    for at in plan.clicks:
+        place(cue, click(), at, CLICK_GAIN)
 
     # --- reverb, master ---
     ir_len = int(SR * 1.1)
@@ -325,7 +369,14 @@ def render(plan: Plan, variant: str = 'bright') -> Samples:
         x = np.arange(n_samples) / SR - at
         dip = np.where(x < 0, np.clip(1 + x / 0.04, 0, 1), np.exp(-np.maximum(x - 0.18, 0) / 0.18))
         duck = np.minimum(duck, 1 - (1 - 10 ** (-3 / 20)) * dip)
-    mix = drums + drumwet + reverb(drumwet) * 0.45 + tonal * duck[:, None] + cue + reverb(cue) * 0.35
+    # The interface's sounds are dry and in the middle: they are in the room with the viewer, not with the band.
+    # All of the music steps back for a moment under each of them, the drums too, or a click on a drum hit is not heard.
+    under = np.ones(n_samples)
+    for at in (*plan.fills, *plan.clicks):
+        x = np.arange(n_samples) / SR - at
+        dip = np.where(x < 0, np.clip(1 + x / 0.008, 0, 1), np.exp(-np.maximum(x - 0.05, 0) / 0.06))
+        under = np.minimum(under, 1 - (1 - 10 ** (-DUCK_DB / 20)) * dip)
+    mix = (drums + drumwet + reverb(drumwet) * 0.4 + tonal * duck[:, None]) * under[:, None] + cue
 
     if variant == 'soft':  # the same piece, darker and quieter on top
         mix = sosfilt(butter(2, 5200, 'lowpass', fs=SR, output='sos'), mix, axis=0)
