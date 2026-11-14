@@ -4,12 +4,12 @@ window.PP = {
     "beat": 0.55,
     "cover": 0,
     "demo": 0.55,
-    "race": 3.85,
-    "end": 6.05,
-    "duration": 8.25
+    "race": 4.4,
+    "end": 6.6,
+    "duration": 8.8
   },
   "demo": {
-    "duration": 3.3,
+    "duration": 3.8500000000000005,
     "hotkey": 0.09090014648437483,
     "panel": 0.2273000488281247,
     "ret": 1.1985002441406247,
@@ -22,7 +22,7 @@ window.PP = {
     "shift": 0
   },
   "race": {
-    "duration": 2.1999999999999997,
+    "duration": 2.1999999999999993,
     "ff": 7,
     "typingMs": 11683.699951171875,
     "typingKeys": 39,

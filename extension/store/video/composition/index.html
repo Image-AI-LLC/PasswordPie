@@ -45,8 +45,6 @@
   .meter .big small { font-size: 64px; letter-spacing: 0; margin-left: 14px; color: var(--text2); }
   .meter .side { text-align: right; white-space: nowrap; }
   .meter .side div { font-size: 34px; font-weight: 700; letter-spacing: -.5px; }
-  .meter .side p { margin-top: 8px; font-size: 26px; }
-  .meter .side p.small { margin-top: 4px; font-size: 22px; }
 
   /* Side by side: same page, two ways, timed from the first key. */
   .half { position: absolute; top: 236px; width: 820px; height: 514px; border-radius: 12px; overflow: hidden; opacity: 0;
@@ -88,16 +86,15 @@
 </style>
 </head>
 <body>
-<div id="stage" data-composition-id="root" data-start="0" data-duration="8.25" data-width="1920" data-height="1080">
+<div id="stage" data-composition-id="root" data-start="0" data-duration="8.8" data-width="1920" data-height="1080">
 
   <div class="head" id="h1"><div><h1>⌘\, then Return.</h1><p>In real time: nothing sped up.</p></div>
-    <div class="meter"><div class="side"><div>Return → both fields filled</div><p id="meter-note"></p>
-      <p class="small">MacBook Air (M2) · macOS 27 · Chrome 157</p></div>
+    <div class="meter"><div class="side"><div>Return → both fields filled</div></div>
       <div class="big"><span id="count">0.00</span><small>s</small></div></div></div>
   <div class="head" id="h4"><div><h1>The whole sign-in, from the first key.</h1><p>The same page, typed by hand and with PasswordPie.</p></div></div>
 
   <div id="card">
-    <video id="v-demo" data-start="0.55" data-duration="3.3" data-track-index="1" src="clips/demo.mp4" muted playsinline></video>
+    <video id="v-demo" data-start="0.55" data-duration="3.85" data-track-index="1" src="clips/demo.mp4" muted playsinline></video>
   </div>
   <!-- Canvas pixels of the email and password fields and the six code boxes in the card. -->
   <div class="ring" id="ring-email" style="left: 1003px; top: 522px; width: 467px; height: 60px;"></div>
@@ -111,11 +108,11 @@
   <div class="key" id="k-sign"><b>return</b><span>Sign in</span></div>
 
   <div class="half" id="left">
-    <video id="v-typing" data-start="3.85" data-duration="2.2" data-track-index="3" src="clips/typing.mp4" muted playsinline></video>
+    <video id="v-typing" data-start="4.4" data-duration="2.2" data-track-index="3" src="clips/typing.mp4" muted playsinline></video>
     <div class="chip" id="ff-chip" style="right: 16px; top: 16px;"></div>
   </div>
   <div class="half" id="right">
-    <video id="v-quick" data-start="3.85" data-duration="2.2" data-track-index="4" src="clips/quick.mp4" muted playsinline></video>
+    <video id="v-quick" data-start="4.4" data-duration="2.2" data-track-index="4" src="clips/quick.mp4" muted playsinline></video>
     <!-- The email and password fields in this half: the card's rings through the half's crop and scale. -->
     <div class="ring right" style="left: 373px; top: 216px; width: 430px; height: 55px;"></div>
     <div class="ring right" style="left: 373px; top: 318px; width: 430px; height: 55px;"></div>
@@ -160,9 +157,11 @@
   // before is left. (A dissolve across the beat reads as a cut that comes late.)
   const show = (ids, at) => tl.set(ids, { opacity: 1 }, at);
   const hide = (ids, at) => tl.set(ids, { opacity: 0 }, at);
-  const key = (id, at) => {
-    tl.fromTo(id, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.1, ease: 'power2.out' }, at - LEAD);
-    tl.to(id, { opacity: 0, duration: 0.15, ease: 'power1.in' }, at + 0.3);
+  /** `gone`: when the cap has gone, if that is sooner than it would go by itself; `lead`: how long before the press it shows. */
+  const key = (id, at, gone = at + 0.45, lead = LEAD) => {
+    tl.fromTo(id, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.1, ease: 'power2.out' }, at - lead);
+    const fade = Math.min(0.15, (gone - at) / 2);
+    tl.to(id, { opacity: 0, duration: fade, ease: 'power1.in' }, gone - fade);
   };
   /** The ring pops on the frame the fields fill, and goes with its scene. */
   const ring = (ids, at, until) => {
@@ -172,10 +171,9 @@
   // What the viewer reads big is in seconds; the milliseconds are the small print.
   const median = Math.round(T.measured.medianMs);
   const medianSeconds = median / 1000;
-  const small = `Median ${median} ms of ${T.measured.runs} runs · slowest ${Math.round(T.measured.maxMs)} ms`;
+  const small = `Median ${median} ms of ${T.measured.runs} runs · slowest ${Math.round(T.measured.maxMs)} ms`;  // the end card's note, as on the cover
   tl.set('#ff-chip', { textContent: `${T.race.ff}× speed` }, 0);
   tl.set('#typing-note', { textContent: `About 40 words a minute, shown ${T.race.ff}× faster` }, 0);
-  tl.set('#meter-note', { textContent: small }, 0);
   tl.set('#end-runs', { textContent: small }, 0);
 
   // 0. The cover is the first frame, whole, so the video starts as the picture that was clicked. It is cut, not
@@ -184,7 +182,7 @@
   hide('#cover', S1);
 
   // 1. One stretch of real time: the page, ⌘\, the panel, Return, the form fills on the fourth beat, Return (Sign in),
-  //    and the code fills on the next page on the sixth. The counter starts at Return and stops on the frame the fields
+  //    and the code fills on the next page on the sixth and stays for two beats. The counter starts at Return and stops on the frame the fields
   //    fill in, on the measured median in seconds (this take's own time is within a frame of it: see ../README.md).
   key('#k-hot', S1 + D.hotkey);
   key('#k-ret', S1 + D.ret);
@@ -193,8 +191,12 @@
   tl.set(count, { v: 0, onUpdate: showCount }, 0);
   tl.to(count, { v: medianSeconds, duration: D.filled - D.ret, ease: 'none', onUpdate: showCount }, S1 + D.ret);
   tl.to('#count', { color: '#A65312', duration: 0.12 }, S1 + D.filled);
-  ring(['#ring-email', '#ring-pass'], S1 + D.filled, S1 + D.page);
-  key('#k-sign', S1 + D.submit);
+  // What belongs to the sign-in page goes with it: the rings on its fields, and the cap of the key that sent it.
+  // (Half a frame before the first frame of the next page: set on the frame's own time, they were still on it.)
+  const pageGone = S1 + D.page - 0.5 / 60;
+  ring(['#ring-email', '#ring-pass'], S1 + D.filled, pageGone);
+  // The page changes two frames after the press, so this cap shows well before it, or it would not be read.
+  key('#k-sign', S1 + D.submit, pageGone, 0.4);
   ring(['#ring-code', '#tag-code'], S1 + D.code, S2);
 
   // 2. Side by side. Both timers start at the first key, at the same moment; the bars share one scale.

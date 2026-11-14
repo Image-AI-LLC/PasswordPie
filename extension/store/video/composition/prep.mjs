@@ -100,9 +100,10 @@ function settle(times, clip, crop) {
 const FRAMES_IN_A_BEAT = 33;
 const beats = (n) => n * FRAMES_IN_A_BEAT / 60;
 const BEAT = beats(1);
-T.scenes = { beat: BEAT, cover: 0, demo: beats(1), race: beats(7), end: beats(11), duration: beats(15) };
+T.scenes = { beat: BEAT, cover: 0, demo: beats(1), race: beats(8), end: beats(12), duration: beats(16) };
 const lasts = (scene, next) => T.scenes[next] - T.scenes[scene];
-// The form fills on the fourth beat of the demo and the code on the sixth; side by side, on the third.
+// The form fills on the fourth beat of the demo and the code on the sixth, which then stays for two beats: a new
+// page that filled itself takes a moment to be seen. Side by side, the form fills on the third beat.
 const DEMO_FILL_AT = beats(3);
 const DEMO_CODE_AT = beats(5);
 const FILL_AT = beats(2);

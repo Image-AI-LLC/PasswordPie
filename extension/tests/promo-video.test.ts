@@ -16,7 +16,7 @@ const timingFile = path.join(video, 'composition/timing.js');
 const read = (file: string): string => readFileSync(path.join(video, file), 'utf8');
 
 interface Timing {
-  demo: { duration: number; hotkey: number; panel: number; ret: number; filled: number; submit: number; code: number; measuredMs: number };
+  demo: { duration: number; hotkey: number; panel: number; ret: number; filled: number; submit: number; page: number; code: number; measuredMs: number };
   race: { duration: number; ff: number; pieFilledAt: number; pieReturnAt: number; typingFirstKeyAt: number; typingDoneAt: number; typingMs: number; pieHotkeyAt: number };
   measured: { runs: number; medianMs: number; p90Ms: number; maxMs: number; machine: string; chrome: string };
   scenes: { beat: number; cover: number; demo: number; race: number; end: number; duration: number };
@@ -75,8 +75,11 @@ describe('promo video: one timing for the picture and the music', () => {
       expect(after).toBeGreaterThan(before);
     }
     expect(d.code).toBeLessThanOrEqual(3);
-    // The filled code stays for half a second or more before the cut.
-    expect(d.duration - d.code).toBeGreaterThanOrEqual(0.5);
+    expect(timing.scenes.demo).toBeGreaterThan(0);
+    // The filled code stays for a second or more before the cut: a page that changed and filled itself has to be seen.
+    expect(d.duration - d.code).toBeGreaterThanOrEqual(1);
+    // The Sign in key cap is gone by the time the next page is up.
+    expect(read('composition/index.html')).toContain("key('#k-sign', S1 + D.submit, pageGone, 0.4);");
     // The clip is cut from the two-step take at 60 frames a second, and nowhere else: not sped up, nothing left out.
     const prep = read('composition/prep.mjs');
     expect(prep).toContain("cut('demo.mp4', twostep.mov, start, duration, CARD);");
@@ -129,9 +132,13 @@ describe('promo video: one timing for the picture and the music', () => {
     const claim = '<div class="claim">From Return to a filled sign-in.<br><i>A heartbeat takes longer.</i></div>';
     expect(body).toContain(claim);
     expect(cover).toContain(claim.replace('class="claim"', 'class="abs claim"'));
-    // Milliseconds are written only into the two notes, from the measured data.
-    expect(html.match(/ ms[` ]/g)).toHaveLength(2);
+    // Milliseconds are nowhere in the markup: only the end card's note has them, written from the measured data, as
+    // on the cover. The demo shows the counter and what it counts, and no note.
+    expect(body).not.toMatch(/\bms\b/);
+    expect(body).not.toContain('meter-note');
     expect(html).toContain('const small = `Median ${median} ms of ${T.measured.runs} runs · slowest ${Math.round(T.measured.maxMs)} ms`;');
+    expect(html.match(/textContent: small\b/g)).toHaveLength(1);
+    expect(html).toContain("tl.set('#end-runs', { textContent: small }, 0);");
   });
 
   it('says how much faster the typing is shown, and keeps its clock true', () => {
@@ -309,6 +316,18 @@ describe.skipIf(!ffmpeg)('promo video: the finished file', () => {
     if (Math.abs(last - first) <= 5) return NaN;
     return from + frames.find(([, y]) => Math.abs(y - last) < 2)![0];
   };
+
+  it('leaves nothing of the sign-in page on the two-step page: no ring on a field that is gone, no key cap', () => {
+    // The first frame of the next page (its boxes still empty) and the one after it, where nothing has changed yet:
+    // around the two rings, and around the key cap.
+    const first = Math.round((timing.scenes.demo + timing.demo.page) * 60);
+    expect(Math.round((timing.scenes.demo + timing.demo.code) * 60)).toBeGreaterThan(first + 1);
+    for (const crop of ['500:200:990:510', '500:90:710:935']) {
+      const log = ffmpegLog(['-i', mp4, '-i', mp4, '-frames:v', '1', '-lavfi',
+        `[0:v]select='eq(n,${first})',crop=${crop},setpts=0[a];[1:v]select='eq(n,${first + 1})',crop=${crop},setpts=0[b];[a][b]ssim`]);
+      expect(Number(/SSIM .*All:([\d.]+)/.exec(log)?.[1]), `crop ${crop}`).toBeGreaterThan(0.99);
+    }
+  });
 
   it('fills each form on the frame the timing data names', () => {
     // The email field: in the browser card (the demo) and in the right half of the side-by-side. The six boxes

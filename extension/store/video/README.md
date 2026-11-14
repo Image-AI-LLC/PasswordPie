@@ -1,6 +1,6 @@
 # Store promo video
 
-`passwordpie-fill-1080p.mp4`: 8 seconds (8.25), 1920x1080, 60 fps, H.264, with music (AAC stereo, -16 LUFS). For the
+`passwordpie-fill-1080p.mp4`: 9 seconds (8.8), 1920x1080, 60 fps, H.264, with music (AAC stereo, -16 LUFS). For the
 Chrome Web Store's "Global promo video", which takes a YouTube link (title and description in
 [../LISTING.md](../LISTING.md), "Promo video"). `cover.jpg` is the thumbnail (1280x720), and the video's first frame
 is the same picture.
@@ -14,9 +14,9 @@ real site or brand appears. The vault is the marketing demo vault with one login
 is shown.
 
 What it says about speed is **<0.5 s**, in seconds wherever it is big (the cover, the counter, the end card), with
-"A heartbeat takes longer." beside it. Every one of the 25 measured runs was under 500 ms (the slowest 482 ms), and
+"A heartbeat takes longer." beside it on the cover and the end card. Every one of the 25 measured runs was under 500 ms (the slowest 482 ms), and
 a heart at rest beats once in 0.6 to 1 s. (Not "faster than a blink": a blink takes 0.1 to 0.4 s.) The median,
-448 ms, is in the small print. A three-digit number of milliseconds did not read as fast.
+448 ms, is in the small print of the cover and of the end card, and nowhere else. A three-digit number of milliseconds did not read as fast.
 
 It is cut to a beat the recording sets. In the two-step take the form fills and, on the next page, the code fills
 66 frames (1.1 s) later; with a beat of 33 frames (0.55 s, 109 a minute) both land on a beat, two beats apart, with
@@ -25,14 +25,15 @@ nothing stretched. Each scene starts on a beat with a hard cut (on its first fra
 | Time | Beats | Scene |
 |---|---|---|
 | 0–0.55 s | 1 | The cover: <0.5 s, "From Return to a filled sign-in. A heartbeat takes longer.", the Return key and the two filled fields. It is the first frame, whole, so the video starts as the thumbnail that was clicked; the demo cuts in on the first beat. |
-| 0.55–3.85 s | 6 | "⌘\\, then Return." One stretch of real time: the page, ⌘\\, the panel with FERNWAY.EXAMPLE on top, Return, filled at 2.2 s, Return (Sign in), and the two-step code fills itself on the next page at 3.3 s (Premium; a label beside it says so). From the cut to the code: 2.75 s. Beside the headline a counter runs from Return and stops on the frame the fields fill in, on 0.45 s, with the median, the slowest run and the machine in small print. |
-| 3.85–6.05 s | 4 | The whole sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s; shown 7× faster, marked) and PasswordPie in real time (⌘\\, Return, filled at 4.95 s: 1.0 s), with bars on one scale. PasswordPie is done while the typing, seven times faster than it was, has a third still to go. |
-| 6.05–8.25 s | 4 | End card: on the left PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com; on the right <0.5 s, from Return to a filled sign-in, a heartbeat takes longer. |
+| 0.55–4.4 s | 7 | "⌘\\, then Return." One stretch of real time: the page, ⌘\\, the panel with FERNWAY.EXAMPLE on top, Return, filled at 2.2 s, Return (Sign in), and the two-step code fills itself on the next page at 3.3 s (Premium; a label beside it says so) and stays for two beats. From the cut to the code: 2.75 s. Beside the headline a counter runs from Return and stops on the frame the fields fill in, on 0.45 s; the only words with it are "Return → both fields filled". |
+| 4.4–6.6 s | 4 | The whole sign-in from the first key, side by side on the same page: typing it at about 40 words a minute (11.7 s; shown 7× faster, marked) and PasswordPie in real time (⌘\\, Return, filled at 5.5 s: 1.0 s), with bars on one scale. PasswordPie is done while the typing, seven times faster than it was, has a third still to go. |
+| 6.6–8.8 s | 4 | End card: on the left PasswordPie, Password Manager for Mac, with a Chrome extension, passwordpie.com; on the right <0.5 s, from Return to a filled sign-in, a heartbeat takes longer. |
 
 - **The counter.** It runs in real time, for as long as this take took from Return to filled, and stops on the median
   of the 25 measured runs in seconds, 0.45 (447.7 ms), the number the cover's small print and the listing give. This
   take's own time is 451.5 ms by the page's clock: 3.8 ms more, less than a quarter of a frame (16.7 ms).
-- The demo is the `twostep` take from 0.09 s before ⌘\ to 0.55 s after the code; Verify and the page after it are
+- The demo is the `twostep` take from 0.09 s before ⌘\ to 1.1 s after the code (half that was too short to see that
+  the page had changed and filled itself); Verify and the page after it are
   left out. The panel is open 0.97 s before Return, as it was. The PasswordPie half of the side-by-side is the
   `quick` take: ⌘\ to filled in 1.0 s. The `fill` take is now only where the cover's two fields come from.
 - The side-by-side times both sides from the first key, not from Return, so its 1.0 s includes opening the panel and
@@ -40,7 +41,7 @@ nothing stretched. Each scene starts on a beat with a hard cut (on its first fra
   at a time with gaps between 60% and 140% of 300 ms (a fixed sequence), 307 ms on average in this take.
 - Earlier versions: the first (#52) was 25.5 s, with the waits left in, a slow-motion replay of the fill, and no
   sound. The second (#56) was 11 s at 120 a minute, said "448 ms", and showed the fill and the two-step code as two
-  scenes from two takes (5.5 s for what is now 3.3 s).
+  scenes from two takes (5.5 s for what is now 3.85 s).
 
 ## Cover and thumbnail
 
@@ -52,8 +53,8 @@ play button (about a tenth of the width) over its centre, and about 112 px wide 
   a gap where the play button lands. `render-cover.mjs` renders it twice: `cover.jpg` to upload as the thumbnail, and
   at 1.5x as the video's first frame.
 - YouTube takes a custom thumbnail only from a channel with a verified phone number. Without one it offers three frames
-  of the video, from about 1/8, 3/8 and 7/8 of its length: 1.0 s (the demo, the panel open), 3.1 s (the demo, the
-  form filled) and 7.2 s (the end card). The end card is laid out to be that thumbnail: brand on the left, the
+  of the video, from about 1/8, 3/8 and 7/8 of its length: 1.1 s (the demo, the panel open), 3.3 s (the demo, the
+  code filling in) and 7.7 s (the end card). The end card is laid out to be that thumbnail: brand on the left, the
   claim on the right, nothing under the play button, and it does not move, so any frame of it will do. Pick the
   third one.
 
@@ -68,12 +69,16 @@ happen and keeps no moment of the video itself:
 - each scene starts a new chord (D, G), with the bar counted from where the scene starts;
 - what the interface does sounds like an interface, not like the tune: a key cap's click (a few ms of noise on a
   short thud, no pitch) at each ⌘\ and Return, and a soft pop (a sine sliding up from 330 to 660 Hz in a few
-  hundredths of a second, never resting on a note) on the frame each form or code fills (2.2, 3.3 and 4.95 s), each
-  on a beat. Both are dry and in the middle; what has a pitch steps back 3 dB under a pop. Before, a two-note chime
+  hundredths of a second, never resting on a note) on the frame each form or code fills (2.2, 3.3 and 5.5 s), each
+  on a beat. Both are dry, in the middle and in front: all of the music, the drums too, steps back 4 dB for a tenth
+  of a second under each (a click that lands on a drum hit was not heard otherwise), and what has a pitch 3 dB more
+  under a pop. Before, a two-note chime
   marked the fills: it sounded like one more instrument, and higher up, as a bare sine, it was piercing;
 - the drums are played by a hand: the hats' off sixteenths come late (swing), each hat is a few ms early or late
-  and no two are equally loud; the snare comes 3 to 9 ms behind the beat, softer on two than on four; the kick is a
-  little harder on the one. The snare is a drum head (two modes falling in pitch) with short, dark wires: its noise
+  and no two are equally loud; the snare comes 3 to 9 ms behind the beat, softer on two than on four; the kick is
+  harder on the one. No two bars are alike: each is played a little harder than the one before, up to the end
+  card, and has its own extras (a soft kick before the three or before the one, a ghost note on the snare). The
+  hats are noise between 6 and 10.5 kHz and nothing above: with everything above 7 kHz they sounded like sand. The snare is a drum head (two modes falling in pitch) with short, dark wires: its noise
   falls off above 1.5 kHz. Brighter or longer, it hissed;
 - two taps over the cover lead into the first beat; a roll leads into the end card, where one hit lands, the drums
   stop, and a D chord on bells dies away before the video ends.
