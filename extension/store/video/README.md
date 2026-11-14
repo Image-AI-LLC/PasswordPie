@@ -78,8 +78,9 @@ happen and keeps no moment of the video itself:
   and no two are equally loud; the snare comes 3 to 9 ms behind the beat, softer on two than on four; the kick is
   harder on the one. No two bars are alike: each is played a little harder than the one before, up to the end
   card, and has its own extras (a soft kick before the three or before the one, a ghost note on the snare). The
-  hats are noise between 6 and 10.5 kHz and nothing above: with everything above 7 kHz they sounded like sand. The snare is a drum head (two modes falling in pitch) with short, dark wires: its noise
-  falls off above 1.5 kHz. Brighter or longer, it hissed;
+  hats are noise between 6 and 10.5 kHz and nothing above: with everything above 7 kHz they sounded like sand. The
+  end card's crash stops at 10.5 kHz too. The snare is a drum head (two modes falling in pitch) with short, dark
+  wires: its noise falls off above 1.5 kHz. Brighter or longer, it hissed;
 - two taps over the cover lead into the first beat; a roll leads into the end card, where one hit lands, the drums
   stop, and a D chord on bells dies away before the video ends.
 

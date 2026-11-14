@@ -70,7 +70,7 @@ Source code: https://github.com/Image-AI-LLC/PasswordPie
 
 ## Promo video
 
-The store's "Global promo video" field takes a YouTube link. The file is `video/passwordpie-fill-1080p.mp4` (9 s,
+The store's "Global promo video" field takes a YouTube link. The file is `video/passwordpie-fill-1080p.mp4` (8.8 s,
 1920x1080, 60 fps, cut to the beat of its music: synthesised for this video, no samples, nothing to license); how it is made and
 measured is in [video/README.md](video/README.md). Upload it to YouTube as Public or Unlisted (the store needs a link
 anyone can open), not made for kids, then paste the link here and in the dashboard.

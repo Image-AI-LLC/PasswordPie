@@ -319,14 +319,22 @@ describe.skipIf(!ffmpeg)('promo video: the finished file', () => {
 
   it('leaves nothing of the sign-in page on the two-step page: no ring on a field that is gone, no key cap', () => {
     // The first frame of the next page (its boxes still empty) and the one after it, where nothing has changed yet:
-    // around the two rings, and around the key cap.
+    // no orange in the two rings' crop, and the crop inside the key cap is plain page. The frame of the press is
+    // the control: both marks are on there.
     const first = Math.round((timing.scenes.demo + timing.demo.page) * 60);
     expect(Math.round((timing.scenes.demo + timing.demo.code) * 60)).toBeGreaterThan(first + 1);
-    for (const crop of ['500:200:990:510', '500:90:710:935']) {
-      const log = ffmpegLog(['-i', mp4, '-i', mp4, '-frames:v', '1', '-lavfi',
-        `[0:v]select='eq(n,${first})',crop=${crop},setpts=0[a];[1:v]select='eq(n,${first + 1})',crop=${crop},setpts=0[b];[a][b]ssim`]);
-      expect(Number(/SSIM .*All:([\d.]+)/.exec(log)?.[1]), `crop ${crop}`).toBeGreaterThan(0.99);
+    const stat = (n: number, crop: string, key: string): number => {
+      const log = out('ffmpeg', ['-v', 'error', '-i', mp4, '-vf', `select='eq(n,${n})',crop=${crop},signalstats,metadata=print:file=-`, '-f', 'null', '-']);
+      return Number(new RegExp(`signalstats\\.${key}=([\\d.]+)`).exec(log)?.[1]);
+    };
+    const [rings, cap] = ['500:200:990:510', '240:50:840:962'];
+    for (const n of [first, first + 1]) {
+      expect(stat(n, rings, 'VMAX'), `ring on frame ${n}`).toBeLessThan(150);
+      expect(stat(n, cap, 'YMAX') - stat(n, cap, 'YMIN'), `key cap on frame ${n}`).toBeLessThanOrEqual(10);
     }
+    const press = Math.round((timing.scenes.demo + timing.demo.submit) * 60);
+    expect(stat(press, rings, 'VMAX')).toBeGreaterThan(160);
+    expect(stat(press, cap, 'YMAX') - stat(press, cap, 'YMIN')).toBeGreaterThan(100);
   });
 
   it('fills each form on the frame the timing data names', () => {

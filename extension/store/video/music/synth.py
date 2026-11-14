@@ -158,7 +158,7 @@ BP_SNARE = butter(2, [500, 2000], 'bandpass', fs=SR, output='sos')  # the upper 
 LP_SNARE = butter(1, 1500, 'lowpass', fs=SR, output='sos')
 BP_TICK = butter(2, [1100, 3200], 'bandpass', fs=SR, output='sos')
 BP_RISE = butter(2, [700, 3200], 'bandpass', fs=SR, output='sos')
-HP_CRASH = butter(2, 4500, 'highpass', fs=SR, output='sos')
+BP_CRASH = butter(3, [4500, 10500], 'bandpass', fs=SR, output='sos')  # same as the hats: nothing above
 
 
 def hat(rng: np.random.Generator, decay: float = 0.028) -> Samples:
@@ -186,7 +186,7 @@ def snare(rng: np.random.Generator) -> Samples:
 
 def crash(rng: np.random.Generator) -> Samples:
     x = t(1.6)
-    out: Samples = sosfilt(HP_CRASH, rng.standard_normal(len(x))) * np.exp(-x / 0.45) * np.minimum(1, x / 0.002)
+    out: Samples = sosfilt(BP_CRASH, rng.standard_normal(len(x))) * np.exp(-x / 0.45) * np.minimum(1, x / 0.002)
     return out
 
 
