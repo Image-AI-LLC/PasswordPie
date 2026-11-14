@@ -6,6 +6,9 @@
   <string>com.passwordpie.autofill</string>
   <key>CFBundleName</key>
   <string>PasswordPie AutoFill</string>
+  <!-- App Store Connect refuses an extension without a display name. -->
+  <key>CFBundleDisplayName</key>
+  <string>PasswordPie</string>
   <key>CFBundleExecutable</key>
   <string>PasswordPieAutoFill</string>
   <key>CFBundlePackageType</key>

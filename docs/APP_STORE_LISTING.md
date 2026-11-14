@@ -152,8 +152,9 @@ Answer **Data Not Collected**. Data handled only on the Mac is not collected, th
 
 ## Export compliance
 
-The build's `Info.plist` says `ITSAppUsesNonExemptEncryption` = YES, so App Store Connect asks the questions for each
-build. The app implements standard, published algorithms itself (AES-256, ChaCha20 and Twofish for the KeePass file;
+The build's `Info.plist` has no `ITSAppUsesNonExemptEncryption`, so App Store Connect asks the questions for each build
+(under TestFlight it shows "Missing Compliance" until answered). YES would need an export compliance code from
+documentation Apple approved, and an upload without one is refused (seen 2026-11-15); NO would claim exempt encryption. The app implements standard, published algorithms itself (AES-256, ChaCha20 and Twofish for the KeePass file;
 Argon2 and AES-KDF to derive its key), in addition to Apple's. Choose **"Standard encryption algorithms instead of, or
 in addition to, using or accessing the encryption within Apple's operating system"**. The encryption only protects the
 user's own database on their Mac; the app sends nothing over a network. Answer any further question App Store Connect
