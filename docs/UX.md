@@ -1215,6 +1215,9 @@ before it opens the file, so what you see is what was saved.
 A change still waiting for its turn when you lock is not written. The lock screen says "PasswordPie locked before a
 change was saved. It was not saved." A scanned code you were adding stays, and comes back after you unlock.
 
+**Remove the database from the list while saving.** The save still finishes. In the App Store app, PasswordPie keeps
+the folder until the file is written, then forgets it.
+
 ### When something goes wrong
 
 The editor stays open with everything you typed, and one red line beside the buttons says why, for example "The
