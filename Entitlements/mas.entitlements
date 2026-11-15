@@ -8,7 +8,7 @@
   <!-- Open/New database, pick an import CSV, delete that CSV after import. -->
   <key>com.apple.security.files.user-selected.read-write</key>
   <true/>
-  <!-- Remember the chosen database across launches (not wired up yet: see docs/CHANNELS.md). -->
+  <!-- Remember the folder of each database across launches (FolderAccess; docs/UX.md). -->
   <key>com.apple.security.files.bookmarks.app-scope</key>
   <true/>
   <key>com.apple.developer.authentication-services.autofill-credential-provider</key>

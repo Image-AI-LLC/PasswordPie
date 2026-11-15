@@ -425,6 +425,8 @@ With the PasswordPie extension in Chrome or Safari:
 1. Press `⌘\` on a sign-in page. Above the usual menu, a group named after the site (`GITHUB.COM`) lists the accounts for
    that site, the first one selected. Accounts count as the same site when their website shares the domain you would
    register: `github.com`, `www.github.com` and `gist.github.com` are one site; `alice.github.io` and `bob.github.io` are two.
+   An account's reset link counts as one of its websites here: on the page where you change the password, the account
+   is listed and fills too ("A reminder to change a password").
 2. Press Return. The panel closes and the username and password appear in the form. The page does not submit.
 
 Typing in the search box works as always: the first letter replaces the site group with search results.
@@ -963,6 +965,17 @@ stops working, usually when you need to get in.
 - **Reset link**: the page where this account's password is changed. Optional; without it, the account's website is
   used.
 
+**The reset link's site is the account's site too.** Many services change the password on another domain than the one
+you sign in to: the website is `app.example.com`, the reset link is `https://accounts.example-id.net/password`. That
+page asks for the same username and password, so PasswordPie treats it as a site of the account: on any page of
+`example-id.net` the account is in the group at the top of the menu, Return fills it, and the two-step code follows.
+Only the site counts, as for a website; the rest of the link is where Reset Password goes. Return on another site
+still opens the account's website, never the reset link.
+
+- One thing a reset link does not do: lower `https` to `http`. An account whose website is `https://example.com` does
+  not fill `http://example.com`, whatever its reset link says.
+- Search does not look in the reset link, and the item's icon comes from its website.
+
 **The clock.** The period counts from the day the password last changed. When you turn the reminder on, that is the
 day PasswordPie knows the password was set; when it does not know, the day you turned it on.
 
@@ -990,7 +1003,8 @@ In the version downloaded from passwordpie.com, **Reset Password** does more tha
    password does not change: Return, Copy and Fill still give the one the site knows.
 2. The reset page opens in the browser. With the Chrome extension, the page's fields fill in: the current password
    where the page asks for it, and the new password in both the new and the confirm box. Nothing is submitted; you
-   press the site's own button.
+   press the site's own button. This is so on another domain than the account's website too: the reset link is yours,
+   typed into the item, and its site is the account's.
 3. When the page has taken the form, PasswordPie asks, over the browser: **"Did example.com accept the new
    password?"** with **Use New Password** and **Not Yet**.
 4. **Use New Password** makes it the saved password. The old one goes to previous passwords, and the reminder's clock
@@ -1007,7 +1021,7 @@ again, or when the question did not come up.
   must not answer it.
 - The site refused the password (too long, a character it does not allow)? Choose Not Yet, change the waiting password
   in the editor's Password row, or type one on the site and let Chrome save it: "The newest password wins".
-- The question comes only for a page on the account's site, within 10 minutes of Reset Password, once.
+- The question comes only for a page on the site Reset Password opened, within 10 minutes of Reset Password, once.
 - Reset Password for two accounts on one site, with both pages open: only the newest page is asked about. Finish the
   other with Use.
 - PasswordPie never presses the site's button and never decides by itself that the password changed.
@@ -1039,6 +1053,9 @@ The period, the link and the date live in the item, inside your database. Nothin
    confirm boxes filled. Open the item's previous passwords: one row, `new · not used yet`.
 6. Press the page's Change button. PasswordPie asks whether the site accepted it. Choose Use New Password: the details
    show the new password as saved, the old one under previous passwords, and "in 30 days".
+7. Another domain: edit "Demo" so its website is `https://example.com` and the reset link stays
+   `http://localhost:8787/change-password`. Open `http://localhost:8787` and press `⌘\`: Demo is at the top, under
+   `LOCALHOST:8787`, and Return fills the sign-in form. Reset Password still fills the change page.
 
 ## Updates that install themselves
 
@@ -1116,6 +1133,45 @@ version number of yours, and no statistics. Turn Update automatically off and th
    ready. It installs the next time PasswordPie is locked."
 3. Close Preferences and press ⌘L in the menu. A second later, open About: the version is the new one.
 4. In a firewall's connection list: `PasswordPieUpdater` → `api.github.com`, and no line for `PasswordPie`.
+
+## The App Store app asks once for a database's folder
+
+**In one line:** in the App Store app, the first time you open or create a database outside PasswordPie's own folder,
+it asks you to allow the folder that holds it; after that the database opens at every start, as in the download.
+
+### The problem
+
+The App Store app runs in Apple's sandbox. Choosing a file in an Open or Save panel lets the app use that one file, and
+only until it quits. PasswordPie needs more than the file: every save first keeps the previous version beside the
+database (`.snapshot`) and writes the new one to a temporary file in the same folder, and an imported CSV, 1Password,
+Bitwarden or Proton Pass file is saved as a new `.kdbx` next to it. With only the file, the first save failed, and the
+next start could not open the database at all.
+
+### What happens now
+
+- **The database PasswordPie makes for you** lives in the app's own folder and never asks.
+- **Open Database… or New Database…** in a folder PasswordPie cannot use yet shows a second panel, already in that
+  folder: *"PasswordPie keeps the previous version of “Passwords.kdbx” beside it, so a save can always be undone.
+  Allow access to the folder “Dropbox” to open this database."* Its button is **Allow**. Choosing that folder, or any
+  folder above it, opens the database. Cancel leaves the current database open and says the other one needs its folder.
+- PasswordPie keeps a security-scoped bookmark of each folder you allowed, and opens them again at every start, so the
+  databases listed in Preferences open without asking. A bookmark that no longer resolves (the folder was moved or
+  deleted) is dropped, and the next unlock of a database there asks again.
+- Allowing a folder lets PasswordPie read and write the files in it and below it, nothing else. Removing the last
+  database in a folder from the list in Preferences forgets that folder.
+- Importing a Chrome or Apple Passwords CSV still asks only for the CSV, and deleting it afterwards needs nothing more.
+  Key files are read once, when chosen (see "A key file that stays on this Mac").
+
+The download from passwordpie.com is not sandboxed and never shows the folder panel.
+
+### Demo script
+
+1. In the App Store app, choose Open Database… and pick a `.kdbx` in `~/Documents`. The second panel opens in
+   `~/Documents` with Allow. Choose Allow and unlock.
+2. Add an item. `Passwords.kdbx.snapshot` appears beside the database.
+3. Quit PasswordPie and start it again. The lock screen shows the same database; unlock it without any panel.
+4. Choose Open Database… again, pick a file in `~/Desktop`, and choose Cancel in the second panel. The first database
+   stays open, with a message that the other one needs its folder.
 
 ## Saving does not freeze PasswordPie
 

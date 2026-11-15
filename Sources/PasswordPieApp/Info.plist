@@ -30,6 +30,9 @@
       </array>
     </dict>
   </array>
+  <!-- The App Store requires a category (docs/APP_STORE_LISTING.md). -->
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.productivity</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>

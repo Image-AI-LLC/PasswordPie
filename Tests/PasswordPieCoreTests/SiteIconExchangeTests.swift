@@ -105,6 +105,13 @@ final class SiteIconExchangeTests: XCTestCase {
         XCTAssertEqual(checked, ["news.ycombinator.com"])
     }
 
+    func testAResetLinksSiteIsNotAskedFor() {
+        var app = entry("https://app.example.com")
+        PasswordRotation.setResetLink("https://accounts.example-id.net/password", on: &app)
+        var ledger = SiteIconLedger()
+        XCTAssertFalse(ledger.shouldAsk(browser: .chrome, pageURL: "https://accounts.example-id.net/", entries: [app], hasIcon: { _ in false }, now: Date(timeIntervalSince1970: 1_000)))
+    }
+
     func testTrashedAccountsAndPrivateSitesNeverAsk() {
         var ledger = SiteIconLedger()
         var trashed = entry("https://news.ycombinator.com")

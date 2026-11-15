@@ -323,6 +323,9 @@ final class VaultSession: ObservableObject {
     /// Who has Premium. Changes without a relaunch, and it is never written to the database or to disk.
     let premium: PremiumStore
     let secretStore = TouchIDSecretStore()
+    /// The App Store app's allowed folders (docs/UX.md, "The App Store app asks once for a database's folder"). A no-op
+    /// outside the sandbox.
+    let folderAccess: FolderAccess
 
     var databaseMenuTitles: [String] { DatabaseRoster.menuTitles(for: databasePaths) }
 
@@ -356,10 +359,14 @@ final class VaultSession: ObservableObject {
         premium: PremiumStore? = nil,
         pasteboard: PasteboardLike? = nil,
         keyFileMemory: KeyFileKeychain? = nil,
+        folderAccess: FolderAccess? = nil,
         writes: WriteRunner = .background
     ) {
         writeRunner = writes
         self.premium = premium ?? PremiumChannel.makeStore()
+        self.folderAccess = folderAccess ?? FolderAccess()
+        // Before any database is read: the sandbox lets the app into the allowed folders only once access starts.
+        self.folderAccess.restore()
         self.keyFileMemory = keyFileMemory ?? TouchIDSecretStore(service: VaultSession.keyFileService)
         let support = Self.defaultDatabaseURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
@@ -390,7 +397,7 @@ final class VaultSession: ObservableObject {
     }
 
     func restore() {
-        creating = !FileManager.default.fileExists(atPath: databaseURL.path)
+        creating = databaseIsMissing
         syncKeyFileDraft()
         refreshTouchID()
         applyDebugOverrides()
@@ -408,7 +415,30 @@ final class VaultSession: ObservableObject {
 
     // MARK: Unlock and lock
 
+    /// A file that is not there yet is created by the lock screen. In a folder the sandbox does not let the app into
+    /// yet, the file cannot be seen at all, so it counts as there: unlocking asks for the folder first.
+    private var databaseIsMissing: Bool {
+        folderAccess.isUsable(databaseURL) && !FileManager.default.fileExists(atPath: databaseURL.path)
+    }
+
+    /// True when the database's folder is usable. Otherwise asks for it, and runs `retry` once it is allowed.
+    private func folderReady(retry: @escaping () -> Void) -> Bool {
+        guard !folderAccess.isUsable(databaseURL) else { return true }
+        let database = databaseURL
+        AppDelegate.shared?.presentFilePanel { [weak self] in
+            guard let self, self.databaseURL == database else { return }
+            guard self.folderAccess.ensure(database) else {
+                self.message = FolderAccess.declined(database)
+                return
+            }
+            self.creating = self.databaseIsMissing
+            retry()
+        }
+        return false
+    }
+
     func unlock() {
+        guard folderReady(retry: { [weak self] in self?.unlock() }) else { return }
         let password = passwordDraft
         // A new database always gets a master password, with or without a key file.
         // No password: only a key file chosen on the lock screen for this attempt. A remembered one never opens a
@@ -565,6 +595,7 @@ final class VaultSession: ObservableObject {
         // Re-check the 7-day window: this process may have been locked for longer than that.
         refreshTouchID()
         guard touchIDAvailable, !touchIDBusy, !unlocking else { return }
+        guard folderReady(retry: { [weak self] in self?.unlockWithTouchID() }) else { return }
         let account = databaseURL.path
         let generation = unlockGeneration
         touchIDBusy = true
@@ -708,7 +739,7 @@ final class VaultSession: ObservableObject {
         editorSaving = false
         editorError = ""
         locked = true
-        creating = !FileManager.default.fileExists(atPath: databaseURL.path)
+        creating = databaseIsMissing
         message = unsaved
         importStatus = ""
         importStatusIsError = false
@@ -835,8 +866,13 @@ final class VaultSession: ObservableObject {
             guard let self else { return }
             let chooser = NSOpenPanel()
             DatabaseChooser.configure(chooser)
-            guard chooser.runModal() == .OK, let url = chooser.url else { return }
-            self.databaseURL = self.databaseURL(resolving: url)
+            guard chooser.runModal() == .OK, let chosen = chooser.url else { return }
+            let url = self.databaseURL(resolving: chosen)
+            guard self.folderAccess.ensure(url) else {
+                self.message = FolderAccess.declined(url)
+                return
+            }
+            self.databaseURL = url
             self.clearKeyFile()
             self.lock()
             self.offerRememberedUnlock()
@@ -907,6 +943,7 @@ final class VaultSession: ObservableObject {
         let applied = next.keeping(blocked)
         roster = applied
         databasePaths = applied.paths
+        folderAccess.prune(keeping: applied.paths)
         if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
             UserDefaults.standard.set(applied.current, forKey: "databasePath")
             UserDefaults.standard.set(applied.paths, forKey: "databasePaths")
@@ -1055,6 +1092,10 @@ final class VaultSession: ObservableObject {
             chooser.nameFieldStringValue = "PasswordPie.kdbx"
             chooser.message = "Choose where to create the new KeePass database"
             guard chooser.runModal() == .OK, let url = chooser.url else { return }
+            guard self.folderAccess.ensure(url) else {
+                self.message = FolderAccess.declined(url)
+                return
+            }
             self.databaseURL = url
             self.clearKeyFile()
             self.lock()
