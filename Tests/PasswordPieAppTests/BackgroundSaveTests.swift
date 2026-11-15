@@ -66,6 +66,50 @@ final class BackgroundSaveTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
     }
 
+    // MARK: The App Store app's folders
+
+    func testForgettingADatabaseKeepsItsFolderUntilItsSaveIsWritten() async throws {
+        let other = FileManager.default.temporaryDirectory.appendingPathComponent("background-save-other-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: other) }
+        let suite = "BackgroundSaveTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let folders = [directory.path, other.path]
+        defaults.set(Dictionary(uniqueKeysWithValues: folders.map { ($0, Data($0.utf8)) }), forKey: FolderAccess.defaultsKey)
+        var session: VaultSession?
+        // One entry per folder given back: was a save still being written or waiting then?
+        var givenBackWhileSaving: [Bool] = []
+        let system = FolderAccess.System(
+            makeBookmark: { Data($0.path.utf8) },
+            resolveBookmark: { FolderAccess.Resolved(url: URL(fileURLWithPath: String(decoding: $0, as: UTF8.self)), stale: false) },
+            startAccessing: { _ in true },
+            stopAccessing: { _ in givenBackWhileSaving.append(session?.savesPending ?? false) },
+            askForFolder: { _ in nil }
+        )
+        let access = FolderAccess(sandboxed: true, defaults: defaults, ownFolder: "/Container/Data", system: system)
+        let made = VaultSession(keyFileMemory: MemoryKeyFileKeychain(), folderAccess: access)
+        session = made
+        made.restore()
+        // Two databases in the list, each in its own allowed folder. The one being saved is in front.
+        made.selectDatabase(other.appendingPathComponent("other.kdbx").path)
+        made.selectDatabase(databaseURL.path)
+        made.passwordDraft = "pw"
+        made.confirmDraft = "pw"
+        made.unlock()
+        XCTAssertFalse(made.locked)
+        made.saveEditing(item("Bank"))
+        XCTAssertTrue(made.savesPending)
+
+        made.forgetDatabase(databaseURL.path)
+
+        XCTAssertEqual(made.databasePaths.count, 1)
+        XCTAssertEqual(givenBackWhileSaving, [], "the save being written still needs the folder")
+        await settle(made)
+        XCTAssertEqual(givenBackWhileSaving, [false])
+        XCTAssertEqual(try savedEntries().map(\.title), ["Bank"])
+    }
+
     // MARK: The editor
 
     func testSaveReturnsAtOnceAndTheEditorClosesWhenTheFileIsWritten() async throws {

@@ -943,7 +943,11 @@ final class VaultSession: ObservableObject {
         let applied = next.keeping(blocked)
         roster = applied
         databasePaths = applied.paths
-        folderAccess.prune(keeping: applied.paths)
+        // A save being written still needs its folder (the sandbox would stop it), so the folder goes once it is done.
+        whenSavesSettle { [weak self] in
+            guard let self else { return }
+            self.folderAccess.prune(keeping: self.databasePaths)
+        }
         if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
             UserDefaults.standard.set(applied.current, forKey: "databasePath")
             UserDefaults.standard.set(applied.paths, forKey: "databasePaths")
