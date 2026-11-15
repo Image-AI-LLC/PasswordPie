@@ -31,7 +31,7 @@ final class DetailsReturnTests: XCTestCase {
         let pasteboard = FakePasteboard()
         var fills = 0
         var closed = 0
-        let session = VaultSession(pasteboard: pasteboard)
+        let session = VaultSession(pasteboard: pasteboard, writes: .inline)
         let model = DetailsModel(entry: login(), session: session, done: { closed += 1 }, fill: { fills += 1 })
         XCTAssertEqual(model.fields[model.focused].kind, .password, "the details open on the password")
         model.activateFocused()
@@ -44,7 +44,7 @@ final class DetailsReturnTests: XCTestCase {
 
     func testReturnOnTheUsernameFills() async throws {
         var fills = 0
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         let model = DetailsModel(entry: login(), session: session, done: {}, fill: { fills += 1 })
         model.focused = try XCTUnwrap(model.fields.firstIndex { $0.kind == .username })
         model.activateFocused()
@@ -56,7 +56,7 @@ final class DetailsReturnTests: XCTestCase {
     func testReturnOnAnotherFieldKeepsItsOwnAction() async throws {
         var fills = 0
         var closed = 0
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         let model = DetailsModel(entry: login(), session: session, done: { closed += 1 }, fill: { fills += 1 })
         model.focused = try XCTUnwrap(model.fields.firstIndex { $0.kind == .notes })
         model.activateFocused()
@@ -68,7 +68,7 @@ final class DetailsReturnTests: XCTestCase {
 
     func testAnAccountWithNothingToFillStillCopiesThePassword() async {
         var closed = 0
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         let model = DetailsModel(entry: login(), session: session, done: { closed += 1 })
         model.activateFocused()
         let copied = await waitUntil(timeout: 2) { closed == 1 }

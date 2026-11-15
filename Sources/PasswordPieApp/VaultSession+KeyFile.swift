@@ -316,6 +316,10 @@ extension VaultSession {
             reportKeyFile(.failed("Save the database once before changing its keys."))
             return
         }
+        guard !savesPending else {
+            reportKeyFile(.failed("Nothing was changed. \(Self.saveBusyText)"))
+            return
+        }
         onActivity?()
         keyFileStatus = ""
         keyFileStatusIsError = false

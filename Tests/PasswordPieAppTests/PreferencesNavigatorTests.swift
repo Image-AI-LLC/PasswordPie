@@ -29,7 +29,7 @@ final class PreferencesNavigatorTests: XCTestCase {
 
     /// A Preferences window shorter than its content, off screen, as `AppDelegate.showPreferences` builds it.
     private func openPreferences(_ navigator: PreferencesNavigator) async -> NSScrollView? {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         self.session = session
         let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 560, height: 480), styleMask: [.titled], backing: .buffered, defer: false)

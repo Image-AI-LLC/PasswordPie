@@ -316,7 +316,7 @@ final class BridgePremiumTests: XCTestCase {
         #if PP_DIRECT
         store.start()
         #endif
-        let session = VaultSession(premium: store, pasteboard: FakePasteboard())
+        let session = VaultSession(premium: store, pasteboard: FakePasteboard(), writes: .inline)
         let bridge = BrowserBridge(session: session)
         defer { withExtendedLifetime(session) {} }
         for browser in [BridgeBrowser.chrome, .safari] {
@@ -333,7 +333,7 @@ final class BridgePremiumTests: XCTestCase {
     /// "Upgrade" in the page's note: the app opens its Premium window, after the answer is on its way.
     func testUpgradeOpensThePremiumWindow() async throws {
         let store = PremiumChannel.makeStore(secrets: FakeSecrets())
-        let session = VaultSession(premium: store, pasteboard: FakePasteboard())
+        let session = VaultSession(premium: store, pasteboard: FakePasteboard(), writes: .inline)
         let bridge = BrowserBridge(session: session)
         defer { withExtendedLifetime(session) {} }
         var opened = 0

@@ -225,6 +225,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return true
     }
 
+    /// A save still being written finishes first: quitting in the middle of it would drop the change.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard session.savesPending else { return .terminateNow }
+        session.whenSavesSettle { NSApp.reply(toApplicationShouldTerminate: true) }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         session.flushClipboard()
         #if PP_DIRECT
@@ -568,9 +575,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     #endif
 
-    /// Locking hides other items' names. A scan still waiting comes back after the unlock; a finished one is done.
+    /// Locking hides other items' names. A scan still waiting comes back after the unlock; a finished one is done, and
+    /// so is one whose save is still being written: that write finishes behind the lock screen.
     private func closeScanForLock() {
-        if case .added = otpScan?.phase { otpScan.cancel() }
+        switch otpScan?.phase {
+        case .added, .saving: otpScan.cancel()
+        default: break
+        }
         guard let window = scanWindow else { return }
         closingScanForLock = true
         window.close()
@@ -619,6 +630,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panelController.hide(refocusPrevious: false)
         NSApp.activate(ignoringOtherApps: true)
         aboutWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The editor and the scan window stay while their save is being written, so a save that fails still has somewhere
+    /// to say so.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        !((sender === editorWindow && session.editorSaving) || (sender === scanWindow && otpScan.phase == .saving))
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -916,6 +933,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } else if let id = session.allEntries.first(where: { $0.title == title })?.id {
                 session.edit(id)
             }
+            // With `PASSWORDPIE_EDIT_SAVE`, Save is pressed 1.5 s later (`trash`: Move to Trash), so Saving… can be captured.
+            if let action = env["PASSWORDPIE_EDIT_SAVE"] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self, let entry = self.session.editing else { return }
+                    if action == "trash" { self.session.deleteEditing() } else { self.session.saveEditing(entry) }
+                }
+            }
         }
         if env["PASSWORDPIE_REVIEW"] != nil {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.showChromeBatchReview() }
@@ -980,6 +1004,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "reviewWindow": chromeReviewWindow?.windowNumber ?? NSNull(),
             "preferencesWindow": preferencesWindow?.isVisible == true ? preferencesWindow?.windowNumber ?? NSNull() : NSNull(),
             "editorWindow": editorWindow?.isVisible == true ? editorWindow?.windowNumber ?? NSNull() : NSNull(),
+            "editorSaving": session.editorSaving,
+            "editorError": session.editorError,
             "scanWindow": scanWindow?.isVisible == true ? scanWindow?.windowNumber ?? NSNull() : NSNull(),
             "scanPhase": otpScan.map { String(describing: $0.phase) } ?? NSNull(),
             "chromeSync": session.chromeSyncEnabled,

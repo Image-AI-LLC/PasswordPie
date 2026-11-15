@@ -392,7 +392,9 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   visible 10 pt from the right, centred in the row. Clicking the row or the button, or Return on the row, runs it.
   VoiceOver reads "Locked. Included with Premium." for the dots, not each dot. The item's code is never computed and its
   period never read.
-- **Item editor** — 450 × 640 pt, `surface`, content scrolls over a fixed footer (Move to Trash, Cancel, Save). First
+- **Item editor** — 450 × 640 pt, `surface`, content scrolls over a fixed footer (Move to Trash, Cancel, Save). While a save is being written the content is
+  at 50 % opacity and takes no input, the three buttons are disabled, a small spinner sits before Cancel, and Save reads Saving…. A
+  save that failed puts one `caption` line in `error` between Move to Trash and Cancel, up to two lines. First
   the site icon (28 pt), the title in `title` and the favorite star (`favorite` when on, `text-secondary` outline when
   off). Then cards: `field-surface`, radius 8, 20 pt from the window edge, 12 pt apart, rows 30 pt with a `Color.primary`
   8 % line inset 12 pt. A row is a 122 pt label column (`control`, `text-secondary`) and the value in `body`; a

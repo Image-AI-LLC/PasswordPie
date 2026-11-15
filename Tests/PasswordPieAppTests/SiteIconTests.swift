@@ -162,7 +162,7 @@ final class SiteIconTests: XCTestCase {
     private func unlockedBridge(with websites: [String]) -> (BrowserBridge, VaultSession) {
         setenv("PASSWORDPIE_DB", directory.appendingPathComponent("test.kdbx").path, 1)
         setenv("PASSWORDPIE_USAGE", directory.appendingPathComponent("usage.json").path, 1)
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

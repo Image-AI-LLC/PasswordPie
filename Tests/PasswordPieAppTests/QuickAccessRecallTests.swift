@@ -325,7 +325,7 @@ final class QuickAccessRecallTests: XCTestCase {
     }
 
     private func openPanel(entries: [VaultEntry]) -> (VaultSession, PanelController) {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

@@ -53,17 +53,32 @@ struct EditorView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 16)
             }
+            // The file is being written: nothing typed now would be in it.
+            .disabled(session.editorSaving)
+            .opacity(session.editorSaving ? 0.5 : 1)
             Divider()
-            HStack {
+            HStack(spacing: 8) {
                 if !session.editingIsNew {
                     Button("Move to Trash", role: .destructive) { session.deleteEditing() }
                 }
+                if !session.editorError.isEmpty {
+                    Text(session.editorError)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.error(dark: dark))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(session.editorError)
+                }
                 Spacer()
+                if session.editorSaving {
+                    ProgressView().controlSize(.small).accessibilityHidden(true)
+                }
                 Button("Cancel") { session.cancelEditing() }.keyboardShortcut(.cancelAction)
-                Button("Save") { commit() }
+                Button(session.editorSaving ? "Saving…" : "Save") { commit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(BrandPrimaryButtonStyle())
             }
+            .disabled(session.editorSaving)
             .padding(12)
         }
         .frame(width: 450, height: 640)

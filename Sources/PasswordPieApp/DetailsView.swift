@@ -416,9 +416,13 @@ final class DetailsModel: ObservableObject {
         if revealed.contains(field.id) { revealed.remove(field.id) } else { revealed.insert(field.id) }
     }
 
+    /// The star answers at once. The file is written behind it, and the star goes back if that fails.
     func toggleFavorite() {
-        session.toggleFavorite(entryID)
-        favorite = session.entry(entryID)?.favorite ?? favorite
+        favorite.toggle()
+        session.toggleFavorite(entryID) { [weak self] _ in
+            guard let self else { return }
+            self.favorite = self.session.entry(self.entryID)?.favorite ?? self.favorite
+        }
     }
 
     /// Runs the field's action. The popover then hides for copy and open; a pinned window never does.

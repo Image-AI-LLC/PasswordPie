@@ -97,7 +97,7 @@ final class UnlockAnimationTests: XCTestCase {
     // MARK: Asynchronous unlock
 
     private func lockedSession(password: String) -> VaultSession {
-        let session = VaultSession()
+        let session = VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = password
         session.confirmDraft = password

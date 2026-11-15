@@ -40,7 +40,7 @@ final class FolderAccessSessionTests: XCTestCase {
     }
 
     func testAFolderNeverAllowedIsNotOfferedAsANewDatabaseAndDoesNotUnlock() {
-        let session = VaultSession(keyFileMemory: MemoryKeyFileKeychain(), folderAccess: sandboxedAccess(allowing: []))
+        let session = VaultSession(keyFileMemory: MemoryKeyFileKeychain(), folderAccess: sandboxedAccess(allowing: []), writes: .inline)
         session.restore()
         XCTAssertFalse(session.creating, "an unreadable folder must not look like a new database")
         session.passwordDraft = "pw"
@@ -50,7 +50,7 @@ final class FolderAccessSessionTests: XCTestCase {
     }
 
     func testAnAllowedFolderCreatesAndSavesAsBefore() {
-        let session = VaultSession(keyFileMemory: MemoryKeyFileKeychain(), folderAccess: sandboxedAccess(allowing: [directory.path]))
+        let session = VaultSession(keyFileMemory: MemoryKeyFileKeychain(), folderAccess: sandboxedAccess(allowing: [directory.path]), writes: .inline)
         session.restore()
         XCTAssertTrue(session.creating)
         session.passwordDraft = "pw"

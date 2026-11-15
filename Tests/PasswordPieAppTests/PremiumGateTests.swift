@@ -42,7 +42,7 @@ final class PremiumGateTests: XCTestCase {
         #endif
         await store.refresh()
         store.presentPaywall = { [unowned self] in self.paywalls += 1 }
-        let session = VaultSession(premium: store, pasteboard: pasteboard)
+        let session = VaultSession(premium: store, pasteboard: pasteboard, writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"

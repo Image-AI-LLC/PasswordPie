@@ -84,6 +84,46 @@ struct OpenedFile {
     }
 }
 
+/// Where the slow part of a save runs: deriving the key, writing the file and reading it back. Tests pass `.inline`,
+/// so a save has finished when the call returns.
+enum WriteRunner {
+    case background
+    case inline
+}
+
+/// One file write, with nothing tied to the main actor. Deriving the key can take seconds, and a save does it twice:
+/// once to write the file and once to open what was written. See "Saving does not freeze PasswordPie" in docs/UX.md.
+struct FileWrite: Sendable {
+    /// The opened file this is for. An import is written to `destination`, a .kdbx beside it.
+    let path: String
+    let destination: URL
+    let vault: Vault
+    let password: String
+    let keyFile: Data?
+    let isCurrent: Bool
+    /// The file was open before this save began. If it is gone when the write ends, the database was removed from the
+    /// list meanwhile, and it does not come back.
+    var wasOpened = false
+
+    func perform() -> Result<Vault, Error> {
+        Result {
+            var written = vault
+            let data = try KDBX.save(vault: &written, password: password, keyFile: keyFile)
+            try VaultFile.replace(destination, with: data, password: password, keyFile: keyFile, expecting: written)
+            written.noteFileContents(data)
+            return written
+        }
+    }
+}
+
+/// A save waiting for its turn.
+private struct QueuedWrite {
+    /// Makes the change in `openedFiles` and names the file to write. Nil when there is nothing to write any more.
+    let change: () -> String?
+    /// Nil when the file was written, or there was nothing to write. Otherwise why it was not.
+    let done: (String?) -> Void
+}
+
 /// A decrypted database and the key file that opened it.
 private struct DecryptedVault {
     let vault: Vault
@@ -177,6 +217,10 @@ final class VaultSession: ObservableObject {
     /// The item as the editor opened it. Nil for something new.
     private var editingOriginal: VaultEntry?
     @Published var editingIsNew = false
+    /// True while the editor's Save, Move to Trash or Split is being written. The editor shows it and takes no input.
+    @Published private(set) var editorSaving = false
+    /// Why the editor's last save was not written. Shown in the editor, which stays open with what was typed.
+    @Published private(set) var editorError = ""
     @Published var touchIDAvailable = false
     @Published var touchIDEnabled = false
     @Published var touchIDHardware = false
@@ -266,6 +310,15 @@ final class VaultSession: ObservableObject {
     lazy var keyFilePrompts: KeyFilePrompting = AppKitKeyFilePrompts()
     private var roster = DatabaseRoster(current: "")
     private var applyingRoster = false
+    private let writeRunner: WriteRunner
+    /// Saves waiting for the one being written. They run one at a time, in the order they were asked for.
+    private var queuedWrites: [QueuedWrite] = []
+    private var writeInFlight = false
+    private var settleWaiters: [() -> Void] = []
+    static let saveFailedText = "The database could not be saved."
+    static let saveBusyText = "Another change is still being saved. Try again in a moment."
+    static let lockedBeforeSaveText = "PasswordPie locked before a change was saved. It was not saved."
+    static let itemGoneText = "That item is no longer in the database. Choose another."
     private let clipboard: ClipboardGuard
     /// Who has Premium. Changes without a relaunch, and it is never written to the database or to disk.
     let premium: PremiumStore
@@ -306,8 +359,10 @@ final class VaultSession: ObservableObject {
         premium: PremiumStore? = nil,
         pasteboard: PasteboardLike? = nil,
         keyFileMemory: KeyFileKeychain? = nil,
-        folderAccess: FolderAccess? = nil
+        folderAccess: FolderAccess? = nil,
+        writes: WriteRunner = .background
     ) {
+        writeRunner = writes
         self.premium = premium ?? PremiumChannel.makeStore()
         self.folderAccess = folderAccess ?? FolderAccess()
         // Before any database is read: the sandbox lets the app into the allowed folders only once access starts.
@@ -446,6 +501,9 @@ final class VaultSession: ObservableObject {
         unlocking = true
         let generation = unlockGeneration
         Task { @MainActor [weak self] in
+            // A save from before a lock may still be writing this file. Read it once that has finished: a session opened
+            // from the older file would write over that save with its next one.
+            await self?.savesSettled()
             let result = await Task.detached(priority: .userInitiated) { () -> Result<Vault, Error> in
                 Result { try VaultFile.openRecovering(url: url, password: password, keyFile: keyFile) }
             }.value
@@ -671,9 +729,18 @@ final class VaultSession: ObservableObject {
         passwordDraft = ""
         confirmDraft = ""
         editing = nil
+        // A save still being written finishes on its own. Its result is dropped: nothing of this session is left to update.
+        // A save still waiting for its turn cannot be written: the files it changes went with the session. Each is told.
+        let waiting = queuedWrites
+        queuedWrites = []
+        let unsaved = waiting.isEmpty ? "" : Self.lockedBeforeSaveText
+        message = unsaved
+        for save in waiting { save.done(unsaved) }
+        editorSaving = false
+        editorError = ""
         locked = true
         creating = databaseIsMissing
-        message = ""
+        message = unsaved
         importStatus = ""
         importStatusIsError = false
         databaseUsesKeyFile = false
@@ -683,6 +750,7 @@ final class VaultSession: ObservableObject {
         syncKeyFileDraft()
         clearChrome(locking: true)
         refreshTouchID()
+        runQueuedWrites()
     }
 
     // MARK: Touch ID window
@@ -875,7 +943,11 @@ final class VaultSession: ObservableObject {
         let applied = next.keeping(blocked)
         roster = applied
         databasePaths = applied.paths
-        folderAccess.prune(keeping: applied.paths)
+        // A save being written still needs its folder (the sandbox would stop it), so the folder goes once it is done.
+        whenSavesSettle { [weak self] in
+            guard let self else { return }
+            self.folderAccess.prune(keeping: self.databasePaths)
+        }
         if ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] == nil {
             UserDefaults.standard.set(applied.current, forKey: "databasePath")
             UserDefaults.standard.set(applied.paths, forKey: "databasePaths")
@@ -1083,7 +1155,9 @@ final class VaultSession: ObservableObject {
     }
 
     func newEntry() {
+        guard !editorSaving else { return }
         onActivity?()
+        editorError = ""
         editing = VaultEntry()
         editingOriginal = nil
         editingIsNew = true
@@ -1091,6 +1165,8 @@ final class VaultSession: ObservableObject {
 
     /// Editing a Chrome login opens a draft. Save puts it in the database and Chrome is left as it is.
     func edit(_ id: UUID) {
+        guard !editorSaving else { return }
+        editorError = ""
         if let draft = chromeDraft(id) {
             onActivity?()
             editing = draft
@@ -1105,46 +1181,71 @@ final class VaultSession: ObservableObject {
         editingIsNew = false
     }
 
+    /// Save in the editor. The file is written off the main thread; the editor closes when it has been.
     func saveEditing(_ entry: VaultEntry) {
-        var entry = entry
-        carryPasswordBookkeeping(into: &entry)
-        carryScannedCode(into: &entry)
-        let isDraft = storedEntry(entry.id) == nil
-        if storeEntry(entry) {
-            editing = nil
-            keepChromeLastUsed(entry.id)
-        } else if !isDraft {
-            #if !PP_DIRECT
-            editing = nil
-            #endif
-            // Direct channel: `persist` undid the failed write, and the editor stays open with what was typed.
+        guard !editorSaving else { return }
+        runEditorSave(of: entry.id, change: { [weak self] in
+            guard let self else { return nil }
+            var entry = entry
+            self.carryPasswordBookkeeping(into: &entry)
+            self.carryScannedCode(into: &entry)
+            return self.placeStored(entry)
+        }, saved: { [weak self] in
+            self?.keepChromeLastUsed(entry.id)
+        })
+    }
+
+    /// One of the editor's writes. The editor shows Saving… until the file has been replaced, then closes. A write that
+    /// fails leaves it open with what was typed and says why. Nothing in the list changes before the file has.
+    private func runEditorSave(of id: UUID, change: @escaping () -> String?, saved: @escaping () -> Void = {}) {
+        editorSaving = true
+        editorError = ""
+        enqueueWrite(change) { [weak self] failure in
+            guard let self else { return }
+            self.editorSaving = false
+            if let failure {
+                self.editorError = failure
+                return
+            }
+            if self.editing?.id == id { self.editing = nil }
+            saved()
         }
     }
 
     /// Writes one item, new or changed, to its database file. Leaves the editor alone, so a scanned code can be added while
-    /// another item is open in it. False when the file could not be written.
-    @discardableResult
-    func storeEntry(_ entry: VaultEntry) -> Bool {
+    /// another item is open in it. `done` gets false when the file could not be written; `message` then says why.
+    func storeEntry(_ entry: VaultEntry, then done: @escaping (Bool) -> Void = { _ in }) {
+        enqueueWrite({ [weak self] in self?.placeStored(entry) }, done: { done($0 == nil) })
+    }
+
+    /// Puts a scanned code in a stored item. The item is read when it is this save's turn, so a save still being written
+    /// for it (an edit, the star, Move to Trash) is kept. `done` gets false when the item is gone by then.
+    func storeScannedCode(_ otp: String, in id: UUID, then done: @escaping (Bool) -> Void = { _ in }) {
+        var found = false
+        enqueueWrite({ [weak self] in
+            guard let self else { return nil }
+            guard var entry = self.storedEntry(id) else {
+                self.reportSaveFailure(Self.itemGoneText)
+                return nil
+            }
+            found = true
+            entry.otp = otp
+            return self.placeStored(entry)
+        }, done: { done(found && $0 == nil) })
+    }
+
+    /// Puts one item, new or changed, into its file in memory, and names that file. A Chrome draft may reuse the row of
+    /// its trashed copy.
+    private func placeStored(_ entry: VaultEntry) -> String {
         var entry = entry
         if entry.title.isEmpty { entry.title = "Untitled" }
         let path = listPaths[entry.id] ?? databaseURL.path
-        // A new item, or a Chrome draft that may reuse the row of its trashed copy. A failed write has nothing else holding it,
-        // so it comes back out of the database and the editor stays open with what the user typed.
-        let isDraft = storedEntry(entry.id) == nil
-        let before = openedFiles.first { $0.url.path == path }?.vault.entries ?? []
         if listPaths[entry.id] != nil {
             replaceStored(entry)
         } else {
             appendStored(entry, to: path)
         }
-        if persist(path: path) { return true }
-        if isDraft {
-            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
-                openedFiles[index].vault.entries = before
-            }
-            publishCatalog()
-        }
-        return false
+        return path
     }
 
     /// A scanned code may have been added to this item while the editor was open. Keep it unless the editor changed the field.
@@ -1167,16 +1268,23 @@ final class VaultSession: ObservableObject {
         #endif
     }
 
+    /// Not while the editor's save is being written: it cannot be taken back, and a failure needs the editor to say so.
     func cancelEditing() {
+        guard !editorSaving else { return }
+        editorError = ""
         editing = nil
     }
 
     /// Restores the accounts from before this one was merged, and marks each so it stays separate.
     func splitEditing() {
-        guard let current = editing else { return }
+        guard !editorSaving, let current = editing else { return }
+        runEditorSave(of: current.id, change: { [weak self] in self?.placeSplit(of: current) })
+    }
+
+    private func placeSplit(of current: VaultEntry) -> String? {
         let path = listPaths[current.id] ?? databaseURL.path
         let originalID = listOrigins[current.id] ?? current.id
-        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
+        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }) else { return nil }
         var entries = openedFiles[fileIndex].vault.entries
         let survivorSlot = listSlots[current.id]
         let source: VaultEntry
@@ -1185,9 +1293,9 @@ final class VaultSession: ObservableObject {
         } else if let found = entries.first(where: { $0.id == originalID }) {
             source = found
         } else {
-            return
+            return nil
         }
-        guard var parts = EntryMerge.split(source) else { return }
+        guard var parts = EntryMerge.split(source) else { return nil }
         if !parts.isEmpty { parts[0].id = originalID }
         var used = Set<Int>()
         for (index, part) in parts.enumerated() {
@@ -1204,58 +1312,67 @@ final class VaultSession: ObservableObject {
             }
         }
         openedFiles[fileIndex].vault.entries = entries
-        editing = nil
-        persist(path: path)
+        return path
     }
 
     /// Writes the file when a merge folded accounts. A database with nothing to fold is left untouched.
     private func autoMergeFile(at path: String) {
-        guard let index = openedFiles.firstIndex(where: { $0.url.path == path }) else { return }
-        let merged = EntryMerge.merged(openedFiles[index].vault.entries)
-        // A password another app changed leaves a reminder without a date: writing dates it again.
-        let undated = merged.contains { !$0.trashed && PasswordRotation.period(of: $0) != nil && PasswordRotation.changed(of: $0) == nil }
-        guard merged != openedFiles[index].vault.entries || undated else { return }
-        openedFiles[index].vault.entries = merged
-        _ = persist(path: path)
+        enqueueWrite { [weak self] in
+            guard let self, let index = self.openedFiles.firstIndex(where: { $0.url.path == path }) else { return nil }
+            let merged = EntryMerge.merged(self.openedFiles[index].vault.entries)
+            // A password another app changed leaves a reminder without a date: writing dates it again.
+            let undated = merged.contains { !$0.trashed && PasswordRotation.period(of: $0) != nil && PasswordRotation.changed(of: $0) == nil }
+            guard merged != self.openedFiles[index].vault.entries || undated else { return nil }
+            self.openedFiles[index].vault.entries = merged
+            return path
+        }
     }
 
+    /// Move to Trash in the editor, which closes when the file has been written.
     func deleteEditing() {
-        guard let id = editing?.id, var entry = storedEntry(id) else { return }
-        entry.trashed = true
-        replaceStored(entry)
-        editing = nil
-        persist(path: listPaths[id] ?? databaseURL.path)
+        guard !editorSaving, let id = editing?.id, storedEntry(id) != nil else { return }
+        runEditorSave(of: id, change: { [weak self] in
+            guard let self, var entry = self.storedEntry(id) else { return nil }
+            entry.trashed = true
+            self.replaceStored(entry)
+            return self.listPaths[id] ?? self.databaseURL.path
+        })
     }
 
-    func toggleFavorite(_ id: UUID) {
-        guard var entry = storedEntry(id) else {
-            favoriteChromeLogin(id)
+    /// `done` gets false when the file could not be written. The list then still shows what the file holds.
+    func toggleFavorite(_ id: UUID, then done: @escaping (Bool) -> Void = { _ in }) {
+        guard storedEntry(id) != nil else {
+            favoriteChromeLogin(id, then: done)
             return
         }
-        entry.favorite.toggle()
-        replaceStored(entry)
-        persist(path: listPaths[id] ?? databaseURL.path)
+        enqueueWrite({ [weak self] in
+            guard let self, var entry = self.storedEntry(id) else { return nil }
+            entry.favorite.toggle()
+            self.replaceStored(entry)
+            return self.listPaths[id] ?? self.databaseURL.path
+        }, done: { done($0 == nil) })
     }
 
     /// A favorite lives in the database, so starring a Chrome login saves it. A failed write leaves it as a Chrome login.
-    private func favoriteChromeLogin(_ id: UUID) {
-        guard var draft = chromeDraft(id) else { return }
-        draft.favorite = true
-        let path = listPaths[id] ?? databaseURL.path
-        let before = openedFiles.first { $0.url.path == path }?.vault.entries ?? []
-        if listPaths[id] != nil {
-            replaceStored(draft)
-        } else {
-            appendStored(draft, to: path)
+    private func favoriteChromeLogin(_ id: UUID, then done: @escaping (Bool) -> Void) {
+        guard chromeDraft(id) != nil else {
+            done(false)
+            return
         }
-        if persist(path: path) {
-            keepChromeLastUsed(id)
-        } else {
-            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) {
-                openedFiles[index].vault.entries = before
+        enqueueWrite({ [weak self] in
+            guard let self, var draft = self.chromeDraft(id) else { return nil }
+            draft.favorite = true
+            let path = self.listPaths[id] ?? self.databaseURL.path
+            if self.listPaths[id] != nil {
+                self.replaceStored(draft)
+            } else {
+                self.appendStored(draft, to: path)
             }
-            publishCatalog()
-        }
+            return path
+        }, done: { [weak self] failure in
+            if failure == nil { self?.keepChromeLastUsed(id) }
+            done(failure == nil)
+        })
     }
 
     /// A generated password saved as a new Password item, only when the user asks for it.
@@ -1264,8 +1381,11 @@ final class VaultSession: ObservableObject {
         var entry = VaultEntry()
         entry.title = "Generated Password"
         entry.password = password
-        appendStored(entry, to: databaseURL.path)
-        persist(path: databaseURL.path)
+        enqueueWrite { [weak self] in
+            guard let self else { return nil }
+            self.appendStored(entry, to: self.databaseURL.path)
+            return self.databaseURL.path
+        }
     }
 
     // MARK: Browser password import
@@ -1682,7 +1802,120 @@ final class VaultSession: ObservableObject {
         return written
     }
 
+    // MARK: Saves off the main thread
+
+    /// True while a save is being written or waiting for its turn. Anything else that writes a file waits or refuses.
+    var savesPending: Bool { writeInFlight || !queuedWrites.isEmpty }
+
+    /// Runs `action` once no save is being written or waiting: at once when there is none.
+    func whenSavesSettle(_ action: @escaping () -> Void) {
+        guard savesPending else {
+            action()
+            return
+        }
+        settleWaiters.append(action)
+    }
+
+    func savesSettled() async {
+        await withCheckedContinuation { continuation in
+            whenSavesSettle { continuation.resume() }
+        }
+    }
+
+    /// A save the person asked for. `change` runs on the main actor when it is this save's turn, so it starts from
+    /// what the save before it wrote. The file is then written off the main thread.
+    private func enqueueWrite(_ change: @escaping () -> String?, done: @escaping (String?) -> Void = { _ in }) {
+        queuedWrites.append(QueuedWrite(change: change, done: done))
+        runQueuedWrites()
+    }
+
+    /// Starts the next save unless a file is being written. Also called when a Chrome update's write ends.
+    func runQueuedWrites() {
+        while !writeInFlight, !chromeWriting, !queuedWrites.isEmpty {
+            let next = queuedWrites.removeFirst()
+            let before = openedFiles
+            var staged: Result<FileWrite, VaultWriteError>?
+            if let path = next.change() {
+                stampPasswordDates(path: path)
+                staged = stageWrite(path: path).map { write in
+                    var write = write
+                    write.wasOpened = before.contains { $0.url.path == path }
+                    return write
+                }
+            }
+            // The change lives in `staged` alone. Memory keeps what the file holds until the new file has replaced it,
+            // so nothing shows, fills or is carried by another write before it is saved.
+            openedFiles = before
+            switch staged {
+            case nil:
+                next.done(nil)
+            case .failure(let refusal):
+                next.done(reportSaveFailure(refusal.description))
+            case .success(let write):
+                guard writeRunner == .background else {
+                    next.done(reportSaveFailure(finishWrite(write, write.perform())))
+                    continue
+                }
+                writeInFlight = true
+                let generation = unlockGeneration
+                Task { @MainActor [weak self] in
+                    let outcome = await Task.detached(priority: .userInitiated) { write.perform() }.value
+                    guard let self else { return }
+                    self.writeInFlight = false
+                    // Locked meanwhile: the file was replaced or it was not, and this session has nothing left to update.
+                    if generation == self.unlockGeneration {
+                        next.done(self.reportSaveFailure(self.finishWrite(write, outcome)))
+                    }
+                    self.runQueuedWrites()
+                }
+                return
+            }
+        }
+        guard !savesPending else { return }
+        let waiters = settleWaiters
+        settleWaiters = []
+        for waiter in waiters { waiter() }
+        #if PP_DIRECT
+        if chromeReconcileAgain, !chromeWriteInFlight {
+            chromeReconcileAgain = false
+            reconcileChromeUpdates()
+        }
+        #endif
+    }
+
+    private var chromeWriting: Bool {
+        #if PP_DIRECT
+        return chromeWriteInFlight
+        #else
+        return false
+        #endif
+    }
+
+    @discardableResult
+    private func reportSaveFailure(_ failure: String?) -> String? {
+        guard let failure else { return nil }
+        message = failure
+        NSSound.beep()
+        return failure
+    }
+
+    /// The whole write in place, for the few that still wait for the file: a new database, and an import.
     private func write(path: String) -> Bool {
+        guard !savesPending else {
+            reportSaveFailure(Self.saveBusyText)
+            return false
+        }
+        switch stageWrite(path: path) {
+        case .success(let staged):
+            return reportSaveFailure(finishWrite(staged, staged.perform())) == nil
+        case .failure(let refusal):
+            reportSaveFailure(refusal.description)
+            return false
+        }
+    }
+
+    /// Everything a write takes from this session, read on the main actor.
+    private func stageWrite(path: String) -> Result<FileWrite, VaultWriteError> {
         onActivity?()
         let index = openedFiles.firstIndex { $0.url.path == path }
         var vault = index.map { openedFiles[$0].vault }
@@ -1703,60 +1936,65 @@ final class VaultSession: ObservableObject {
         // A key-file-only database can open with an empty password. The new .kdbx cannot.
         let writesKDBX = VaultFormat.writesKDBX(fileURL)
         if VaultFormat.blocksImportSave(writesKDBX: writesKDBX, password: password) {
-            message = "Set a master password before saving this database."
-            NSSound.beep()
-            return false
+            return .failure(VaultWriteError("Set a master password before saving this database."))
         }
         let pending = index.flatMap { openedFiles[$0].pendingSaveURL?.path } ?? pendingImportPath(for: path)
         let destination = writesKDBX ? fileURL : ImportDestination.url(source: fileURL, pending: pending)
-        do {
-            let data = try KDBX.save(vault: &vault, password: password, keyFile: keyFile)
-            try VaultFile.replace(destination, with: data, password: password, keyFile: keyFile, expecting: vault)
-            vault.noteFileContents(data)
-            // Move the secret before the opened file changes path. A failed move keeps the
-            // source path, so the next save still finds this vault and rewrites the same sibling.
-            let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
-            let decision = ImportRetarget.decide(source: path, destination: destination.path, secretMoved: moved)
-            let stored = OpenedFile(
-                url: URL(fileURLWithPath: decision.openedPath),
-                vault: vault,
-                password: password,
-                keyFile: keyFile,
-                pendingSaveURL: decision.pendingPath.map { URL(fileURLWithPath: $0) },
-                revision: index.map { openedFiles[$0].revision + 1 } ?? 0
-            )
-            if let index {
-                openedFiles[index] = stored
-            } else {
-                openedFiles.insert(stored, at: 0)
-            }
-            if decision.retargetRoster {
-                // The sibling .kdbx is the file we will open next. Leaving the import in the
-                // roster would show the same entries twice.
-                clearPendingImport(source: path)
-                applyingRoster = true
-                if isCurrent { databaseURL = URL(fileURLWithPath: decision.openedPath) }
-                adopt(roster.replacing(path, with: destination.path))
-                applyingRoster = false
-            } else if let pendingPath = decision.pendingPath {
-                rememberPendingImport(source: path, destination: pendingPath)
-                message = "Saved \(destination.lastPathComponent), but the saved password could not move to it."
-            }
-            if isCurrent {
-                kdf = vault.kdf
-                rootName = vault.rootName
-                vaultName = vault.name
-                masterPassword = password
-            }
-            publishCatalog()
-            return true
-        } catch {
-            message = (error as? VaultWriteError)?.description
+        return .success(FileWrite(path: path, destination: destination, vault: vault, password: password, keyFile: keyFile, isCurrent: isCurrent))
+    }
+
+    /// Back on the main actor: the file that was written becomes the opened one, and the list is published from it.
+    /// Nil when the file was written, otherwise why it was not.
+    private func finishWrite(_ write: FileWrite, _ outcome: Result<Vault, Error>) -> String? {
+        let vault: Vault
+        switch outcome {
+        case .success(let written):
+            vault = written
+        case .failure(let error):
+            return (error as? VaultWriteError)?.description
                 ?? (error as? KDBXError)?.description
-                ?? "The database could not be saved."
-            NSSound.beep()
-            return false
+                ?? Self.saveFailedText
         }
+        let (path, destination, password, keyFile) = (write.path, write.destination, write.password, write.keyFile)
+        let index = openedFiles.firstIndex { $0.url.path == path }
+        if index == nil, write.wasOpened { return nil }
+        // Move the secret before the opened file changes path. A failed move keeps the
+        // source path, so the next save still finds this vault and rewrites the same sibling.
+        let moved = destination.path == path || migrateUnlockSecret(from: path, to: destination.path)
+        let decision = ImportRetarget.decide(source: path, destination: destination.path, secretMoved: moved)
+        let stored = OpenedFile(
+            url: URL(fileURLWithPath: decision.openedPath),
+            vault: vault,
+            password: password,
+            keyFile: keyFile,
+            pendingSaveURL: decision.pendingPath.map { URL(fileURLWithPath: $0) },
+            revision: index.map { openedFiles[$0].revision + 1 } ?? 0
+        )
+        if let index {
+            openedFiles[index] = stored
+        } else {
+            openedFiles.insert(stored, at: 0)
+        }
+        if decision.retargetRoster {
+            // The sibling .kdbx is the file we will open next. Leaving the import in the
+            // roster would show the same entries twice.
+            clearPendingImport(source: path)
+            applyingRoster = true
+            if write.isCurrent { databaseURL = URL(fileURLWithPath: decision.openedPath) }
+            adopt(roster.replacing(path, with: destination.path))
+            applyingRoster = false
+        } else if let pendingPath = decision.pendingPath {
+            rememberPendingImport(source: path, destination: pendingPath)
+            message = "Saved \(destination.lastPathComponent), but the saved password could not move to it."
+        }
+        if write.isCurrent {
+            kdf = vault.kdf
+            rootName = vault.rootName
+            vaultName = vault.name
+            masterPassword = password
+        }
+        publishCatalog()
+        return nil
     }
 
     var keyFileForUnlock: Data? {

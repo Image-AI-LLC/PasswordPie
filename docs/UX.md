@@ -760,6 +760,7 @@ item's history in the database file, where KeePassXC and other KeePass apps show
 | Google Authenticator's export | "This is a Google Authenticator export. Scan the QR code the website shows instead." |
 | A damaged secret, or unusual settings | One line saying which: the secret, the number of digits (6 to 8), the time step, or the algorithm (SHA1, SHA256, SHA512) |
 | Two minutes passed before Add | "This scan has expired. Scan the QR code again." |
+| The item was moved to the trash or removed before the code was saved | "That item is no longer in the database. Choose another." The scan stays. |
 | PasswordPie is not running | The extension starts it, as a click on its toolbar button does |
 
 ### Demo script
@@ -1171,3 +1172,77 @@ The download from passwordpie.com is not sandboxed and never shows the folder pa
 3. Quit PasswordPie and start it again. The lock screen shows the same database; unlock it without any panel.
 4. Choose Open Database… again, pick a file in `~/Desktop`, and choose Cancel in the second panel. The first database
    stays open, with a message that the other one needs its folder.
+
+## Saving does not freeze PasswordPie
+
+**In one line:** Save, Move to Trash and the star write the database in the background, so every window keeps
+responding, and the list changes once the file has been written and checked.
+
+### The problem
+
+Every save locks the database again with your master password, on purpose slowly: that is what makes a stolen file
+hard to guess. How slowly is written in the database itself. A database made in another KeePass app is often set to
+about a second or more: one measured here asks for 163 passes of Argon2 over 64 MiB, 2.5 seconds on an Apple silicon
+Mac. A save does that twice, once to write the new file and once to open it again before it replaces the old one.
+
+PasswordPie did all of it before it let go of the button. Pressing Save or Move to Trash froze the editor, the menu and
+every other window for five seconds or more, with the spinning pointer and no sign of what it was doing.
+
+### What happens now
+
+The slow part runs beside the app, not in front of it.
+
+- **Save.** The button says **Saving…** beside a small spinner and the editor's rows dim. The window can be moved, the
+  menu opens, and search, copy and fill work as always. When the new file has been written and read back, the editor
+  closes and the list shows the change.
+- **Move to Trash** and **Split** work the same way: the editor stays, dimmed, until the file is written.
+- **The star** in an account's details fills at once and is written behind it. If it cannot be saved, it goes back.
+- **Save as Password Item** in the generator closes the popup at once and saves behind it.
+- **Add**, for a scanned two-step code, says **Adding…** until the code is in the file. Its window stays open until
+  then, like the editor.
+
+Nothing shows a change before it is in the file. The menu, the details and the browser extension keep using what was
+saved until the new file has replaced the old one, so a save that fails never leaves a password on screen that is not
+in the database.
+
+Changes made one after another are written one after another, in the order you made them.
+
+**Quit while saving.** PasswordPie finishes the save, then quits.
+
+**Lock while saving.** It locks at once. The save still finishes behind the lock screen, and the file is whole either
+way: the old one or the new one, never half of each. Unlock again straight away and PasswordPie waits for that save
+before it opens the file, so what you see is what was saved.
+
+A change still waiting for its turn when you lock is not written. The lock screen says "PasswordPie locked before a
+change was saved. It was not saved." A scanned code you were adding stays, and comes back after you unlock.
+
+**Remove the database from the list while saving.** The save still finishes. In the App Store app, PasswordPie keeps
+the folder until the file is written, then forgets it.
+
+### When something goes wrong
+
+The editor stays open with everything you typed, and one red line beside the buttons says why, for example "The
+database changed on disk during the save. The original file was kept." Nothing in the list changed. Fix it, or press
+Save again.
+
+### What it does not change
+
+- **How long a save takes.** That is set by the database. A database PasswordPie creates saves in a fraction of a
+  second. One set to 163 passes takes about five seconds, in PasswordPie as in the app that made it; the difference is
+  that you are not kept waiting for it.
+- **The check.** The new file is still opened with your master password, and compared with what was saved, before it
+  replaces the old one.
+- **Not yet in the background:** importing a file of passwords, changing the master password or the key file, and
+  Restore, Reset Password and Use New Password in an account's details. These still wait for the file. Pressed while
+  another save is being written, they change nothing and say it could not be saved; press again a moment later.
+
+### Demo script
+
+1. Open a database made in KeePassXC with a slow key setting. Edit an account, change the title, press Save. The
+   button says Saving…; drag the editor around and open the menu with the shortcut while it does. The editor closes by
+   itself and the menu shows the new title.
+2. Edit it again and press Move to Trash: the same, and the account is gone from the menu when the editor closes.
+3. Open an account's details and press the star twice quickly. It fills and empties at once; a few seconds later the
+   file holds what the star shows.
+4. Make the database's folder read-only in Finder and save an edit: the editor stays open, with the reason in red.
+   Give the folder back its permission and press Save again.
