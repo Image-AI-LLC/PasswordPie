@@ -164,6 +164,10 @@ in addition to, using or accessing the encryption within Apple's operating syste
 user's own database on their Mac; the app sends nothing over a network. Answer any further question App Store Connect
 shows (documentation) at submission, and record the answers here.
 
+**Answered for 0.2.0 (4), 2026-11-15:** "Standard encryption algorithms instead of, or in addition to, using or accessing
+the encryption within Apple's operating system", then "Is your app going to be available for distribution in France?"
+**No**. App Store Connect asked nothing else.
+
 **France (decided 2026-11-15):** the first release is **not available in France**. Leave France out under Pricing and
 Availability, so the French encryption declaration is not needed yet. Adding France later needs that declaration first.
 
@@ -172,6 +176,11 @@ Availability, so the French encryption declaration is not needed yet. Adding Fra
 Paste into App Review Information > Notes, with a fresh activation link in place of the placeholder. Sign-in required:
 **No** (leave the demo account empty). The field takes 4000 characters and a link is about 380, so the notes stay under
 3500 with the placeholder (`AppStoreListingTests`).
+
+**0.2.0 (4), submitted 2026-11-15:** no activation link was at hand (making one needs a signed-in Premium account on
+passwordpie.com), so the two lines from "To try it, open this link" to the placeholder were replaced with "If you would
+like to try it, ask through App Review and we will send a test link. Opening it in Safari and allowing it to open
+PasswordPie turns Premium on, and the code shows." If App Review asks, send a fresh link from the account page.
 
 ```text
 PasswordPie is a KeePass password manager for Mac. It has no account and needs no sign-in, so no demo account is needed.
