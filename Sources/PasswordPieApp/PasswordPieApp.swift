@@ -632,9 +632,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         aboutWindow?.makeKeyAndOrderFront(nil)
     }
 
-    /// The editor stays while its save is being written, so a save that fails still has somewhere to say so.
+    /// The editor and the scan window stay while their save is being written, so a save that fails still has somewhere
+    /// to say so.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        !(sender === editorWindow && session.editorSaving)
+        !((sender === editorWindow && session.editorSaving) || (sender === scanWindow && otpScan.phase == .saving))
     }
 
     func windowWillClose(_ notification: Notification) {

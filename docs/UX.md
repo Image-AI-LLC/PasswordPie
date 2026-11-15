@@ -1198,7 +1198,8 @@ The slow part runs beside the app, not in front of it.
 - **Move to Trash** and **Split** work the same way: the editor stays, dimmed, until the file is written.
 - **The star** in an account's details fills at once and is written behind it. If it cannot be saved, it goes back.
 - **Save as Password Item** in the generator closes the popup at once and saves behind it.
-- **Add**, for a scanned two-step code, says **Adding…** until the code is in the file.
+- **Add**, for a scanned two-step code, says **Adding…** until the code is in the file. Its window stays open until
+  then, like the editor.
 
 Nothing shows a change before it is in the file. The menu, the details and the browser extension keep using what was
 saved until the new file has replaced the old one, so a save that fails never leaves a password on screen that is not
