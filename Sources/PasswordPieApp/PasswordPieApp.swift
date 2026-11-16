@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private let preferencesNavigator = PreferencesNavigator()
+    private let switcherPresence = SwitcherPresence()
     private var aboutWindow: NSWindow?
     private var chromeReviewWindow: NSWindow?
     private var paywallWindow: NSWindow?
@@ -477,6 +478,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             preferencesWindow = window
         }
         panelController.hide(refocusPrevious: false)
+        // Before activating: the app comes to the front as one the switcher lists, with its menu bar.
+        switcherPresence.sync(preferencesOpen: true)
         NSApp.activate(ignoringOtherApps: true)
         preferencesWindow?.makeKeyAndOrderFront(nil)
     }
@@ -682,6 +685,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
+            switcherPresence.sync(preferencesOpen: false)
         } else if window === aboutWindow {
             aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
@@ -1038,6 +1042,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "chromeFailures": session.chromeUpdateFailures.count,
             "rootRows": menu.root.rows.map(\.title),
             "appActive": NSApp.isActive,
+            "inSwitcher": NSApp.activationPolicy() == .regular,
+            "pinnedWindows": pinnedAccounts.values.filter { $0.panel.isVisible }.count,
             "frontmostApp": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? NSNull(),
             "panelFrame": NSStringFromRect(panel.frame),
             "systemIdleSeconds": SystemIdle.seconds(),
