@@ -174,6 +174,8 @@ final class DetailsModel: ObservableObject {
     @Published var revealed: Set<String> = []
     @Published var optionHeld = false
     @Published var flashing = false
+    /// The field the pointer is on. Its row shows the outline and its button.
+    @Published private(set) var hoveredField: String?
     @Published var favorite: Bool
     let presentation: DetailsPresentation
     unowned let session: VaultSession
@@ -410,6 +412,16 @@ final class DetailsModel: ObservableObject {
 
     func isShown(_ field: DetailField) -> Bool {
         !field.secret || revealed.contains(field.id) || optionHeld
+    }
+
+    /// The pointer came onto `field`'s row or left it. The next row can report the pointer before the last one reports
+    /// that it left, so leaving clears only the row that is leaving.
+    func pointer(_ inside: Bool, on field: DetailField) {
+        if inside {
+            hoveredField = field.id
+        } else if hoveredField == field.id {
+            hoveredField = nil
+        }
     }
 
     func toggleReveal(_ field: DetailField) {
@@ -649,9 +661,9 @@ private struct DetailRow: View {
     @ObservedObject var premium: PremiumStore
     var field: DetailField
     var focused: Bool
-    @State private var hovering = false
 
     var body: some View {
+        let hovering = model.hoveredField == field.id
         let control = fieldControl(field, revealed: model.revealed.contains(field.id), codeLocked: !premium.hasPremium)
         // Upgrade is how a locked row says what to do, so it does not wait for a hover.
         let locked = control.primary == .upgrade
@@ -665,6 +677,7 @@ private struct DetailRow: View {
             .contentShape(Rectangle())
             .onTapGesture { model.perform(control.primary, on: field) }
             .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
+            .overlay { if hovering { FieldHoverOutline() } }
             .overlay(alignment: .trailing) {
                 if actionShown {
                     actions(control)
@@ -672,7 +685,7 @@ private struct DetailRow: View {
                         .opacity(focused && model.flashing ? 0.4 : 1)
                 }
             }
-            .onHover { hovering = $0 }
+            .onHover { model.pointer($0, on: field) }
     }
 
     /// The small lock after "one-time password" without Premium. The dots say it in words for VoiceOver.
@@ -723,6 +736,24 @@ private struct DetailRow: View {
         ) {
             model.perform(control.primary, on: field)
         }
+    }
+}
+
+/// The dashed line round the field the pointer is on. Everything inside it takes the click that runs the field's button
+/// (DESIGN.md, "Detail field").
+private struct FieldHoverOutline: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(
+                Palette.secondaryText(dark: colorScheme == .dark).opacity(0.7),
+                style: StrokeStyle(lineWidth: 1, dash: [3, 2])
+            )
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
