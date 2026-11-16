@@ -64,6 +64,8 @@ public struct MenuRow: Equatable, Sendable {
     public var count: Int
     /// The account's password is due for a change: a red dot on its icon.
     public var due: Bool
+    /// On the header of an app's group: the app, for its icon before the name.
+    public var appBundleID: String?
 
     public init(
         kind: Kind,

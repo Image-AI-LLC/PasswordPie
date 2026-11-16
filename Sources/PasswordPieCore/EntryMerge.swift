@@ -12,6 +12,7 @@ public enum EntryMerge {
             || key.caseInsensitiveCompare(manifestKey) == .orderedSame
             || key.caseInsensitiveCompare(PreviousPasswords.key) == .orderedSame
             || PasswordRotation.isKey(key)
+            || AppLinks.isKey(key)
     }
 
     public static func keepsSeparate(_ entry: VaultEntry) -> Bool {
@@ -95,6 +96,11 @@ public enum EntryMerge {
                     if PasswordRotation.period(of: entry) == nil, PasswordRotation.period(of: other) != nil {
                         entry.fields.removeAll { PasswordRotation.isKey($0.key) }
                         entry.fields.append(contentsOf: other.fields.filter { PasswordRotation.isKey($0.key) })
+                        changed = true
+                    }
+                    // Nor is an app link: the survivor keeps every app its copies were linked to, except one the user
+                    // took off the survivor.
+                    for app in AppLinks.apps(of: other) where !AppLinks.refuses(entry, app) && AppLinks.link(app, to: &entry) {
                         changed = true
                     }
                     #if PP_DIRECT

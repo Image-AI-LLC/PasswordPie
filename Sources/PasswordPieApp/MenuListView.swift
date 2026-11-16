@@ -327,7 +327,19 @@ final class MenuListView: NSView {
         menuInk(0.2).setFill()
         NSRect(x: 0, y: rect.minY, width: rect.width, height: 1).fill()
         NSRect(x: 0, y: rect.maxY - 1, width: rect.width, height: 1).fill()
-        drawText(row.title.uppercased(), in: rect, x: 6, color: MenuPalette.secondaryText, width: rect.width - 12, font: MenuMetrics.headerFont)
+        var x: CGFloat = 6
+        if let bundleID = row.appBundleID {
+            // An app's group: its icon before its name, so the group reads as "this app's accounts" at a glance.
+            let icon = AppIdentity.icon(for: LinkedApp(bundleID: bundleID, name: row.title))
+            icon.draw(in: Self.headerIconRect(in: rect), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            x = Self.headerIconRect(in: rect).maxX + 5
+        }
+        drawText(row.title.uppercased(), in: rect, x: x, color: MenuPalette.secondaryText, width: rect.width - x - 6, font: MenuMetrics.headerFont)
+    }
+
+    /// The 11 pt app icon on an app group's header, centred in the 16 pt band.
+    static func headerIconRect(in rect: NSRect) -> NSRect {
+        NSRect(x: 6, y: rect.midY - 5.5, width: 11, height: 11)
     }
 
     private func drawItem(_ row: MenuRow, in rect: NSRect, selected: Bool) {

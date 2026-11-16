@@ -1,0 +1,168 @@
+import Foundation
+
+/// An app an account signs in to. See "An account remembers its app" in docs/UX.md.
+public struct LinkedApp: Equatable, Hashable, Sendable {
+    /// The app's bundle identifier, as the app declares it.
+    public var bundleID: String
+    /// Who signed the app. Nil when it has no team, or the signature could not be read.
+    public var teamID: String?
+    /// The name to show, kept so the link still reads well when the app is not installed.
+    public var name: String
+
+    public init(bundleID: String, teamID: String? = nil, name: String) {
+        self.bundleID = bundleID
+        self.teamID = teamID
+        self.name = name
+    }
+
+    /// The same app: the identifier has no case. A link made with a team holds only for that team, so another app that
+    /// claims the identifier is not it. A link made without one goes by the identifier.
+    func isApp(_ running: LinkedApp) -> Bool {
+        guard bundleID.caseInsensitiveCompare(running.bundleID) == .orderedSame else { return false }
+        guard let teamID else { return true }
+        return teamID == running.teamID
+    }
+}
+
+/// The apps of an account, kept on the account itself in one field: a line per app, `identifier<tab>team<tab>name`,
+/// with `-` for no team. A line that starts with `!` is an app the user took back, which is never linked again on its own.
+public enum AppLinks {
+    public static let key = "PasswordPie.Apps"
+
+    public static func isKey(_ key: String) -> Bool {
+        key.caseInsensitiveCompare(Self.key) == .orderedSame
+    }
+
+    public static func apps(of entry: VaultEntry) -> [LinkedApp] {
+        lines(of: entry).filter { !$0.refused }.map(\.app)
+    }
+
+    public static func isLinked(_ entry: VaultEntry, to app: LinkedApp) -> Bool {
+        apps(of: entry).contains { $0.isApp(app) }
+    }
+
+    /// The user unlinked this app, or pressed Undo on its link. A refusal goes by the identifier alone: it is about the
+    /// app the user saw named, and must hold when the signer cannot be read.
+    public static func refuses(_ entry: VaultEntry, _ app: LinkedApp) -> Bool {
+        lines(of: entry).contains { $0.refused && $0.app.sameIdentifier(app) }
+    }
+
+    /// False when the account already has an app with this identifier. That includes one signed by someone else, or
+    /// whose signer cannot be read just now: the link that is there is never replaced or loosened on its own.
+    /// A link clears an earlier refusal.
+    @discardableResult
+    public static func link(_ app: LinkedApp, to entry: inout VaultEntry) -> Bool {
+        var all = lines(of: entry)
+        guard !all.contains(where: { !$0.refused && $0.app.sameIdentifier(app) }) else { return false }
+        all.removeAll { $0.refused && $0.app.sameIdentifier(app) }
+        all.append(Line(app: app, refused: false))
+        write(all, to: &entry)
+        return true
+    }
+
+    /// False when the account does not have the app. `remember` keeps the refusal.
+    @discardableResult
+    public static func unlink(_ app: LinkedApp, from entry: inout VaultEntry, remember: Bool = true) -> Bool {
+        var all = lines(of: entry)
+        guard let index = all.firstIndex(where: { !$0.refused && $0.app.sameIdentifier(app) }) else { return false }
+        if remember {
+            all[index].refused = true
+        } else {
+            all.remove(at: index)
+        }
+        write(all, to: &entry)
+        return true
+    }
+
+    /// The live accounts linked to `app`, in the order of a site's accounts: favorites, the most recently used, title.
+    public static func entries(_ entries: [VaultEntry], linkedTo app: LinkedApp, lastUsed: [UUID: Date] = [:]) -> [VaultEntry] {
+        // A cheap test first: thousands of accounts, and almost none has the field.
+        let found = entries.filter { entry in
+            !entry.trashed && entry.fields.contains { $0.key == key } && isLinked(entry, to: app)
+        }
+        return SiteSuggestions.ordered(found, lastUsed: lastUsed)
+    }
+
+    private struct Line {
+        var app: LinkedApp
+        var refused: Bool
+    }
+
+    private static func lines(of entry: VaultEntry) -> [Line] {
+        entry.value(for: key).split(whereSeparator: \.isNewline).compactMap { raw in
+            var text = String(raw)
+            let refused = text.hasPrefix("!")
+            if refused { text.removeFirst() }
+            let parts = text.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            let bundleID = parts[0].trimmingCharacters(in: .whitespaces)
+            // An identifier is letters, digits, hyphens and dots. Anything else is not a line of ours.
+            guard !bundleID.isEmpty, bundleID.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_" }),
+                  bundleID.contains(".") else { return nil }
+            let team = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+            let name = parts.count > 2 ? parts[2].trimmingCharacters(in: .whitespaces) : ""
+            return Line(app: LinkedApp(bundleID: bundleID, teamID: team.isEmpty || team == "-" ? nil : team,
+                                       name: name.isEmpty ? bundleID : name), refused: refused)
+        }
+    }
+
+    private static func write(_ lines: [Line], to entry: inout VaultEntry) {
+        entry.fields.removeAll { $0.key == key }
+        guard !lines.isEmpty else { return }
+        let text = lines.map { line in
+            let name = line.app.name.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ")
+            return (line.refused ? "!" : "") + [line.app.bundleID, line.app.teamID ?? "-", name].joined(separator: "\t")
+        }.joined(separator: "\n")
+        entry.setValue(text, for: key)
+    }
+}
+
+private extension LinkedApp {
+    func sameIdentifier(_ other: LinkedApp) -> Bool {
+        bundleID.caseInsensitiveCompare(other.bundleID) == .orderedSame
+    }
+}
+
+/// The one rule that links an account to an app without asking: its username and its password were both copied while
+/// the same app was in front, within five minutes, in either order. Every way of copying reports here, so the rule does
+/// not know which window or shortcut made the copy. In memory only.
+public struct AppLinkLearner: Sendable {
+    public enum Field: Sendable {
+        case username
+        case password
+    }
+
+    public static let window: TimeInterval = 300
+
+    private var first: (entry: UUID, app: LinkedApp, field: Field, at: Date)?
+
+    public init() {}
+
+    /// True when this copy completes the pair. The pair is then spent.
+    public mutating func copied(_ field: Field, of entry: UUID, over app: LinkedApp, at now: Date) -> Bool {
+        if let first, first.entry == entry, first.app.isApp(app), app.isApp(first.app), first.field != field, isFresh(first.at, now) {
+            self.first = nil
+            return true
+        }
+        first = (entry, app, field, now)
+        return false
+    }
+
+    public mutating func forget() {
+        first = nil
+    }
+
+    private func isFresh(_ then: Date, _ now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(then)
+        return elapsed >= 0 && elapsed < Self.window
+    }
+}
+
+extension MenuBuilder {
+    /// The group at the top of the panel for the app in front: a header with the app's icon and name, then its
+    /// accounts, as `siteRows` lists a site's. Empty when the app has no accounts.
+    public static func appRows(app: LinkedApp, entries: [VaultEntry], sources: [UUID: String] = [:]) -> [MenuRow] {
+        var rows = siteRows(site: app.name, entries: entries, sources: sources)
+        if !rows.isEmpty { rows[0].appBundleID = app.bundleID }
+        return rows
+    }
+}

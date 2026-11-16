@@ -16,6 +16,10 @@ protocol MenuHost: AnyObject {
     func menuHide()
     /// An action row ran. The host hides the panel if the action leaves it.
     func menuPerform(_ action: MenuAction)
+    /// The app the menu is over, when accounts can be linked to it.
+    var menuLinkableApp: LinkedApp? { get }
+    /// Return on an account linked to the app in front: copy its username and close, as ⌃⌘C does.
+    func menuCopyPrimary(of id: UUID)
 }
 
 /// A child window that never takes key status, so the search field in the root panel keeps the keyboard.
@@ -380,6 +384,11 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     /// Login: fill the browser tab on its site, or open the site and fill. Password: fill the previous app. Everything else has no default action.
     private func performAction(for id: UUID) {
         guard let entry = session.entry(id) else { return }
+        // Over an app this account is linked to, Return is for that app: there is no page to open or fill.
+        if entry.category == .login, session.isLinked(id, to: host?.menuLinkableApp) {
+            host?.menuCopyPrimary(of: id)
+            return
+        }
         switch entry.category {
         case .login: session.fill(id, .fillOrOpen, website: otherWebsite(of: entry, matching: query))
         case .password: session.fill(id, .fill)
