@@ -365,9 +365,12 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `brand-accent`, `on-accent` label and arrow, `on-accent` 28 % divider, no outline. Hover adds ink 10 %, pressed
   ink 18 %. Compact is 20 pt tall in `caption` with a 20 pt arrow; regular is 28 pt in `control` with a 24 pt arrow.
 - **Detail field** — `label` over the value, with a hairline on top. States: normal; focused (keyboard,
-  `brand-accent` 20 % fill); hover (a compact quiet split action button at the right: "Copy" for most fields,
+  `brand-accent` 20 % fill); hover (a 1 pt dashed outline, dash 3 gap 2, radius 6, in `text-secondary` 70 %, inset
+  4 pt from the row's sides and 3 pt from its top and bottom, so it surrounds the whole row that takes the click; and
+  inside it a compact quiet split action button at the right: "Copy" for most fields,
   "Open" for a website; a password's arrow adds Reveal / Conceal and Large Type, a website's adds Copy and
-  Open and Fill); flashing (Return shows the button at 40 % for 0.3 s, then runs the
+  Open and Fill. A click anywhere in the outline runs the button's action, also when that click is the one that
+  brings PasswordPie to the front (macOS 15 and later); docs/UX.md, "The whole field is the button"); flashing (Return shows the button at 40 % for 0.3 s, then runs the
   primary action). In the popover, copy and open hide the panel. Masked secrets show 8 to 16 bullets; holding
   Option or Reveal shows them in `body-code`. The pinned window does not inherit a held Option, and that
   reveal clears when PasswordPie resigns active. An explicit reveal stays until conceal. Notes wrap to 8 lines.
