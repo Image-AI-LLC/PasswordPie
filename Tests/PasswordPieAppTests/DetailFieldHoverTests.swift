@@ -127,21 +127,27 @@ final class DetailFieldHoverTests: XCTestCase {
         withExtendedLifetime(session) {}
     }
 
-    /// The click lands on the value's side of the row, far from the Copy button.
+    /// The click lands on the value's side of the row, far from the Copy button. The window can become key and is not
+    /// key, as when the menu opens over another app, so the click is also the one that activates it.
     func testAClickAnywhereInTheFieldRunsItsButton() async throws {
-        let row = try await hoverChange(on: .username).change.rect
         var closed = 0
         let session = VaultSession(writes: .inline)
         let model = DetailsModel(entry: login(), session: session, done: { closed += 1 })
+        let username = try XCTUnwrap(model.fields.first { $0.kind == .username })
         let host = try await hosted(model)
-        let window = NSWindow(contentRect: CGRect(origin: CGPoint(x: -4000, y: -4000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = KeyPanel(contentRect: CGRect(origin: CGPoint(x: -4000, y: -4000), size: size), styleMask: [.borderless, .nonactivatingPanel, .utilityWindow], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         // Off every screen, but ordered in: SwiftUI takes no gestures in a window that is not shown.
         window.orderFrontRegardless()
         try await settle(host)
+        // The row's rect from this same host, with the pointer on it.
+        let before = try draw(host)
+        model.pointer(true, on: username)
+        try await settle(host)
+        let row = try XCTUnwrap(change(from: before, to: try draw(host))).rect
         // A third of the way along, between the text and the button.
-        let inHost = CGPoint(x: size.width / 3, y: host.isFlipped ? row.midY : size.height - row.midY)
+        let inHost = CGPoint(x: host.bounds.width / 3, y: host.isFlipped ? row.midY : host.bounds.height - row.midY)
         let point = host.convert(inHost, to: nil)
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let event = try XCTUnwrap(NSEvent.mouseEvent(

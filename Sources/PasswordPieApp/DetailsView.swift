@@ -654,6 +654,18 @@ private struct DetailChrome<Content: View>: View {
     }
 }
 
+private extension View {
+    /// The menu may open over another app, and the click that follows is the one that activates PasswordPie. Without
+    /// this it only reaches a button, so a click on the row's text or blank area would do nothing.
+    @ViewBuilder func takesTheClickThatActivates() -> some View {
+        if #available(macOS 15.0, *) {
+            allowsWindowActivationEvents(true)
+        } else {
+            self
+        }
+    }
+}
+
 private struct DetailRow: View {
     @Environment(\.colorScheme) private var colorScheme
     @ObservedObject var model: DetailsModel
@@ -676,6 +688,7 @@ private struct DetailRow: View {
         ) { value }
             .contentShape(Rectangle())
             .onTapGesture { model.perform(control.primary, on: field) }
+            .takesTheClickThatActivates()
             .padding(.trailing, fieldActionsStayVisible(model.presentation) ? (control.menu.isEmpty ? 60 : 92) : 0)
             .overlay { if hovering { FieldHoverOutline() } }
             .overlay(alignment: .trailing) {
