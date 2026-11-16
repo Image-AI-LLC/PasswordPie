@@ -5,7 +5,7 @@ import PasswordPieCore
 enum AppLinkNotice: Equatable {
     /// The account was just linked to the app. The bubble offers Undo.
     case linked(entry: UUID, title: String, app: LinkedApp)
-    /// The user took this link back before, so the same copies only ask. The bubble offers Show first.
+    /// The user took this link back before, so a password copied over the app only asks. The bubble offers Show first.
     case offer(entry: UUID, title: String, app: LinkedApp)
     /// A click on the app in the account's details took the link off. The bubble offers Undo.
     case unlinked(entry: UUID, title: String, app: LinkedApp)

@@ -1394,7 +1394,8 @@ Harbor again?", with **Show first**. Ignore it and nothing changes.
   with the same app shows the same group. Another KeePass app shows it as an extra field; deleting it there only
   removes the links.
 - A login that comes from Chrome is saved into your database when it is linked, as it is when you star it. Chrome
-  itself is not changed.
+  itself is not changed. **Undo** takes the link off and leaves the saved login in your database: that is where "not
+  this app" is remembered. It stays one account in the menu, as before.
 
 ### What it will not do
 

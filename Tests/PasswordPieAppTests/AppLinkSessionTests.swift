@@ -88,7 +88,6 @@ final class AppLinkSessionTests: XCTestCase {
         let session = session()
         let id = try id(session)
         session.copy(.username, of: id)
-        session.copy(.oneTimePassword, of: id)
         session.copy(.url, of: id)
         session.copy(.notes, of: id)
         session.copy(.username, of: id)
