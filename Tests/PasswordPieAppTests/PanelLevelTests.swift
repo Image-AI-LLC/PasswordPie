@@ -82,6 +82,24 @@ final class PanelLevelTests: XCTestCase {
         XCTAssertEqual(submenu.level, menuWindowLevel)
     }
 
+    func testTheDetailsPopoverFollowsThePanel() throws {
+        var entry = VaultEntry()
+        entry.title = "GitHub"
+        entry.username = "first"
+        let (_, panel) = try openPanel(entries: [entry])
+        defer { panel.hide() }
+        panel.header.searchField.stringValue = "github"
+        panel.headerSearchChanged("github")
+        _ = panel.headerKey(.right)
+        let popover = try XCTUnwrap(panel.menu.popoverWindow)
+        XCTAssertGreaterThanOrEqual(popover.level.rawValue, menuWindowLevel.rawValue)
+
+        let during = panel.keepOpen { popover.level }
+
+        XCTAssertLessThan(during.rawValue, NSWindow.Level.modalPanel.rawValue)
+        XCTAssertGreaterThanOrEqual(popover.level.rawValue, menuWindowLevel.rawValue)
+    }
+
     func testNestedDialogsBringThePanelBackOnlyAfterTheLastOne() throws {
         let (_, panel) = try openPanel()
         defer { panel.hide() }
