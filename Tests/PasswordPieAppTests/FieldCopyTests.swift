@@ -133,11 +133,20 @@ final class FieldCopyTests: XCTestCase {
 
     func testOnlyThePasswordFieldShowsTheLargeTypeShortcut() {
         let password = DetailField(id: "password", kind: .password, label: "password", value: "secret", secret: true)
-        XCTAssertEqual(fieldActionShortcut(.largeType, on: password), KeyboardShortcut("o", modifiers: [.command, .shift]))
-        XCTAssertNil(fieldActionShortcut(.reveal, on: password))
-        XCTAssertNil(fieldActionShortcut(.copy, on: password))
+        XCTAssertEqual(
+            fieldActionShortcut(.largeType, on: password, menuShortcut: .default),
+            KeyboardShortcut("o", modifiers: [.command, .shift])
+        )
+        XCTAssertNil(fieldActionShortcut(.reveal, on: password, menuShortcut: .default))
+        XCTAssertNil(fieldActionShortcut(.copy, on: password, menuShortcut: .default))
         let pin = DetailField(id: "PIN", kind: .custom("PIN"), label: "PIN", value: "4242", secret: true)
-        XCTAssertNil(fieldActionShortcut(.largeType, on: pin))
+        XCTAssertNil(fieldActionShortcut(.largeType, on: pin, menuShortcut: .default))
+    }
+
+    func testTheLargeTypeShortcutIsNotShownWhenItOpensTheMenu() {
+        let password = DetailField(id: "password", kind: .password, label: "password", value: "secret", secret: true)
+        let menuShortcut = HotKeyConfig(keyCode: UInt32(kVK_ANSI_O), modifiers: UInt32(cmdKey) | UInt32(shiftKey))
+        XCTAssertNil(fieldActionShortcut(.largeType, on: password, menuShortcut: menuShortcut))
     }
 
     func testPinnedHotKeysNeverTakeOverTheMenuShortcut() {

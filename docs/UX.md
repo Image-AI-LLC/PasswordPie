@@ -1456,8 +1456,8 @@ It is next to ⌘O, which pins the account: O opens the account in a window, and
 - **Other apps' ⇧⌘O, while an account is pinned.** As with the copy shortcuts, ⇧⌘O belongs to PasswordPie in every
   app while a pinned window is open, so another app's own ⇧⌘O does not reach it. Close the pinned window and the app has
   it back.
-- **A menu shortcut of your own.** If you set the shortcut that opens the menu to ⇧⌘O, it opens the menu and this
-  shortcut is not available.
+- **A menu shortcut of your own.** If you set the shortcut that opens the menu to ⇧⌘O, it opens the menu, this
+  shortcut is not available, and the arrow lists Large Type with no shortcut beside it.
 
 ### Demo script
 
