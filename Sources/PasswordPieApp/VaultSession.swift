@@ -285,6 +285,12 @@ final class VaultSession: ObservableObject {
     var onAutoLockChange: ((AutoLockSettings) -> Void)?
     /// Called for every vault action and unlock, so the idle timer restarts.
     var onActivity: (() -> Void)?
+    /// The app a copy is for, when it is one an account can be linked to. See `VaultSession+AppLinks.swift`.
+    var copyTargetApp: (() -> LinkedApp?)?
+    /// A link was made, or an account and an app that were unlinked before met again: the bubble says so.
+    var onAppLink: ((AppLinkNotice) -> Void)?
+    var appLinkLearner = AppLinkLearner()
+    var appLinkClock: () -> Date = { Date() }
 
     private(set) var vaultName = "PasswordPie"
     var masterPassword = ""
@@ -729,6 +735,7 @@ final class VaultSession: ObservableObject {
         passwordDraft = ""
         confirmDraft = ""
         editing = nil
+        appLinkLearner.forget()
         // A save still being written finishes on its own. Its result is dropped: nothing of this session is left to update.
         // A save still waiting for its turn cannot be written: the files it changes went with the session. Each is told.
         let waiting = queuedWrites
@@ -1375,6 +1382,38 @@ final class VaultSession: ObservableObject {
         })
     }
 
+    /// One change to an account, saved. A Chrome login is saved into the database with the change, as starring it does.
+    /// `change` returns false when it has nothing to save. `done` gets true when the file holds the change.
+    func changeEntry(_ id: UUID, _ change: @escaping (inout VaultEntry) -> Bool, then done: @escaping (Bool) -> Void = { _ in }) {
+        let stored = storedEntry(id) != nil
+        guard stored || chromeDraft(id) != nil else {
+            done(false)
+            return
+        }
+        var changed = false
+        enqueueWrite({ [weak self] in
+            guard let self else { return nil }
+            if var entry = self.storedEntry(id) {
+                guard change(&entry) else { return nil }
+                changed = true
+                self.replaceStored(entry)
+                return self.listPaths[id] ?? self.databaseURL.path
+            }
+            guard var draft = self.chromeDraft(id), change(&draft) else { return nil }
+            changed = true
+            let path = self.listPaths[id] ?? self.databaseURL.path
+            if self.listPaths[id] != nil {
+                self.replaceStored(draft)
+            } else {
+                self.appendStored(draft, to: path)
+            }
+            return path
+        }, done: { [weak self] failure in
+            if failure == nil, changed, !stored { self?.keepChromeLastUsed(id) }
+            done(failure == nil && changed)
+        })
+    }
+
     /// A generated password saved as a new Password item, only when the user asks for it.
     /// New items go into the file whose password unlocked this session.
     func saveGenerated(_ password: String) {
@@ -1516,11 +1555,14 @@ final class VaultSession: ObservableObject {
             requestPremium { [weak self] in self?.copy(target, of: id) }
             return
         }
-        copy(value(of: target, in: entry))
+        let text = value(of: target, in: entry)
+        copy(text)
         switch target {
         case .username, .password, .oneTimePassword: recordUse(id)
         case .url, .notes, .custom: break
         }
+        // Every way of copying an account's field ends here, so this is the one place the link rule hears of it.
+        if !text.isEmpty { noteCopy(target, of: entry) }
     }
 
     /// What ⌃⌘C, ⇧⌘C and ⌥⌘C do, in the menu and with a pinned window.

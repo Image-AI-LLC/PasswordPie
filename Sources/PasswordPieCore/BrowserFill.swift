@@ -732,7 +732,12 @@ public enum SiteSuggestions {
                 return BrowserSite(url: website)?.allowsFill(on: page) == true
             }
         }
-        return found.map { (entry: $0, title: $0.title, used: lastUsed[$0.id]) }.sorted { lhs, rhs in
+        return ordered(found, lastUsed: lastUsed)
+    }
+
+    /// Favorites first, then the most recently used, then title.
+    public static func ordered(_ entries: [VaultEntry], lastUsed: [UUID: Date]) -> [VaultEntry] {
+        entries.map { (entry: $0, title: $0.title, used: lastUsed[$0.id]) }.sorted { lhs, rhs in
             if lhs.entry.favorite != rhs.entry.favorite { return lhs.entry.favorite }
             if lhs.used != rhs.used {
                 guard let left = lhs.used else { return false }

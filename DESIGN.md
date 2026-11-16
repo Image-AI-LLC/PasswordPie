@@ -329,6 +329,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   off for 50 ms, back on, and acts 150 ms later.
 - **Group header** — 16 pt band, ink 3 % fill, ink 20 % lines above and below, `caption` upper case.
   Not selectable.
+  The header of an app's group (the accounts linked to the app in front) puts the app's icon, 11 pt, at x 6 and
+  the name 5 pt after it. A site's group has no icon. See "An account remembers its app" in [docs/UX.md](docs/UX.md).
 - **Separator** — 11 pt row with a 1 pt ink 25 % line at its middle.
 - **Show N more** — selectable; replaces itself with the hidden rows.
 - **Hover timing** — a submenu or the generator opens 0.2 s after the pointer rests on its row. The first
@@ -351,6 +353,20 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Details popover** — header, then one field per value: username, password (+ strength and previous passwords),
   one-time password, websites, custom fields, notes, tags. Up and down walk the same order. Pin opens that account in its own utility window and
   hides the menu.
+- **Linked apps line** — in the details header, under the title, only for an account linked to an app: "Shown
+  first in" in `caption` `text-secondary`, then one token per app, 6 pt apart. The header is then 60 pt and not 52.
+  A token is 18 pt tall, radius 5, a 1 pt ink 25 % outline and no fill: the app's icon at 12 pt, its name in `caption`
+  `text`, and an 7 pt bold `xmark` at 60 %, 5 pt between them and 6 pt at the sides. The close mark is always there, so
+  nothing moves under the pointer. Hover: `field-surface` fill, outline at 45 %, mark at 100 %. A click anywhere on
+  the token unlinks. Apps that do not fit are counted: "+2 more".
+- **Link bubble** — says that an account was linked to an app, was unlinked, or may be linked again. A borderless
+  panel that never takes focus, at the pinned windows' level, centred 48 pt above the bottom of the screen's visible
+  frame. 44 pt tall, at most 560 pt wide, radius 10, `surface` with a 1 pt `border` outline and the system window
+  shadow; nothing behind it shows through. From the left, 12 pt in: the account's 24 pt icon with the app's icon as its
+  mark (13 pt, bottom right, a 1.5 pt `surface` ring, radius 4, set 6 pt out), one line in `body` medium, cut in the
+  middle when long, and one compact quiet split action button: "Undo", or "Show first" when it asks. It fades in and
+  out over 0.2 s, stays 6 seconds, and waits while the pointer is on it. Locking closes it. Orange is not used:
+  the bubble is a notice, not the surface's main action.
 - **Pinned window** — one window per account; pinning again brings it forward and leaves it in place. A
   new window starts at the top-right of the screen; each further one steps 28 pt down and left. Its level
   is the main-menu level minus 2, so it stays above normal windows and under PasswordPie's menu, also after

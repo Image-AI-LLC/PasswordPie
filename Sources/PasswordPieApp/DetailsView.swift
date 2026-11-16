@@ -177,6 +177,8 @@ final class DetailsModel: ObservableObject {
     /// The field the pointer is on. Its row shows the outline and its button.
     @Published private(set) var hoveredField: String?
     @Published var favorite: Bool
+    /// The apps this account is shown first in, for the line under the title.
+    @Published private(set) var linkedApps: [LinkedApp] = []
     let presentation: DetailsPresentation
     unowned let session: VaultSession
     fileprivate let done: () -> Void
@@ -258,8 +260,14 @@ final class DetailsModel: ObservableObject {
         }
     }
 
+    /// A click on an app under the title: the account is no longer shown first there. The bubble offers Undo.
+    func unlink(_ app: LinkedApp) {
+        session.unlinkApp(app, from: entryID, announce: true)
+    }
+
     private func apply(_ entry: VaultEntry) {
         favorite = entry.favorite
+        linkedApps = AppLinks.apps(of: entry)
         fields = Self.detailFields(of: entry)
         changeInDays = PasswordRotation.daysLeft(of: entry, now: Date())
         #if PP_DIRECT
@@ -600,7 +608,10 @@ struct DetailsView: View {
         HStack(spacing: 10) {
             SiteIconView(host: model.siteHost, title: model.title, side: 32)
                 .overlay(alignment: .bottomTrailing) { headerBadge }
-            Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                if !model.linkedApps.isEmpty { LinkedAppsLine(model: model) }
+            }
             Spacer(minLength: 0)
             Button { model.edit() } label: {
                 Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(Color.secondary)
@@ -624,6 +635,68 @@ struct DetailsView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+}
+
+/// "Shown first in", then the account's apps. As many as fit; the rest are counted.
+/// See "An account remembers its app" in docs/UX.md.
+private struct LinkedAppsLine: View {
+    @ObservedObject var model: DetailsModel
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach(Array(stride(from: model.linkedApps.count, through: 1, by: -1)), id: \.self) { shown in
+                line(shown: shown)
+            }
+        }
+    }
+
+    private func line(shown: Int) -> some View {
+        HStack(spacing: 6) {
+            Text(linkedAppsLabel).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize()
+            ForEach(Array(model.linkedApps.prefix(shown)), id: \.self) { app in
+                LinkedAppToken(app: app, account: model.title) { model.unlink(app) }
+            }
+            if shown < model.linkedApps.count {
+                Text(linkedAppsOverflow(hidden: model.linkedApps.count - shown))
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize()
+            }
+        }
+    }
+}
+
+let linkedAppsLabel = "Shown first in"
+
+func linkedAppsOverflow(hidden: Int) -> String {
+    "+\(hidden) more"
+}
+
+/// One app: its icon, its name, and a close mark that is always there. A click anywhere on it unlinks.
+private struct LinkedAppToken: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var app: LinkedApp
+    var account: String
+    var unlink: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        Button(action: unlink) {
+            HStack(spacing: 5) {
+                Image(nsImage: AppIdentity.icon(for: app)).resizable().frame(width: 12, height: 12)
+                Text(app.name).font(.system(size: 11)).lineLimit(1).fixedSize()
+                Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).opacity(hovered ? 1 : 0.6)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 18)
+            .background(RoundedRectangle(cornerRadius: 5).fill(hovered ? Palette.fieldSurface(dark: dark) : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(hovered ? 0.45 : 0.25), lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("Stop showing \(account) first in \(app.name)")
+        .accessibilityLabel("\(app.name). Stop showing \(account) first in \(app.name)")
     }
 }
 

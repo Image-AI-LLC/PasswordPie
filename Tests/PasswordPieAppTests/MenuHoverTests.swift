@@ -39,6 +39,8 @@ final class MenuHoverTests: XCTestCase {
         }
         func menuHide() { hidden += 1 }
         func menuPerform(_ action: MenuAction) { performed.append(action) }
+        var menuLinkableApp: LinkedApp? { nil }
+        func menuCopyPrimary(of id: UUID) {}
     }
 
     /// A session on a new database, with `entries` saved into it, and a controller whose root list lives in a window

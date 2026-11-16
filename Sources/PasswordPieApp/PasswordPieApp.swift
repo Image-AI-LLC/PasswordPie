@@ -95,6 +95,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hotKeyStatus = ""
     #endif
 
+    private let linkBubble = AppLinkBubbleController()
+
+    /// The bubble at the bottom of the screen: a link was made, was taken off, or is offered again. Its button is the
+    /// way back (or, for an offer, the way in).
+    private func showLinkBubble(_ notice: AppLinkNotice) {
+        guard let entry = session.entry(notice.entry) else { return }
+        linkBubble.show(notice, title: VaultSession.linkTitle(of: entry), siteHost: websiteHost(of: entry)) { [weak self] in
+            guard let self else { return }
+            switch notice {
+            case .linked: self.session.unlinkApp(notice.app, from: notice.entry)
+            case .offer, .unlinked: self.session.linkApp(notice.app, to: notice.entry)
+            }
+        }
+    }
+
     /// The browser extensions fill through the bridge; Fill falls back to keystrokes when it cannot.
     private func startBrowserBridge() {
         bridge = BrowserBridge(session: session)
@@ -103,6 +118,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return FrontApp(target.app, inFront: target.inFront)
         }
         bridge.hidePanel = { [weak self] refocus in self?.panelController.hide(refocusPrevious: refocus) }
+        session.onAppLink = { [weak self] notice in self?.showLinkBubble(notice) }
+        // The app a copy is for: the one the menu opened over, or with the menu closed (a pinned window) the one in front.
+        session.copyTargetApp = { [weak self] in
+            guard let target = self?.panelController.fillTarget else { return nil }
+            return AppIdentity.linkable(target.app, inFront: target.inFront)
+        }
         session.browserFill = { [weak self] entry, mode, website in
             self?.bridge.fill(entry, mode, website: website) ?? false
         }
@@ -163,6 +184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 #endif
                 self?.largeTypeWindow?.close()
                 self?.largeTypeWindow = nil
+                // The bubble names an account.
+                self?.linkBubble.dismiss(animated: false)
                 let pinned = Array(self?.pinnedAccounts.values.map(\.panel) ?? [])
                 pinned.forEach { $0.close() }
             }

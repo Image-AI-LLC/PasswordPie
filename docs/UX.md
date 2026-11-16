@@ -1331,3 +1331,89 @@ one.
 2. Press `⌘\`. The menu opens over the Sign in window. Type a few letters of the account and press ⇧⌘C.
 3. The menu closes, the caret is back in the Sign in window, and ⌘V pastes the password.
 4. Open the menu again and choose **Open Database…** from the gear. The file chooser is in front of the menu.
+
+## An account remembers its app
+
+**In one line:** sign in to an app once with an account from PasswordPie, and the next time you press `⌘\` over that
+app, the account is already at the top.
+
+### The problem
+
+In a browser, PasswordPie knows the site you are on and lists its accounts first. In any other app it knew nothing.
+Microsoft Teams asks for the account you keep under "Outlook"; a company chat app asks for the one you keep under the
+company's name. The app's name and the account's name do not match, so you searched for the same account every time
+the app signed you out.
+
+### What happens now
+
+1. Over the app, copy the account's username and its password from PasswordPie, in either order. Any way of copying
+   counts: a shortcut in the menu, a click in the details beside the menu, a click or a shortcut with a pinned window.
+2. PasswordPie links the account to that app and says so in a small bubble at the bottom of the screen: "Northwind SSO
+   is now shown first in Harbor", with **Undo**. The bubble never takes the keyboard, so what you paste next still
+   goes into the app. It leaves after 6 seconds, and waits while the pointer is on it.
+3. The next time you open the menu over that app, a group with the app's icon and name (`HARBOR`) is at the top with
+   its accounts, the first one selected. Return on a login copies its username and closes the menu, as ⌃⌘C does; ⇧⌘C
+   copies the password and ⌥⌘C the one-time code.
+
+The group is there only while that app is in front. Typing in the search box replaces it with search results, as it
+does a site's group. An account can be linked to several apps, and an app can have several accounts: they are listed
+favorites first, then the most recently used.
+
+### What makes a link
+
+| What you did | What happens |
+|---|---|
+| Copied the username and the password of one account over the same app, within 5 minutes | The account is linked to the app |
+| Copied only one of the two | Nothing |
+| Copied one over one app and the other over another app | Nothing |
+| Copied the two more than 5 minutes apart | Nothing: the first copy is forgotten |
+| Copied a one-time code, a website or a note | Does not count either way |
+| Copied over a web browser, with or without PasswordPie's extension | Nothing: in a browser the site says which account, not the app |
+| Copied while a PasswordPie window (Preferences, the editor) was in front | Nothing |
+| Locked PasswordPie between the two copies | Nothing: the first copy is forgotten |
+
+PasswordPie looks only at its own copies and at which app is in front. It does not see what you paste, where you
+paste it, or whether the sign-in worked, and it needs no permission from macOS for any of this.
+
+### Seeing it and taking it back
+
+An account's details, beside the menu and in a pinned window, show the link under the title: "Shown first in", then
+each app with its icon, its name and a close mark. Click an app and the account is no longer shown first there. The
+bubble says so, "Northwind SSO is no longer shown first in Harbor", with **Undo**, because a click can be a slip.
+An account with no app has no such line, and its details look as they always did.
+
+After **Undo** on a new link, or a click that took an app off, PasswordPie does not link that account to that app
+again on its own. If you copy the two over the app again, the bubble asks instead, "Show Northwind SSO first in
+Harbor again?", with **Show first**. Ignore it and nothing changes.
+
+### Where the link is kept
+
+- On the account, in your database, as a field named `PasswordPie.Apps`. It travels with the database, so another Mac
+  with the same app shows the same group. Another KeePass app shows it as an extra field; deleting it there only
+  removes the links.
+- A login that comes from Chrome is saved into your database when it is linked, as it is when you star it. Chrome
+  itself is not changed.
+- The first copy of a pair is held in memory for 5 minutes and is never written anywhere.
+
+### What it will not do
+
+- Show an app's group to another app that only claims the same name. A link records who signed the app, when macOS
+  tells PasswordPie, and an app signed by someone else then does not get the group. (An app from Apple, or one that is
+  not signed by a developer, has no signer to record; its link goes by the app's identifier.)
+- Type or paste anything into the app. It only puts the account first.
+- Link from a single copy. Copying one password to send to someone is not a sign-in.
+
+### Demo script
+
+Use an app that asks for an account whose name is not the app's name, such as Microsoft Teams and an account titled
+"Outlook".
+
+1. Open the app signed out. Press `⌘\`, type `outlook`, press ⌃⌘C. Paste the username into the app.
+2. Press `⌘\` again within 10 seconds: the same account is selected. Press ⇧⌘C and paste the password. The bubble
+   appears at the bottom of the screen: "Outlook is now shown first in Microsoft Teams".
+3. Sign out of the app. Press `⌘\`: the group `MICROSOFT TEAMS` is at the top with Outlook selected. Press Return and
+   paste.
+4. Switch to another app and press `⌘\`: no group.
+5. Back over the first app, press `⌘\`, then → on the account. Under the title: "Shown first in", and Microsoft
+   Teams with its icon. Click it: the bubble says the account is no longer shown first there. Press `⌘\` again: no group.
+6. Copy the username and the password over the app once more: the bubble now asks, with **Show first**.

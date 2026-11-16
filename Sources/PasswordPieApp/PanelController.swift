@@ -711,8 +711,21 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         bridge.install(shownBanner, in: FrontApp(previousApp, inFront: targetInFront))
     }
 
-    /// The front browser's site and its accounts, for the top of the initial menu.
+    /// The app the panel opened over, when accounts can be linked to it. Nil over a browser and once the panel closed.
+    var menuLinkableApp: LinkedApp? {
+        AppIdentity.linkable(previousApp, inFront: targetInFront)
+    }
+
+    func menuCopyPrimary(of id: UUID) {
+        runCopy(.copyPrimary, of: id)
+    }
+
+    /// The front browser's site and its accounts, for the top of the initial menu. Over any other app: the accounts
+    /// linked to that app.
     private func siteSectionRows() -> [MenuRow] {
+        if let app = menuLinkableApp {
+            return MenuBuilder.appRows(app: app, entries: session.appEntries(for: app), sources: session.entrySources)
+        }
         guard let bridge, let browser = BrowserBridge.browser(forBundleID: previousApp?.bundleIdentifier),
               let page = bridge.pageURL(for: browser, inFront: targetInFront), let site = BrowserSite(url: page) else { return [] }
         let entries = SiteSuggestions.entries(session.allEntries, pageURL: page, lastUsed: session.lastUsedMap)
@@ -1106,17 +1119,21 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         return true
     }
 
+    private func runCopy(_ shortcut: QuickAccessShortcut, of id: UUID) {
+        switch session.runCopyShortcut(shortcut, of: id) {
+        case .copied: hide()
+        // The plans take the keyboard, so focus does not go back to the app underneath.
+        case .premiumRequired: hide(refocusPrevious: false)
+        case .nothingToCopy: break
+        }
+    }
+
     /// Copies dismiss Quick Access only when there is something to put on the clipboard.
     private func runQuickAccess(_ shortcut: QuickAccessShortcut) {
         guard let id = menu.currentEntryID else { return }
         switch shortcut {
         case .copyPrimary, .copyPassword, .copyOneTimePassword:
-            switch session.runCopyShortcut(shortcut, of: id) {
-            case .copied: hide()
-            // The plans take the keyboard, so focus does not go back to the app underneath.
-            case .premiumRequired: hide(refocusPrevious: false)
-            case .nothingToCopy: break
-            }
+            runCopy(shortcut, of: id)
         case .pinItem:
             session.pinEntry(id)
         case .openAndFill:
