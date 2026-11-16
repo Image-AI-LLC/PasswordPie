@@ -1346,8 +1346,9 @@ the app signed you out.
 
 ### What happens now
 
-1. Over the app, copy the account's username and its password from PasswordPie, in either order. Any way of copying
-   counts: a shortcut in the menu, a click in the details beside the menu, a click or a shortcut with a pinned window.
+1. Over the app, copy the account's password from PasswordPie. Any way of copying counts: a shortcut in the menu, a
+   click in the details beside the menu, a click or a shortcut with a pinned window. The username is not needed: many
+   apps already show it and ask only for the password.
 2. PasswordPie links the account to that app and says so in a small bubble at the bottom of the screen: "Northwind SSO
    is now shown first in Harbor", with **Undo**. The bubble never takes the keyboard, so what you paste next still
    goes into the app. It leaves after 6 seconds, and waits while the pointer is on it.
@@ -1363,17 +1364,18 @@ favorites first, then the most recently used.
 
 | What you did | What happens |
 |---|---|
-| Copied the username and the password of one account over the same app, within 5 minutes | The account is linked to the app |
-| Copied only one of the two | Nothing |
-| Copied one over one app and the other over another app | Nothing |
-| Copied the two more than 5 minutes apart | Nothing: the first copy is forgotten |
-| Copied a one-time code, a website or a note | Does not count either way |
-| Copied over a web browser, with or without PasswordPie's extension | Nothing: in a browser the site says which account, not the app |
-| Copied while a PasswordPie window (Preferences, the editor) was in front | Nothing |
-| Locked PasswordPie between the two copies | Nothing: the first copy is forgotten |
+| Copied an account's password over an app | The account is linked to the app |
+| Copied only the username | Nothing: a username is not a sign-in |
+| Copied a one-time code, a website or a note | Nothing |
+| Copied the password over a web browser, with or without PasswordPie's extension | Nothing: in a browser the site says which account, not the app |
+| Copied the password while a PasswordPie window (Preferences, the editor) was in front | Nothing |
 
 PasswordPie looks only at its own copies and at which app is in front. It does not see what you paste, where you
 paste it, or whether the sign-in worked, and it needs no permission from macOS for any of this.
+
+So one copy is enough, and sometimes it is the wrong guess: a password copied over a chat app to send to someone
+links the account to the chat app. Press **Undo** on the bubble, or take the app off later in the account's details.
+Either is one click, and PasswordPie does not make that link again on its own.
 
 ### Seeing it and taking it back
 
@@ -1383,7 +1385,7 @@ bubble says so, "Northwind SSO is no longer shown first in Harbor", with **Undo*
 An account with no app has no such line, and its details look as they always did.
 
 After **Undo** on a new link, or a click that took an app off, PasswordPie does not link that account to that app
-again on its own. If you copy the two over the app again, the bubble asks instead, "Show Northwind SSO first in
+again on its own. If you copy the password over the app again, the bubble asks instead, "Show Northwind SSO first in
 Harbor again?", with **Show first**. Ignore it and nothing changes.
 
 ### Where the link is kept
@@ -1393,7 +1395,6 @@ Harbor again?", with **Show first**. Ignore it and nothing changes.
   removes the links.
 - A login that comes from Chrome is saved into your database when it is linked, as it is when you star it. Chrome
   itself is not changed.
-- The first copy of a pair is held in memory for 5 minutes and is never written anywhere.
 
 ### What it will not do
 
@@ -1401,14 +1402,15 @@ Harbor again?", with **Show first**. Ignore it and nothing changes.
   tells PasswordPie, and an app signed by someone else then does not get the group. (An app from Apple, or one that is
   not signed by a developer, has no signer to record; its link goes by the app's identifier.)
 - Type or paste anything into the app. It only puts the account first.
-- Link from a single copy. Copying one password to send to someone is not a sign-in.
+- Link from a username, a one-time code or a website. Only a copied password makes a link.
 
 ### Demo script
 
 Use an app that asks for an account whose name is not the app's name, such as Microsoft Teams and an account titled
 "Outlook".
 
-1. Open the app signed out. Press `⌘\`, type `outlook`, press ⌃⌘C. Paste the username into the app.
+1. Open the app signed out. Press `⌘\`, type `outlook`, press ⌃⌘C. Paste the username into the app. No bubble: a
+   username does not make a link.
 2. Press `⌘\` again within 10 seconds: the same account is selected. Press ⇧⌘C and paste the password. The bubble
    appears at the bottom of the screen: "Outlook is now shown first in Microsoft Teams".
 3. Sign out of the app. Press `⌘\`: the group `MICROSOFT TEAMS` is at the top with Outlook selected. Press Return and
@@ -1416,4 +1418,4 @@ Use an app that asks for an account whose name is not the app's name, such as Mi
 4. Switch to another app and press `⌘\`: no group.
 5. Back over the first app, press `⌘\`, then → on the account. Under the title: "Shown first in", and Microsoft
    Teams with its icon. Click it: the bubble says the account is no longer shown first there. Press `⌘\` again: no group.
-6. Copy the username and the password over the app once more: the bubble now asks, with **Show first**.
+6. Copy the password over the app once more: the bubble now asks, with **Show first**.

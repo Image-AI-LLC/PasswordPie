@@ -38,6 +38,11 @@ What the rounds changed, taking the points both critics raised in the same round
 | 4 → 5 | One Harbor window, not two. Cause and effect in a straight line, with the linked header in it. |
 | 5 → 6 | The menu bar proves which app is in front. The step titles use the same words as the interface. Fewer notes. |
 
+After the six rounds the owner changed the rule that makes a link: a copied password is enough, and the username is no
+longer needed, because many apps already show it and a wrong link is one click to take back. The board's first step and
+the way back were redrawn for it (no numbered marks on the two fields; "copy it again in Harbor"). The critics did not
+see this version.
+
 What was not taken, and why:
 
 - **No bubble at the bottom of the screen** (Gemini, every round). The owner asked for this bubble. From round 6 the
