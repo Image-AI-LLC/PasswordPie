@@ -98,11 +98,9 @@ public enum EntryMerge {
                         entry.fields.append(contentsOf: other.fields.filter { PasswordRotation.isKey($0.key) })
                         changed = true
                     }
-                    // Nor is an app link: the survivor keeps every app its copies were linked to, except one the user
-                    // took off the survivor.
-                    for app in AppLinks.apps(of: other) where !AppLinks.refuses(entry, app) && AppLinks.link(app, to: &entry) {
-                        changed = true
-                    }
+                    // Nor is an app link: the survivor keeps every app its copies were linked to, and the ones they
+                    // refused too. What the survivor itself says about an app is not changed.
+                    if AppLinks.absorb(other, into: &entry) { changed = true }
                     #if PP_DIRECT
                     if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
                     #endif

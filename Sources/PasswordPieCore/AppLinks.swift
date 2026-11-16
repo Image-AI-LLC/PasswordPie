@@ -74,6 +74,20 @@ public enum AppLinks {
         return true
     }
 
+    /// Takes each line of `other`, linked or refused, for an app `entry` has no line for. What `entry` already says about
+    /// an app is not changed. True when a line was added.
+    @discardableResult
+    public static func absorb(_ other: VaultEntry, into entry: inout VaultEntry) -> Bool {
+        var all = lines(of: entry)
+        var added = false
+        for line in lines(of: other) where !all.contains(where: { $0.app.sameIdentifier(line.app) }) {
+            all.append(line)
+            added = true
+        }
+        if added { write(all, to: &entry) }
+        return added
+    }
+
     /// The live accounts linked to `app`, in the order of a site's accounts: favorites, the most recently used, title.
     public static func entries(_ entries: [VaultEntry], linkedTo app: LinkedApp, lastUsed: [UUID: Date] = [:]) -> [VaultEntry] {
         // A cheap test first: thousands of accounts, and almost none has the field.
@@ -109,7 +123,8 @@ public enum AppLinks {
         entry.fields.removeAll { $0.key == key }
         guard !lines.isEmpty else { return }
         let text = lines.map { line in
-            let name = line.app.name.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ")
+            // Every character that ends a line when the field is read back, not only \n.
+            let name = String(line.app.name.map { $0.isNewline || $0 == "\t" ? " " : $0 })
             return (line.refused ? "!" : "") + [line.app.bundleID, line.app.teamID ?? "-", name].joined(separator: "\t")
         }.joined(separator: "\n")
         entry.setValue(text, for: key)

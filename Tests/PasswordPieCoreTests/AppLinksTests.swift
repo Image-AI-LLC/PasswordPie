@@ -94,6 +94,13 @@ final class AppLinksTests: XCTestCase {
         XCTAssertTrue(AppLinks.refuses(entry, ledger))
     }
 
+    func testANameWithALineBreakOrATabInItStaysOneLine() {
+        var entry = account()
+        AppLinks.link(LinkedApp(bundleID: "example.odd", teamID: nil, name: "Odd\u{2028}Name\r\tHere"), to: &entry)
+        AppLinks.link(ledger, to: &entry)
+        XCTAssertEqual(AppLinks.apps(of: entry), [LinkedApp(bundleID: "example.odd", teamID: nil, name: "Odd Name  Here"), ledger])
+    }
+
     func testTheFieldIsBookkeepingAndNotACustomField() {
         var entry = account()
         AppLinks.link(harbor, to: &entry)
@@ -127,6 +134,25 @@ final class AppLinksTests: XCTestCase {
         let kept = try XCTUnwrap(EntryMerge.merged([refusing, linked]).first { !$0.trashed })
         XCTAssertEqual(AppLinks.apps(of: kept), [])
         XCTAssertTrue(AppLinks.refuses(kept, harbor))
+
+        // A refusal on the copy is kept when the survivor has no word on the app.
+        var fuller = copy("Northwind SSO")
+        fuller.notes = "the one with more in it"
+        var unlinked = copy("Northwind")
+        AppLinks.link(harbor, to: &unlinked)
+        AppLinks.unlink(harbor, from: &unlinked)
+        let refused = EntryMerge.merged([fuller, unlinked])
+        let refusedSurvivor = try XCTUnwrap(refused.first { !$0.trashed })
+        XCTAssertTrue(AppLinks.refuses(refusedSurvivor, harbor))
+        XCTAssertEqual(EntryMerge.merged(refused), refused, "a second pass changes nothing")
+
+        // The survivor's own link is not undone by a copy that refused it.
+        var linkedSurvivor = copy("Northwind SSO")
+        linkedSurvivor.notes = "the one with more in it"
+        AppLinks.link(harbor, to: &linkedSurvivor)
+        let stayed = try XCTUnwrap(EntryMerge.merged([linkedSurvivor, unlinked]).first { !$0.trashed })
+        XCTAssertEqual(AppLinks.apps(of: stayed), [harbor])
+        XCTAssertFalse(AppLinks.refuses(stayed, harbor))
     }
 
     // MARK: The accounts of an app
