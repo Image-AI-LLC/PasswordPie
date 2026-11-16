@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Whether the panel may close because focus moved. The Touch ID sheet is another process.
 /// Cancelling that sheet must leave the lock form open.
@@ -10,6 +10,17 @@ enum PanelPresence {
         autoHideEnabled: Bool
     ) -> Bool {
         autoHideEnabled && keepOpenDepth == 0 && !touchIDBusy && !recordingHotKey
+    }
+}
+
+/// The window level of the menu: the panel, its submenus and the details popover.
+enum PanelLevel {
+    /// Just under the menu bar, like the attached 1Password mini: above another app's modal dialog (a sign-in window
+    /// sits at the modal-panel level while its app is active) and above pinned windows.
+    /// While PasswordPie shows a dialog of its own (a file chooser, a question), the menu goes back under the
+    /// modal-panel level, or it would cover the dialog it opened.
+    static func level(ownDialogOpen: Bool) -> NSWindow.Level {
+        ownDialogOpen ? .floating : menuWindowLevel
     }
 }
 

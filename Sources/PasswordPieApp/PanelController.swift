@@ -122,6 +122,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var attached = false
     private var keepOpenDepth = 0
+    /// How many of PasswordPie's own dialogs are open over the panel. See `PanelLevel`.
+    private var ownDialogDepth = 0 {
+        didSet { applyLevel() }
+    }
     /// True after the first file panel has been scheduled. The first one has to wait a turn.
     private var hasPresentedFilePanel = false
     /// A second click before the deferred panel appears must not open another one.
@@ -196,8 +200,10 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     // MARK: Construction
 
     private func buildPanel() {
-        panel.level = menuWindowLevel
         panel.isFloatingPanel = true
+        // isFloatingPanel puts the panel at the floating level and turns hidesOnDeactivate back on. Set both after,
+        // or the panel opens under another app's modal dialog (the Microsoft Teams sign-in window) with the keyboard.
+        panel.level = PanelLevel.level(ownDialogOpen: false)
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
@@ -209,6 +215,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         panel.onKeyEquivalent = { [weak self] event in self?.handleKeyEquivalent(event) ?? false }
         panel.onDragEnded = { [weak self] in self?.dragEnded() }
         NotificationCenter.default.addObserver(self, selector: #selector(panelResignedKey), name: NSWindow.didResignKeyNotification, object: panel)
+        NotificationCenter.default.addObserver(self, selector: #selector(panelBecameKey), name: NSWindow.didBecomeKeyNotification, object: panel)
 
         container.frame = NSRect(x: 0, y: 0, width: Metrics.width, height: Metrics.lockCardHeight)
         container.autoresizingMask = [.width, .height]
@@ -389,6 +396,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         // Activation is a request that macOS may decline while another app is frontmost; the panel is
         // non-activating, so it still becomes key and the first responder below receives the keys.
         NSApp.activate()
+        // The other app is then still active and its modal dialog still above ordinary panels: see `PanelLevel`.
+        applyLevel()
         panel.makeKeyAndOrderFront(nil)
         focusInitialField()
         if recalled != nil {
@@ -460,10 +469,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         recall.forget()
     }
 
-    /// Runs `body` (a modal file chooser, a menu) without the panel hiding when it loses key status.
-    func keepOpen<T>(_ body: () -> T) -> T {
+    /// Runs `body` (a modal file chooser, a question, a menu) without the panel hiding when it loses key status.
+    /// `underDialog` is false for a menu: it is not a dialog the panel could cover, and the panel stays on top.
+    func keepOpen<T>(underDialog: Bool = true, _ body: () -> T) -> T {
         keepOpenDepth += 1
+        if underDialog { ownDialogDepth += 1 }
         defer {
+            if underDialog { ownDialogDepth -= 1 }
             keepOpenDepth -= 1
             if panel.isVisible {
                 panel.makeKeyAndOrderFront(nil)
@@ -493,13 +505,23 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         }
         filePanelQueued = true
         keepOpenDepth += 1
+        ownDialogDepth += 1
         NSApp.activate(ignoringOtherApps: true)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.filePanelQueued = false
             self.keepOpen(show)
+            self.ownDialogDepth -= 1
             self.keepOpenDepth -= 1
         }
+    }
+
+    /// Puts the panel and the menu's other windows at the level `PanelLevel` gives. A modal window of PasswordPie's
+    /// that did not come through `keepOpen` counts as its own dialog too.
+    private func applyLevel() {
+        let level = PanelLevel.level(ownDialogOpen: ownDialogDepth > 0 || NSApp.modalWindow != nil)
+        if panel.level != level { panel.level = level }
+        menu.windowLevel = level
     }
 
     /// Touch ID cancel returns focus to another app. Stay open until the password field is key again.
@@ -531,7 +553,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         hide()
     }
 
+    @objc private func panelBecameKey() {
+        applyLevel()
+    }
+
     @objc private func panelResignedKey() {
+        applyLevel()
         guard PanelPresence.hidesOnFocusLoss(
             keepOpenDepth: keepOpenDepth,
             touchIDBusy: touchIDPromptOpen,
@@ -986,7 +1013,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     private func popUp(_ menu: NSMenu, from view: NSView) {
         self.menu.root.list.selectedIndex = nil
         self.menu.closeAll()
-        keepOpen { _ = menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX, y: view.bounds.maxY), in: view) }
+        keepOpen(underDialog: false) { _ = menu.popUp(positioning: nil, at: NSPoint(x: view.bounds.minX, y: view.bounds.maxY), in: view) }
     }
 
     private func gearMenu() -> NSMenu {
