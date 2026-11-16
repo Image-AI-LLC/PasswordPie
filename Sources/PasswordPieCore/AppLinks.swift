@@ -137,41 +137,6 @@ private extension LinkedApp {
     }
 }
 
-/// The one rule that links an account to an app without asking: its username and its password were both copied while
-/// the same app was in front, within five minutes, in either order. Every way of copying reports here, so the rule does
-/// not know which window or shortcut made the copy. In memory only.
-public struct AppLinkLearner: Sendable {
-    public enum Field: Sendable {
-        case username
-        case password
-    }
-
-    public static let window: TimeInterval = 300
-
-    private var first: (entry: UUID, app: LinkedApp, field: Field, at: Date)?
-
-    public init() {}
-
-    /// True when this copy completes the pair. The pair is then spent.
-    public mutating func copied(_ field: Field, of entry: UUID, over app: LinkedApp, at now: Date) -> Bool {
-        if let first, first.entry == entry, first.app.isApp(app), app.isApp(first.app), first.field != field, isFresh(first.at, now) {
-            self.first = nil
-            return true
-        }
-        first = (entry, app, field, now)
-        return false
-    }
-
-    public mutating func forget() {
-        first = nil
-    }
-
-    private func isFresh(_ then: Date, _ now: Date) -> Bool {
-        let elapsed = now.timeIntervalSince(then)
-        return elapsed >= 0 && elapsed < Self.window
-    }
-}
-
 extension MenuBuilder {
     /// The group at the top of the panel for the app in front: a header with the app's icon and name, then its
     /// accounts, as `siteRows` lists a site's. Empty when the app has no accounts.

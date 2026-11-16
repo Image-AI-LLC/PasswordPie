@@ -289,8 +289,6 @@ final class VaultSession: ObservableObject {
     var copyTargetApp: (() -> LinkedApp?)?
     /// A link was made, or an account and an app that were unlinked before met again: the bubble says so.
     var onAppLink: ((AppLinkNotice) -> Void)?
-    var appLinkLearner = AppLinkLearner()
-    var appLinkClock: () -> Date = { Date() }
 
     private(set) var vaultName = "PasswordPie"
     var masterPassword = ""
@@ -735,7 +733,6 @@ final class VaultSession: ObservableObject {
         passwordDraft = ""
         confirmDraft = ""
         editing = nil
-        appLinkLearner.forget()
         // A save still being written finishes on its own. Its result is dropped: nothing of this session is left to update.
         // A save still waiting for its turn cannot be written: the files it changes went with the session. Each is told.
         let waiting = queuedWrites

@@ -6,7 +6,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from board1 import (defs, tile, app, pencil, star, row, text, SURFACE, TEXT, SECOND, ACCENT, ON_ACCENT,
                     BORDER, DESK, LABEL, LABEL_STRONG, ROUND, FIELD, INK, WINDOW, WINDOW_LINE)
-from board3 import mark
 from board1 import pie
 from board4 import bubble, menu, RELATION, RELATION_W, HEADER_H
 
@@ -67,8 +66,6 @@ def pinned(x, y, clip_id):
         out.append(row(x, ry, w, label, value, tint=(label == 'password'), accent=accent))
         ry += 38
     out.append('</g>')
-    out.append(mark(x + w - 24, y + bar + 52 + 19, '1'))
-    out.append(mark(x + w - 24, y + bar + 52 + 38 + 19, '2'))
     return '\n'.join(out), h
 
 
@@ -131,9 +128,9 @@ def board():
     top = 176
     mid = top + 150
 
-    # 1. Cause: both fields copied while the menu bar says Harbor.
+    # 1. Cause: the password copied while the menu bar says Harbor.
     x1 = 56
-    out.append(step(x1, 122, '1', 'Copy username and password while Harbor is in front'))
+    out.append(step(x1, 122, '1', 'Copy the password while Harbor is in front'))
     out.append(menubar(x1, top - 30, 480))
     out.append(harbor(x1, top, 320, 190, 'w1'))
     p, ph = pinned(x1 + 80, top + 96, 'p1')
@@ -165,7 +162,7 @@ def board():
     out.append(strip(56, y3, ('harbor', 'ledger'), hover='harbor'))
     ax = 56 + 400 + 16
     out.append(arrow(ax, y3 + 30, 150))
-    out.append(text(ax + 75, y3 + 20, 'copy both again in Harbor', 11.5, LABEL, anchor='middle'))
+    out.append(text(ax + 75, y3 + 20, 'copy it again in Harbor', 11.5, LABEL, anchor='middle'))
     out.append(bubble(ax + 168, y3 + 8, 'Show Northwind SSO first in Harbor again?', 'Show first', 430, bw=76))
     out.append('</svg>')
     return '\n'.join(out)

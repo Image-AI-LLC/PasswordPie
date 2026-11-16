@@ -5,7 +5,7 @@ import PasswordPieCore
 enum AppLinkNotice: Equatable {
     /// The account was just linked to the app. The bubble offers Undo.
     case linked(entry: UUID, title: String, app: LinkedApp)
-    /// The user took this link back before, so the same copies only ask. The bubble offers Show first.
+    /// The user took this link back before, so a password copied over the app only asks. The bubble offers Show first.
     case offer(entry: UUID, title: String, app: LinkedApp)
     /// A click on the app in the account's details took the link off. The bubble offers Undo.
     case unlinked(entry: UUID, title: String, app: LinkedApp)
@@ -39,17 +39,11 @@ enum AppLinkNotice: Equatable {
 }
 
 extension VaultSession {
-    /// A username or a password was copied. When its other half was copied over the same app, the account is linked
-    /// to that app, or, after an Undo or an unlink, the bubble asks.
+    /// The one rule that links an account to an app without asking: its password was copied while the app was in front.
+    /// The username is not asked for, because many apps already show it. A wrong guess costs one click on Undo or on
+    /// the app in the account's details, and after that the same copy only asks.
     func noteCopy(_ target: CopyTarget, of entry: VaultEntry) {
-        let field: AppLinkLearner.Field
-        switch target {
-        case .username: field = .username
-        case .password: field = .password
-        case .oneTimePassword, .url, .notes, .custom: return
-        }
-        guard let app = copyTargetApp?(), !AppLinks.isLinked(entry, to: app) else { return }
-        guard appLinkLearner.copied(field, of: entry.id, over: app, at: appLinkClock()) else { return }
+        guard target == .password, let app = copyTargetApp?(), !AppLinks.isLinked(entry, to: app) else { return }
         let title = Self.linkTitle(of: entry)
         if AppLinks.refuses(entry, app) {
             onAppLink?(.offer(entry: entry.id, title: title, app: app))

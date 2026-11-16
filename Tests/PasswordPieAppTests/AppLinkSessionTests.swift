@@ -11,7 +11,6 @@ final class AppLinkSessionTests: XCTestCase {
     private let harbor = LinkedApp(bundleID: "example.harbor", teamID: "TEAM123456", name: "Harbor")
     private let ledger = LinkedApp(bundleID: "example.ledger", teamID: nil, name: "Ledger")
     private var front: LinkedApp?
-    private var clock = Date(timeIntervalSince1970: 1_800_000_000)
     private var notices: [AppLinkNotice] = []
 
     override func setUpWithError() throws {
@@ -46,7 +45,6 @@ final class AppLinkSessionTests: XCTestCase {
             session.saveEditing(entry)
         }
         session.copyTargetApp = { [unowned self] in self.front }
-        session.appLinkClock = { [unowned self] in self.clock }
         session.onAppLink = { [unowned self] in self.notices.append($0) }
         return session
     }
@@ -59,15 +57,11 @@ final class AppLinkSessionTests: XCTestCase {
         AppLinks.apps(of: try XCTUnwrap(session.entries.first { $0.title == title && !$0.trashed }))
     }
 
-    func testUsernameAndPasswordOverOneAppLinkTheAccountAndSaveIt() throws {
+    func testAPasswordCopiedOverAnAppLinksTheAccountAndSavesIt() throws {
         let session = session()
         let id = try id(session)
-        session.copy(.username, of: id)
-        XCTAssertEqual(try apps(session), [])
-        XCTAssertEqual(notices, [])
-        clock += 30
         session.copy(.password, of: id)
-        XCTAssertEqual(try apps(session), [harbor])
+        XCTAssertEqual(try apps(session), [harbor], "the password alone: the app may already show the username")
         XCTAssertEqual(notices, [.linked(entry: id, title: "Northwind SSO", app: harbor)])
         XCTAssertEqual(notices.first?.message, "Northwind SSO is now shown first in Harbor")
         XCTAssertEqual(notices.first?.action, "Undo")
@@ -83,7 +77,6 @@ final class AppLinkSessionTests: XCTestCase {
     func testALinkedAccountIsNotLinkedOrAnnouncedAgain() throws {
         let session = session()
         let id = try id(session)
-        session.copy(.username, of: id)
         session.copy(.password, of: id)
         session.copy(.username, of: id)
         session.copy(.password, of: id)
@@ -91,62 +84,53 @@ final class AppLinkSessionTests: XCTestCase {
         XCTAssertEqual(try apps(session), [harbor])
     }
 
-    func testOtherFieldsAndOtherAppsDoNotMakeALink() throws {
-        let session = session(titles: ["Northwind SSO", "Other"])
+    func testOnlyAPasswordMakesALink() throws {
+        let session = session()
         let id = try id(session)
         session.copy(.username, of: id)
         session.copy(.url, of: id)
         session.copy(.notes, of: id)
         session.copy(.username, of: id)
-        XCTAssertEqual(try apps(session), [], "one field, however often")
-
-        front = ledger
-        session.copy(.password, of: id)
-        XCTAssertEqual(try apps(session), [], "the password went to another app")
-
-        front = harbor
-        session.copy(.username, of: id)
-        session.copy(.password, of: try self.id(session, "Other"))
-        XCTAssertEqual(try apps(session), [])
-        XCTAssertEqual(try apps(session, "Other"), [], "two accounts are not a pair")
+        XCTAssertEqual(try apps(session), [], "a username is not a sign-in, however often it is copied")
         XCTAssertEqual(notices, [])
     }
 
-    func testNoAppInFrontThatCanBeLinkedMeansNothingIsLearned() throws {
+    func testAnAccountWithNoPasswordIsNotLinked() throws {
+        let session = session()
+        let id = try id(session)
+        var entry = try XCTUnwrap(session.entries.first { $0.id == id })
+        entry.password = ""
+        session.saveEditing(entry)
+        session.copy(.password, of: id)
+        XCTAssertEqual(try apps(session), [], "nothing was copied")
+        XCTAssertEqual(notices, [])
+    }
+
+    func testEachAccountIsLinkedToTheAppItsOwnPasswordWasCopiedOver() throws {
+        let session = session(titles: ["Northwind SSO", "Other"])
+        session.copy(.password, of: try id(session))
+        front = ledger
+        session.copy(.password, of: try id(session, "Other"))
+        XCTAssertEqual(try apps(session), [harbor])
+        XCTAssertEqual(try apps(session, "Other"), [ledger])
+        XCTAssertEqual(notices.count, 2)
+    }
+
+    func testNoAppInFrontThatCanBeLinkedMeansNoLink() throws {
         let session = session()
         let id = try id(session)
         front = nil
-        session.copy(.username, of: id)
         session.copy(.password, of: id)
-        XCTAssertEqual(try apps(session), [])
+        XCTAssertEqual(try apps(session), [], "a browser or a PasswordPie window was in front")
+        XCTAssertEqual(notices, [])
         front = harbor
         session.copy(.password, of: id)
-        XCTAssertEqual(try apps(session), [], "the copy over a browser or a PasswordPie window was not the first half")
+        XCTAssertEqual(try apps(session), [harbor])
     }
 
-    func testThePairHasFiveMinutesAndLockingForgetsIt() async throws {
+    func testAfterAnUndoAPasswordCopyAsksAndDoesNotLink() throws {
         let session = session()
         let id = try id(session)
-        session.copy(.username, of: id)
-        clock += 301
-        session.copy(.password, of: id)
-        XCTAssertEqual(try apps(session), [])
-
-        session.copy(.password, of: id)
-        session.lock()
-        session.passwordDraft = "pw"
-        session.unlock()
-        for _ in 0..<4_000 where session.locked { try await Task.sleep(nanoseconds: 5_000_000) }
-        clock += 5
-        session.copy(.username, of: try self.id(session))
-        XCTAssertEqual(try apps(session), [], "the password copied before the lock is not half a pair")
-        XCTAssertEqual(notices, [])
-    }
-
-    func testAfterAnUndoTheSameCopiesAskAndDoNotLink() throws {
-        let session = session()
-        let id = try id(session)
-        session.copy(.username, of: id)
         session.copy(.password, of: id)
         var undone = false
         session.unlinkApp(harbor, from: id) { undone = $0 }
@@ -154,8 +138,9 @@ final class AppLinkSessionTests: XCTestCase {
         XCTAssertEqual(try apps(session), [])
         XCTAssertEqual(session.appEntries(for: harbor), [])
 
-        session.copy(.password, of: id)
         session.copy(.username, of: id)
+        XCTAssertEqual(notices.count, 1, "a username does not ask either")
+        session.copy(.password, of: id)
         XCTAssertEqual(try apps(session), [])
         XCTAssertEqual(notices.last, .offer(entry: id, title: "Northwind SSO", app: harbor))
         XCTAssertEqual(notices.last?.message, "Show Northwind SSO first in Harbor again?")
@@ -168,10 +153,8 @@ final class AppLinkSessionTests: XCTestCase {
     func testAnAccountCanHaveTwoAppsAndLosesOnlyTheOneUnlinked() throws {
         let session = session()
         let id = try id(session)
-        session.copy(.username, of: id)
         session.copy(.password, of: id)
         front = ledger
-        session.copy(.username, of: id)
         session.copy(.password, of: id)
         XCTAssertEqual(try apps(session), [harbor, ledger])
         session.unlinkApp(harbor, from: id)
