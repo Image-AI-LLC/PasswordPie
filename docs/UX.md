@@ -1420,3 +1420,50 @@ Use an app that asks for an account whose name is not the app's name, such as Mi
 5. Back over the first app, press `⌘\`, then → on the account. Under the title: "Shown first in", and Microsoft
    Teams with its icon. Click it: the bubble says the account is no longer shown first there. Press `⌘\` again: no group.
 6. Copy the password over the app once more: the bubble now asks, with **Show first**.
+
+## Large Type from the keyboard
+
+**In one line:** press ⇧⌘O on an account and its password fills the screen in Large Type, without touching the mouse.
+
+### The problem
+
+Large Type is for a password you read instead of paste: you type it on a phone, a TV, or another computer. It was
+reachable only with the pointer, under the arrow of the password field in an account's details. Everything else in the
+menu works from the keyboard, so reaching for the mouse here cost more than the reading did.
+
+### What happens now
+
+| Where | ⇧⌘O shows |
+|---|---|
+| In the menu | The password of the selected account |
+| With a pinned window, in any app | The password of the pinned window on top |
+
+- **The menu stays open.** Large Type opens over it. Press any key and Large Type goes away; the menu is where you
+  left it, with the same search and the same account, so ⇧⌘C or Return is the next keystroke.
+- **⇧⌘O again puts it away,** as any other key does.
+- **Nothing is copied.** The clipboard is unchanged, and showing a password this way does not link the account to an
+  app.
+- **The arrow says so.** In the details, the password's arrow lists Large Type with ⇧⌘O beside it.
+
+It is next to ⌘O, which pins the account: O opens the account in a window, and Shift makes the password big.
+
+### When it does not apply
+
+- **An account with no password.** Nothing happens. No empty window opens.
+- **A locked database.** Nothing happens, and locking closes a Large Type window that is open.
+- **Previous passwords and your own hidden fields.** They keep Large Type under their arrow, with no shortcut beside
+  it: ⇧⌘O always shows the account's current password.
+- **Other apps' ⇧⌘O, while an account is pinned.** As with the copy shortcuts, ⇧⌘O belongs to PasswordPie in every
+  app while a pinned window is open, so another app's own ⇧⌘O does not reach it. Close the pinned window and the app has
+  it back.
+- **A menu shortcut of your own.** If you set the shortcut that opens the menu to ⇧⌘O, it opens the menu and this
+  shortcut is not available.
+
+### Demo script
+
+1. Press `⌘\` and type a few letters of an account. Press ⇧⌘O. The password fills the screen in groups of four, and
+   the menu is still open behind it.
+2. Press Space. Large Type goes away and the menu has the keyboard again. Press ⇧⌘C and paste the password.
+3. Open the menu again and press ⌘O to pin the account. Click into another app.
+4. Press ⇧⌘O in that app. The pinned account's password is shown in Large Type. Press ⇧⌘O again: it goes away.
+5. Select an account that has no password and press ⇧⌘O: nothing happens.
