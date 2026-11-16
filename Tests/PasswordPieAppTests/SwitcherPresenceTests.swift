@@ -6,11 +6,22 @@ import XCTest
 @MainActor
 final class SwitcherPresenceTests: XCTestCase {
     func testPreferencesPutsTheAppInTheSwitcher() {
-        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: true), .regular)
+        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: true, otherWindowOpen: false, current: .accessory), .regular)
+        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: true, otherWindowOpen: true, current: .regular), .regular)
     }
 
     func testWithoutPreferencesTheAppIsAMenuBarItemOnly() {
-        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: false), .accessory)
+        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: false, otherWindowOpen: false, current: .accessory), .accessory)
+        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: false, otherWindowOpen: false, current: .regular), .accessory)
+    }
+
+    func testTheEditorAloneDoesNotPutTheAppInTheSwitcher() {
+        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: false, otherWindowOpen: true, current: .accessory), .accessory)
+    }
+
+    func testClosingPreferencesWaitsForTheWindowOpenedBesideIt() {
+        // Leaving the switcher gives the keyboard to the app behind: an editor still open would drop behind that app.
+        XCTAssertEqual(SwitcherPresence.policy(preferencesOpen: false, otherWindowOpen: true, current: .regular), .regular)
     }
 
     func testThePolicyIsSetOnlyWhenItChanges() {
@@ -18,14 +29,19 @@ final class SwitcherPresenceTests: XCTestCase {
         var current = NSApplication.ActivationPolicy.accessory
         let presence = SwitcherPresence(current: { current }, apply: { applied.append($0); current = $0 })
 
-        presence.sync(preferencesOpen: false)
-        XCTAssertEqual(applied, [], "a menu or a pinned window opening changes nothing")
+        presence.sync(preferencesOpen: false, otherWindowOpen: false)
+        presence.sync(preferencesOpen: false, otherWindowOpen: true)
+        XCTAssertEqual(applied, [], "a menu, a pinned window or the editor opening changes nothing")
 
-        presence.sync(preferencesOpen: true)
-        presence.sync(preferencesOpen: true)
+        presence.sync(preferencesOpen: true, otherWindowOpen: false)
+        presence.sync(preferencesOpen: true, otherWindowOpen: false)
         XCTAssertEqual(applied, [.regular], "Preferences asked for again is already in the switcher")
 
-        presence.sync(preferencesOpen: false)
+        // The editor opens beside Preferences, Preferences closes, then the editor closes.
+        presence.sync(preferencesOpen: true, otherWindowOpen: true)
+        presence.sync(preferencesOpen: false, otherWindowOpen: true)
+        XCTAssertEqual(applied, [.regular], "the editor is still open")
+        presence.sync(preferencesOpen: false, otherWindowOpen: false)
         XCTAssertEqual(applied, [.regular, .accessory])
     }
 

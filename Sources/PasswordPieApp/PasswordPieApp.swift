@@ -223,10 +223,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     #if PP_DIRECT
     /// Nothing an update's restart would interrupt: the vault is locked, nobody is typing on the lock screen, no window
-    /// of ours is open, no scanned code waits for an unlock, and no alert or file chooser is up and no Touch ID prompt is showing.
+    /// of ours is open (or hidden with the app, which the Dock menu can do while Preferences is open), no scanned code waits
+    /// for an unlock, and no alert or file chooser is up and no Touch ID prompt is showing.
     private var isIdleForUpdate: Bool {
         guard session.locked, !session.unlocking, !panelController.isVisible, !otpScan.isWaiting, pinnedAccounts.isEmpty,
-              NSApp.modalWindow == nil, !session.touchIDBusy else { return false }
+              NSApp.modalWindow == nil, !session.touchIDBusy, !NSApp.isHidden else { return false }
         let windows = [editorWindow, preferencesWindow, aboutWindow, chromeReviewWindow, paywallWindow, scanWindow, passwordChangeWindow, largeTypeWindow]
         return !windows.contains { $0?.isVisible == true }
     }
@@ -479,7 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         panelController.hide(refocusPrevious: false)
         // Before activating: the app comes to the front as one the switcher lists, with its menu bar.
-        switcherPresence.sync(preferencesOpen: true)
+        syncSwitcherPresence()
         NSApp.activate(ignoringOtherApps: true)
         preferencesWindow?.makeKeyAndOrderFront(nil)
     }
@@ -685,7 +686,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
-            switcherPresence.sync(preferencesOpen: false)
         } else if window === aboutWindow {
             aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
@@ -693,6 +693,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pinnedOrder.removeAll { $0 == id }
             syncPinnedHotKeys()
         }
+        // After the window that is closing has been forgotten above.
+        syncSwitcherPresence()
+    }
+
+    /// In the ⌘Tab switcher and the Dock while Preferences is open (`SwitcherPresence`).
+    private func syncSwitcherPresence() {
+        let others = [editorWindow, aboutWindow, chromeReviewWindow, paywallWindow]
+        switcherPresence.sync(preferencesOpen: preferencesWindow != nil, otherWindowOpen: others.contains { $0 != nil })
     }
 
     // MARK: Menu bar

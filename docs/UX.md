@@ -1443,6 +1443,9 @@ it. It was not in ⌘Tab, it had no Dock icon, and Mission Control was the only 
   it.
 - **Close Preferences** and PasswordPie leaves the switcher and the Dock. The menu bar icon and the shortcut work as
   they did all along.
+- **Another PasswordPie window still open** (the item editor, About, Premium) keeps PasswordPie in the switcher after
+  Preferences closes, until that window closes too. Leaving the switcher hands the keyboard to the app behind, and a
+  half-edited item would drop behind it.
 
 ### When it does not apply
 
@@ -1450,6 +1453,8 @@ it. It was not in ⌘Tab, it had no Dock icon, and Mission Control was the only 
   puts PasswordPie in the switcher.
 - **A pinned window (⌘O).** It stays above your other windows and never takes the keyboard, so there is nothing to
   switch to. Pinning an account does not put PasswordPie in the switcher either.
+- **The item editor, About and Premium by themselves.** Opened without Preferences they do not put PasswordPie in the
+  switcher; they only stay in it when Preferences was open beside them.
 - **With Preferences open**, both work as before. ⌘Tab to PasswordPie then brings Preferences forward; the menu and
   the pinned windows stay as they are.
 
