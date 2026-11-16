@@ -10,6 +10,8 @@ enum QuickAccessShortcut: Equatable {
     case copyOneTimePassword
     /// ⌘O. The same window as the pin button.
     case pinItem
+    /// ⇧⌘O. The password in Large Type.
+    case largeTypePassword
     /// ⌥Return. Open the website and fill the username and password.
     case openAndFill
     /// ⇧Return. Fill the app that was focused before Quick Access.
@@ -49,6 +51,8 @@ func quickAccessShortcut(_ press: QuickAccessKeyPress) -> QuickAccessShortcut? {
         return .copyPassword
     case "o" where !press.shift && !press.option:
         return .pinItem
+    case "o" where press.shift && !press.option:
+        return .largeTypePassword
     default:
         return nil
     }
@@ -70,8 +74,13 @@ func quickAccessCopyTarget(_ shortcut: QuickAccessShortcut, of entry: VaultEntry
     case .copyPrimary: quickAccessPrimaryCopy(entry)
     case .copyPassword: .password
     case .copyOneTimePassword: .oneTimePassword
-    case .pinItem, .openAndFill, .fillFocusedApp: nil
+    case .pinItem, .largeTypePassword, .openAndFill, .fillFocusedApp: nil
     }
+}
+
+/// What ⇧⌘O puts in Large Type: the password. Nil for an item without one, so no empty window opens.
+func quickAccessLargeTypeText(of entry: VaultEntry) -> String? {
+    entry.password.isEmpty ? nil : entry.password
 }
 
 /// ⌃⌘C copies the username. An item without one copies the first field the details view would show, except the one-time password.

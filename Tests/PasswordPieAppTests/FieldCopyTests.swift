@@ -1,6 +1,7 @@
 import AppKit
 import PasswordPieCore
 import Carbon.HIToolbox
+import SwiftUI
 import XCTest
 @testable import PasswordPie
 
@@ -111,29 +112,56 @@ final class FieldCopyTests: XCTestCase {
         XCTAssertEqual(pinnedOrderRaising(first, in: [second, first]), [second, first])
     }
 
-    func testPinnedHotKeysAreTheQuickAccessCopyShortcuts() {
+    func testPinnedHotKeysAreTheQuickAccessCopyShortcutsAndLargeType() {
         let command = UInt32(cmdKey)
-        XCTAssertEqual(pinnedCopyHotKeys(excluding: .default).map(\.shortcut), [.copyPrimary, .copyPassword, .copyOneTimePassword])
-        XCTAssertEqual(pinnedCopyHotKeys(excluding: .default).map(\.config), [
+        XCTAssertEqual(
+            pinnedItemHotKeys(excluding: .default).map(\.shortcut),
+            [.copyPrimary, .copyPassword, .copyOneTimePassword, .largeTypePassword]
+        )
+        XCTAssertEqual(pinnedItemHotKeys(excluding: .default).map(\.config), [
             HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: command | UInt32(controlKey)),
             HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: command | UInt32(shiftKey)),
             HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: command | UInt32(optionKey)),
+            HotKeyConfig(keyCode: UInt32(kVK_ANSI_O), modifiers: command | UInt32(shiftKey)),
         ])
+    }
+
+    func testAMenuShortcutOfShiftCommandOKeepsLargeTypeOffThePinnedHotKeys() {
+        let largeType = HotKeyConfig(keyCode: UInt32(kVK_ANSI_O), modifiers: UInt32(cmdKey) | UInt32(shiftKey))
+        XCTAssertEqual(pinnedItemHotKeys(excluding: largeType).map(\.shortcut), [.copyPrimary, .copyPassword, .copyOneTimePassword])
+    }
+
+    func testOnlyThePasswordFieldShowsTheLargeTypeShortcut() {
+        let password = DetailField(id: "password", kind: .password, label: "password", value: "secret", secret: true)
+        XCTAssertEqual(
+            fieldActionShortcut(.largeType, on: password, menuShortcut: .default),
+            KeyboardShortcut("o", modifiers: [.command, .shift])
+        )
+        XCTAssertNil(fieldActionShortcut(.reveal, on: password, menuShortcut: .default))
+        XCTAssertNil(fieldActionShortcut(.copy, on: password, menuShortcut: .default))
+        let pin = DetailField(id: "PIN", kind: .custom("PIN"), label: "PIN", value: "4242", secret: true)
+        XCTAssertNil(fieldActionShortcut(.largeType, on: pin, menuShortcut: .default))
+    }
+
+    func testTheLargeTypeShortcutIsNotShownWhenItOpensTheMenu() {
+        let password = DetailField(id: "password", kind: .password, label: "password", value: "secret", secret: true)
+        let menuShortcut = HotKeyConfig(keyCode: UInt32(kVK_ANSI_O), modifiers: UInt32(cmdKey) | UInt32(shiftKey))
+        XCTAssertNil(fieldActionShortcut(.largeType, on: password, menuShortcut: menuShortcut))
     }
 
     func testPinnedHotKeysNeverTakeOverTheMenuShortcut() {
         let password = HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey) | UInt32(shiftKey))
-        XCTAssertEqual(pinnedCopyHotKeys(excluding: password).map(\.shortcut), [.copyPrimary, .copyOneTimePassword])
+        XCTAssertEqual(pinnedItemHotKeys(excluding: password).map(\.shortcut), [.copyPrimary, .copyOneTimePassword, .largeTypePassword])
     }
 
     func testPinnedHotKeyIDsAreDistinctFromTheMenuShortcutAndResolveBack() {
-        let hotKeys = pinnedCopyHotKeys(excluding: .default)
+        let hotKeys = pinnedItemHotKeys(excluding: .default)
         XCTAssertEqual(Set(hotKeys.map(\.id)).count, hotKeys.count)
         XCTAssertFalse(hotKeys.map(\.id).contains(menuHotKeyID))
         for hotKey in hotKeys {
-            XCTAssertEqual(pinnedCopyShortcut(id: hotKey.id), hotKey.shortcut)
+            XCTAssertEqual(pinnedItemShortcut(id: hotKey.id), hotKey.shortcut)
         }
-        XCTAssertNil(pinnedCopyShortcut(id: menuHotKeyID))
+        XCTAssertNil(pinnedItemShortcut(id: menuHotKeyID))
     }
 
     func testEachAccountGetsItsOwnPinnedWindow() {

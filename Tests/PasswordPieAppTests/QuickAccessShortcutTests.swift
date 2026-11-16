@@ -36,8 +36,28 @@ final class QuickAccessShortcutTests: XCTestCase {
     func testCommandOPinsTheItemWindow() {
         XCTAssertEqual(quickAccessShortcut(press("o", command: true)), .pinItem)
         XCTAssertEqual(quickAccessShortcut(press("O", command: true)), .pinItem)
-        XCTAssertNil(quickAccessShortcut(press("o", command: true, shift: true)))
         XCTAssertNil(quickAccessShortcut(press("o", command: true, option: true)))
+    }
+
+    func testShiftCommandOShowsThePasswordInLargeType() {
+        XCTAssertEqual(quickAccessShortcut(press("o", command: true, shift: true)), .largeTypePassword)
+        XCTAssertEqual(quickAccessShortcut(press("O", command: true, shift: true)), .largeTypePassword)
+        XCTAssertNil(quickAccessShortcut(press("o", shift: true)))
+        XCTAssertNil(quickAccessShortcut(press("o", command: true, shift: true, option: true)))
+        XCTAssertNil(quickAccessShortcut(press("o", command: true, shift: true, control: true)))
+    }
+
+    func testLargeTypeShowsThePasswordAndNothingForAnItemWithoutOne() {
+        var login = VaultEntry()
+        login.username = "ada"
+        login.password = "correct horse"
+        XCTAssertEqual(quickAccessLargeTypeText(of: login), "correct horse")
+
+        var note = VaultEntry()
+        note.username = "ada"
+        note.notes = "remember the gate code"
+        note.fields.append(VaultField(key: "PIN", value: "4242"))
+        XCTAssertNil(quickAccessLargeTypeText(of: note))
     }
 
     func testModifiedReturnFillsOrOpens() {
@@ -53,7 +73,9 @@ final class QuickAccessShortcutTests: XCTestCase {
         for key in ["1", "2", "9", "e", "n", "=", "-", "0", "w"] {
             XCTAssertNil(quickAccessShortcut(press(key, command: true)), key)
         }
-        XCTAssertNil(quickAccessShortcut(press("o", command: true, shift: true)))
+        for key in ["e", "n", "l", "p", "w"] {
+            XCTAssertNil(quickAccessShortcut(press(key, command: true, shift: true)), key)
+        }
     }
 
     func testEachCopyShortcutPicksItsField() {
@@ -63,6 +85,7 @@ final class QuickAccessShortcutTests: XCTestCase {
         XCTAssertEqual(quickAccessCopyTarget(.copyPassword, of: login), .password)
         XCTAssertEqual(quickAccessCopyTarget(.copyOneTimePassword, of: login), .oneTimePassword)
         XCTAssertNil(quickAccessCopyTarget(.pinItem, of: login))
+        XCTAssertNil(quickAccessCopyTarget(.largeTypePassword, of: login))
         XCTAssertNil(quickAccessCopyTarget(.openAndFill, of: login))
         XCTAssertNil(quickAccessCopyTarget(.fillFocusedApp, of: login))
     }

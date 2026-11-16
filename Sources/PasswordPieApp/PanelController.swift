@@ -1129,6 +1129,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     }
 
     /// Copies dismiss Quick Access only when there is something to put on the clipboard.
+    /// Large Type opens over it and leaves it open, as it does from the password's arrow.
     private func runQuickAccess(_ shortcut: QuickAccessShortcut) {
         guard let id = menu.currentEntryID else { return }
         switch shortcut {
@@ -1136,6 +1137,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             runCopy(shortcut, of: id)
         case .pinItem:
             session.pinEntry(id)
+        case .largeTypePassword:
+            session.runLargeTypeShortcut(of: id)
         case .openAndFill:
             let website = session.entry(id).flatMap { otherWebsite(of: $0, matching: menu.query) }
             session.fill(id, .openAndFill, website: website)
