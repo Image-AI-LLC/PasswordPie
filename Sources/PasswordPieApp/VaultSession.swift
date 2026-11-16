@@ -1666,6 +1666,14 @@ final class VaultSession: ObservableObject {
         AppDelegate.shared?.showLargeType(text)
     }
 
+    /// What ⇧⌘O does, in the menu and with a pinned window: the account's password in Large Type.
+    /// A second press puts Large Type away, as any other key does. See "Large Type from the keyboard" in docs/UX.md.
+    func runLargeTypeShortcut(of id: UUID) {
+        if AppDelegate.shared?.closeLargeType() == true { return }
+        guard let entry = entry(id), let text = quickAccessLargeTypeText(of: entry) else { return }
+        showLargeType(text)
+    }
+
     /// Pins the account in a floating window, then puts the menu away so the user can fill another app.
     func pinEntry(_ id: UUID) {
         guard let entry = entry(id) else { return }

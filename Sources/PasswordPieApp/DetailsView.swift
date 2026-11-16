@@ -41,6 +41,12 @@ enum FieldAction: Equatable, Hashable {
     }
 }
 
+/// The shortcut a menu item shows beside its title. Only the password's Large Type has one: ⇧⌘O shows the account's
+/// current password, never another hidden field or a previous password.
+func fieldActionShortcut(_ action: FieldAction, on field: DetailField) -> KeyboardShortcut? {
+    action == .largeType && field.kind == .password ? KeyboardShortcut("o", modifiers: [.command, .shift]) : nil
+}
+
 struct FieldControl: Equatable {
     var primary: FieldAction
     var menu: [FieldAction]
@@ -817,7 +823,9 @@ private struct DetailRow: View {
             prominence: control.primary == .upgrade ? .primary : .quiet,
             weight: control.primary == .upgrade ? .semibold : .regular,
             items: control.menu.map { item in
-                SplitActionButton.Item(title: item.title) { model.perform(item, on: field) }
+                SplitActionButton.Item(title: item.title, shortcut: fieldActionShortcut(item, on: field)) {
+                    model.perform(item, on: field)
+                }
             }
         ) {
             model.perform(control.primary, on: field)
