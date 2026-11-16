@@ -70,6 +70,13 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
     var siteSection: (() -> [MenuRow])?
     private(set) var levels: [MenuLevel] = []
     private(set) var query = ""
+    /// The level of the submenus: the panel's own, which `PanelController` moves with it (`PanelLevel`).
+    var windowLevel = PanelLevel.level(ownDialogOpen: false) {
+        didSet {
+            guard windowLevel != oldValue else { return }
+            levels.forEach { $0.window?.level = windowLevel }
+        }
+    }
     private var popover: NSPopover?
     private var details: DetailsModel?
     private var detailsLevel: MenuLevel?
@@ -430,8 +437,9 @@ final class MenuController: NSObject, MenuListDelegate, NSPopoverDelegate {
             backing: .buffered,
             defer: false
         )
-        window.level = menuWindowLevel
         window.isFloatingPanel = true
+        // After isFloatingPanel, which resets both (see `PanelController.buildPanel`).
+        window.level = windowLevel
         window.hidesOnDeactivate = false
         window.isOpaque = false
         window.backgroundColor = .clear

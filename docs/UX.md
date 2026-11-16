@@ -1295,3 +1295,39 @@ details the copy puts the menu away, as it always did; a pinned window stays.
 3. Point at **password**: the outline moves to it. Click on the dots and paste: the password.
 4. Point at **website**: the button says Open. Click the middle of the field: the page opens.
 5. Pin the account, then click its password in the pinned window: it is copied and the window stays.
+
+## The menu opens over another app's dialog
+
+**In one line:** press the shortcut while an app is showing a sign-in window or another dialog, and the menu opens on
+top of it, ready for typing.
+
+### The problem
+
+Some apps ask for a password in a window that stays above the rest of their windows until it is answered. Microsoft
+Teams signs in this way. PasswordPie's menu opened underneath that window. It had the
+keyboard, so what you typed went into a menu you could not see, and the shortcut seemed to do nothing in the one place
+you needed a password.
+
+### What happens now
+
+The menu, its submenus and an account's details open above the other app's dialog, as they do above its ordinary
+windows. Search, the copy shortcuts and Escape work as anywhere else, and closing the menu puts the keyboard back in
+the dialog's field.
+
+A pinned window was already above such a dialog. The menu is one step above pinned windows, so it is never hidden by
+one.
+
+### When it does not apply
+
+- **PasswordPie's own dialogs.** Open Database, Save, a key file chooser and the questions PasswordPie asks come from
+  the menu, so they open above it. The menu stays where it was, underneath, and is on top again when the dialog
+  closes.
+- **Touch ID.** The system's Touch ID prompt is above everything, the menu included.
+- **The menu bar.** The menu stays under the menu bar and the menus that open from it.
+
+### Demo script
+
+1. Open Microsoft Teams signed out and choose **Create or use another account**. The Sign in window appears.
+2. Press `⌘\`. The menu opens over the Sign in window. Type a few letters of the account and press ⇧⌘C.
+3. The menu closes, the caret is back in the Sign in window, and ⌘V pastes the password.
+4. Open the menu again and choose **Open Database…** from the gear. The file chooser is in front of the menu.

@@ -415,7 +415,8 @@ struct EditorView: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.message = "Choose a picture of the QR code"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let response = AppDelegate.shared?.keepOpen { panel.runModal() } ?? panel.runModal()
+        guard response == .OK, let url = panel.url else { return }
         apply(OTPInputScanner.scan(fileURL: url))
     }
 
