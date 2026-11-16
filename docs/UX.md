@@ -1246,3 +1246,46 @@ Save again.
    file holds what the star shows.
 4. Make the database's folder read-only in Finder and save an edit: the editor stays open, with the reason in red.
    Give the folder back its permission and press Save again.
+
+## The whole field is the button
+
+**In one line:** point at a field in an account's details and a dashed outline goes round all of it; click anywhere
+inside and it is copied.
+
+### The problem
+
+Pointing at a field showed a small **Copy** button at its right end and nothing else. The field itself already took a
+click, but nothing said so. It looked as if the only way to copy a username was to move the pointer across the window
+and hit a button 20 points tall.
+
+### What happens now
+
+- **Point at a field.** A dashed outline appears round the whole field, edge to edge, with the button inside it at the
+  right. The outline is the part that takes a click.
+- **Click anywhere in it.** The click does what the button says: **Copy** for a username, a password, a one-time
+  password, notes and your own fields, **Open** for a website. The whole value is copied, also when the row shows only
+  part of a long one, and the real password when the row shows dots.
+- **The arrow keeps the rest.** Reveal and Large Type for a password, Copy and Open and Fill for a website. Pressing the
+  arrow opens its menu and copies nothing.
+- **Move the pointer away** and the outline goes with the button.
+
+It works the same in the details beside the menu and in a pinned window. In the menu's details the copy puts the menu
+away, as it always did; a pinned window stays.
+
+### When it does not apply
+
+- **The keyboard does not change.** The field the arrow keys are on keeps its filled background, and Return does what
+  it did. The outline follows the pointer only.
+- **Previous passwords** have two buttons, Restore and Copy, and neither is the main one. A click on the row does
+  nothing; press the button you mean.
+- **Strength, tags and the change-password row** hold nothing to copy and get no outline.
+- **A one-time password without Premium** gets the outline too; the click opens Premium, as its button does.
+
+### Demo script
+
+1. Open an account's details. Move the pointer onto **username**: a dashed outline surrounds the field and Copy appears
+   at its right.
+2. Click on the username text itself, far from the button. Paste somewhere: the username.
+3. Point at **password**: the outline moves to it. Click on the dots and paste: the password.
+4. Point at **website**: the button says Open. Click the middle of the field: the page opens.
+5. Pin the account, then click its password in the pinned window: it is copied and the window stays.
