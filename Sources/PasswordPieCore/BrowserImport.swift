@@ -130,7 +130,7 @@ public enum BrowserImport {
         let files = try unzip(data)
         if files["export.data"] != nil {
             try expect(.onePassword, on: source)
-            return try imported(try loadPuxImport(data).entries, source: source, plainText: true)
+            return try imported(try loadPuxImport(files: files).entries, source: source, plainText: true)
         }
         func named(_ suffix: String) -> Data? {
             files.first { $0.key.lowercased() == suffix || $0.key.lowercased().hasSuffix("/" + suffix) }?.value

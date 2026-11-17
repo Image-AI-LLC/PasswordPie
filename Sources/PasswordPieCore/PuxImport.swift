@@ -1,7 +1,11 @@
 import Foundation
 
 func loadPuxImport(_ data: Data) throws -> Vault {
-    let files = try unzip(data)
+    try loadPuxImport(files: try unzip(data))
+}
+
+/// From an archive that is already unpacked, so it is not unpacked twice.
+func loadPuxImport(files: [String: Data]) throws -> Vault {
     guard let export = files["export.data"] else {
         throw VaultOpenError.invalid("This export is missing export.data.")
     }
