@@ -5,126 +5,289 @@ import SwiftUI
 import PasswordPieUpdate
 #endif
 
-/// A section other parts of the app open Preferences at.
+/// One pane of Preferences (docs/UX.md, "Preferences in panes").
+enum PreferencesPane: String, CaseIterable, Identifiable {
+    case general
+    case security
+    case database
+    case browsers
+    case importPasswords
+    case premium
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: return "General"
+        case .security: return "Security"
+        case .database: return "Database"
+        case .browsers: return "Browsers"
+        case .importPasswords: return "Import"
+        case .premium: return "Premium"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: return "The shortcut, the clipboard and search."
+        case .security: return "When PasswordPie locks, and how it unlocks."
+        case .database: return "The file your passwords are in, and its keys."
+        case .browsers: return "Filling sign-in forms in your browser."
+        case .importPasswords: return "Bring your passwords from a browser or another password manager."
+        case .premium: return "Two-step codes."
+        }
+    }
+
+    /// A single-layer outline: it sits on a tile.
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape"
+        case .security: return "lock"
+        case .database: return "cylinder.split.1x2"
+        case .browsers: return "globe"
+        case .importPasswords: return "square.and.arrow.down"
+        case .premium: return "star"
+        }
+    }
+}
+
+/// A place other parts of the app open Preferences at.
 enum PreferencesSection: Hashable {
     case importPasswords
     case browserExtensions
     #if PP_DIRECT
     case chrome
     #endif
+
+    var pane: PreferencesPane {
+        switch self {
+        case .importPasswords: return .importPasswords
+        case .browserExtensions: return .browsers
+        #if PP_DIRECT
+        case .chrome: return .browsers
+        #endif
+        }
+    }
 }
 
-/// Where Preferences should scroll next. Set it, and the open (or opening) window scrolls there once.
+/// Which pane Preferences shows.
 @MainActor
 final class PreferencesNavigator: ObservableObject {
-    @Published var target: PreferencesSection?
+    @Published var pane: PreferencesPane = .general
+
+    /// A window that just opened starts on General, unless it was opened at a place. An open window keeps its pane
+    /// unless it is sent somewhere.
+    func open(at section: PreferencesSection?, newWindow: Bool) {
+        if let section {
+            pane = section.pane
+        } else if newWindow {
+            pane = .general
+        }
+    }
+}
+
+/// A pane's title and the line under it.
+struct PaneHeader: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 16, weight: .semibold))
+            Text(subtitle)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The name of a group of settings, over its line.
+struct PaneGroupLabel: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The thin line under a group's name and between its rows.
+struct PaneRule: View {
+    var body: some View {
+        Rectangle().fill(Color.primary.opacity(0.09)).frame(height: 1)
+    }
 }
 
 struct PreferencesView: View {
     @ObservedObject var session: VaultSession
     @ObservedObject var navigator: PreferencesNavigator
-    /// The browser extensions' state, for "Browser extensions". Nil leaves the section out.
+    /// Preferences > Import. Nil leaves the pane out.
+    var importFlow: ImportFlow?
+    /// The browser extensions' state, for "Browsers". Nil leaves the extensions out.
     var bridge: BrowserBridge?
     #if PP_DIRECT
-    /// The downloaded app's updater, for "Updates". Nil leaves the section out.
+    /// The downloaded app's updater, for "Updates". Nil leaves the card out.
     var updates: UpdateCoordinator?
     #endif
     @StateObject private var recorder = ShortcutRecorder()
     @Environment(\.colorScheme) private var colorScheme
 
+    static let sidebarWidth: CGFloat = 188
+    static let contentWidth: CGFloat = 560
+
     private var cardColor: Color { Palette.card(dark: colorScheme == .dark) }
 
-    var body: some View {
-        ScrollViewReader { proxy in
-            scrollingContent
-                .onAppear {
-                    // A new window lays out first; scrolling before that lands nowhere.
-                    DispatchQueue.main.async { scroll(proxy) }
-                }
-                .onChange(of: navigator.target) { _, _ in scroll(proxy) }
+    /// The panes this build and this window have something in.
+    var panes: [PreferencesPane] {
+        PreferencesPane.allCases.filter { pane in
+            switch pane {
+            case .browsers:
+                #if PP_DIRECT
+                return true
+                #else
+                return bridge != nil
+                #endif
+            case .importPasswords: return importFlow != nil
+            default: return true
+            }
         }
     }
 
-    private func scroll(_ proxy: ScrollViewProxy) {
-        guard let target = navigator.target else { return }
-        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .top) }
-        navigator.target = nil
-    }
+    private var shown: PreferencesPane { panes.contains(navigator.pane) ? navigator.pane : .general }
 
-    private var scrollingContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                section("Premium") { PremiumPreferencesSection(store: session.premium) }
-                section("Quick access") { shortcut }
-                section("Security") { security }
-                section("Everyday") { everyday }
-                section("Database") { database }
-                if let bridge {
-                    section("Browser extensions") { BrowserExtensionsSection(bridge: bridge) }
-                        .id(PreferencesSection.browserExtensions)
+    var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+            ScrollView {
+                VStack(alignment: .leading, spacing: 26) {
+                    pane(shown)
                 }
-                section("Import passwords") { importPasswords }
-                    .id(PreferencesSection.importPasswords)
-                #if PP_DIRECT
-                section("Chrome") { chromeSync }
-                    .id(PreferencesSection.chrome)
-                if let updates {
-                    section("Updates") { UpdatesSection(updates: updates) }
-                }
-                #endif
+                // A line of text stays readable in a window made wider.
+                .frame(maxWidth: Self.contentWidth, alignment: .leading)
+                .padding(.horizontal, 28)
+                .padding(.top, 14)
+                .padding(.bottom, 24)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
+            // A new pane starts at its top.
+            .id(shown)
         }
         .font(.system(size: 13))
-        .background(Palette.windowSurface(dark: colorScheme == .dark))
+        .background(Palette.windowSurface(dark: colorScheme == .dark).ignoresSafeArea())
         .tint(Palette.brandAccent)
-        .frame(minWidth: 560, idealWidth: 560, maxWidth: .infinity,
-               minHeight: 480, idealHeight: 800, maxHeight: .infinity)
+        .frame(minWidth: 700, idealWidth: 760, maxWidth: .infinity,
+               minHeight: 460, idealHeight: 600, maxHeight: .infinity)
+        .onChange(of: navigator.pane) { _, _ in recorder.stop() }
         .onDisappear { recorder.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in recorder.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { _ in recorder.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in recorder.stop() }
     }
 
-    private var header: some View {
-        HStack(spacing: 14) {
-            PasswordPieMark(size: 40)
-                .frame(width: 46, height: 48)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Preferences").font(.system(size: 24, weight: .semibold))
-                Text("Make PasswordPie feel at home.")
-                    .foregroundStyle(.secondary)
+    // MARK: The list of panes
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(panes) { pane in
+                PaneRow(pane: pane, selected: pane == shown) { navigator.pane = pane }
             }
         }
-        .padding(.bottom, 2)
+        .padding(.horizontal, 8)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .frame(width: Self.sidebarWidth)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color.primary.opacity(0.04).ignoresSafeArea())
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(width: 1).ignoresSafeArea()
+        }
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.7)
-                .foregroundStyle(.secondary)
-                .padding(.leading, 2)
+    // MARK: Panes
+
+    @ViewBuilder
+    private func pane(_ pane: PreferencesPane) -> some View {
+        if pane != .importPasswords {
+            PaneHeader(title: pane.title, subtitle: pane.subtitle)
+        }
+        switch pane {
+        case .general:
+            // The everyday settings need no name over them: the pane's title is their name.
+            section(nil) {
+                VStack(spacing: 12) {
+                    shortcut
+                    PaneRule()
+                    everyday
+                }
+            }
+            #if PP_DIRECT
+            if let updates {
+                if updates.state == .unavailable {
+                    Text(updates.statusLine)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                } else {
+                    section("Updates") { UpdatesSection(updates: updates) }
+                }
+            }
+            #endif
+        case .security:
+            section("Lock automatically") { security }
+            section("Touch ID") { touchID }
+        case .database:
+            section("Database") { database }
+            section("Key file") { keyFile }
+            section("Master password") { masterPassword }
+        case .browsers:
+            if let bridge {
+                section("Extensions") { BrowserExtensionsSection(bridge: bridge) }
+            }
+            #if PP_DIRECT
+            section("Chrome passwords") { chromeSync }
+            #endif
+        case .importPasswords:
+            if let importFlow {
+                ImportPane(flow: importFlow, session: session)
+            }
+        case .premium:
+            section("Premium") { PremiumPreferencesSection(store: session.premium) }
+        }
+    }
+
+    private func section<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let title { PaneGroupLabel(title).padding(.bottom, 6) }
+            PaneRule().padding(.bottom, 12)
             content()
-                .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.07)))
         }
     }
 
     private var shortcut: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Keyboard shortcut").fontWeight(.medium)
-                Spacer()
-                Text("Open PasswordPie from any app")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            HStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Keyboard shortcut")
+                    Text("Opens PasswordPie from any app.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if recorder.isRecording || session.hotKey != .default {
+                    Button(recorder.isRecording ? "Cancel" : "Reset") {
+                        if recorder.isRecording { recorder.stop() } else { session.hotKey = .default }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
+                    .help(Text(verbatim: recorder.isRecording ? "Cancel recording" : "Restore default shortcut (⌘\\)"))
+                    .accessibilityLabel(recorder.isRecording ? "Cancel recording" : "Restore default shortcut")
+                }
                 Button {
                     if recorder.isRecording { recorder.stop() } else {
                         recorder.start(in: NSApp.keyWindow, suspend: {
@@ -136,66 +299,52 @@ struct PreferencesView: View {
                         })
                     }
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "keyboard").foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
+                    Group {
                         if recorder.isRecording {
-                            Text("Press a shortcut…").font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
+                            Text("Press a shortcut…")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
                         } else {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 3) {
                                 ForEach(Array(session.hotKey.keycaps.enumerated()), id: \.offset) { _, key in
                                     Text(key)
-                                        .font(.system(size: 17, weight: .medium))
-                                        .frame(minWidth: 24, minHeight: 28)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .frame(minWidth: 14, minHeight: 20)
                                         .padding(.horizontal, 5)
-                                        .background(cardColor, in: RoundedRectangle(cornerRadius: 5))
-                                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.12)))
+                                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
                                 }
                             }
                         }
-                        Spacer(minLength: 0)
                     }
-                    .padding(.leading, 14)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .contentShape(Rectangle())
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 62, minHeight: 30)
+                    .background(cardColor.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(
+                        recorder.isRecording ? Palette.focus(dark: colorScheme == .dark) : Color.primary.opacity(0.16),
+                        lineWidth: recorder.isRecording ? 2 : 1))
+                    .contentShape(RoundedRectangle(cornerRadius: 7))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(recorder.isRecording ? "Cancel shortcut recording" : "Record keyboard shortcut")
                 .accessibilityValue(session.hotKey.display)
                 .help("Click, then press a shortcut with Command, Option or Control. Esc cancels.")
-
-                Button {
-                    if recorder.isRecording { recorder.stop() } else { session.hotKey = .default }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 54)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!recorder.isRecording && session.hotKey == .default)
-                .help(Text(verbatim: recorder.isRecording ? "Cancel recording" : "Restore default shortcut (⌘\\)"))
-                .accessibilityLabel(recorder.isRecording ? "Cancel recording" : "Restore default shortcut")
             }
-            .background(Color(nsColor: .textBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(
-                recorder.isRecording ? Palette.focus(dark: colorScheme == .dark) : Color.primary.opacity(0.16),
-                lineWidth: recorder.isRecording ? 2 : 1))
-
-            Text(shortcutHint)
-                .font(.system(size: 11))
-                .foregroundStyle(!recorder.isRecording && !session.hotKeyActive ? Palette.error(dark: colorScheme == .dark) : .secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("shortcut-hint")
+            if let hint = shortcutHint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(!recorder.isRecording && !session.hotKeyActive ? Palette.error(dark: colorScheme == .dark) : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("shortcut-hint")
+            }
         }
     }
 
-    private var shortcutHint: String {
+    /// Nothing to say while the shortcut works and is not being recorded.
+    private var shortcutHint: String? {
         if recorder.needsModifier { return "Include Command (⌘), Option (⌥) or Control (⌃). Esc cancels." }
         if recorder.isRecording { return "Use ⌘, ⌥ or ⌃ with a key. Press Esc to cancel." }
         if !session.hotKeyActive { return "Shortcut unavailable. It may be in use by another app; choose a different one." }
-        return "Click to record a shortcut. × restores the default ⌘\\."
+        return nil
     }
 
     private var idleSelection: Binding<Int> {
@@ -213,14 +362,19 @@ struct PreferencesView: View {
             HStack {
                 Text("Lock after inactivity")
                 Spacer()
-                Picker("Lock after inactivity", selection: idleSelection) {
-                    ForEach(PreferenceDurations.idleOptions(including: session.autoLock.timeoutMinutes), id: \.self) { minutes in
-                        Text(PreferenceDurations.minutesLabel(minutes)).tag(minutes)
+                PaneMenu(
+                    title: "Lock after inactivity",
+                    value: idleSelection.wrappedValue == 0 ? "Never" : PreferenceDurations.minutesLabel(idleSelection.wrappedValue)
+                ) {
+                    Picker("Lock after inactivity", selection: idleSelection) {
+                        ForEach(PreferenceDurations.idleOptions(including: session.autoLock.timeoutMinutes), id: \.self) { minutes in
+                            Text(PreferenceDurations.minutesLabel(minutes)).tag(minutes)
+                        }
+                        Divider()
+                        Text("Never").tag(0)
                     }
-                    Divider()
-                    Text("Never").tag(0)
+                    .labelsHidden().pickerStyle(.inline)
                 }
-                .labelsHidden().pickerStyle(.menu).frame(width: 150)
             }
             Divider()
             settingToggle("When the Mac sleeps", value: $session.autoLock.lockOnSleep)
@@ -234,19 +388,21 @@ struct PreferencesView: View {
     }
 
     private var everyday: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack {
                 Text("Clear clipboard after")
                 Spacer()
-                Picker("Clear clipboard after", selection: $session.clipboardTimeout) {
-                    ForEach(PreferenceDurations.clipboardOptions(including: session.clipboardTimeout), id: \.self) { seconds in
-                        Text(PreferenceDurations.secondsLabel(seconds)).tag(seconds)
+                PaneMenu(title: "Clear clipboard after", value: PreferenceDurations.secondsLabel(session.clipboardTimeout)) {
+                    Picker("Clear clipboard after", selection: $session.clipboardTimeout) {
+                        ForEach(PreferenceDurations.clipboardOptions(including: session.clipboardTimeout), id: \.self) { seconds in
+                            Text(PreferenceDurations.secondsLabel(seconds)).tag(seconds)
+                        }
                     }
+                    .labelsHidden().pickerStyle(.inline)
                 }
-                .labelsHidden().pickerStyle(.menu).frame(width: 150)
                 .onChange(of: session.clipboardTimeout) { _, _ in recorder.stop() }
             }
-            Divider()
+            PaneRule()
             settingToggle("Search all fields", detail: "Also search usernames, notes, tags and custom fields.", value: $session.searchAll)
         }
     }
@@ -303,10 +459,17 @@ struct PreferencesView: View {
                     }
                 }
             }
-            Divider()
+        }
+        .controlSize(.regular)
+    }
+
+    /// Touch ID for the open database.
+    private var touchID: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Touch ID").fontWeight(.medium)
+                    Text("Unlock “\(session.databaseURL.lastPathComponent)” with Touch ID").fontWeight(.medium)
+                        .lineLimit(1).truncationMode(.middle)
                     Text(touchIDDescription)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -336,10 +499,6 @@ struct PreferencesView: View {
                     .help(session.locked ? "Unlock this database with its master password first." : "Save the current master password for Touch ID")
                 }
             }
-            Divider()
-            keyFile
-            Divider()
-            masterPassword
         }
         .controlSize(.regular)
     }
@@ -349,7 +508,7 @@ struct PreferencesView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Key file").fontWeight(.medium)
+                    Text(session.databaseUsesKeyFile && !session.locked ? "This database has a key file" : "A second key").fontWeight(.medium)
                     Text(keyFileDescription)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -391,6 +550,7 @@ struct PreferencesView: View {
                     .accessibilityIdentifier("keyfile-status")
             }
         }
+        .controlSize(.regular)
     }
 
     private var keyFileDescription: String {
@@ -413,7 +573,7 @@ struct PreferencesView: View {
     private var masterPassword: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Master password").fontWeight(.medium)
+                Text("The password that unlocks this database").fontWeight(.medium)
                 Text(session.databaseUsesKeyFile && !session.locked
                      ? "Changing it keeps the key file."
                      : "Changes the password for this database.")
@@ -424,35 +584,6 @@ struct PreferencesView: View {
             Button("Change Master Password…") { recorder.stop(); session.changeMasterPassword() }
                 .disabled(!session.canChangeKeys)
                 .help(session.locked ? "Unlock this database first." : "Change the master password")
-        }
-    }
-
-    private var importPasswords: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            importRow(
-                "Chrome",
-                steps: "In Chrome, open chrome://password-manager/settings and choose Export passwords. Then pick the file here.",
-                source: .chrome
-            )
-            Divider()
-            if VaultSession.credentialExchangeAvailable {
-                applePasswordsRow
-            } else {
-                importRow(
-                    "Apple Passwords",
-                    steps: "In the Passwords app, choose File > Export All Passwords. Then pick the file here.",
-                    source: .applePasswords
-                )
-            }
-            Text("Passwords go into a \"Chrome\" or \"Apple Passwords\" group. Import again to update them: new sites are added, changed passwords are updated, and sites that are gone move to the Recycle Bin. Your own entries are never changed.")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if !session.importStatus.isEmpty {
-                Text(session.importStatus)
-                    .font(.system(size: 11))
-                    .foregroundStyle(session.importStatusIsError ? Palette.error(dark: colorScheme == .dark) : Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .controlSize(.regular)
     }
@@ -511,51 +642,6 @@ struct PreferencesView: View {
     }
     #endif
 
-    /// macOS 26+: Passwords sends the items to this app directly, with no file. The file import stays as a fallback.
-    private var applePasswordsRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Apple Passwords").fontWeight(.medium)
-                Text("In the Passwords app, choose File > Export All Items to App, then pick PasswordPie. No file is saved. Do this again whenever you want to update.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Import from a CSV file instead…") {
-                    recorder.stop()
-                    session.importPasswords(from: .applePasswords)
-                }
-                .buttonStyle(.link)
-                .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
-                .font(.system(size: 11))
-                .disabled(session.locked)
-            }
-            Spacer(minLength: 4)
-            Button("Open Passwords") {
-                recorder.stop()
-                session.openPasswordsApp()
-            }
-            .disabled(session.locked)
-            .help(session.locked ? "Unlock this database first." : "Open the Passwords app")
-        }
-    }
-
-    private func importRow(_ title: String, steps: String, source: BrowserImportSource) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title).fontWeight(.medium)
-                Text(steps)
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 4)
-            Button("Import…") {
-                recorder.stop()
-                session.importPasswords(from: source)
-            }
-            .disabled(session.locked)
-            .help(session.locked ? "Unlock this database first." : "Choose the exported CSV file")
-        }
-    }
-
     private var touchIDDescription: String {
         if session.touchIDEnabled && !session.touchIDHardware {
             return "On for this database, but Touch ID is not available on this Mac."
@@ -567,8 +653,81 @@ struct PreferencesView: View {
     }
 }
 
-/// The gear menu's and the menu bar icon's way to "Browser extensions" in Preferences.
+/// One row of the pane list. The selected one takes a light wash, not the menu's orange fill: the list says where
+/// you are, and the page's own controls stay the loudest thing in the window.
+private struct PaneRow: View {
+    let pane: PreferencesPane
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var hovered = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: pane.symbol)
+                    .font(.system(size: 13, weight: selected ? .medium : .regular))
+                    .foregroundStyle(selected ? Palette.accentText(dark: colorScheme == .dark) : Palette.secondaryText(dark: colorScheme == .dark))
+                    .frame(width: 20, height: 20)
+                Text(pane.title)
+                    .fontWeight(selected ? .medium : .regular)
+                    .foregroundStyle(Palette.text(dark: colorScheme == .dark))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background(
+                selected ? Palette.brandAccent.opacity(colorScheme == .dark ? 0.22 : 0.14) : Color.primary.opacity(hovered ? 0.06 : 0),
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .accessibilityLabel(pane.title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityIdentifier("pane-\(pane.rawValue)")
+    }
+}
+
+/// A pop-up menu drawn as the shortcut's box is: the same height, line and corner, and no orange arrows.
+struct PaneMenu<Content: View>: View {
+    let title: String
+    let value: String
+    @ViewBuilder var content: () -> Content
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: 6) {
+                Text(value)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 30)
+            .background(Palette.card(dark: colorScheme == .dark).opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.16)))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
+    }
+}
+
+/// The gear menu's and the menu bar icon's way to "Browsers" in Preferences.
 let browserExtensionsMenuTitle = "Browser Extensions…"
+/// The gear menu's way to "Import". The empty database's row has the same words.
+let importPasswordsMenuTitle = "Import Passwords…"
 
 /// Where each browser's extension stands, and the way to add it or turn it on. Always here, whatever app is in front:
 /// the line above the search box shows only over a browser that is missing it (docs/UX.md, "Getting the extension").
@@ -642,7 +801,7 @@ struct UpdatesSection: View {
     @ObservedObject var updates: UpdateCoordinator
     @Environment(\.colorScheme) private var colorScheme
 
-    static let detail = "Once a week, a separate updater asks GitHub for a newer PasswordPie, checks that it is signed by Image AI, LLC and notarized by Apple, and installs it while PasswordPie is locked. PasswordPie itself never connects to the network."
+    static let detail = "A separate updater asks GitHub once a week, and installs a signed, notarized update while PasswordPie is locked. PasswordPie itself never connects to the network."
 
     private var failed: Bool {
         if case .failed = updates.state { return true }
@@ -651,9 +810,11 @@ struct UpdatesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // A build that is not a release has nothing to switch: the line below says so.
+            if updates.state != .unavailable {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Update automatically").fontWeight(.medium)
+                    Text("Update automatically")
                     Text(Self.detail)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -663,9 +824,9 @@ struct UpdatesSection: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .disabled(updates.state == .unavailable)
                     .accessibilityLabel("Update automatically")
                     .accessibilityHint(Self.detail)
+            }
             }
             HStack(spacing: 10) {
                 Text(updates.statusLine)

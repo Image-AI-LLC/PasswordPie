@@ -1049,6 +1049,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         gear.addItem(.separator())
         add(to: gear, "Preferences…", #selector(openPreferences), key: ",")
         add(to: gear, browserExtensionsMenuTitle, #selector(openBrowserExtensions))
+        add(to: gear, importPasswordsMenuTitle, #selector(openImport))
         add(to: gear, "Open Database…", #selector(openDatabase))
         add(to: gear, "New Database…", #selector(newDatabase))
         gear.addItem(.separator())
@@ -1069,6 +1070,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     @objc private func lockNow() { session.lock() }
     @objc private func openPreferences() { hide(refocusPrevious: false); AppDelegate.shared?.showPreferences() }
     @objc private func openBrowserExtensions() { showPreferences(at: .browserExtensions) }
+    @objc private func openImport() { showPreferences(at: .importPasswords) }
     @objc private func openDatabase() { session.chooseDatabase() }
     @objc private func newDatabase() { session.newDatabase() }
     @objc private func quit() { NSApp.terminate(nil) }

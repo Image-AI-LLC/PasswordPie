@@ -77,6 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var editorWindow: NSWindow?
     private var preferencesWindow: NSWindow?
     private let preferencesNavigator = PreferencesNavigator()
+    /// Preferences > Import. It outlives the window, so what Apple Passwords sends has somewhere to land.
+    private(set) lazy var importFlow = ImportFlow(session: session)
     private let switcherPresence = SwitcherPresence()
     private var aboutWindow: NSWindow?
     private var chromeReviewWindow: NSWindow?
@@ -246,7 +248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     ) -> Bool {
         guard VaultSession.isCredentialExchange(userActivity.activityType),
               let token = VaultSession.credentialExchangeToken(from: userActivity.userInfo) else { return false }
-        session.importFromCredentialExchange(token: token)
+        // Preferences > Import says how it went.
+        showPreferences(at: .importPasswords)
+        session.importFromCredentialExchange(token: token) { [weak self] report in self?.importFlow.receive(report) }
         return true
     }
 
@@ -459,29 +463,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var preferencesView: PreferencesView {
-        var view = PreferencesView(session: session, navigator: preferencesNavigator, bridge: bridge)
+        var view = PreferencesView(session: session, navigator: preferencesNavigator, importFlow: importFlow, bridge: bridge)
         #if PP_DIRECT
         view.updates = updates
         #endif
         return view
     }
 
-    /// Opens Preferences; with `section`, scrolled to it.
+    static let preferencesSize = NSSize(width: 760, height: 600)
+    static let preferencesMinSize = NSSize(width: 700, height: 460)
+
+    /// Opens Preferences; with `section`, on its pane.
     func showPreferences(at section: PreferencesSection? = nil) {
-        preferencesNavigator.target = section
+        preferencesNavigator.open(at: section, newWindow: preferencesWindow == nil)
         if preferencesWindow == nil {
-            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.styleMask.insert(.resizable)
+            // The pane list runs to the top of the window, under the title bar. The title stays for the Window menu.
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = "PasswordPie Preferences"
+            window.titleVisibility = .hidden
             window.applyWarmTitlebar()
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: preferencesView)
-            window.setContentSize(NSSize(width: 560, height: 800))
-            window.contentMinSize = NSSize(width: 560, height: 480)
+            window.contentMinSize = Self.preferencesMinSize
+            var size = Self.preferencesSize
             if let screen = NSScreen.main {
-                let height = min(800, screen.visibleFrame.height - 60)
-                window.setContentSize(NSSize(width: 560, height: height))
+                size.height = max(Self.preferencesMinSize.height, min(size.height, screen.visibleFrame.height - 60))
             }
+            window.setContentSize(size)
             window.delegate = self
             window.center()
             preferencesWindow = window
@@ -694,6 +702,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
+            // What a file held does not stay in memory behind a closed window.
+            importFlow.preferencesClosed()
         } else if window === aboutWindow {
             aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
@@ -915,11 +925,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showPaywall()
             return
         }
-        if env["PASSWORDPIE_PREFERENCES"] != nil {
+        // `PASSWORDPIE_PREFERENCES=<pane>` opens that pane (`1`: General); `PASSWORDPIE_IMPORT=<source id>` its page in
+        // Import, with no database unlocked.
+        if let pane = env["PASSWORDPIE_PREFERENCES"] {
             showPreferences()
-            if let rawHeight = env["PASSWORDPIE_PREFERENCES_HEIGHT"], let height = Double(rawHeight), height.isFinite {
-                preferencesWindow?.setContentSize(NSSize(width: 560, height: max(480, min(800, height))))
+            if let pane = PreferencesPane(rawValue: pane) { preferencesNavigator.pane = pane }
+            if let tile = env["PASSWORDPIE_IMPORT"].flatMap(ImportTile.tile) {
+                preferencesNavigator.pane = .importPasswords
+                importFlow.choose(tile)
             }
+            // `PASSWORDPIE_PREFERENCES_HEIGHT` and `_WIDTH`: a smaller window, not below the smallest it allows.
+            func side(_ name: String, _ full: CGFloat, _ least: CGFloat) -> CGFloat {
+                guard let raw = env[name], let value = Double(raw), value.isFinite else { return full }
+                return max(least, min(full, value))
+            }
+            preferencesWindow?.setContentSize(NSSize(
+                width: side("PASSWORDPIE_PREFERENCES_WIDTH", Self.preferencesSize.width, Self.preferencesMinSize.width),
+                height: side("PASSWORDPIE_PREFERENCES_HEIGHT", Self.preferencesSize.height, Self.preferencesMinSize.height)
+            ))
             return
         }
         guard env["PASSWORDPIE_SHOW"] != nil else { return }
@@ -967,6 +990,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             for (step, title) in hover.split(separator: "/").map(String.init).enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5 + 1.2 * Double(step)) { [weak self] in
                     self?.panelController.menu.debugHover(title)
+                }
+            }
+        }
+        // Preferences > Import on a source's page, with the database unlocked. `PASSWORDPIE_IMPORT_FILE` is handed over
+        // as if dropped; `PASSWORDPIE_IMPORT_COMMIT` presses Import a second later (`delete`: then Delete File).
+        if let tile = env["PASSWORDPIE_IMPORT"].flatMap(ImportTile.tile) {
+            showPreferences(at: .importPasswords)
+            importFlow.choose(tile)
+            if let path = env["PASSWORDPIE_IMPORT_FILE"] {
+                importFlow.take(URL(fileURLWithPath: path))
+                Task { @MainActor [importFlow] in
+                    await importFlow.settled()
+                    if let password = env["PASSWORDPIE_IMPORT_PASSWORD"] {
+                        importFlow.passwordDraft = password
+                        importFlow.unlockFile()
+                        await importFlow.settled()
+                    }
+                    guard let action = env["PASSWORDPIE_IMPORT_COMMIT"] else { return }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    importFlow.commit()
+                    if action == "delete" { importFlow.deleteFile() }
                 }
             }
         }
@@ -1050,6 +1094,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "popoverWindow": menu.popoverWindowNumber ?? NSNull(),
             "reviewWindow": chromeReviewWindow?.windowNumber ?? NSNull(),
             "preferencesWindow": preferencesWindow?.isVisible == true ? preferencesWindow?.windowNumber ?? NSNull() : NSNull(),
+            "preferencesPane": preferencesNavigator.pane.rawValue,
+            "importSource": importFlow.tile?.id ?? NSNull(),
+            "importStage": String(describing: importFlow.stage).split(separator: "(").first.map(String.init) ?? "",
+            "importError": importFlow.error,
             "editorWindow": editorWindow?.isVisible == true ? editorWindow?.windowNumber ?? NSNull() : NSNull(),
             "editorSaving": session.editorSaving,
             "editorError": session.editorError,

@@ -144,7 +144,7 @@ final class TopLevelMenuTests: XCTestCase {
             .header, .action(.importPasswords), .action(.syncChrome), .action(.newItem), .separator, .generator
         ])
         XCTAssertEqual(rows.map(\.detail), [
-            "", "From a Chrome or Apple Passwords export", "Search what Chrome saved on this Mac", "A login, password or secure note", "", ""
+            "", "From a browser or a password manager", "Search what Chrome saved on this Mac", "A login, password or secure note", "", ""
         ])
         XCTAssertFalse(rows[0].isSelectable, "the group header is not a row you can pick")
         XCTAssertNil(rows[0].category, "the header is not a category's search group")
@@ -160,7 +160,7 @@ final class TopLevelMenuTests: XCTestCase {
     func testTheAppStoreAppHasNoChromeRow() {
         let rows = MenuBuilder.topLevel(entries: [], channel: .appStore)
         XCTAssertEqual(titles(rows), ["Get Started", "Import Passwords…", "New Item…", "-", "Password Generator"])
-        XCTAssertEqual(rows.map(\.detail), ["", "From a Chrome or Apple Passwords export", "A login, password or secure note", "", ""])
+        XCTAssertEqual(rows.map(\.detail), ["", "From a browser or a password manager", "A login, password or secure note", "", ""])
     }
 
     func testOnlyTrashedEntriesStillCountAsEmpty() {

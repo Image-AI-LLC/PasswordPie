@@ -233,7 +233,79 @@ func addTag(_ entry: inout VaultEntry, _ tag: String) {
 
 // MARK: - ZIP (store and raw deflate)
 
-func unzip(_ data: Data) throws -> [String: Data] {
+/// The files of a ZIP, by path. Read from the central directory, which always has the sizes: an archive written to a
+/// stream leaves them out of each file's own header. `limit`: the most bytes all files together may unpack to.
+func unzip(_ data: Data, limit: Int = 1 << 30) throws -> [String: Data] {
+    // A slice keeps its parent's indices. Offsets below start at 0.
+    let data = Data(data)
+    var budget = limit
+    guard let end = zipEndOfCentralDirectory(data) else { return try unzipSequential(data, budget: &budget) }
+    let count = Int(readU16LE(data, end + 10))
+    var offset = Int(readU32LE(data, end + 16))
+    var files: [String: Data] = [:]
+    for _ in 0..<count {
+        guard offset + 46 <= data.count, readU32LE(data, offset) == 0x02014b50 else {
+            throw VaultOpenError.invalid("The ZIP file is damaged.")
+        }
+        let flags = readU16LE(data, offset + 8)
+        let method = readU16LE(data, offset + 10)
+        let compressedSize = readU32LE(data, offset + 20)
+        let nameLength = Int(readU16LE(data, offset + 28))
+        let extraLength = Int(readU16LE(data, offset + 30))
+        let commentLength = Int(readU16LE(data, offset + 32))
+        let local = readU32LE(data, offset + 42)
+        guard offset + 46 + nameLength <= data.count else { throw VaultOpenError.invalid("The ZIP file is damaged.") }
+        let name = String(data: data.subdata(in: (offset + 46)..<(offset + 46 + nameLength)), encoding: .utf8) ?? ""
+        offset += 46 + nameLength + extraLength + commentLength
+        if name.hasSuffix("/") { continue }
+        guard flags & 0x1 == 0 else {
+            throw VaultOpenError.unsupported("This ZIP is protected with a password. Unzip it first.")
+        }
+        guard compressedSize != UInt32.max, local != UInt32.max else {
+            throw VaultOpenError.unsupported("This ZIP is too large to read.")
+        }
+        let header = Int(local)
+        guard header + 30 <= data.count, readU32LE(data, header) == 0x04034b50 else {
+            throw VaultOpenError.invalid("The ZIP file is damaged.")
+        }
+        let start = header + 30 + Int(readU16LE(data, header + 26)) + Int(readU16LE(data, header + 28))
+        guard start + Int(compressedSize) <= data.count else { throw VaultOpenError.invalid("The ZIP file is damaged.") }
+        let compressed = data.subdata(in: start..<(start + Int(compressedSize)))
+        files[name] = try zipContents(compressed, method: method, budget: &budget)
+    }
+    return files
+}
+
+/// One file's bytes, counted against what the whole archive may unpack to.
+private func zipContents(_ compressed: Data, method: UInt16, budget: inout Int) throws -> Data {
+    let contents: Data
+    switch method {
+    case 0:
+        guard compressed.count <= budget else { throw VaultOpenError.unsupported("This file is too large to read.") }
+        contents = compressed
+    case 8:
+        contents = try rawInflate(compressed, limit: budget)
+    default:
+        throw VaultOpenError.unsupported("ZIP compression method \(method) is not supported.")
+    }
+    budget -= contents.count
+    return contents
+}
+
+/// Where the end-of-central-directory record starts. It is the last thing in the file, before an optional comment.
+private func zipEndOfCentralDirectory(_ data: Data) -> Int? {
+    guard data.count >= 22 else { return nil }
+    var offset = data.count - 22
+    let lowest = max(0, data.count - 22 - 65535)
+    while offset >= lowest {
+        if readU32LE(data, offset) == 0x06054b50 { return offset }
+        offset -= 1
+    }
+    return nil
+}
+
+/// A ZIP cut short of its directory: the files in the order they were written.
+private func unzipSequential(_ data: Data, budget: inout Int) throws -> [String: Data] {
     var cursor = ByteCursor(data: data)
     var files: [String: Data] = [:]
     while cursor.remaining >= 4 {
@@ -256,14 +328,7 @@ func unzip(_ data: Data) throws -> [String: Data] {
         let compressed = try cursor.take(compressedSize)
         let name = String(data: nameData, encoding: .utf8) ?? ""
         if name.hasSuffix("/") { continue }
-        switch method {
-        case 0:
-            files[name] = compressed
-        case 8:
-            files[name] = try rawInflate(compressed)
-        default:
-            throw VaultOpenError.unsupported("ZIP compression method \(method) is not supported.")
-        }
+        files[name] = try zipContents(compressed, method: method, budget: &budget)
     }
     return files
 }
@@ -440,9 +505,12 @@ func loadCSV(_ data: Data) throws -> Vault {
     let body = mapping.isEmpty ? rows : Array(rows.dropFirst())
     let columns = mapping.isEmpty ? csvFallbackColumns(header.count) : mapping
     var entries: [VaultEntry] = []
+    // In column order, with the one-time code last: its label is the title and username, wherever their columns are.
+    let ordered = columns.sorted { $0.key < $1.key }
+    let passes = ordered.filter { !$0.value.isOTP } + ordered.filter { $0.value.isOTP }
     for row in body {
         var entry = VaultEntry()
-        for (index, role) in columns {
+        for (index, role) in passes {
             guard index < row.count else { continue }
             let value = row[index]
             switch role {
@@ -461,8 +529,15 @@ func loadCSV(_ data: Data) throws -> Vault {
             case .otp:
                 if !value.isEmpty { putOTP(&entry, value) }
             case .favorite:
-                let flag = value.trimmingCharacters(in: .whitespaces).lowercased()
-                entry.favorite = flag == "1" || flag == "true" || flag == "yes" || flag == "*"
+                if csvFlag(value) { entry.favorite = true }
+            case .archived:
+                if csvFlag(value) { addTag(&entry, "Archived") }
+            case .tags:
+                for tag in value.split(whereSeparator: { $0 == "," || $0 == ";" }) {
+                    addTag(&entry, tag.trimmingCharacters(in: .whitespaces))
+                }
+            case .ignored:
+                break
             case .extra(let name):
                 putField(&entry, name, value)
             }
@@ -474,8 +549,30 @@ func loadCSV(_ data: Data) throws -> Vault {
 }
 
 private enum CSVRole {
-    case group, title, username, password, url, notes, otp, favorite
+    case group, title, username, password, url, notes, otp, favorite, archived, tags
+    /// A column the app it came from keeps for itself, such as Firefox's record id and timestamps.
+    case ignored
     case extra(String)
+
+    var isOTP: Bool {
+        if case .otp = self { return true }
+        return false
+    }
+
+    var isPassword: Bool {
+        if case .password = self { return true }
+        return false
+    }
+}
+
+private func csvFlag(_ value: String) -> Bool {
+    let flag = value.trimmingCharacters(in: .whitespaces).lowercased()
+    return flag == "1" || flag == "true" || flag == "yes" || flag == "*"
+}
+
+/// True when the first row names a password column, under any of the names the readers know.
+func csvNamesPassword(_ header: [String]) -> Bool {
+    csvMapping(header).values.contains { $0.isPassword }
 }
 
 private func csvMapping(_ header: [String]) -> [Int: CSVRole] {
@@ -485,19 +582,22 @@ private func csvMapping(_ header: [String]) -> [Int: CSVRole] {
         let key = column.lowercased().filter { $0.isLetter || $0.isNumber }
         let role: CSVRole?
         switch key {
-        case "group", "groups", "folder", "folders", "grouping": role = .group
+        case "group", "groups", "folder", "folders", "grouping", "category": role = .group
         case "title", "name", "account", "loginname": role = .title
         case "username", "user", "login", "loginusername", "email": role = .username
         case "password", "loginpassword", "pass": role = .password
         case "url", "website", "uri", "loginuri", "web": role = .url
         case "notes", "note", "extra", "comment", "comments": role = .notes
-        case "totp", "otp", "logintotp", "otpauth": role = .otp
+        case "totp", "otp", "logintotp", "otpauth", "otpsecret", "otpurl": role = .otp
         case "favorite", "fav", "favourite": role = .favorite
+        case "archived": role = .archived
+        case "tags", "tag": role = .tags
+        case "httprealm", "formactionorigin", "guid", "timecreated", "timelastused", "timepasswordchanged": role = .ignored
         default: role = nil
         }
         if let role {
             mapping[index] = role
-            known += 1
+            if case .ignored = role {} else { known += 1 }
         } else if !column.trimmingCharacters(in: .whitespaces).isEmpty {
             mapping[index] = .extra(column.trimmingCharacters(in: .whitespaces))
         }

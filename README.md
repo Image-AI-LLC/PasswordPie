@@ -12,7 +12,7 @@ A keyboard-first KeePass password manager for Mac that lives in the menu bar.
 
 Requires macOS 14 or later on an Apple Silicon Mac. The DMG and the app are signed with Developer ID (Image AI, LLC) and notarized by Apple. Release notes and checksums are on the [releases page](https://github.com/Image-AI-LLC/PasswordPie/releases).
 
-The downloaded app keeps itself up to date: once a week a separate updater inside it asks GitHub for a newer release, checks the same signature and notarization, and installs it while PasswordPie is locked. PasswordPie itself opens no network connection. Turn it off under Preferences > Updates.
+The downloaded app keeps itself up to date: once a week a separate updater inside it asks GitHub for a newer release, checks the same signature and notarization, and installs it while PasswordPie is locked. PasswordPie itself opens no network connection. Turn it off under Preferences > General.
 
 ## What it does
 
@@ -48,4 +48,4 @@ We are not accepting outside pull requests for now. Bug reports and ideas are we
 
 ## Credits
 
-Site popularity in search, and the list of sites whose icons are bundled, come from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The bundled site icons in `Assets/SiteIcons` are the trademarks of their sites' owners, shown only to identify the site an account belongs to; where each came from is listed in [`Assets/SiteIcons/SOURCES.md`](Assets/SiteIcons/SOURCES.md). Argon2 is used under CC0 1.0 / Apache 2.0. The browser extension bundles [jsQR](https://github.com/cozmo/jsQR) under the Apache License 2.0 (notice in `extension/public/THIRD_PARTY_NOTICES.txt`).
+Site popularity in search, and the list of sites whose icons are bundled, come from the [Majestic Million](https://majestic.com/reports/majestic-million), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). The bundled site icons in `Assets/SiteIcons` are the trademarks of their sites' owners, shown only to identify the site an account belongs to; where each came from is listed in [`Assets/SiteIcons/SOURCES.md`](Assets/SiteIcons/SOURCES.md). The icons of the browsers and password managers in Preferences > Import (`Assets/ImportIcons`) are likewise their owners' trademarks, shown only to identify the app a password export comes from, and are listed in [`Assets/ImportIcons/SOURCES.md`](Assets/ImportIcons/SOURCES.md). Argon2 is used under CC0 1.0 / Apache 2.0. The browser extension bundles [jsQR](https://github.com/cozmo/jsQR) under the Apache License 2.0 (notice in `extension/public/THIRD_PARTY_NOTICES.txt`).

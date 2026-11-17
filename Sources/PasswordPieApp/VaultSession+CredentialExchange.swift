@@ -32,42 +32,38 @@ extension VaultSession {
     }
 
     /// The token is single use and short lived, and the data is decrypted only on request, so a locked database
-    /// asks the user to export again instead of keeping passwords in memory.
-    func importFromCredentialExchange(token: UUID) {
+    /// asks the user to export again instead of keeping passwords in memory. `report` is called on the main actor,
+    /// once with `.reading` when the read starts and once with how it ended.
+    func importFromCredentialExchange(token: UUID, report: @escaping @MainActor (ExchangeReport) -> Void) {
         guard #available(macOS 26.0, *) else { return }
-        AppDelegate.shared?.showPreferences()
         guard !locked else {
-            setImportStatus("Unlock the database first, then choose Export All Items to App in Passwords again.", isError: true)
+            report(.failed("Unlock the database first, then choose Export All Items to App in Passwords again."))
             return
         }
-        setImportStatus("Reading Apple Passwords…", isError: false)
+        report(.reading)
         let path = databaseURL.path
         Task { @MainActor in
             do {
                 let data = try await ASCredentialImportManager().importCredentials(token: token)
                 guard !locked, databaseURL.path == path else {
-                    setImportStatus("The database was locked or changed while reading Apple Passwords. Choose Export All Items to App again.", isError: true)
+                    report(.failed("The database was locked or changed while reading Apple Passwords. Choose Export All Items to App again."))
                     return
                 }
-                finishCredentialExchange(Self.exchangedItems(from: data))
+                report(finishCredentialExchange(Self.exchangedItems(from: data)))
             } catch {
-                setImportStatus("Couldn't read the passwords from Apple Passwords. Try Export All Items to App again. (\(error.localizedDescription))", isError: true)
+                report(.failed("Couldn’t read the passwords from Apple Passwords. Try Export All Items to App again. (\(error.localizedDescription))"))
             }
         }
     }
 
-    @available(macOS 26.0, *)
-    private func finishCredentialExchange(_ items: [ExchangedItem]) {
+    /// Merges what Passwords sent into the open database.
+    func finishCredentialExchange(_ items: [ExchangedItem]) -> ExchangeReport {
         let imported = BrowserImport.entries(fromExchange: items, source: .applePasswords)
-        guard !imported.isEmpty else {
-            setImportStatus("Apple Passwords sent no passwords. Nothing was changed.", isError: true)
-            return
-        }
+        guard !imported.isEmpty else { return .failed("Apple Passwords sent no passwords. Nothing was changed.") }
         guard let summary = mergeImported(imported, source: .applePasswords) else {
-            setImportStatus("Couldn't save the imported passwords. Nothing was changed.", isError: true)
-            return
+            return .failed("Couldn’t save the imported passwords. Nothing was changed.")
         }
-        setImportStatus(importSummaryText(summary, source: .applePasswords), isError: false)
+        return .done(summary)
     }
 
     /// Logins only: a password, optionally with a one-time code and a note. Cards, passkeys and the rest are left out.

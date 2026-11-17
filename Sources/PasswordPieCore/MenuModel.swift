@@ -19,9 +19,9 @@ public enum AppChannel: Equatable, Sendable {
 
 /// What an action row does. The app decides how; the menu only says which.
 public enum MenuAction: Equatable, Sendable {
-    /// Preferences, at "Import passwords".
+    /// Preferences, at "Import".
     case importPasswords
-    /// Preferences, at "Chrome". Direct channel only.
+    /// Preferences, at "Browsers". Direct channel only.
     case syncChrome
     /// The item editor with a new item, as the gear's New Item.
     case newItem
@@ -189,7 +189,7 @@ public enum MenuBuilder {
                 kind: .action(.importPasswords),
                 title: "Import Passwords…",
                 icon: .importPasswords,
-                detail: "From a Chrome or Apple Passwords export"
+                detail: "From a browser or a password manager"
             )
         ]
         // The App Store app has no Chrome reader.

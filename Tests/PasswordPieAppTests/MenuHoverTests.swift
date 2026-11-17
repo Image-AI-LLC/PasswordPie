@@ -317,10 +317,10 @@ final class MenuHoverTests: XCTestCase {
         menu.reset()
         let elements = try XCTUnwrap(menu.root.list.accessibilityChildren() as? [NSAccessibilityElement])
         let labels = elements.compactMap { $0.accessibilityLabel() }
-        XCTAssertTrue(labels.contains("Import Passwords…, From a Chrome or Apple Passwords export"), "\(labels)")
+        XCTAssertTrue(labels.contains("Import Passwords…, From a browser or a password manager"), "\(labels)")
         XCTAssertTrue(labels.contains("New Item…, A login, password or secure note"), "\(labels)")
         XCTAssertTrue(labels.contains("Password Generator"), "an ordinary row reads its title")
         let selected = elements.filter { $0.isAccessibilitySelected() }.compactMap { $0.accessibilityLabel() }
-        XCTAssertEqual(selected, ["Import Passwords…, From a Chrome or Apple Passwords export"])
+        XCTAssertEqual(selected, ["Import Passwords…, From a browser or a password manager"])
     }
 }

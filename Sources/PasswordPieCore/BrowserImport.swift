@@ -4,13 +4,57 @@ import Foundation
 public enum BrowserImportSource: String, CaseIterable, Sendable {
     case chrome
     case applePasswords
+    case firefox
+    case edge
+    case brave
+    case onePassword
+    case bitwarden
+    case protonPass
+    case lastPass
+    case dashlane
+    /// Any other app, as a CSV file whose first row names its columns.
+    case csv
 
     /// Used as the group name and as the tag that marks entries this import manages.
     public var label: String {
         switch self {
         case .chrome: return "Chrome"
         case .applePasswords: return "Apple Passwords"
+        case .firefox: return "Firefox"
+        case .edge: return "Edge"
+        case .brave: return "Brave"
+        case .onePassword: return "1Password"
+        case .bitwarden: return "Bitwarden"
+        case .protonPass: return "Proton Pass"
+        case .lastPass: return "LastPass"
+        case .dashlane: return "Dashlane"
+        case .csv: return "Imported"
         }
+    }
+
+    /// A browser, or Apple Passwords, exports its whole list every time, so a site missing from the next export was
+    /// deleted there. A password manager often exports one vault or folder, so a missing item means nothing.
+    public var exportsWholeList: Bool {
+        switch self {
+        case .chrome, .applePasswords, .firefox, .edge, .brave: return true
+        case .onePassword, .bitwarden, .protonPass, .lastPass, .dashlane, .csv: return false
+        }
+    }
+
+    /// A password manager's folders and vaults, and a CSV's folder column, become groups inside the source's own. A
+    /// browser has none.
+    public var keepsFolders: Bool { !exportsWholeList }
+}
+
+/// What was read from an export, before any of it is in the database.
+public struct ImportedFile: Equatable, Sendable {
+    public var entries: [VaultEntry]
+    /// Anyone who has the file can read the passwords in it, so it should not stay on disk.
+    public var plainText: Bool
+
+    public init(entries: [VaultEntry], plainText: Bool) {
+        self.entries = entries
+        self.plainText = plainText
     }
 }
 
@@ -37,24 +81,118 @@ public enum BrowserImport {
         guard let header = parseCSV(text).first else {
             throw VaultOpenError.invalid("The CSV file is empty.")
         }
-        let columns = Set(header.map { $0.lowercased().filter { $0.isLetter || $0.isNumber } })
-        guard columns.contains("password") else {
-            throw VaultOpenError.invalid("This isn't a \(source.label) password export. It has no Password column.")
+        guard csvNamesPassword(header) else {
+            throw VaultOpenError.invalid("This file has no Password column, so it is not a password export.")
         }
-        let loaded = try loadCSV(data)
-        guard !loaded.entries.isEmpty else {
+        let placed = place(try loadCSV(data).entries, source: source)
+        guard !placed.isEmpty else {
             throw VaultOpenError.invalid("The export has no passwords in it.")
         }
-        return loaded.entries.map { loadedEntry in
-            var entry = loadedEntry
-            entry.groupPath = [source.label]
-            entry.tags = source.label
+        return placed
+    }
+
+    /// Reads an export of any kind the source hands out: a CSV, a ZIP that holds one, a 1Password, Bitwarden or Proton
+    /// Pass file. `VaultOpenError.wrongPassword` with an empty password means the file is protected and needs one.
+    public static func read(_ url: URL, source: BrowserImportSource, password: String = "") throws -> ImportedFile {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            throw VaultOpenError.invalid("The file is no longer there.")
+        }
+        if isDirectory.boolValue {
+            guard url.pathExtension.lowercased() == "opvault" else {
+                throw VaultOpenError.invalid("Choose the exported file, not a folder.")
+            }
+            try expect(.onePassword, on: source)
+            let vault = try loadOpVault(directory: url, password: password)
+            return try imported(vault.entries, source: source, plainText: false)
+        }
+        return try read(data: try Data(contentsOf: url), source: source, password: password)
+    }
+
+    static func read(data: Data, source: BrowserImportSource, password: String = "") throws -> ImportedFile {
+        // A slice keeps its parent's indices. Offsets below start at 0.
+        let data = Data(data)
+        if data.count >= 4, readU32LE(data, 0) == 0x9AA2D903 {
+            throw VaultOpenError.invalid("This is a KeePass database. PasswordPie opens it as it is: choose Open Database… instead of importing it.")
+        }
+        if data.count >= 4, readU32LE(data, 0) == 0x04034b50 {
+            return try read(zip: data, source: source, password: password)
+        }
+        // Past spaces, line ends and a UTF-8 byte order mark.
+        let first = data.first { ![0x20, 0x09, 0x0A, 0x0D, 0xEF, 0xBB, 0xBF].contains($0) }
+        if first == UInt8(ascii: "{") {
+            return try read(json: data, source: source, password: password)
+        }
+        return ImportedFile(entries: try entries(fromCSV: data, source: source), plainText: true)
+    }
+
+    private static func read(zip data: Data, source: BrowserImportSource, password: String) throws -> ImportedFile {
+        let files = try unzip(data)
+        if files["export.data"] != nil {
+            try expect(.onePassword, on: source)
+            return try imported(try loadPuxImport(files: files).entries, source: source, plainText: true)
+        }
+        func named(_ suffix: String) -> Data? {
+            files.first { $0.key.lowercased() == suffix || $0.key.lowercased().hasSuffix("/" + suffix) }?.value
+        }
+        if let json = named("data.json") {
+            return try read(json: json, source: source, password: password)
+        }
+        if named("data.pgp") != nil {
+            throw VaultOpenError.unsupported("This Proton Pass export is encrypted with PGP. Export it again without encryption.")
+        }
+        let sheets = files.filter { $0.key.lowercased().hasSuffix(".csv") }
+        // Safari's browsing data and Dashlane's export keep passwords in one sheet among several.
+        if let sheet = named("passwords.csv") ?? named("credentials.csv") ?? (sheets.count == 1 ? sheets.first?.value : nil) {
+            return ImportedFile(entries: try entries(fromCSV: sheet, source: source), plainText: true)
+        }
+        throw VaultOpenError.invalid("This ZIP has no password export in it.")
+    }
+
+    private static func read(json data: Data, source: BrowserImportSource, password: String) throws -> ImportedFile {
+        guard let json = try? JSON.parse(data), json.object != nil else {
+            throw VaultOpenError.invalid("This JSON file could not be read.")
+        }
+        if json["vaults"]?.object != nil {
+            try expect(.protonPass, on: source)
+            return try imported(try loadProtonPass(data).entries, source: source, plainText: true)
+        }
+        let protected = json["encrypted"]?.bool == true
+        if protected || json["items"] != nil {
+            try expect(.bitwarden, on: source)
+            return try imported(try loadBitwarden(data, password: password).entries, source: source, plainText: !protected)
+        }
+        throw VaultOpenError.invalid("This JSON file is not a Bitwarden or Proton Pass export.")
+    }
+
+    /// A password manager's own file belongs on that manager's page. A CSV is taken anywhere.
+    private static func expect(_ kind: BrowserImportSource, on source: BrowserImportSource) throws {
+        guard kind != source else { return }
+        throw VaultOpenError.invalid("This is a \(kind.label) export, not \(source == .csv ? "a CSV file" : "a \(source.label) one"). Go back and choose \(kind.label).")
+    }
+
+    private static func imported(_ entries: [VaultEntry], source: BrowserImportSource, plainText: Bool) throws -> ImportedFile {
+        let placed = place(entries, source: source)
+        guard !placed.isEmpty else { throw VaultOpenError.invalid("The export has no passwords in it.") }
+        return ImportedFile(entries: placed, plainText: plainText)
+    }
+
+    /// Puts what a file held under the source's group, with the source's tag. What the other app had in its trash
+    /// stays out.
+    static func place(_ entries: [VaultEntry], source: BrowserImportSource) -> [VaultEntry] {
+        entries.compactMap { loaded in
+            guard !loaded.trashed else { return nil }
+            var entry = loaded
+            entry.groupPath = [source.label] + (source.keepsFolders ? entry.groupPath : [])
+            addTag(&entry, source.label)
+            if entry.title.isEmpty { entry.title = host(of: entry.url) }
             return entry
         }
     }
 
     /// Merges an export into the database. Only entries tagged with the source are touched:
-    /// matches get the new password, new sites are added, and sites missing from the export go to the recycle bin.
+    /// matches get the new password, new sites are added, and, for a source that exports its whole list, sites
+    /// missing from the export go to the recycle bin.
     /// An entry the user already deleted is not brought back, and an empty export changes nothing.
     public static func merge(
         _ imported: [VaultEntry],
@@ -65,26 +203,44 @@ public enum BrowserImport {
 
         var result = existing
         var summary = BrowserImportSummary()
-        var managed: [String: [Int]] = [:]
+        // Which existing entry each imported one is. First by folder, so the same account kept in two folders is
+        // never paired the other way round; then by site and account alone, which finds an item whose folder was
+        // renamed in the other app, and one deleted here (the recycle bin keeps the tag, not the group).
+        var inFolder: [String: [Int]] = [:]
+        var anywhere: [String: [Int]] = [:]
         // Active entries go first, so a deleted twin never shadows a live entry with the same key.
         for trashed in [false, true] {
             for (index, entry) in existing.enumerated() where entry.trashed == trashed && isManaged(entry, by: source) {
-                managed[matchKey(entry), default: []].append(index)
+                anywhere[matchKey(entry), default: []].append(index)
+                if source.keepsFolders, !trashed { inFolder[folderKey(entry, source: source), default: []].append(index) }
             }
         }
         var matched = Set<Int>()
+        var pairs = [Int?](repeating: nil, count: imported.count)
+        func claim(_ candidates: [Int]?, for position: Int) {
+            guard let index = candidates?.first(where: { !matched.contains($0) }) else { return }
+            matched.insert(index)
+            pairs[position] = index
+        }
+        if source.keepsFolders {
+            for (position, incoming) in imported.enumerated() {
+                claim(inFolder[folderKey(incoming, source: source)], for: position)
+            }
+        }
+        for (position, incoming) in imported.enumerated() where pairs[position] == nil {
+            claim(anywhere[matchKey(incoming)], for: position)
+        }
 
-        for incoming in imported {
-            let key = matchKey(incoming)
-            if let index = managed[key]?.first {
-                managed[key]?.removeFirst()
-                matched.insert(index)
+        for (position, incoming) in imported.enumerated() {
+            if let index = pairs[position] {
                 if existing[index].trashed { continue }
                 var current = result[index]
+                // An export row without a password, such as a note, says nothing about the one stored here.
+                let passwordChanged = !incoming.password.isEmpty && current.password != incoming.password
                 let otpChanged = !incoming.otp.isEmpty && current.otp != incoming.otp
-                if current.password != incoming.password || otpChanged {
-                    current.password = incoming.password
-                    if !incoming.otp.isEmpty { current.otp = incoming.otp }
+                if passwordChanged || otpChanged {
+                    if passwordChanged { current.password = incoming.password }
+                    if otpChanged { current.otp = incoming.otp }
                     result[index] = current
                     summary.updated += 1
                 } else {
@@ -92,13 +248,14 @@ public enum BrowserImport {
                 }
             } else {
                 var fresh = incoming
-                fresh.groupPath = [source.label]
-                fresh.tags = source.label
+                if !source.keepsFolders || fresh.groupPath.first != source.label { fresh.groupPath = [source.label] }
+                addTag(&fresh, source.label)
                 result.append(fresh)
                 summary.added += 1
             }
         }
 
+        guard source.exportsWholeList else { return (result, summary) }
         for index in existing.indices where isManaged(existing[index], by: source) && !matched.contains(index) && !existing[index].trashed {
             result[index].trashed = true
             summary.removed += 1
@@ -113,8 +270,15 @@ public enum BrowserImport {
 
     private static func isManaged(_ entry: VaultEntry, by source: BrowserImportSource) -> Bool {
         // A recycled entry has lost its group in the file, so only its tag can identify it.
-        (entry.trashed || entry.groupPath == [source.label])
+        let inGroup = source.keepsFolders ? entry.groupPath.first == source.label : entry.groupPath == [source.label]
+        return (entry.trashed || inGroup)
             && entry.tagList.contains { $0.caseInsensitiveCompare(source.label) == .orderedSame }
+    }
+
+    /// `matchKey` within the folder the entry has inside the source's group.
+    private static func folderKey(_ entry: VaultEntry, source: BrowserImportSource) -> String {
+        let folder = entry.groupPath.first == source.label ? entry.groupPath.dropFirst() : []
+        return folder.joined(separator: "\u{2}") + "\u{3}" + matchKey(entry)
     }
 
     /// The same site and account in a new export. Scheme, `www.`, path and letter case do not matter.

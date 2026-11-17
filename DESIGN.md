@@ -109,8 +109,10 @@ spacing:
   details-max-height: 500
   generator-width: 412
   generator-height: 300
-  preferences-width: 560
-  preferences-height: 800
+  preferences-width: 760
+  preferences-height: 600
+  preferences-sidebar-width: 188
+  import-row-height: 40
   about-width: 440
   paywall-width: 400
   editor-width: 450
@@ -285,9 +287,12 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   32 pt tile, title, edit, pin and star, 14 pt side padding, 10 pt vertical. Fields: 14 pt side
   padding, 5 pt vertical, at least 38 pt tall.
 - **Generator**: a 412 × 300 pt child window; the password well is 28 pt tall, radius 5, and fills the row beside the button.
-- **Detached windows**: Preferences is 560 × 800 pt (minimum height 480), About 440 pt wide,
+- **Detached windows**: Preferences is 760 × 600 pt (minimum 700 × 460), About 440 pt wide,
   Editor 450 × 640 pt, the Premium window 400 pt wide. The warm surface runs under a transparent title
-  bar. Preferences, About and the Premium window use radius 12 cards.
+  bar. About and the Premium window use radius 12 cards. Preferences has none.
+- **Preferences**: a 188 pt list of panes on the left, full height, under the title bar (the window has no title
+  text). The pane fills the rest: 28 pt at the sides, 24 pt at the bottom, its heading 42 pt from the top of the window, a `title` heading with one `body` `text-secondary` line, then
+  groups 26 pt apart (see **Preferences groups**). The pane scrolls; the list does not.
 - **Large Type**: a borderless window at screen-saver level, sized to the password. Its largest
   size is the visible frame minus 48 pt in width and height.
 - **Spacing rhythm**: 4 · 5 · 8 · 10 · 12 · 14 · 20 · 24. **Menu bar mark**: 18 × 18 pt.
@@ -341,9 +346,9 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   under a resting pointer opens nothing until the pointer moves.
 - **Empty database** — when the open databases hold no visible entries (the Recycle Bin does not count), the
   menu is: a "Get Started" group header, the action rows, a separator, then Password Generator as a normal row,
-  last. "Import Passwords…" (From a Chrome or Apple Passwords export) opens Preferences at Import passwords. "Sync
+  last. "Import Passwords…" (From a browser or a password manager) opens Preferences at Import. "Sync
   Chrome Passwords…" (Search what Chrome saved on this Mac; direct channel only, the App Store app has no Chrome
-  reader) opens Preferences at Chrome, and does not switch sync on: that asks macOS for the Chrome key, which the user
+  reader) opens Preferences at Browsers, and does not switch sync on: that asks macOS for the Chrome key, which the user
   has not asked for yet. "New Item…" (A login, password or secure note) opens the editor, as the gear's New Item.
   The first action is selected on open. Action rows are selectable, run on Return or click with the usual flash, hide
   the panel, have no arrow, and open nothing on hover. Selected, the row takes the `selection` fill with
@@ -456,7 +461,47 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   Password is `BrandPrimaryButtonStyle`, the default. A write that failed adds "Couldn't save. Nothing changed." in
   `caption` `error` and the window stays. The close button is Not Yet. Never the system's blue default button. Locking
   closes it.
-- **Preferences > Database, key file and master password** — below Touch ID, each after a divider. "Key file": `body`
+- **Preferences pane list** — `surface` with ink 4 % over it, and a 1 pt ink 8 % line on its right edge. Rows start
+  42 pt from the top of the window, 8 pt from the sides, 30 pt tall, radius 7: a 13 pt symbol in a 20 pt slot, 8 pt,
+  the name in `body`. No tile behind the symbol. Unselected: the symbol is `text-secondary`. Selected: the row takes
+  `brand-accent` at 14 % (22 % in dark), the symbol `accent-text`, the name `text` in medium. The `selection` fill is
+  not used here: the list says where you are, and the page's controls stay the loudest thing in the window. A row
+  under the pointer that is not selected takes ink 6 %. Premium is the last row, as the others.
+- **Preferences groups** — no cards. A pane is its `title` and one `text-secondary` line, then groups 26 pt apart.
+  A group is its name in `caption` semibold `text-secondary` (sentence case), a 1 pt ink 9 % line 6 pt under it, and
+  its rows 12 pt under that, with the same line between rows. General's first group has no name. Content is at most
+  560 pt wide, 28 pt from the list.
+- **Preferences controls** — the shortcut's keys and a pop-up menu share one box: 30 pt tall, radius 7,
+  `field-surface` at 70 %, a 1 pt ink 16 % outline. Keys are `body` medium on ink 7 % radius 4 chips. A pop-up shows
+  its value and a 9 pt `chevron.up.chevron.down` in `text-secondary`. Recording: "Press a shortcut…" in
+  `accent-text` and a 2 pt `focus` outline. Reset and Cancel are `caption` medium `accent-text`, left of the box.
+- **Import > sources** — the header's second line is the database's name. Two columns 28 pt apart, Browsers and
+  Password managers, each a group name, its line, and rows. A row is 40 pt tall: the source's icon at 26 pt, 10 pt,
+  its name in `body`, and at the right edge the kind of file in `caption` `text-secondary`. A 1 pt ink 9 % line
+  under each row. Under the pointer the row takes `brand-accent` at 14 %. No chevrons and no boxes. Then a line and
+  one row across both columns, Another App, with "Any CSV file with a header row" at its right. Last, one `caption`
+  `text-secondary` line on where the file is read. The icon is the installed app's own icon; a source that is not
+  installed shows the icon bundled for it (`Assets/ImportIcons`) on a white plate, radius 20 % of its size, with a
+  black 10 % hairline, so a dark mark stays visible on the dark surface. A source with neither shows a letter tile,
+  as items without a site icon do.
+- **Import > a source** — a quiet "‹ All Sources" button, then the source's icon at 34 pt beside "Import from
+  Chrome" in `title` and the database's name in `body` `text-secondary`. Two parts follow, each a `body` semibold
+  title with no box and no number. Part 1: the export steps, 7 pt apart, each a `caption` semibold `text-secondary`
+  digit and the step in `body`, menu and button names in semibold. Under the first step, Open Chrome (system button;
+  only when the app is installed). After the last step, where the source has one: "Or paste into Chrome's address
+  bar:" in `caption` `text-secondary` and the address in `body-code` in a 26 pt box (radius 6, `field-surface` at
+  70 %, ink 14 % outline) with a `doc.on.doc` copy button inside its right edge. Part 2: the drop zone, then what
+  importing does in `caption` `text-secondary`.
+- **Drop zone** — the page's only box: radius 12, `field-surface` at 70 %, a 1 pt ink 12 % outline, at least 76 pt
+  tall. "Drop the file here" in `body` medium and the file names it takes in `caption` `text-secondary` on the left;
+  Choose File… (`BrandPrimaryButtonStyle`) on the right. A file dragged over it: the outline is 1.5 pt
+  `brand-accent` and the fill `brand-accent` at 12 %. With a file read, the same box holds a row: `doc.fill`, the
+  count and file name in `body` medium, and the one primary action, Import N Passwords (`BrandPrimaryButtonStyle`),
+  with Choose Another File as a link. While a file is being read: a small system progress spinner and "Reading
+  name…" in `text-secondary`. A password field (system secure field, 220 pt) with Unlock replaces the button until
+  the file opens. Errors are `caption` `error` under the box. Done: `checkmark.circle.fill` in `text-secondary`, what
+  happened in `body`, and for a plain-text file Delete File and Keep File (system buttons). Orange is never a status.
+- **Preferences > Database, key file and master password** — groups under the Database group. "Key file": `body`
   medium title, a `caption` `text-secondary` line that says what the open database needs, and "On" with a check when it
   has one. Below that, system buttons at their natural width: Add Key File… and Use Existing Key File…; then, on a second
   row, Remove Key File… (only with a key file) and Forget Key File at the right (only when this Mac keeps one). The outcome is a `caption` line, `error` when it
@@ -479,8 +524,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `caption` line, and a regular split action button at the right: primary for the one-time plan, quiet for the subscription,
   so the surface keeps one main action. The button shows the price from Apple, and no price is ever written in the code. While
   buying it says "Waiting…"; an owned plan shows "Owned" in `text-secondary`.
-- **Premium section** (App Store channel) — first in Preferences: the status line, then the plans as rows.
-- **Premium section** (direct channel) — first in Preferences: the status block and the direct offer, as in the
+- **Premium pane** (App Store channel) — last in the Preferences list: the status line, then the plans as rows.
+- **Premium pane** (direct channel) — last in the Preferences list: the status block and the direct offer, as in the
   window. Errors use `error`; everything else `text-secondary`. Orange is never a status.
 - **Strength meter** — 5 pt capsule on a 12 % track, at least 6 pt wide: `strength-weak` below 0.4,
   `strength-medium` below 0.7, otherwise `strength-strong`.
@@ -518,4 +563,3 @@ form, and the locked card is always 144 pt tall. Every surface follows light and
 - **Two panel radii**: the locked panel is 16 and the unlocked panel 5, so corners change during unlock.
 - **Two reds**: `error` and `strength-weak` are close but separate.
 - **Two strength meters**: details draws its own capsule; the generator uses a system `ProgressView`.
-- **Shortcut recorder well** still uses the system text background (`PreferencesView.swift`).

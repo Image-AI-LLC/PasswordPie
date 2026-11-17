@@ -2,7 +2,7 @@ import XCTest
 @testable import PasswordPieCore
 
 final class ImportTests: XCTestCase {
-    private let fixtures = URL(fileURLWithPath: "/Users/oldcai/projects/vault/keepassxc/tests/data", isDirectory: true)
+    private let fixtures = URL(fileURLWithPath: "/Users/oldcai/projects/PasswordPie/keepassxc/tests/data", isDirectory: true)
 
     func testTwofishAllZeroBlock() {
         let zeros16 = Data(repeating: 0, count: 16)

@@ -149,8 +149,6 @@ final class VaultSession: ObservableObject {
         didSet { catalogChanged() }
     }
     @Published var message = ""
-    @Published var importStatus = ""
-    @Published var importStatusIsError = false
     /// Chrome logins read live. These are never saved as they are. A newer password reaches the saved entry through `reconcileChromeUpdates`.
     @Published var liveEntries: [VaultEntry] = [] {
         didSet { catalogChanged() }
@@ -745,8 +743,6 @@ final class VaultSession: ObservableObject {
         locked = true
         creating = databaseIsMissing
         message = unsaved
-        importStatus = ""
-        importStatusIsError = false
         databaseUsesKeyFile = false
         keyFileStatus = ""
         keyFileStatusIsError = false
@@ -1424,55 +1420,7 @@ final class VaultSession: ObservableObject {
         }
     }
 
-    // MARK: Browser password import
-
-    /// Imports a Chrome or Apple Passwords CSV into this database, then offers to delete the plain-text file.
-    func importPasswords(from source: BrowserImportSource) {
-        guard !locked else {
-            setImportStatus("Unlock the database first.", isError: true)
-            return
-        }
-        AppDelegate.shared?.presentFilePanel { [weak self] in
-            guard let self else { return }
-            let chooser = NSOpenPanel()
-            chooser.canChooseFiles = true
-            chooser.canChooseDirectories = false
-            chooser.allowedContentTypes = [.commaSeparatedText]
-            chooser.allowsOtherFileTypes = true
-            chooser.message = "Choose the \(source.label) password export (.csv)"
-            guard chooser.runModal() == .OK, let url = chooser.url else { return }
-            self.importChosenPasswords(from: url, source: source)
-        }
-    }
-
-    private func importChosenPasswords(from url: URL, source: BrowserImportSource) {
-
-        let imported: [VaultEntry]
-        do {
-            imported = try BrowserImport.entries(fromCSV: Data(contentsOf: url), source: source)
-        } catch {
-            setImportStatus(openErrorText(error), isError: true)
-            return
-        }
-        guard let summary = mergeImported(imported, source: source) else {
-            setImportStatus("Couldn't save the imported passwords. Nothing was changed.", isError: true)
-            return
-        }
-        var status = importSummaryText(summary, source: source)
-        var failed = false
-        if confirmDeleteExport(url) {
-            do {
-                try BrowserImport.deleteExport(at: url)
-                status += " The export file was deleted."
-            } catch {
-                status += " Couldn't delete the export file. It still holds your passwords in plain text, so delete it yourself."
-                failed = true
-            }
-        } else {
-            status += " The export file is still on disk in plain text."
-        }
-        setImportStatus(status, isError: failed)
-    }
+    // MARK: Password import
 
     /// Merges an export into the file this session unlocked and saves it. The merged menu list is never saved as one database.
     /// Returns nil, with nothing changed, when the file cannot be saved.
@@ -1488,30 +1436,6 @@ final class VaultSession: ObservableObject {
             return nil
         }
         return merged.summary
-    }
-
-    func setImportStatus(_ text: String, isError: Bool) {
-        importStatus = text
-        importStatusIsError = isError
-    }
-
-    func importSummaryText(_ summary: BrowserImportSummary, source: BrowserImportSource) -> String {
-        var parts: [String] = []
-        if summary.added > 0 { parts.append("\(summary.added) added") }
-        if summary.updated > 0 { parts.append("\(summary.updated) updated") }
-        if summary.removed > 0 { parts.append("\(summary.removed) moved to the Recycle Bin") }
-        if parts.isEmpty { return "\(source.label) is already up to date." }
-        return "Imported from \(source.label): " + parts.joined(separator: ", ") + "."
-    }
-
-    private func confirmDeleteExport(_ url: URL) -> Bool {
-        let alert = NSAlert()
-        alert.messageText = "Delete the exported file?"
-        alert.informativeText = "\(url.lastPathComponent) holds your passwords in plain text. They are now in your PasswordPie database, so the file is no longer needed. Deleting it is permanent."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Keep")
-        return AppDelegate.shared?.keepOpen { alert.runModal() == .alertFirstButtonReturn } ?? false
     }
 
     // MARK: Actions
