@@ -3,7 +3,8 @@ import SwiftUI
 import XCTest
 @testable import PasswordPie
 
-/// The empty database's menu rows open Preferences at a section, whether or not the window is already open.
+/// Preferences shows one pane at a time, and other parts of the app open it at a pane (docs/UX.md, "Preferences in
+/// panes").
 @MainActor
 final class PreferencesNavigatorTests: XCTestCase {
     private var directory: URL!
@@ -27,63 +28,74 @@ final class PreferencesNavigatorTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    /// A Preferences window shorter than its content, off screen, as `AppDelegate.showPreferences` builds it.
-    private func openPreferences(_ navigator: PreferencesNavigator) async -> NSScrollView? {
+    func testANewWindowStartsOnGeneral() {
+        let navigator = PreferencesNavigator()
+        navigator.pane = .database
+        navigator.open(at: nil, newWindow: true)
+        XCTAssertEqual(navigator.pane, .general)
+    }
+
+    func testAnOpenWindowKeepsItsPaneUnlessItIsSentSomewhere() {
+        let navigator = PreferencesNavigator()
+        navigator.pane = .database
+        navigator.open(at: nil, newWindow: false)
+        XCTAssertEqual(navigator.pane, .database)
+        navigator.open(at: .importPasswords, newWindow: false)
+        XCTAssertEqual(navigator.pane, .importPasswords)
+    }
+
+    func testEveryPlaceTheAppOpensPreferencesAtHasItsPane() {
+        let navigator = PreferencesNavigator()
+        navigator.open(at: .importPasswords, newWindow: true)
+        XCTAssertEqual(navigator.pane, .importPasswords)
+        navigator.open(at: .browserExtensions, newWindow: true)
+        XCTAssertEqual(navigator.pane, .browsers)
+        #if PP_DIRECT
+        navigator.pane = .general
+        navigator.open(at: .chrome, newWindow: false)
+        XCTAssertEqual(navigator.pane, .browsers)
+        #endif
+    }
+
+    func testAPaneWithNothingInItIsLeftOutOfTheList() {
+        let session = VaultSession(writes: .inline)
+        session.restore()
+        let bare = PreferencesView(session: session, navigator: PreferencesNavigator())
+        XCTAssertFalse(bare.panes.contains(.importPasswords), "no import flow, no Import pane")
+        #if !PP_DIRECT
+        XCTAssertFalse(bare.panes.contains(.browsers), "the App Store app without the Safari bridge has nothing for Browsers")
+        #endif
+        let full = PreferencesView(session: session, navigator: PreferencesNavigator(), importFlow: ImportFlow(session: session))
+        XCTAssertEqual(full.panes.first, .general)
+        XCTAssertEqual(full.panes.last, .premium)
+        XCTAssertTrue(full.panes.contains(.importPasswords))
+    }
+
+    /// Every pane, and every source's page in Import, draws in the window `AppDelegate.showPreferences` builds.
+    func testEveryPaneAndEverySourceDraws() async throws {
         let session = VaultSession(writes: .inline)
         session.restore()
         self.session = session
-        let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 560, height: 480), styleMask: [.titled], backing: .buffered, defer: false)
+        let navigator = PreferencesNavigator()
+        let flow = ImportFlow(session: session)
+        let size = AppDelegate.preferencesMinSize
+        let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: size.width, height: size.height), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: PreferencesView(session: session, navigator: navigator))
+        let host = NSHostingView(rootView: PreferencesView(session: session, navigator: navigator, importFlow: flow))
+        window.contentView = host
         window.orderFront(nil)
         self.window = window
-        await wait(0.5)
-        return scrollView(in: window.contentView)
-    }
-
-    private func scrollView(in view: NSView?) -> NSScrollView? {
-        guard let view else { return nil }
-        if let scroll = view as? NSScrollView { return scroll }
-        for child in view.subviews {
-            if let found = scrollView(in: child) { return found }
+        for pane in PreferencesPane.allCases {
+            navigator.pane = pane
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            XCTAssertNotNil(host.bitmapImageRepForCachingDisplay(in: host.bounds), pane.title)
         }
-        return nil
+        navigator.pane = .importPasswords
+        for tile in ImportTile.all {
+            flow.choose(tile)
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertEqual(flow.tile, tile)
+        }
+        XCTAssertEqual(host.frame.size, size, "the content fits the smallest window without growing it")
     }
-
-    private func wait(_ seconds: Double) async {
-        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-    }
-
-    private func offset(_ scroll: NSScrollView) -> CGFloat { scroll.contentView.bounds.minY }
-
-    func testAnOpenWindowScrollsToTheSection() async throws {
-        let navigator = PreferencesNavigator()
-        let opened = await openPreferences(navigator)
-        let scroll = try XCTUnwrap(opened)
-        let top = offset(scroll)
-
-        navigator.target = .importPasswords
-        await wait(0.8)
-        XCTAssertGreaterThan(abs(offset(scroll) - top), 200, "Import passwords is far below the top")
-        XCTAssertNil(navigator.target, "a request scrolls once")
-
-        // The same request again, after the user scrolled back up, scrolls again.
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: top))
-        scroll.reflectScrolledClipView(scroll.contentView)
-        navigator.target = .importPasswords
-        await wait(0.8)
-        XCTAssertGreaterThan(abs(offset(scroll) - top), 200)
-    }
-
-    #if PP_DIRECT
-    func testANewWindowOpensAtTheSection() async throws {
-        let navigator = PreferencesNavigator()
-        navigator.target = .chrome
-        let opened = await openPreferences(navigator)
-        let scroll = try XCTUnwrap(opened)
-        await wait(0.5)
-        XCTAssertGreaterThan(abs(offset(scroll)), 200, "the Chrome section is last")
-        XCTAssertNil(navigator.target)
-    }
-    #endif
 }
