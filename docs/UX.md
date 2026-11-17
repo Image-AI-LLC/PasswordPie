@@ -202,10 +202,10 @@ and only while its signature checks and it has not run out.
 
 ### Preferences
 
-**App Store app:** a Premium section with what you have and until when, the plans you can still buy, Restore Purchases and
+**App Store app:** a Premium pane with what you have and until when, the plans you can still buy, Restore Purchases and
 Manage Subscription. If you hold both plans, it reminds you that the yearly one keeps renewing until you cancel it.
 
-**Downloaded app:** a Premium section with the words and buttons of the Premium window. No sign-in, no email, no Sign Out.
+**Downloaded app:** a Premium pane with the words and buttons of the Premium window. No sign-in, no email, no Sign Out.
 
 ### When something goes wrong
 
@@ -326,7 +326,7 @@ changes nothing.
 
 ### Settings
 
-Under the Chrome switch in Preferences: "Newer Chrome passwords replace saved ones. Chrome isn't changed."
+Under the Chrome switch in Preferences > Browsers: "Newer Chrome passwords replace saved ones. Chrome isn't changed."
 
 ### Demo script
 
@@ -462,12 +462,12 @@ Store, in that Chrome profile. Once the extension is installed and talking to Pa
 Safari has the same line, **Enable Safari Extension…**. It opens Safari's Extensions settings with PasswordPie selected,
 where you turn it on.
 
-The same two are always in **Preferences → Browser extensions**, whether or not a browser is in front. Each browser has
+The same two are always in **Preferences > Browsers**, under Extensions, whether or not a browser is in front. Each browser has
 a line that says where it stands (**Connected**, **Connected in 2 profiles**, **Not connected**; **On** or **Off** for
 Safari) and its button: **Add Chrome Extension…**, and **Enable Safari Extension…** (**Open Safari Settings…** once it
 is on). **Add Chrome Extension…** stays there after Chrome is connected, because another profile may still need it.
 **Browser Extensions…** in the gear menu, and in the menu that Option-clicking the menu bar icon opens, goes straight
-to that section.
+to that pane.
 
 Chrome is in the version downloaded from passwordpie.com. The App Store version has Safari only, for now.
 
@@ -660,9 +660,9 @@ The menu of an empty database (nothing outside the Recycle Bin) is:
 
 - A **GET STARTED** group header, in place of "No items yet".
 - Two-line rows, each with an orange icon tile, a title and one line under it:
-  - **Import Passwords…** — "From a Chrome or Apple Passwords export". Opens Preferences at Import passwords, which
-    takes those two exports in both builds.
-  - **Sync Chrome Passwords…** — "Search what Chrome saved on this Mac". Opens Preferences at Chrome. Only in the
+  - **Import Passwords…** — "From a browser or another password manager". Opens Preferences at Import, which leads
+    through the export and takes the file ("Import with a guide"), in both builds.
+  - **Sync Chrome Passwords…** — "Search what Chrome saved on this Mac". Opens Preferences at Browsers. Only in the
     download from passwordpie.com; the App Store app cannot read Chrome. It does not turn sync on by itself: that asks
     macOS for the Chrome key, and you should see why first. With sync on, Chrome's passwords show up in search next to
     your own, read from Chrome's files on this Mac, and Chrome is never changed.
@@ -688,7 +688,7 @@ the browser is on) opens when the pointer moves onto it, and an account the arro
 1. Choose New Database… in the gear menu and create one. The menu shows "Get Started", Import Passwords… highlighted,
    the other actions, and Password Generator at the bottom.
 2. Move the pointer onto Password Generator: the generator opens.
-3. Choose Import Passwords…: Preferences opens at Import passwords. Close it.
+3. Choose Import Passwords…: Preferences opens at Import, on the list of sources. Close it.
 4. Open the menu, choose New Item…, and save an item. Open the menu again: the group is gone, and the item's
    category is there.
 
@@ -1094,7 +1094,7 @@ week, and never `PasswordPie`.
 
 ### Preferences
 
-**Updates** in Preferences, in the downloaded app only:
+**Updates**, in Preferences > General, in the downloaded app only:
 
 | | |
 |---|---|
@@ -1159,7 +1159,8 @@ next start could not open the database at all.
   deleted) is dropped, and the next unlock of a database there asks again.
 - Allowing a folder lets PasswordPie read and write the files in it and below it, nothing else. Removing the last
   database in a folder from the list in Preferences forgets that folder.
-- Importing a Chrome or Apple Passwords CSV still asks only for the CSV, and deleting it afterwards needs nothing more.
+- Importing an export still asks only for that file, dropped on Preferences or chosen in the panel, and deleting it
+  afterwards needs nothing more.
   Key files are read once, when chosen (see "A key file that stays on this Mac").
 
 The download from passwordpie.com is not sandboxed and never shows the folder panel.
@@ -1513,3 +1514,157 @@ It is next to ⌘O, which pins the account: O opens the account in a window, and
 3. Open the menu again and press ⌘O to pin the account. Click into another app.
 4. Press ⇧⌘O in that app. The pinned account's password is shown in Large Type. Press ⇧⌘O again: it goes away.
 5. Select an account that has no password and press ⇧⌘O: nothing happens.
+
+## Import with a guide
+
+**In one line:** choose where your passwords are now, follow the numbered steps to export them, drop the file on
+PasswordPie, and they are in your database.
+
+### The problem
+
+A new database is empty, and nobody types two hundred passwords by hand. PasswordPie could already read a Chrome or an
+Apple Passwords export, but Preferences said only "open chrome://password-manager/settings and choose Export
+passwords", in grey small print in the middle of a long page. Someone who had never exported a password did not get
+past that line. People coming from 1Password, Bitwarden or LastPass had no row at all: their files could be opened as
+a database of their own, but not brought into the one they already had.
+
+### What happens now
+
+**Preferences > Import** is a pane of its own. It is used once or twice and then left alone, so it does not sit among
+the everyday settings. **Import Passwords…** in an empty database's menu and in the gear menu opens it.
+
+**1. Choose where the passwords are now.** A grid of sources, each with its icon:
+
+| | |
+|---|---|
+| My browser | Chrome, Safari, Firefox, Edge, Brave |
+| A password manager | Apple Passwords, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane, KeePass |
+| Something else | Another app, as a CSV file |
+
+**2. Export, with the steps in front of you.** The source's page shows its icon, an arrow and the pie, then the
+export as numbered steps in full, with the names of the menus and buttons in bold: for Chrome, the menu, Google
+Password Manager, Settings, Download file, the Mac's login password, and where to save. Where it helps there is a
+button: **Open Chrome**, **Open Passwords**, or **Copy** beside an address such as
+`chrome://password-manager/settings`, which a browser only opens when you paste it into its address bar yourself.
+
+**3. Add the file.** Drop it on the dashed box, or click **Choose File…**. PasswordPie reads it and says what is in
+it: "214 passwords in Chrome Passwords.csv". Nothing is in the database yet. A file that needs a password, such as a
+Bitwarden export you protected with one or a 1Password OPVault, shows a password field first. A file that is not
+what the page expects says what is wrong and stays out.
+
+**4. Import.** The button says how many: **Import 214 Passwords**. The page then says what happened: how many were
+added, how many passwords were updated, and where they are.
+
+**5. Delete the export.** A CSV, a 1PUX and a Proton Pass ZIP hold every password in plain text. The page asks once:
+**Delete File** removes it for good, not to the Trash, where it would still be readable. **Keep File** leaves it and
+says that it is still there.
+
+What each source needs:
+
+| Source | The file |
+|---|---|
+| Chrome, Edge, Brave | The CSV from the browser's password manager settings |
+| Firefox | The CSV from Passwords > Export Passwords… |
+| Safari, Apple Passwords | `Passwords.csv` from the Passwords app, or the ZIP from Safari's Export Browsing Data to File… |
+| 1Password | A `.1pux` export, or an `.opvault` folder from 1Password 7 and earlier |
+| Bitwarden | A `.json` export, plain or protected with a password |
+| Proton Pass | The unencrypted ZIP, or the `data.json` in it |
+| LastPass | The CSV from Export vault items |
+| Dashlane | The ZIP from Export to CSV, or the `credentials.csv` in it |
+| Another app | Any CSV whose first row names its columns: title, url, username, password, notes, otp |
+
+On macOS 26 and later, Apple Passwords needs no file at all: choose **File > Export All Items to App** in Passwords
+and pick PasswordPie. The page for Apple Passwords and Safari leads with those steps, and keeps the file as the other
+way.
+
+**KeePass** has no export step. PasswordPie's database is a KeePass database, so the page says so and offers **Open
+Database…**: KeePassXC, Strongbox and KeePassium keep using the same file.
+
+### Where they go
+
+Every import lands in a group named after its source ("Chrome", "1Password"), and each item carries that name as a
+tag. A password manager's folders and vaults are kept as groups inside it. Your own items are never changed.
+
+Importing from the same source again updates it instead of doubling it:
+
+| | Browsers and Apple Passwords | Password managers and CSV files |
+|---|---|---|
+| A site that is new | Added | Added |
+| A password or one-time code that changed | Updated | Updated |
+| A site that is no longer in the export | Moved to the Recycle Bin | Left alone |
+| An item you deleted here | Stays deleted | Stays deleted |
+
+A browser export is the whole list every time, so a site missing from it was deleted in the browser. A password
+manager often exports one vault or one folder at a time, so a missing item means nothing.
+
+### When it does not apply
+
+- **A locked database.** The pane says to unlock first, and takes no file until then.
+- **Passkeys, cards and identities in a browser export.** A browser's CSV has logins only. From a password manager,
+  every item comes in, with what is not a login kept as fields and notes.
+- **A Bitwarden export encrypted to your account** (the ".json (Encrypted)" choice without a password) can only be
+  read by Bitwarden. The page says to export again with a password. The same goes for a Proton Pass export encrypted
+  with PGP.
+- **A KeePass database dropped on a source.** It is not imported: the page says to open it with Open Database….
+- **One-time codes** come in when the export has them. LastPass does not export its own codes.
+
+### Privacy
+
+- The file is read on this Mac. Nothing is sent anywhere: PasswordPie opens no network connection.
+- What was read from the file is held in memory until you import or leave the page, and is dropped when the database
+  locks. The password you type for a protected file is not kept.
+- PasswordPie does not open your browser's password page for you and does not read the export from the Downloads
+  folder by itself. You hand it the file.
+
+### Demo script
+
+Use a new, empty database and a Chrome profile with a few saved passwords.
+
+1. Press `⌘\`. The menu says Get Started; choose Import Passwords…. Preferences opens at Import with the grid.
+2. Click Chrome. Follow the steps in Chrome and save `Chrome Passwords.csv` to the Desktop.
+3. Press ⌘Tab back to PasswordPie and drag the file from the Desktop onto the dashed box: "4 passwords in Chrome
+   Passwords.csv".
+4. Click Import 4 Passwords: "4 added, in the Chrome group." Click Delete File: the file is gone from the Desktop.
+5. Press `⌘\`: the four accounts are in the menu. Type a few letters of one and press Return.
+6. Back in Preferences, choose All Sources, then Bitwarden. Drop a password-protected `.json`: a password field
+   appears. Type the password: the count shows. Import.
+7. Choose KeePass: no steps, only Open Database….
+
+## Preferences in panes
+
+**In one line:** Preferences has a list of panes on the left, so each setting is one click away instead of somewhere
+down a long page.
+
+### The problem
+
+Preferences was one column of nine cards, 800 pt tall and still scrolling: Premium, the shortcut, locking, the
+clipboard, the database, its key file, the extensions, import, Chrome, updates. Finding the Chrome switch meant
+scrolling past everything else, and each new feature made the page longer.
+
+### What happens now
+
+| Pane | What is in it |
+|---|---|
+| General | The keyboard shortcut, clearing the clipboard, searching all fields, and, in the downloaded app, updates |
+| Security | Locking after inactivity and on sleep, screen lock and user switch; Touch ID for the open database |
+| Database | The open database and the list of the others, its key file and its master password |
+| Browsers | The Chrome and Safari extensions, and, in the downloaded app, reading Chrome's saved passwords |
+| Import | "Import with a guide" |
+| Premium | What you have, and the ways to get it |
+
+- Preferences opens on General, or on the pane you were sent to: Import Passwords… opens Import, Browser Extensions…
+  and Sync Chrome Passwords… open Browsers.
+- While the window stays open it keeps the pane you chose. A window opened again starts on General.
+- The selected pane is drawn like the selected row of the menu: the flat orange fill.
+- A pane taller than the window scrolls by itself; the list stays put.
+
+### When it does not apply
+
+- **About** is still its own window, and so is the Premium window a locked code opens.
+- **The settings themselves** did not change: the same switches, with the same words, do the same things.
+
+### Demo script
+
+1. Open Preferences from the gear menu: General, with the shortcut recorder.
+2. Click Security, Database and Browsers in turn: each is one screen, with no scrolling at the default size.
+3. Close Preferences. In the menu, choose Browser Extensions… from the gear: Preferences opens on Browsers.
