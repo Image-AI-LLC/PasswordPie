@@ -32,7 +32,9 @@ KeePass Vault & 2FA Codes
 - **Copyright:** `2026 Image AI, LLC` (App Store Connect adds the ©)
 - **Content rights:** the app ships the logos of about 100 popular sites, so it shows third-party content. Answer from
   where each logo came from, in [../Assets/SiteIcons/SOURCES.md](../Assets/SiteIcons/SOURCES.md): they are shown only to
-  identify the site an account belongs to (README, "Credits").
+  identify the site an account belongs to (README, "Credits"). The same holds for the icons of the ten browsers and
+  password managers in Preferences > Import ([../Assets/ImportIcons/SOURCES.md](../Assets/ImportIcons/SOURCES.md)), shown
+  only to identify the app a password export comes from.
 
 ## URLs
 
@@ -195,9 +197,9 @@ The first time a database outside the app's container is opened or created (Open
 
 TRYING IT
 - New Item…: fill in a title, username, password and website, and Save. Search for it, then press ⌃⌘C (username) or ⇧⌘C (password).
-- Import: Preferences > Import passwords takes the CSV that Chrome or Apple's Passwords app (File > Export All Passwords) exports. Any CSV with columns name,url,username,password works.
+- Import: Preferences > Import lists the browsers and password managers it reads, shows each one's export steps, and takes the file by drag and drop or Choose File…. To try it without another app, choose Another App and add any CSV with the columns name,url,username,password.
 - macOS 26: in Passwords, File > Export All Items to App > PasswordPie. If it is not listed, turn PasswordPie on in System Settings > General > AutoFill & Passwords. The AutoFill extension exists only for this hand-over (Credential Exchange); it fills nothing and cancels AutoFill requests.
-- Safari: turn on PasswordPie in Safari > Settings > Extensions (Preferences > Browser extensions > Enable Safari Extension… opens it) and allow it on the site. On a sign-in page, press ⌘\ or click its toolbar button; Return fills the username and password. It never submits the form.
+- Safari: turn on PasswordPie in Safari > Settings > Extensions (Preferences > Browsers > Enable Safari Extension… opens it) and allow it on the site. On a sign-in page, press ⌘\ or click its toolbar button; Return fills the username and password. It never submits the form.
 
 PREMIUM (IN-APP PURCHASE)
 Only two-step codes need Premium. To try it, paste this into an item's One-time password row in the editor and Save:

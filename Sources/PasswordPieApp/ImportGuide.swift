@@ -12,7 +12,6 @@ struct ImportTile: Identifiable, Equatable {
     enum Group: String, CaseIterable {
         case browser = "My browser"
         case manager = "A password manager"
-        case other = "Something else"
     }
 
     let id: String
@@ -21,7 +20,7 @@ struct ImportTile: Identifiable, Equatable {
     let kind: Kind
     /// The apps whose icon stands for this source, in order. The first one installed is shown.
     var bundleIDs: [String] = []
-    /// Drawn on a tile when the source is not an app.
+    /// Drawn on a tile when the source is not an app, or is one of Apple's that this Mac does not have.
     var symbol: String?
 
     var source: BrowserImportSource? {
@@ -32,18 +31,18 @@ struct ImportTile: Identifiable, Equatable {
     static let all: [ImportTile] = [
         ImportTile(id: "chrome", name: "Chrome", group: .browser, kind: .source(.chrome), bundleIDs: ["com.google.Chrome"]),
         // Safari keeps its passwords in the Passwords app, so both tiles lead to the same import.
-        ImportTile(id: "safari", name: "Safari", group: .browser, kind: .source(.applePasswords), bundleIDs: ["com.apple.Safari"]),
+        ImportTile(id: "safari", name: "Safari", group: .browser, kind: .source(.applePasswords), bundleIDs: ["com.apple.Safari"], symbol: "safari"),
         ImportTile(id: "firefox", name: "Firefox", group: .browser, kind: .source(.firefox), bundleIDs: ["org.mozilla.firefox"]),
         ImportTile(id: "edge", name: "Edge", group: .browser, kind: .source(.edge), bundleIDs: ["com.microsoft.edgemac"]),
         ImportTile(id: "brave", name: "Brave", group: .browser, kind: .source(.brave), bundleIDs: ["com.brave.Browser"]),
-        ImportTile(id: "apple-passwords", name: "Apple Passwords", group: .manager, kind: .source(.applePasswords), bundleIDs: ["com.apple.Passwords"]),
+        ImportTile(id: "apple-passwords", name: "Apple Passwords", group: .manager, kind: .source(.applePasswords), bundleIDs: ["com.apple.Passwords"], symbol: "key"),
         ImportTile(id: "1password", name: "1Password", group: .manager, kind: .source(.onePassword), bundleIDs: ["com.1password.1password", "com.agilebits.onepassword7"]),
         ImportTile(id: "bitwarden", name: "Bitwarden", group: .manager, kind: .source(.bitwarden), bundleIDs: ["com.bitwarden.desktop"]),
         ImportTile(id: "proton-pass", name: "Proton Pass", group: .manager, kind: .source(.protonPass), bundleIDs: ["me.proton.pass.electron"]),
         ImportTile(id: "lastpass", name: "LastPass", group: .manager, kind: .source(.lastPass), bundleIDs: ["com.lastpass.lastpassmacdesktop", "com.lastpass.LastPass"]),
         ImportTile(id: "dashlane", name: "Dashlane", group: .manager, kind: .source(.dashlane), bundleIDs: ["com.dashlane.dashlanephonefinal", "com.dashlane.Dashlane"]),
         ImportTile(id: "keepass", name: "KeePass", group: .manager, kind: .keePass, bundleIDs: ["org.keepassxc.keepassxc", "com.markmcguill.strongbox.mac", "com.keepassium.mac"]),
-        ImportTile(id: "csv", name: "Another App", group: .other, kind: .source(.csv), symbol: "tablecells")
+        ImportTile(id: "csv", name: "Another App", group: .manager, kind: .source(.csv), symbol: "tablecells")
     ]
 
     static func tile(_ id: String) -> ImportTile? { all.first { $0.id == id } }

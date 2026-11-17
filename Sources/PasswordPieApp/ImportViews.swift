@@ -19,7 +19,8 @@ struct ImportPane: View {
 
 // MARK: - Icons
 
-/// A source's icon: the app's own when it is installed, otherwise a letter tile. No logo is shipped in the app.
+/// A source's icon: the app's own when it is installed, then the one bundled for it (`Contents/Resources/ImportIcons`,
+/// made by `Scripts/fetch_site_icons.py --import-sources`), then a letter tile. Nothing is fetched.
 struct ImportIcon: View {
     let tile: ImportTile
     var size: CGFloat = 32
@@ -27,10 +28,18 @@ struct ImportIcon: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @MainActor private static var icons: [String: NSImage?] = [:]
+    @MainActor private static var bundled: [String: NSImage?] = [:]
+
+    /// The folder of bundled icons. Tests point it at the repository's.
+    @MainActor static var bundledDirectory = Bundle.main.resourceURL?.appendingPathComponent("ImportIcons", isDirectory: true)
 
     /// The icon of the first of the tile's apps that is on this Mac.
     @MainActor
     static func appIcon(_ tile: ImportTile) -> NSImage? {
+        #if DEBUG
+        // Screenshots of what a Mac without these apps shows.
+        if ProcessInfo.processInfo.environment["PASSWORDPIE_IMPORT_NO_APPS"] != nil { return nil }
+        #endif
         if let known = icons[tile.id] { return known }
         let found = tile.bundleIDs.lazy
             .compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
@@ -40,10 +49,44 @@ struct ImportIcon: View {
         return found
     }
 
+    /// `<id>.png` (64 px) and `<id>@2x.png` (128 px).
+    @MainActor
+    static func bundledIcon(_ tile: ImportTile) -> NSImage? {
+        let key = (bundledDirectory?.path ?? "") + "/" + tile.id
+        if let known = bundled[key] { return known }
+        var found: NSImage?
+        if let bundledDirectory {
+            let reps = ["", "@2x"].compactMap { suffix -> NSBitmapImageRep? in
+                guard let data = try? Data(contentsOf: bundledDirectory.appendingPathComponent(tile.id + suffix + ".png")) else { return nil }
+                return NSBitmapImageRep(data: data)
+            }
+            if !reps.isEmpty {
+                let image = NSImage(size: NSSize(width: 64, height: 64))
+                for rep in reps {
+                    rep.size = image.size
+                    image.addRepresentation(rep)
+                }
+                found = image
+            }
+        }
+        bundled[key] = .some(found)
+        return found
+    }
+
     var body: some View {
         Group {
             if let icon = Self.appIcon(tile) {
                 Image(nsImage: icon).resizable().interpolation(.high)
+            } else if let icon = Self.bundledIcon(tile) {
+                // On a white plate, as an app icon: some of these are dark shapes that vanish on the dark surface.
+                RoundedRectangle(cornerRadius: size * 0.2)
+                    .fill(Color.white)
+                    .overlay(RoundedRectangle(cornerRadius: size * 0.2).strokeBorder(Color.black.opacity(0.1), lineWidth: 0.5))
+                    .overlay(
+                        Image(nsImage: icon).resizable().interpolation(.high)
+                            .padding(size * 0.13)
+                    )
+                    .padding(size * 0.09)
             } else if let symbol = tile.symbol {
                 // As an empty database's action rows: an outline on the orange tile.
                 RoundedRectangle(cornerRadius: size * 0.24)
@@ -98,11 +141,12 @@ private struct ImportSourcesPage: View {
     @ObservedObject var session: VaultSession
     @Environment(\.colorScheme) private var colorScheme
 
-    private let columns = [GridItem(.adaptive(minimum: 112), spacing: 10)]
+    /// Five across at the window's first size, so the browsers fill one row.
+    private let columns = [GridItem(.adaptive(minimum: 92), spacing: 10)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            PaneHeader(title: "Import", subtitle: "Bring your passwords from a browser or another password manager. Choose where they are now.")
+            PaneHeader(title: "Import", subtitle: "Choose where your passwords are now.")
             ForEach(ImportTile.Group.allCases, id: \.self) { group in
                 VStack(alignment: .leading, spacing: 7) {
                     PaneGroupLabel(group.rawValue)
@@ -231,21 +275,22 @@ private struct ImportSourcePage: View {
     }
 
     private var heading: some View {
-        HStack(spacing: 14) {
-            HStack(spacing: 12) {
-                ImportIcon(tile: tile, size: 44)
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                ImportIcon(tile: tile, size: 32)
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                PasswordPieMark(size: 38)
-                    .frame(width: 44, height: 44)
+                PasswordPieMark(size: 27)
+                    .frame(width: 32, height: 32)
                     .accessibilityHidden(true)
             }
-            .padding(14)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .background(Palette.card(dark: dark), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.07)))
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(tile.kind == .keePass ? "Coming from KeePass" : "Import from \(tile.name)")
                     .font(.system(size: 16, weight: .semibold))
                 Text("Into “\(session.databaseURL.lastPathComponent)”")
@@ -272,29 +317,42 @@ private struct ImportSourcePage: View {
                 }
             }
         }
-        if let address = steps.address {
-            HStack(spacing: 8) {
-                Text("Or paste this into the address bar:")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Text(address)
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
-                CopyAddressButton(address: address)
+        let opens = steps.opens.flatMap { installedApp == nil ? nil : $0 }
+        if steps.address != nil || opens != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                if steps.address != nil {
+                    Text("Or go straight there: paste this address into \(tile.name).")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    if let address = steps.address {
+                        Text(address)
+                            .font(.system(size: 12, design: .monospaced))
+                            .lineLimit(1)
+                            .fixedSize()
+                            .textSelection(.enabled)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+                        CopyAddressButton(address: address)
+                    }
+                    if let opens {
+                        Button("Open \(opens)") { open() }
+                    }
+                }
             }
             .padding(.leading, 22)
-        }
-        if let app = steps.opens, ImportIcon.appIcon(tile) != nil {
-            Button("Open \(app)") { open() }
-                .padding(.leading, 22)
+            .padding(.top, 2)
         }
     }
 
+    private var installedApp: URL? {
+        tile.bundleIDs.lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
+    }
+
     private func open() {
-        guard let url = tile.bundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first else { return }
+        guard let url = installedApp else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
@@ -359,8 +417,8 @@ private struct ImportSourcePage: View {
                 .disabled(session.locked)
                 .padding(.top, 4)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 132)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 116)
         .background(targeted ? Palette.brandAccent.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)

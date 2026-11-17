@@ -174,7 +174,7 @@ struct PreferencesView: View {
         .background(Palette.windowSurface(dark: colorScheme == .dark).ignoresSafeArea())
         .tint(Palette.brandAccent)
         .frame(minWidth: 700, idealWidth: 760, maxWidth: .infinity,
-               minHeight: 460, idealHeight: 580, maxHeight: .infinity)
+               minHeight: 460, idealHeight: 650, maxHeight: .infinity)
         .onChange(of: navigator.pane) { _, _ in recorder.stop() }
         .onDisappear { recorder.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in recorder.stop() }

@@ -1538,13 +1538,15 @@ the everyday settings. **Import Passwords…** in an empty database's menu and i
 | | |
 |---|---|
 | My browser | Chrome, Safari, Firefox, Edge, Brave |
-| A password manager | Apple Passwords, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane, KeePass |
-| Something else | Another app, as a CSV file |
+| A password manager | Apple Passwords, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane, KeePass, and Another App for a CSV file from anything else |
+
+A source shows the icon of its app on this Mac. When that app is not installed, it shows an icon that ships with
+PasswordPie: no icon is ever fetched.
 
 **2. Export, with the steps in front of you.** The source's page shows its icon, an arrow and the pie, then the
 export as numbered steps in full, with the names of the menus and buttons in bold: for Chrome, the menu, Google
 Password Manager, Settings, Download file, the Mac's login password, and where to save. Where it helps there is a
-button: **Open Chrome**, **Open Passwords**, or **Copy** beside an address such as
+button: **Open Chrome** or **Open Passwords** when that app is on this Mac, and **Copy** beside an address such as
 `chrome://password-manager/settings`, which a browser only opens when you paste it into its address bar yourself.
 
 **3. Add the file.** Drop it on the dashed box, or click **Choose File…**. PasswordPie reads it and says what is in

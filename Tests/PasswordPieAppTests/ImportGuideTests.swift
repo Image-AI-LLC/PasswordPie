@@ -12,9 +12,8 @@ final class ImportGuideTests: XCTestCase {
         XCTAssertEqual(ImportTile.all.filter { $0.group == .browser }.map(\.name), ["Chrome", "Safari", "Firefox", "Edge", "Brave"])
         XCTAssertEqual(
             ImportTile.all.filter { $0.group == .manager }.map(\.name),
-            ["Apple Passwords", "1Password", "Bitwarden", "Proton Pass", "LastPass", "Dashlane", "KeePass"]
+            ["Apple Passwords", "1Password", "Bitwarden", "Proton Pass", "LastPass", "Dashlane", "KeePass", "Another App"]
         )
-        XCTAssertEqual(ImportTile.all.filter { $0.group == .other }.map(\.name), ["Another App"])
         XCTAssertEqual(Set(ImportTile.all.map(\.id)).count, ImportTile.all.count)
     }
 
