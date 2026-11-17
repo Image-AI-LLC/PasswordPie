@@ -59,7 +59,16 @@ final class ImportFlow: ObservableObject {
     }
 
     private let session: VaultSession
-    private var url: URL?
+    /// The file in hand. In the App Store sandbox a dropped or chosen file can be security-scoped: access is held
+    /// from the moment it is taken until it is let go, which covers reading it and deleting it.
+    private var url: URL? {
+        didSet {
+            guard oldValue != url else { return }
+            if scoped, let oldValue { oldValue.stopAccessingSecurityScopedResource() }
+            scoped = url?.startAccessingSecurityScopedResource() ?? false
+        }
+    }
+    private var scoped = false
     private var pending: ImportedFile?
     private var lockWatch: AnyCancellable?
     /// Goes up whenever the page moves on, so a read that finishes late is dropped.
@@ -165,6 +174,8 @@ final class ImportFlow: ObservableObject {
         pending = nil
         error = ""
         stage = .done(Outcome(summary: summary, source: source, fileName: url.lastPathComponent, file: file.plainText ? .ask : .none))
+        // Only a plain-text file is still needed, for Delete File.
+        if !file.plainText { self.url = nil }
     }
 
     /// Deletes the plain-text export outright. The Trash would keep the passwords readable.
