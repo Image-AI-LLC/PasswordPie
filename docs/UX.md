@@ -1421,6 +1421,52 @@ Use an app that asks for an account whose name is not the app's name, such as Mi
    Teams with its icon. Click it: the bubble says the account is no longer shown first there. Press `⌘\` again: no group.
 6. Copy the password over the app once more: the bubble now asks, with **Show first**.
 
+## Preferences is in the app switcher
+
+**In one line:** while Preferences is open, PasswordPie is in the ⌘Tab switcher and the Dock, so you can get back to
+the window; close it and PasswordPie is a menu bar item again.
+
+### The problem
+
+PasswordPie lives in the menu bar: no Dock icon, nothing in the ⌘Tab switcher. The menu does not need either, because
+the shortcut brings it back from anywhere.
+
+Preferences is different. It is an ordinary window that stays open while you do something else: look up a database's
+folder in Finder, read the extension's page in the browser. Once another window covered it there was no way back to
+it. It was not in ⌘Tab, it had no Dock icon, and Mission Control was the only place it still showed.
+
+### What happens now
+
+- **Open Preferences** and PasswordPie appears in the ⌘Tab switcher and in the Dock, with its menu bar (PasswordPie,
+  Edit, Window) while it is in front.
+- **Switch away and come back** with ⌘Tab or a click on the Dock icon: Preferences is in front again, where you left
+  it.
+- **Close Preferences** and PasswordPie leaves the switcher and the Dock. The menu bar icon and the shortcut work as
+  they did all along.
+- **Another PasswordPie window still open** (the item editor, About, Premium) keeps PasswordPie in the switcher after
+  Preferences closes, until that window closes too. Leaving the switcher hands the keyboard to the app behind, and a
+  half-edited item would drop behind it.
+
+### When it does not apply
+
+- **The menu.** `⌘\` opens it over the app you are in and closing it gives the keyboard back to that app. It never
+  puts PasswordPie in the switcher.
+- **A pinned window (⌘O).** It stays above your other windows and never takes the keyboard, so there is nothing to
+  switch to. Pinning an account does not put PasswordPie in the switcher either.
+- **The item editor, About and Premium by themselves.** Opened without Preferences they do not put PasswordPie in the
+  switcher; they only stay in it when Preferences was open beside them.
+- **With Preferences open**, both work as before. ⌘Tab to PasswordPie then brings Preferences forward; the menu and
+  the pinned windows stay as they are.
+
+### Demo script
+
+1. Press ⌘Tab: PasswordPie is not in the row. The Dock has no PasswordPie icon.
+2. Press `⌘\`, pin an account with ⌘O, press ⌘Tab again: still not there.
+3. Open Preferences (the gear in the menu, or Option-click the menu bar icon). The Dock shows the PasswordPie icon.
+4. Click a browser window so it covers Preferences. Press ⌘Tab and choose PasswordPie: Preferences is in front.
+5. Close Preferences. The Dock icon goes; ⌘Tab no longer lists PasswordPie. The pinned window is still there, and
+   `⌘\` still opens the menu.
+
 ## Large Type from the keyboard
 
 **In one line:** press ⇧⌘O on an account and its password fills the screen in Large Type, without touching the mouse.

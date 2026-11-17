@@ -186,7 +186,7 @@ PasswordPie turns Premium on, and the code shows." If App Review asks, send a fr
 PasswordPie is a KeePass password manager for Mac. It has no account and needs no sign-in, so no demo account is needed.
 
 OPENING IT
-PasswordPie lives in the menu bar only (LSUIElement): no Dock icon, no window at launch. Click the pie icon in the menu bar, or press Command-Backslash (⌘\) in any app. Option-click the icon for Preferences… and Quit.
+PasswordPie lives in the menu bar only (LSUIElement): no Dock icon, no window at launch. Click the pie icon in the menu bar, or press Command-Backslash (⌘\) in any app. Option-click the icon for Preferences… and Quit. While Preferences is open, PasswordPie also has a Dock icon and is in the Command-Tab switcher; both go when Preferences and any PasswordPie window opened beside it are closed.
 
 FIRST LAUNCH
 The first launch creates a new, empty database in the app's own container. Choose any master password, type it twice and press Create Database. The menu then shows Get Started: Import Passwords…, New Item…, Password Generator.
