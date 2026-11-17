@@ -189,7 +189,7 @@ public enum MenuBuilder {
                 kind: .action(.importPasswords),
                 title: "Import Passwords…",
                 icon: .importPasswords,
-                detail: "From a browser or another password manager"
+                detail: "From a browser or a password manager"
             )
         ]
         // The App Store app has no Chrome reader.

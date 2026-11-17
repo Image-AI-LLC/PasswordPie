@@ -702,6 +702,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
+            // What a file held does not stay in memory behind a closed window, and Import starts over next time.
+            importFlow.showSources()
         } else if window === aboutWindow {
             aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {
@@ -932,10 +934,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 preferencesNavigator.pane = .importPasswords
                 importFlow.choose(tile)
             }
-            if let rawHeight = env["PASSWORDPIE_PREFERENCES_HEIGHT"], let height = Double(rawHeight), height.isFinite {
-                let limit = Self.preferencesSize.height
-                preferencesWindow?.setContentSize(NSSize(width: Self.preferencesSize.width, height: max(Self.preferencesMinSize.height, min(limit, height))))
+            // `PASSWORDPIE_PREFERENCES_HEIGHT` and `_WIDTH`: a smaller window, not below the smallest it allows.
+            func side(_ name: String, _ full: CGFloat, _ least: CGFloat) -> CGFloat {
+                guard let raw = env[name], let value = Double(raw), value.isFinite else { return full }
+                return max(least, min(full, value))
             }
+            preferencesWindow?.setContentSize(NSSize(
+                width: side("PASSWORDPIE_PREFERENCES_WIDTH", Self.preferencesSize.width, Self.preferencesMinSize.width),
+                height: side("PASSWORDPIE_PREFERENCES_HEIGHT", Self.preferencesSize.height, Self.preferencesMinSize.height)
+            ))
             return
         }
         guard env["PASSWORDPIE_SHOW"] != nil else { return }
@@ -1085,6 +1092,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "popoverWindow": menu.popoverWindowNumber ?? NSNull(),
             "reviewWindow": chromeReviewWindow?.windowNumber ?? NSNull(),
             "preferencesWindow": preferencesWindow?.isVisible == true ? preferencesWindow?.windowNumber ?? NSNull() : NSNull(),
+            "preferencesPane": preferencesNavigator.pane.rawValue,
+            "importSource": importFlow.tile?.id ?? NSNull(),
+            "importStage": String(describing: importFlow.stage).split(separator: "(").first.map(String.init) ?? "",
+            "importError": importFlow.error,
             "editorWindow": editorWindow?.isVisible == true ? editorWindow?.windowNumber ?? NSNull() : NSNull(),
             "editorSaving": session.editorSaving,
             "editorError": session.editorError,

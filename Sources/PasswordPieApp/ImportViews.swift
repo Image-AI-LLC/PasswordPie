@@ -139,7 +139,6 @@ private struct LetterTile: View {
 private struct ImportSourcesPage: View {
     @ObservedObject var flow: ImportFlow
     @ObservedObject var session: VaultSession
-    @Environment(\.colorScheme) private var colorScheme
 
     /// Five across at the window's first size, so the browsers fill one row.
     private let columns = [GridItem(.adaptive(minimum: 92), spacing: 10)]
@@ -325,25 +324,43 @@ private struct ImportSourcePage: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                HStack(spacing: 8) {
-                    if let address = steps.address {
-                        Text(address)
-                            .font(.system(size: 12, design: .monospaced))
-                            .lineLimit(1)
-                            .fixedSize()
-                            .textSelection(.enabled)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
-                        CopyAddressButton(address: address)
+                // One row, or the Open button under the address in a narrow window.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        addressChip(steps.address)
+                        openButton(opens)
                     }
-                    if let opens {
-                        Button("Open \(opens)") { open() }
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) { addressChip(steps.address) }
+                        openButton(opens)
                     }
                 }
             }
             .padding(.leading, 22)
             .padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder
+    private func addressChip(_ address: String?) -> some View {
+        if let address {
+            Text(address)
+                .font(.system(size: 12, design: .monospaced))
+                .lineLimit(1)
+                .fixedSize()
+                .textSelection(.enabled)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
+            CopyAddressButton(address: address)
+        }
+    }
+
+    @ViewBuilder
+    private func openButton(_ app: String?) -> some View {
+        if let app {
+            Button("Open \(app)") { open() }
+                .fixedSize()
         }
     }
 

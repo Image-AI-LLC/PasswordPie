@@ -660,7 +660,7 @@ The menu of an empty database (nothing outside the Recycle Bin) is:
 
 - A **GET STARTED** group header, in place of "No items yet".
 - Two-line rows, each with an orange icon tile, a title and one line under it:
-  - **Import Passwords…** — "From a browser or another password manager". Opens Preferences at Import, which leads
+  - **Import Passwords…** — "From a browser or a password manager". Opens Preferences at Import, which leads
     through the export and takes the file ("Import with a guide"), in both builds.
   - **Sync Chrome Passwords…** — "Search what Chrome saved on this Mac". Opens Preferences at Browsers. Only in the
     download from passwordpie.com; the App Store app cannot read Chrome. It does not turn sync on by itself: that asks
@@ -1613,8 +1613,8 @@ manager often exports one vault or one folder at a time, so a missing item means
 ### Privacy
 
 - The file is read on this Mac. Nothing is sent anywhere: PasswordPie opens no network connection.
-- What was read from the file is held in memory until you import or leave the page, and is dropped when the database
-  locks. The password you type for a protected file is not kept.
+- What was read from the file is held in memory only until you import it, choose another file or source, or close
+  Preferences, and it is dropped when the database locks. The password you type for a protected file is not kept.
 - PasswordPie does not open your browser's password page for you and does not read the export from the Downloads
   folder by itself. You hand it the file.
 

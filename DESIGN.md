@@ -291,7 +291,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   Editor 450 × 640 pt, the Premium window 400 pt wide. The warm surface runs under a transparent title
   bar. Preferences, About and the Premium window use radius 12 cards.
 - **Preferences**: a 188 pt list of panes on the left, full height, under the title bar (the window has no title
-  text). The pane fills the rest: 24 pt padding, a `title` heading with one `body` `text-secondary` line, then cards
+  text). The pane fills the rest: 24 pt at the sides and bottom, its heading 42 pt from the top of the window, a `title` heading with one `body` `text-secondary` line, then cards
   12 pt apart, each under a `label` group header. The pane scrolls; the list does not.
 - **Large Type**: a borderless window at screen-saver level, sized to the password. Its largest
   size is the visible frame minus 48 pt in width and height.
@@ -346,7 +346,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   under a resting pointer opens nothing until the pointer moves.
 - **Empty database** — when the open databases hold no visible entries (the Recycle Bin does not count), the
   menu is: a "Get Started" group header, the action rows, a separator, then Password Generator as a normal row,
-  last. "Import Passwords…" (From a browser or another password manager) opens Preferences at Import. "Sync
+  last. "Import Passwords…" (From a browser or a password manager) opens Preferences at Import. "Sync
   Chrome Passwords…" (Search what Chrome saved on this Mac; direct channel only, the App Store app has no Chrome
   reader) opens Preferences at Browsers, and does not switch sync on: that asks macOS for the Chrome key, which the user
   has not asked for yet. "New Item…" (A login, password or secure note) opens the editor, as the gear's New Item.
@@ -462,7 +462,7 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `caption` `error` and the window stays. The close button is Not Yet. Never the system's blue default button. Locking
   closes it.
 - **Preferences pane list** — `surface` with ink 4 % over it, and a 1 pt ink 8 % line on its right edge. Rows start
-  52 pt from the top of the window, 8 pt from the sides, 30 pt tall, radius 6: a 20 pt tile (radius 5) with an 11 pt
+  42 pt from the top of the window, 8 pt from the sides, 30 pt tall, radius 6: a 20 pt tile (radius 5) with an 11 pt
   symbol, 8 pt, the name in `body`. Unselected: the tile is `brand-accent` at 20 % with an `accent-text` symbol, as an
   empty database's action rows. Selected: the row takes the `selection` fill, the name `on-selection` in medium, the
   tile ink 14 %. A row under the pointer that is not selected takes ink 6 %. Premium is last, after a 1 pt line.
