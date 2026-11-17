@@ -140,54 +140,67 @@ private struct ImportSourcesPage: View {
     @ObservedObject var flow: ImportFlow
     @ObservedObject var session: VaultSession
 
-    /// Five across at the window's first size, so the browsers fill one row.
-    private let columns = [GridItem(.adaptive(minimum: 92), spacing: 10)]
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            PaneHeader(title: "Import", subtitle: "Choose where your passwords are now.")
-            ForEach(ImportTile.Group.allCases, id: \.self) { group in
-                VStack(alignment: .leading, spacing: 7) {
-                    PaneGroupLabel(group.rawValue)
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                        ForEach(ImportTile.all.filter { $0.group == group }) { tile in
-                            ImportTileButton(tile: tile) { flow.choose(tile) }
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 22) {
+            PaneHeader(title: "Import", subtitle: "Into “\(session.databaseURL.lastPathComponent)”")
+            // One list, in two columns by kind. A source whose app is on this Mac shows that app's icon.
+            HStack(alignment: .top, spacing: 28) {
+                column("Browsers", ImportTile.all.filter { $0.group == .browser })
+                column("Password managers", ImportTile.all.filter { $0.group == .manager && $0.source != .csv })
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                PaneRule()
+                ForEach(ImportTile.all.filter { $0.source == .csv }) { tile in
+                    ImportSourceRow(tile: tile, detail: tile.hint) { flow.choose(tile) }
                 }
             }
-            Text("Passwords are added to “\(session.databaseURL.lastPathComponent)”. The file you choose is read on this Mac, and nothing is sent anywhere.")
+            Text("The file you choose is read on this Mac. Nothing is sent anywhere.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func column(_ title: String, _ tiles: [ImportTile]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PaneGroupLabel(title).padding(.bottom, 6)
+            PaneRule()
+            ForEach(tiles) { tile in
+                ImportSourceRow(tile: tile, detail: tile.format) { flow.choose(tile) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 }
 
-private struct ImportTileButton: View {
+/// One source: its icon, its name, and the file it takes. The whole row is the button.
+private struct ImportSourceRow: View {
     let tile: ImportTile
+    let detail: String
     let action: () -> Void
 
     @State private var hovered = false
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
-                ImportIcon(tile: tile, size: 32)
-                Text(tile.name)
-                    .font(.system(size: 11, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+            HStack(spacing: 10) {
+                ImportIcon(tile: tile, size: 26)
+                Text(tile.name).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 84, maxHeight: 84)
-            .background(Palette.card(dark: colorScheme == .dark), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(hovered ? Palette.brandAccent : Color.primary.opacity(0.07), lineWidth: hovered ? 1.5 : 1))
-            .contentShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
+            .background(hovered ? Palette.brandAccent.opacity(0.14) : Color.clear)
+            .overlay(alignment: .bottom) { PaneRule() }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .accessibilityLabel("Import from \(tile.name)")
+        .accessibilityHint(tile.hint)
     }
 }
 
@@ -213,7 +226,7 @@ private struct ImportSourcePage: View {
 
     var body: some View {
         let guide = guide
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 20) {
             Button {
                 flow.showSources()
             } label: {
@@ -235,7 +248,7 @@ private struct ImportSourcePage: View {
                 Button("Open Database…") { session.chooseDatabase() }
             }
             if let withoutFile = guide.withoutFile {
-                ImportCard(number: nil, title: withoutFile.title) {
+                ImportSection(title: withoutFile.title) {
                     steps(withoutFile)
                     if flow.reading {
                         Text("Reading Apple Passwords…")
@@ -243,18 +256,23 @@ private struct ImportSourcePage: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                PaneGroupLabel("Or with a file")
+                VStack(alignment: .leading, spacing: 6) {
+                    PaneGroupLabel("Or with a file")
+                    PaneRule()
+                }
             }
             if let export = guide.export {
-                ImportCard(number: 1, title: export.title) { steps(export) }
-                ImportCard(number: 2, title: "Add the file here") {
+                ImportSection(title: export.title) { steps(export) }
+                ImportSection(title: "Add the file") {
                     fileZone(guide)
-                }
-                if !guide.after.isEmpty, !isDone {
-                    Text(guide.after)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // What importing does, beside the button that does it.
+                    if !guide.after.isEmpty, !isDone {
+                        Text(guide.after)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
                 }
             }
         }
@@ -279,21 +297,8 @@ private struct ImportSourcePage: View {
     }
 
     private var heading: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                ImportIcon(tile: tile, size: 32)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                PasswordPieMark(size: 27)
-                    .frame(width: 32, height: 32)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(Palette.card(dark: dark), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.07)))
+        HStack(spacing: 10) {
+            ImportIcon(tile: tile, size: 34)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tile.kind == .keePass ? "Coming from KeePass" : "Import from \(tile.name)")
                     .font(.system(size: 16, weight: .semibold))
@@ -308,64 +313,66 @@ private struct ImportSourcePage: View {
 
     @ViewBuilder
     private func steps(_ steps: ImportGuide.Steps) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let opens = steps.opens.flatMap { installedApp == nil ? nil : $0 }
+        VStack(alignment: .leading, spacing: 7) {
             ForEach(Array(steps.steps.enumerated()), id: \.offset) { index, step in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(index + 1).")
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(index + 1)")
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
-                        .frame(width: 16, alignment: .trailing)
-                    // Markdown: the names of menus and buttons are bold.
-                    Text(LocalizedStringKey(step))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 12, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Markdown: the names of menus and buttons are bold.
+                        Text(LocalizedStringKey(step))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        // The first step is in the other app: the button takes you there.
+                        if index == 0, let opens {
+                            Button("Open \(opens)") { open() }
+                                .fixedSize()
+                                .padding(.bottom, 2)
+                        }
+                    }
                 }
             }
         }
-        let opens = steps.opens.flatMap { installedApp == nil ? nil : $0 }
-        if steps.address != nil || opens != nil {
-            VStack(alignment: .leading, spacing: 6) {
-                if steps.address != nil {
-                    Text("Or go straight there: paste this address into \(tile.name).")
+        if let address = steps.address {
+            // The quiet way round the first steps: one line, after them.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    Text("Or paste into \(tile.name)’s address bar:")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                    addressField(address)
                 }
-                // One row, or the Open button under the address in a narrow window.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) {
-                        addressChip(steps.address)
-                        openButton(opens)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) { addressChip(steps.address) }
-                        openButton(opens)
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Or paste into \(tile.name)’s address bar:")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    addressField(address)
                 }
             }
-            .padding(.leading, 22)
-            .padding(.top, 2)
+            .padding(.leading, 20)
         }
     }
 
+    /// The address and its copy button, as one field.
     @ViewBuilder
-    private func addressChip(_ address: String?) -> some View {
+    private func addressField(_ address: String?) -> some View {
         if let address {
-            Text(address)
-                .font(.system(size: 12, design: .monospaced))
-                .lineLimit(1)
-                .fixedSize()
-                .textSelection(.enabled)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 5))
-            CopyAddressButton(address: address)
-        }
-    }
-
-    @ViewBuilder
-    private func openButton(_ app: String?) -> some View {
-        if let app {
-            Button("Open \(app)") { open() }
-                .fixedSize()
+            HStack(spacing: 2) {
+                Text(address)
+                    .font(.system(size: 12, design: .monospaced))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .textSelection(.enabled)
+                    .padding(.leading, 8)
+                CopyAddressButton(address: address)
+            }
+            .frame(height: 26)
+            .background(Palette.card(dark: dark).opacity(0.7), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.14)))
         }
     }
 
@@ -380,17 +387,44 @@ private struct ImportSourcePage: View {
 
     // MARK: The file
 
+    /// The page's one container: the place the file goes, then what was read from it, then what importing did.
     @ViewBuilder
     private func fileZone(_ guide: ImportGuide) -> some View {
+        Group {
+            if case .waiting = flow.stage {
+                dropZone(guide)
+            } else {
+                fileState.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .background(
+            targeted ? Palette.brandAccent.opacity(0.12) : Palette.card(dark: dark).opacity(0.7),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(targeted ? Palette.brandAccent : Color.primary.opacity(0.12), lineWidth: targeted ? 1.5 : 1)
+        )
+        if !flow.error.isEmpty {
+            Text(flow.error)
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.error(dark: dark))
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("import-error")
+        }
+    }
+
+    @ViewBuilder
+    private var fileState: some View {
         switch flow.stage {
         case .waiting:
-            dropZone(guide)
+            EmptyView()
         case .reading(let fileName):
             HStack(spacing: 10) {
                 ProgressView().controlSize(.small)
                 Text("Reading \(fileName)…").foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         case .protected(let fileName):
             fileRow(symbol: "lock.doc", title: fileName, detail: "This file is protected. Type its password to read it.") {
                 HStack(spacing: 8) {
@@ -420,41 +454,27 @@ private struct ImportSourcePage: View {
         case .done(let outcome):
             done(outcome)
         }
-        if !flow.error.isEmpty {
-            Text(flow.error)
-                .font(.system(size: 11))
-                .foregroundStyle(Palette.error(dark: dark))
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("import-error")
-        }
     }
 
+    /// One row: what to drop, and the button for those who would rather choose.
     private func dropZone(_ guide: ImportGuide) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: "doc.badge.plus")
-                .font(.system(size: 28))
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(session.locked ? "Unlock PasswordPie to import" : "Drop the file here")
-            Text(guide.files)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.locked ? "Unlock PasswordPie to import" : "Drop the file here")
+                    .fontWeight(.medium)
+                Text(guide.files)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
             Button("Choose File…") { flow.chooseFile() }
+                .buttonStyle(BrandPrimaryButtonStyle())
                 .disabled(session.locked)
-                .padding(.top, 4)
+                .fixedSize()
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 116)
-        .background(targeted ? Palette.brandAccent.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(
-                    targeted ? Palette.brandAccent : Palette.border(dark: dark),
-                    style: StrokeStyle(lineWidth: 1.5, dash: targeted ? [] : [6, 4])
-                )
-        )
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 76)
     }
 
     private func fileRow<Actions: View>(symbol: String, title: String, detail: String, @ViewBuilder actions: () -> Actions) -> some View {
@@ -494,43 +514,37 @@ private struct CopyAddressButton: View {
     @State private var copied = false
 
     var body: some View {
-        Button(copied ? "Copied" : "Copy") {
+        Button {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(address, forType: .string)
             copied = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+        } label: {
+            Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
         }
-        .controlSize(.small)
+        .buttonStyle(.plain)
+        .help(copied ? "Copied" : "Copy")
         .accessibilityLabel("Copy the address")
+        .accessibilityValue(copied ? "Copied" : "")
     }
 }
 
-/// A numbered card of the source's page.
-private struct ImportCard<Content: View>: View {
-    let number: Int?
+/// A part of the source's page: its title, then what is under it. No box: the page has one, for the file.
+private struct ImportSection<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                if let number {
-                    Text("\(number)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
-                        .frame(width: 20, height: 20)
-                        .background(Palette.brandAccent.opacity(0.2), in: Circle())
-                        .accessibilityHidden(true)
-                }
-                Text(title).fontWeight(.medium)
-            }
+            Text(title)
+                .fontWeight(.semibold)
+                .accessibilityAddTraits(.isHeader)
             content()
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.card(dark: colorScheme == .dark), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.07)))
     }
 }

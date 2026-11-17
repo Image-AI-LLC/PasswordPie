@@ -17,6 +17,22 @@ final class ImportGuideTests: XCTestCase {
         XCTAssertEqual(Set(ImportTile.all.map(\.id)).count, ImportTile.all.count)
     }
 
+    func testEachRowNamesTheKindOfFileItTakes() {
+        let formats = Dictionary(uniqueKeysWithValues: ImportTile.all.map { ($0.name, $0.format) })
+        XCTAssertEqual(formats["Chrome"], "CSV")
+        XCTAssertEqual(formats["1Password"], "1PUX")
+        XCTAssertEqual(formats["Bitwarden"], "JSON")
+        XCTAssertEqual(formats["Proton Pass"], "ZIP")
+        XCTAssertEqual(formats["Dashlane"], "ZIP")
+        XCTAssertEqual(formats["KeePass"], "KDBX")
+        for tile in ImportTile.all {
+            XCTAssertFalse(tile.format.isEmpty, tile.name)
+            XCTAssertFalse(tile.hint.isEmpty, tile.name)
+        }
+        // The row across the page says more than a format: it is the one for a file from anywhere.
+        XCTAssertEqual(ImportTile.tile("csv")?.hint, "Any CSV file with a header row")
+    }
+
     func testEveryImportSourceHasATile() {
         let sources = Set(ImportTile.all.compactMap(\.source))
         XCTAssertEqual(sources, Set(BrowserImportSource.allCases))

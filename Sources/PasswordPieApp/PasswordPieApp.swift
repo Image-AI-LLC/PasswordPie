@@ -470,7 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return view
     }
 
-    static let preferencesSize = NSSize(width: 760, height: 650)
+    static let preferencesSize = NSSize(width: 760, height: 600)
     static let preferencesMinSize = NSSize(width: 700, height: 460)
 
     /// Opens Preferences; with `section`, on its pane.

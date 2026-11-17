@@ -1533,23 +1533,30 @@ a database of their own, but not brought into the one they already had.
 **Preferences > Import** is a pane of its own. It is used once or twice and then left alone, so it does not sit among
 the everyday settings. **Import Passwords…** in an empty database's menu and in the gear menu opens it.
 
-**1. Choose where the passwords are now.** A grid of sources, each with its icon:
+**1. Choose where the passwords are now.** Under the title, the page says which database they go into. Then one
+list of sources, in two columns by kind:
 
 | | |
 |---|---|
-| My browser | Chrome, Safari, Firefox, Edge, Brave |
-| A password manager | Apple Passwords, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane, KeePass, and Another App for a CSV file from anything else |
+| Browsers | Chrome, Safari, Firefox, Edge, Brave |
+| Password managers | Apple Passwords, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane, KeePass |
+
+Each row is the source's icon, its name, and the kind of file it takes (CSV, 1PUX, JSON, ZIP, KDBX). The whole row
+is the button. Under the two columns, one row across the page: **Another App**, for any CSV file with a header row.
+The last line says that the file is read on this Mac and nothing is sent anywhere.
 
 A source shows the icon of its app on this Mac. When that app is not installed, it shows an icon that ships with
 PasswordPie: no icon is ever fetched.
 
-**2. Export, with the steps in front of you.** The source's page shows its icon, an arrow and the pie, then the
-export as numbered steps in full, with the names of the menus and buttons in bold: for Chrome, the menu, Google
-Password Manager, Settings, Download file, the Mac's login password, and where to save. Where it helps there is a
-button: **Open Chrome** or **Open Passwords** when that app is on this Mac, and **Copy** beside an address such as
-`chrome://password-manager/settings`, which a browser only opens when you paste it into its address bar yourself.
+**2. Export, with the steps in front of you.** The source's page shows its icon, its name and the database the
+items go into, then the export as numbered steps in full, with the names of the menus and buttons in bold: for Chrome, the menu, Google
+Password Manager, Settings, Download file, the Mac's login password, and where to save. Under the first step there is a
+button when that app is on this Mac: **Open Chrome** or **Open Passwords**. After the last step, one quiet line
+gives the way round the first ones: an address such as `chrome://password-manager/settings` with a copy button in
+its box. A browser only opens such an address when you paste it into its address bar yourself.
 
-**3. Add the file.** Drop it on the dashed box, or click **Choose File…**. PasswordPie reads it and says what is in
+**3. Add the file.** Drop it on the box under the steps, the only box on the page, or click **Choose File…** in it,
+the page's one orange button. What importing does is said in small print right under the box. PasswordPie reads it and says what is in
 it: "214 passwords in Chrome Passwords.csv". Nothing is in the database yet. A large or protected file says
 "Reading…" for a moment, and the window stays usable meanwhile. A file that needs a password, such as a
 Bitwarden export you protected with one or a 1Password OPVault, shows a password field first. A file that is not
@@ -1665,13 +1672,23 @@ scrolling past everything else, and each new feature made the page longer.
 - Preferences opens on General, or on the pane you were sent to: Import Passwords… opens Import, Browser Extensions…
   and Sync Chrome Passwords… open Browsers.
 - While the window stays open it keeps the pane you chose. A window opened again starts on General.
-- The selected pane is drawn like the selected row of the menu: the flat orange fill.
+- Premium is the last pane of the list, drawn as the others are.
+- The selected pane has a light orange wash and an orange symbol. The flat orange fill is kept for the menu's
+  selected row and for the one main button of a page.
+- Settings sit on the window itself, under a section name and a thin line, with thin lines between them. There are
+  no cards.
+- The keyboard shortcut is one row: its name on the left, the keys on the right. Click the keys to record another
+  shortcut. **Reset** shows only when the shortcut is not the default ⌘\.
+- A pop-up menu, such as Clear clipboard after, is drawn as the shortcut's box is: the same height and outline, with
+  small grey arrows.
 - A pane taller than the window scrolls by itself; the list stays put.
 
 ### When it does not apply
 
 - **About** is still its own window, and so is the Premium window a locked code opens.
-- **The settings themselves** did not change: the same switches, with the same words, do the same things.
+- **The settings themselves** did not change: the same switches do the same things. Two texts are shorter: the
+  line under the shortcut shows only while recording or when the shortcut is unavailable, and Updates says in two
+  sentences what the updater does. A build that is not a release shows one small line instead of the Updates group.
 
 ### Demo script
 

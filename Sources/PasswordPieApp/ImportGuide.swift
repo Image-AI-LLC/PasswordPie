@@ -22,6 +22,10 @@ struct ImportTile: Identifiable, Equatable {
     var bundleIDs: [String] = []
     /// Drawn on a tile when the source is not an app, or is one of Apple's that this Mac does not have.
     var symbol: String?
+    /// Under the name where the source is listed large: what you will export from it.
+    var hint = "Export a CSV file"
+    /// Beside the name where the source is listed small: the kind of file it takes.
+    var format = "CSV"
 
     /// The app the page's Open button opens. Safari's passwords are exported from the Passwords app, not from Safari.
     var opensBundleIDs: [String] { source == .applePasswords ? ["com.apple.Passwords"] : bundleIDs }
@@ -34,18 +38,18 @@ struct ImportTile: Identifiable, Equatable {
     static let all: [ImportTile] = [
         ImportTile(id: "chrome", name: "Chrome", group: .browser, kind: .source(.chrome), bundleIDs: ["com.google.Chrome"]),
         // Safari keeps its passwords in the Passwords app, so both tiles lead to the same import.
-        ImportTile(id: "safari", name: "Safari", group: .browser, kind: .source(.applePasswords), bundleIDs: ["com.apple.Safari"], symbol: "safari"),
+        ImportTile(id: "safari", name: "Safari", group: .browser, kind: .source(.applePasswords), bundleIDs: ["com.apple.Safari"], symbol: "safari", hint: "Kept in the Passwords app"),
         ImportTile(id: "firefox", name: "Firefox", group: .browser, kind: .source(.firefox), bundleIDs: ["org.mozilla.firefox"]),
         ImportTile(id: "edge", name: "Edge", group: .browser, kind: .source(.edge), bundleIDs: ["com.microsoft.edgemac"]),
         ImportTile(id: "brave", name: "Brave", group: .browser, kind: .source(.brave), bundleIDs: ["com.brave.Browser"]),
         ImportTile(id: "apple-passwords", name: "Apple Passwords", group: .manager, kind: .source(.applePasswords), bundleIDs: ["com.apple.Passwords"], symbol: "key"),
-        ImportTile(id: "1password", name: "1Password", group: .manager, kind: .source(.onePassword), bundleIDs: ["com.1password.1password", "com.agilebits.onepassword7"]),
-        ImportTile(id: "bitwarden", name: "Bitwarden", group: .manager, kind: .source(.bitwarden), bundleIDs: ["com.bitwarden.desktop"]),
-        ImportTile(id: "proton-pass", name: "Proton Pass", group: .manager, kind: .source(.protonPass), bundleIDs: ["me.proton.pass.electron"]),
+        ImportTile(id: "1password", name: "1Password", group: .manager, kind: .source(.onePassword), bundleIDs: ["com.1password.1password", "com.agilebits.onepassword7"], hint: "Export a 1PUX file", format: "1PUX"),
+        ImportTile(id: "bitwarden", name: "Bitwarden", group: .manager, kind: .source(.bitwarden), bundleIDs: ["com.bitwarden.desktop"], hint: "Export a JSON file", format: "JSON"),
+        ImportTile(id: "proton-pass", name: "Proton Pass", group: .manager, kind: .source(.protonPass), bundleIDs: ["me.proton.pass.electron"], hint: "Export a ZIP file", format: "ZIP"),
         ImportTile(id: "lastpass", name: "LastPass", group: .manager, kind: .source(.lastPass), bundleIDs: ["com.lastpass.lastpassmacdesktop", "com.lastpass.LastPass"]),
-        ImportTile(id: "dashlane", name: "Dashlane", group: .manager, kind: .source(.dashlane), bundleIDs: ["com.dashlane.dashlanephonefinal", "com.dashlane.Dashlane"]),
-        ImportTile(id: "keepass", name: "KeePass", group: .manager, kind: .keePass, bundleIDs: ["org.keepassxc.keepassxc", "com.markmcguill.strongbox.mac", "com.keepassium.mac"]),
-        ImportTile(id: "csv", name: "Another App", group: .manager, kind: .source(.csv), symbol: "tablecells")
+        ImportTile(id: "dashlane", name: "Dashlane", group: .manager, kind: .source(.dashlane), bundleIDs: ["com.dashlane.dashlanephonefinal", "com.dashlane.Dashlane"], hint: "Export a ZIP file", format: "ZIP"),
+        ImportTile(id: "keepass", name: "KeePass", group: .manager, kind: .keePass, bundleIDs: ["org.keepassxc.keepassxc", "com.markmcguill.strongbox.mac", "com.keepassium.mac"], hint: "Opens as it is", format: "KDBX"),
+        ImportTile(id: "csv", name: "Another App", group: .manager, kind: .source(.csv), symbol: "tablecells", hint: "Any CSV file with a header row", format: "Any CSV")
     ]
 
     static func tile(_ id: String) -> ImportTile? { all.first { $0.id == id } }

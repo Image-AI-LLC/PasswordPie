@@ -29,7 +29,7 @@ enum PreferencesPane: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: return "The shortcut that opens PasswordPie, and everyday habits."
+        case .general: return "The shortcut, the clipboard and search."
         case .security: return "When PasswordPie locks, and how it unlocks."
         case .database: return "The file your passwords are in, and its keys."
         case .browsers: return "Filling sign-in forms in your browser."
@@ -103,19 +103,24 @@ struct PaneHeader: View {
     }
 }
 
-/// The small capitals over a card.
+/// The name of a group of settings, over its line.
 struct PaneGroupLabel: View {
     let title: String
 
     init(_ title: String) { self.title = title }
 
     var body: some View {
-        Text(title.uppercased())
-            .font(.system(size: 10, weight: .semibold))
-            .tracking(0.7)
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
-            .padding(.leading, 2)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// The thin line under a group's name and between its rows.
+struct PaneRule: View {
+    var body: some View {
+        Rectangle().fill(Color.primary.opacity(0.09)).frame(height: 1)
     }
 }
 
@@ -134,6 +139,7 @@ struct PreferencesView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     static let sidebarWidth: CGFloat = 188
+    static let contentWidth: CGFloat = 560
 
     private var cardColor: Color { Palette.card(dark: colorScheme == .dark) }
 
@@ -159,10 +165,12 @@ struct PreferencesView: View {
         HStack(spacing: 0) {
             sidebar
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 26) {
                     pane(shown)
                 }
-                .padding(.horizontal, 24)
+                // A line of text stays readable in a window made wider.
+                .frame(maxWidth: Self.contentWidth, alignment: .leading)
+                .padding(.horizontal, 28)
                 .padding(.top, 14)
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -174,7 +182,7 @@ struct PreferencesView: View {
         .background(Palette.windowSurface(dark: colorScheme == .dark).ignoresSafeArea())
         .tint(Palette.brandAccent)
         .frame(minWidth: 700, idealWidth: 760, maxWidth: .infinity,
-               minHeight: 460, idealHeight: 650, maxHeight: .infinity)
+               minHeight: 460, idealHeight: 600, maxHeight: .infinity)
         .onChange(of: navigator.pane) { _, _ in recorder.stop() }
         .onDisappear { recorder.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in recorder.stop() }
@@ -186,12 +194,9 @@ struct PreferencesView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(panes.filter { $0 != .premium }) { pane in
+            ForEach(panes) { pane in
                 PaneRow(pane: pane, selected: pane == shown) { navigator.pane = pane }
             }
-            Spacer(minLength: 8)
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1).padding(.horizontal, 4).padding(.bottom, 6)
-            PaneRow(pane: .premium, selected: shown == .premium) { navigator.pane = .premium }
         }
         .padding(.horizontal, 8)
         .padding(.top, 14)
@@ -213,11 +218,23 @@ struct PreferencesView: View {
         }
         switch pane {
         case .general:
-            section("Quick access") { shortcut }
-            section("Everyday") { everyday }
+            // The everyday settings need no name over them: the pane's title is their name.
+            section(nil) {
+                VStack(spacing: 12) {
+                    shortcut
+                    PaneRule()
+                    everyday
+                }
+            }
             #if PP_DIRECT
             if let updates {
-                section("Updates") { UpdatesSection(updates: updates) }
+                if updates.state == .unavailable {
+                    Text(updates.statusLine)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                } else {
+                    section("Updates") { UpdatesSection(updates: updates) }
+                }
             }
             #endif
         case .security:
@@ -243,26 +260,34 @@ struct PreferencesView: View {
         }
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            PaneGroupLabel(title)
+    private func section<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let title { PaneGroupLabel(title).padding(.bottom, 6) }
+            PaneRule().padding(.bottom, 12)
             content()
-                .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.07)))
         }
     }
 
     private var shortcut: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Keyboard shortcut").fontWeight(.medium)
-                Spacer()
-                Text("Open PasswordPie from any app")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            HStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Keyboard shortcut")
+                    Text("Opens PasswordPie from any app.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                if recorder.isRecording || session.hotKey != .default {
+                    Button(recorder.isRecording ? "Cancel" : "Reset") {
+                        if recorder.isRecording { recorder.stop() } else { session.hotKey = .default }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
+                    .help(Text(verbatim: recorder.isRecording ? "Cancel recording" : "Restore default shortcut (⌘\\)"))
+                    .accessibilityLabel(recorder.isRecording ? "Cancel recording" : "Restore default shortcut")
+                }
                 Button {
                     if recorder.isRecording { recorder.stop() } else {
                         recorder.start(in: NSApp.keyWindow, suspend: {
@@ -274,66 +299,52 @@ struct PreferencesView: View {
                         })
                     }
                 } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "keyboard").foregroundStyle(.secondary)
-                        Spacer(minLength: 0)
+                    Group {
                         if recorder.isRecording {
-                            Text("Press a shortcut…").font(.system(size: 14, weight: .medium)).foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
+                            Text("Press a shortcut…")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Palette.accentText(dark: colorScheme == .dark))
                         } else {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 3) {
                                 ForEach(Array(session.hotKey.keycaps.enumerated()), id: \.offset) { _, key in
                                     Text(key)
-                                        .font(.system(size: 17, weight: .medium))
-                                        .frame(minWidth: 24, minHeight: 28)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .frame(minWidth: 14, minHeight: 20)
                                         .padding(.horizontal, 5)
-                                        .background(cardColor, in: RoundedRectangle(cornerRadius: 5))
-                                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(Color.primary.opacity(0.12)))
+                                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4))
                                 }
                             }
                         }
-                        Spacer(minLength: 0)
                     }
-                    .padding(.leading, 14)
-                    .frame(maxWidth: .infinity, minHeight: 54)
-                    .contentShape(Rectangle())
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 62, minHeight: 30)
+                    .background(cardColor.opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(
+                        recorder.isRecording ? Palette.focus(dark: colorScheme == .dark) : Color.primary.opacity(0.16),
+                        lineWidth: recorder.isRecording ? 2 : 1))
+                    .contentShape(RoundedRectangle(cornerRadius: 7))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(recorder.isRecording ? "Cancel shortcut recording" : "Record keyboard shortcut")
                 .accessibilityValue(session.hotKey.display)
                 .help("Click, then press a shortcut with Command, Option or Control. Esc cancels.")
-
-                Button {
-                    if recorder.isRecording { recorder.stop() } else { session.hotKey = .default }
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 40, height: 54)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(!recorder.isRecording && session.hotKey == .default)
-                .help(Text(verbatim: recorder.isRecording ? "Cancel recording" : "Restore default shortcut (⌘\\)"))
-                .accessibilityLabel(recorder.isRecording ? "Cancel recording" : "Restore default shortcut")
             }
-            .background(Color(nsColor: .textBackgroundColor).opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(
-                recorder.isRecording ? Palette.focus(dark: colorScheme == .dark) : Color.primary.opacity(0.16),
-                lineWidth: recorder.isRecording ? 2 : 1))
-
-            Text(shortcutHint)
-                .font(.system(size: 11))
-                .foregroundStyle(!recorder.isRecording && !session.hotKeyActive ? Palette.error(dark: colorScheme == .dark) : .secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("shortcut-hint")
+            if let hint = shortcutHint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(!recorder.isRecording && !session.hotKeyActive ? Palette.error(dark: colorScheme == .dark) : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("shortcut-hint")
+            }
         }
     }
 
-    private var shortcutHint: String {
+    /// Nothing to say while the shortcut works and is not being recorded.
+    private var shortcutHint: String? {
         if recorder.needsModifier { return "Include Command (⌘), Option (⌥) or Control (⌃). Esc cancels." }
         if recorder.isRecording { return "Use ⌘, ⌥ or ⌃ with a key. Press Esc to cancel." }
         if !session.hotKeyActive { return "Shortcut unavailable. It may be in use by another app; choose a different one." }
-        return "Click to record a shortcut. × restores the default ⌘\\."
+        return nil
     }
 
     private var idleSelection: Binding<Int> {
@@ -351,14 +362,19 @@ struct PreferencesView: View {
             HStack {
                 Text("Lock after inactivity")
                 Spacer()
-                Picker("Lock after inactivity", selection: idleSelection) {
-                    ForEach(PreferenceDurations.idleOptions(including: session.autoLock.timeoutMinutes), id: \.self) { minutes in
-                        Text(PreferenceDurations.minutesLabel(minutes)).tag(minutes)
+                PaneMenu(
+                    title: "Lock after inactivity",
+                    value: idleSelection.wrappedValue == 0 ? "Never" : PreferenceDurations.minutesLabel(idleSelection.wrappedValue)
+                ) {
+                    Picker("Lock after inactivity", selection: idleSelection) {
+                        ForEach(PreferenceDurations.idleOptions(including: session.autoLock.timeoutMinutes), id: \.self) { minutes in
+                            Text(PreferenceDurations.minutesLabel(minutes)).tag(minutes)
+                        }
+                        Divider()
+                        Text("Never").tag(0)
                     }
-                    Divider()
-                    Text("Never").tag(0)
+                    .labelsHidden().pickerStyle(.inline)
                 }
-                .labelsHidden().pickerStyle(.menu).frame(width: 150)
             }
             Divider()
             settingToggle("When the Mac sleeps", value: $session.autoLock.lockOnSleep)
@@ -372,19 +388,21 @@ struct PreferencesView: View {
     }
 
     private var everyday: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             HStack {
                 Text("Clear clipboard after")
                 Spacer()
-                Picker("Clear clipboard after", selection: $session.clipboardTimeout) {
-                    ForEach(PreferenceDurations.clipboardOptions(including: session.clipboardTimeout), id: \.self) { seconds in
-                        Text(PreferenceDurations.secondsLabel(seconds)).tag(seconds)
+                PaneMenu(title: "Clear clipboard after", value: PreferenceDurations.secondsLabel(session.clipboardTimeout)) {
+                    Picker("Clear clipboard after", selection: $session.clipboardTimeout) {
+                        ForEach(PreferenceDurations.clipboardOptions(including: session.clipboardTimeout), id: \.self) { seconds in
+                            Text(PreferenceDurations.secondsLabel(seconds)).tag(seconds)
+                        }
                     }
+                    .labelsHidden().pickerStyle(.inline)
                 }
-                .labelsHidden().pickerStyle(.menu).frame(width: 150)
                 .onChange(of: session.clipboardTimeout) { _, _ in recorder.stop() }
             }
-            Divider()
+            PaneRule()
             settingToggle("Search all fields", detail: "Also search usernames, notes, tags and custom fields.", value: $session.searchAll)
         }
     }
@@ -635,7 +653,8 @@ struct PreferencesView: View {
     }
 }
 
-/// One row of the pane list: the selected one is drawn like the selected row of the menu.
+/// One row of the pane list. The selected one takes a light wash, not the menu's orange fill: the list says where
+/// you are, and the page's own controls stay the loudest thing in the window.
 private struct PaneRow: View {
     let pane: PreferencesPane
     let selected: Bool
@@ -648,31 +667,60 @@ private struct PaneRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: pane.symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(selected ? Palette.selectionInk : Palette.accentText(dark: colorScheme == .dark))
+                    .font(.system(size: 13, weight: selected ? .medium : .regular))
+                    .foregroundStyle(selected ? Palette.accentText(dark: colorScheme == .dark) : Palette.secondaryText(dark: colorScheme == .dark))
                     .frame(width: 20, height: 20)
-                    .background(
-                        selected ? Palette.selectionInk.opacity(0.14) : Palette.brandAccent.opacity(0.2),
-                        in: RoundedRectangle(cornerRadius: 5)
-                    )
                 Text(pane.title)
                     .fontWeight(selected ? .medium : .regular)
-                    .foregroundStyle(selected ? Palette.selectionInk : Palette.text(dark: colorScheme == .dark))
+                    .foregroundStyle(Palette.text(dark: colorScheme == .dark))
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 8)
             .frame(height: 30)
             .background(
-                selected ? Palette.selectionFill : Color.primary.opacity(hovered ? 0.06 : 0),
-                in: RoundedRectangle(cornerRadius: 6)
+                selected ? Palette.brandAccent.opacity(colorScheme == .dark ? 0.22 : 0.14) : Color.primary.opacity(hovered ? 0.06 : 0),
+                in: RoundedRectangle(cornerRadius: 7)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .accessibilityLabel(pane.title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("pane-\(pane.rawValue)")
+    }
+}
+
+/// A pop-up menu drawn as the shortcut's box is: the same height, line and corner, and no orange arrows.
+struct PaneMenu<Content: View>: View {
+    let title: String
+    let value: String
+    @ViewBuilder var content: () -> Content
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Menu {
+            content()
+        } label: {
+            HStack(spacing: 6) {
+                Text(value)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 30)
+            .background(Palette.card(dark: colorScheme == .dark).opacity(0.7), in: RoundedRectangle(cornerRadius: 7))
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.16)))
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel(title)
+        .accessibilityValue(value)
     }
 }
 
@@ -753,7 +801,7 @@ struct UpdatesSection: View {
     @ObservedObject var updates: UpdateCoordinator
     @Environment(\.colorScheme) private var colorScheme
 
-    static let detail = "Once a week, a separate updater asks GitHub for a newer PasswordPie, checks that it is signed by Image AI, LLC and notarized by Apple, and installs it while PasswordPie is locked. PasswordPie itself never connects to the network."
+    static let detail = "A separate updater asks GitHub once a week, and installs a signed, notarized update while PasswordPie is locked. PasswordPie itself never connects to the network."
 
     private var failed: Bool {
         if case .failed = updates.state { return true }
@@ -762,9 +810,11 @@ struct UpdatesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // A build that is not a release has nothing to switch: the line below says so.
+            if updates.state != .unavailable {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Update automatically").fontWeight(.medium)
+                    Text("Update automatically")
                     Text(Self.detail)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -774,9 +824,9 @@ struct UpdatesSection: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .disabled(updates.state == .unavailable)
                     .accessibilityLabel("Update automatically")
                     .accessibilityHint(Self.detail)
+            }
             }
             HStack(spacing: 10) {
                 Text(updates.statusLine)
