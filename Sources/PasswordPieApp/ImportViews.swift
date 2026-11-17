@@ -260,9 +260,14 @@ private struct ImportSourcePage: View {
         }
         .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
             guard tile.source != nil, let provider = providers.first else { return false }
+            // The file arrives later. It belongs to the source it was dropped on, not to one chosen since.
+            let dropped = tile
             _ = provider.loadObject(ofClass: URL.self) { url, _ in
                 guard let url else { return }
-                Task { @MainActor in flow.take(url) }
+                Task { @MainActor in
+                    guard flow.tile == dropped else { return }
+                    flow.take(url)
+                }
             }
             return true
         }
@@ -380,6 +385,12 @@ private struct ImportSourcePage: View {
         switch flow.stage {
         case .waiting:
             dropZone(guide)
+        case .reading(let fileName):
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Reading \(fileName)…").foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         case .protected(let fileName):
             fileRow(symbol: "lock.doc", title: fileName, detail: "This file is protected. Type its password to read it.") {
                 HStack(spacing: 8) {

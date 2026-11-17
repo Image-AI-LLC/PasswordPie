@@ -129,6 +129,16 @@ final class ImportSourcesTests: XCTestCase {
         XCTAssertEqual(read.entries.first?.tagList, ["Imported"])
     }
 
+    func testAnotherAppsCSVKeepsItsFolderColumn() throws {
+        let csv = "folder,title,url,username,password\nWork/Servers,Example,https://example.com,ann,pw1\n"
+        let read = try BrowserImport.read(file("anything.csv", csv), source: .csv)
+        XCTAssertEqual(read.entries.first?.groupPath, ["Imported", "Work", "Servers"])
+        let merged = BrowserImport.merge(read.entries, into: [], source: .csv)
+        XCTAssertEqual(merged.entries.first?.groupPath, ["Imported", "Work", "Servers"])
+        let again = BrowserImport.merge(read.entries, into: merged.entries, source: .csv)
+        XCTAssertEqual(again.summary, BrowserImportSummary(unchanged: 1))
+    }
+
     // MARK: ZIP exports
 
     private let safariZIP = "UEsDBBQAAAAIAA0Fcl0fhxtgCwAAAA0AAAAOAAAAQm9va21hcmtzLmh0bWyzySjJzbGz0QdTAFBLAwQUAAAACAANBXJdDkGgWWsAAAB4AAAADQAAAFBhc3N3b3Jkcy5jc3Y9jUEKwjAQRfc5hQf4tOjSnau6kFqkPcC0DiZgJqEzIR7fgODyweO9OdibsTxuWJR3ociYSLWm/YkxGSvu83Qp5t0Q7FpWeLOs575/BfNl7bYUQSLI9Qi4kav+DWnQ8YdiboefcwIdpFXhvlBLAQIUAxQAAAAIAA0Fcl0fhxtgCwAAAA0AAAAOAAAAAAAAAAAAAACAAQAAAABCb29rbWFya3MuaHRtbFBLAQIUAxQAAAAIAA0Fcl0OQaBZawAAAHgAAAANAAAAAAAAAAAAAACAATcAAABQYXNzd29yZHMuY3N2UEsFBgAAAAACAAIAdwAAAM0AAAAAAA=="

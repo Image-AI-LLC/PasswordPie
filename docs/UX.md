@@ -1550,7 +1550,8 @@ button: **Open Chrome** or **Open Passwords** when that app is on this Mac, and 
 `chrome://password-manager/settings`, which a browser only opens when you paste it into its address bar yourself.
 
 **3. Add the file.** Drop it on the dashed box, or click **Choose File…**. PasswordPie reads it and says what is in
-it: "214 passwords in Chrome Passwords.csv". Nothing is in the database yet. A file that needs a password, such as a
+it: "214 passwords in Chrome Passwords.csv". Nothing is in the database yet. A large or protected file says
+"Reading…" for a moment, and the window stays usable meanwhile. A file that needs a password, such as a
 Bitwarden export you protected with one or a 1Password OPVault, shows a password field first. A file that is not
 what the page expects says what is wrong and stays out.
 
@@ -1585,7 +1586,8 @@ Database…**: KeePassXC, Strongbox and KeePassium keep using the same file.
 ### Where they go
 
 Every import lands in a group named after its source ("Chrome", "1Password"), and each item carries that name as a
-tag. A password manager's folders and vaults are kept as groups inside it. Your own items are never changed.
+tag. A password manager's folders and vaults, and the folder column of a CSV from another app, are kept as groups
+inside it. Your own items are never changed.
 
 Importing from the same source again updates it instead of doubling it:
 

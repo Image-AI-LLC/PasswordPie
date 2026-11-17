@@ -70,7 +70,7 @@ final class ImportGuideTests: XCTestCase {
         XCTAssertFalse(try guide("bitwarden").after.contains("Recycle Bin"))
         XCTAssertTrue(try guide("bitwarden").after.contains("Nothing is removed"))
         XCTAssertTrue(try guide("1password").after.contains("with their folders"))
-        XCTAssertFalse(try guide("csv").after.contains("with their folders"))
+        XCTAssertTrue(try guide("csv").after.contains("with their folders"))
     }
 
     func testKeePassHasNothingToExport() throws {

@@ -86,7 +86,7 @@ struct ImportGuide: Equatable {
         }
         let after = source.exportsWholeList
             ? "They go into a “\(source.label)” group. Import again later to update it: new sites are added, changed passwords are updated, and sites that are gone move to the Recycle Bin. Your own items are never changed."
-            : "They go into a “\(source.label)” group\(source.keepsFolders ? ", with their folders" : ""). Importing again adds what is new and updates changed passwords. Nothing is removed, and your own items are never changed."
+            : "They go into a “\(source.label)” group, with their folders. Importing again adds what is new and updates changed passwords. Nothing is removed, and your own items are never changed."
         switch source {
         case .chrome:
             return ImportGuide(

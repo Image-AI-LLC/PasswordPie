@@ -1000,15 +1000,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             importFlow.choose(tile)
             if let path = env["PASSWORDPIE_IMPORT_FILE"] {
                 importFlow.take(URL(fileURLWithPath: path))
-                if let password = env["PASSWORDPIE_IMPORT_PASSWORD"] {
-                    importFlow.passwordDraft = password
-                    importFlow.unlockFile()
-                }
-            }
-            if let action = env["PASSWORDPIE_IMPORT_COMMIT"] {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                    self?.importFlow.commit()
-                    if action == "delete" { self?.importFlow.deleteFile() }
+                Task { @MainActor [importFlow] in
+                    await importFlow.settled()
+                    if let password = env["PASSWORDPIE_IMPORT_PASSWORD"] {
+                        importFlow.passwordDraft = password
+                        importFlow.unlockFile()
+                        await importFlow.settled()
+                    }
+                    guard let action = env["PASSWORDPIE_IMPORT_COMMIT"] else { return }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    importFlow.commit()
+                    if action == "delete" { importFlow.deleteFile() }
                 }
             }
         }

@@ -32,6 +32,8 @@ final class ImportFlow: ObservableObject {
 
     enum Stage: Equatable {
         case waiting
+        /// The file is being read, off the main thread: a protected export takes a moment to open.
+        case reading(fileName: String)
         /// The file needs a password before it can be read.
         case protected(fileName: String)
         /// Read, and not in the database yet.
@@ -60,6 +62,9 @@ final class ImportFlow: ObservableObject {
     private var url: URL?
     private var pending: ImportedFile?
     private var lockWatch: AnyCancellable?
+    /// Goes up whenever the page moves on, so a read that finishes late is dropped.
+    private var generation = 0
+    private var readTask: Task<Void, Never>?
 
     init(session: VaultSession) {
         self.session = session
@@ -107,23 +112,42 @@ final class ImportFlow: ObservableObject {
         read(password: password)
     }
 
+    /// Unzipping, parsing and opening a protected export run off the main thread, so the window keeps drawing.
     private func read(password: String) {
         guard let url, let source = tile?.source else { return }
         error = ""
-        do {
-            let file = try BrowserImport.read(url, source: source, password: password)
+        pending = nil
+        generation += 1
+        let ticket = generation
+        stage = .reading(fileName: url.lastPathComponent)
+        readTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try BrowserImport.read(url, source: source, password: password) }
+            }.value
+            // The page moved on, or the database locked, while the file was being read.
+            guard let self, self.generation == ticket else { return }
+            self.finishRead(result, of: url, hadPassword: !password.isEmpty)
+        }
+    }
+
+    private func finishRead(_ result: Result<ImportedFile, Error>, of url: URL, hadPassword: Bool) {
+        switch result {
+        case .success(let file):
             pending = file
             stage = .found(fileName: url.lastPathComponent, count: file.entries.count)
-        } catch VaultOpenError.wrongPassword {
-            pending = nil
+        case .failure(VaultOpenError.wrongPassword):
             stage = .protected(fileName: url.lastPathComponent)
-            if !password.isEmpty { error = "That password does not open this file." }
-        } catch {
-            pending = nil
+            if hadPassword { error = "That password does not open this file." }
+        case .failure(let failure):
             self.url = nil
             stage = .waiting
-            self.error = session.openErrorText(error)
+            error = session.openErrorText(failure)
         }
+    }
+
+    /// Returns once a file handed over has been read. For tests and debug hooks.
+    func settled() async {
+        await readTask?.value
     }
 
     // MARK: Importing
@@ -220,6 +244,8 @@ final class ImportFlow: ObservableObject {
     }
 
     private func forget() {
+        // A read still running finishes into nothing.
+        generation += 1
         pending = nil
         url = nil
         passwordDraft = ""

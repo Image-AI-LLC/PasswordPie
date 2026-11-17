@@ -484,7 +484,8 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `caption` `text-secondary`, and Choose File… (system button). A file dragged over it: the outline turns solid
   `brand-accent` and the fill is `brand-accent` at 10 %. With a file read, the zone becomes a row: `doc.fill`, the count
   and file name in `body` medium, and the one primary action, Import N Passwords (`BrandPrimaryButtonStyle`), with
-  Choose Another File as a link. A password field (system secure field, 220 pt) with Unlock replaces the button until
+  Choose Another File as a link. While a file is being read: a small system progress spinner and "Reading
+  name…" in `text-secondary`. A password field (system secure field, 220 pt) with Unlock replaces the button until
   the file opens. Errors are `caption` `error` under the zone. Done: `checkmark.circle.fill` in `text-secondary`, what
   happened in `body`, and for a plain-text file Delete File and Keep File (system buttons). Orange is never a status.
 - **Preferences > Database, key file and master password** — cards under the database card. "Key file": `body`

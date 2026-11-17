@@ -41,8 +41,9 @@ public enum BrowserImportSource: String, CaseIterable, Sendable {
         }
     }
 
-    /// A password manager's folders and vaults become groups inside the source's own. A browser has none.
-    public var keepsFolders: Bool { !exportsWholeList && self != .csv }
+    /// A password manager's folders and vaults, and a CSV's folder column, become groups inside the source's own. A
+    /// browser has none.
+    public var keepsFolders: Bool { !exportsWholeList }
 }
 
 /// What was read from an export, before any of it is in the database.

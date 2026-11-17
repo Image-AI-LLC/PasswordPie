@@ -58,20 +58,22 @@ final class ImportFlowTests: XCTestCase {
 
     // MARK: A file
 
-    func testADroppedFileIsCountedAndNothingIsInTheDatabaseYet() throws {
+    func testADroppedFileIsCountedAndNothingIsInTheDatabaseYet() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         flow.take(try export())
+        await flow.settled()
         XCTAssertEqual(flow.stage, .found(fileName: "Chrome Passwords.csv", count: 2))
         XCTAssertEqual(flow.error, "")
         XCTAssertTrue(session.entries.isEmpty)
     }
 
-    func testImportPutsThemInTheSourcesGroupAndAsksAboutThePlainTextFile() throws {
+    func testImportPutsThemInTheSourcesGroupAndAsksAboutThePlainTextFile() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         let url = try export()
         flow.take(url)
+        await flow.settled()
         flow.commit()
         let outcome = try outcome(flow)
         XCTAssertEqual(outcome.summary, BrowserImportSummary(added: 2))
@@ -81,11 +83,12 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "nothing is deleted without being asked")
     }
 
-    func testDeleteFileRemovesTheExportForGood() throws {
+    func testDeleteFileRemovesTheExportForGood() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         let url = try export()
         flow.take(url)
+        await flow.settled()
         flow.commit()
         flow.deleteFile()
         XCTAssertEqual(try outcome(flow).file, .deleted)
@@ -93,11 +96,12 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertEqual(ImportFlow.fileText(try outcome(flow)), "The export file was deleted.")
     }
 
-    func testKeepFileLeavesItAndSaysItIsStillThere() throws {
+    func testKeepFileLeavesItAndSaysItIsStillThere() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         let url = try export()
         flow.take(url)
+        await flow.settled()
         flow.commit()
         flow.keepFile()
         XCTAssertEqual(try outcome(flow).file, .kept)
@@ -105,27 +109,30 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertTrue(ImportFlow.fileText(try outcome(flow)).contains("still on disk"))
     }
 
-    func testAFileThatCannotBeDeletedSaysSo() throws {
+    func testAFileThatCannotBeDeletedSaysSo() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         let url = try export()
         flow.take(url)
+        await flow.settled()
         flow.commit()
         try FileManager.default.removeItem(at: url)
         flow.deleteFile()
         XCTAssertEqual(try outcome(flow).file, .deleteFailed)
     }
 
-    func testImportingTheSameFileAgainChangesNothing() throws {
+    func testImportingTheSameFileAgainChangesNothing() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         let url = try export()
         flow.take(url)
+        await flow.settled()
         flow.commit()
         flow.keepFile()
         flow.startOver()
         XCTAssertEqual(flow.stage, .waiting)
         flow.take(url)
+        await flow.settled()
         flow.commit()
         let outcome = try outcome(flow)
         XCTAssertEqual(outcome.summary, BrowserImportSummary(unchanged: 2))
@@ -135,40 +142,58 @@ final class ImportFlowTests: XCTestCase {
 
     // MARK: The wrong file
 
-    func testAFileWithoutPasswordsStaysOutAndSaysWhy() throws {
+    func testAFileWithoutPasswordsStaysOutAndSaysWhy() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         flow.take(try export("bookmarks.csv", "name,url\nExample,https://example.com\n"))
+        await flow.settled()
         XCTAssertEqual(flow.stage, .waiting)
         XCTAssertEqual(flow.error, "This file has no Password column, so it is not a password export.")
         flow.commit()
         XCTAssertTrue(session.entries.isEmpty)
     }
 
-    func testALockedDatabaseTakesNoFile() throws {
+    func testALockedDatabaseTakesNoFile() async throws {
         let session = VaultSession(writes: .inline)
         session.restore()
         XCTAssertTrue(session.locked)
         let flow = try flow(session)
         flow.take(try export())
+        await flow.settled()
         XCTAssertEqual(flow.stage, .waiting)
         XCTAssertEqual(flow.error, "Unlock PasswordPie first.")
     }
 
-    func testLockingForgetsWhatWasRead() throws {
+    func testAFileIsReadOffTheMainThreadAndALateReadIsDropped() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         flow.take(try export())
+        XCTAssertEqual(flow.stage, .reading(fileName: "Chrome Passwords.csv"), "the window is not held while the file is read")
+        // The user goes back before the read finishes: what it finds is not shown on another page.
+        flow.showSources()
+        await flow.settled()
+        XCTAssertEqual(flow.stage, .waiting)
+        flow.choose(try XCTUnwrap(ImportTile.tile("firefox")))
+        flow.commit()
+        XCTAssertTrue(session.entries.isEmpty)
+    }
+
+    func testLockingForgetsWhatWasRead() async throws {
+        let session = unlockedSession()
+        let flow = try flow(session)
+        flow.take(try export())
+        await flow.settled()
         session.lock()
         XCTAssertEqual(flow.stage, .waiting)
         flow.commit()
         XCTAssertEqual(flow.stage, .waiting)
     }
 
-    func testGoingBackToTheSourcesForgetsTheFile() throws {
+    func testGoingBackToTheSourcesForgetsTheFile() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         flow.take(try export())
+        await flow.settled()
         flow.showSources()
         XCTAssertNil(flow.tile)
         flow.choose(try XCTUnwrap(ImportTile.tile("firefox")))
@@ -177,16 +202,17 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertTrue(session.entries.isEmpty)
     }
 
-    func testKeePassHasNoFileToTake() throws {
+    func testKeePassHasNoFileToTake() async throws {
         let session = unlockedSession()
         let flow = try flow(session, on: "keepass")
         flow.take(try export())
+        await flow.settled()
         XCTAssertEqual(flow.stage, .waiting)
     }
 
     // MARK: A protected file
 
-    func testAProtectedFileAsksForItsPasswordAndIsNotOfferedForDeletion() throws {
+    func testAProtectedFileAsksForItsPasswordAndIsNotOfferedForDeletion() async throws {
         let fixture = URL(fileURLWithPath: "/Users/oldcai/projects/PasswordPie/keepassxc/tests/data/bitwarden_encrypted_export.json")
         try XCTSkipUnless(FileManager.default.fileExists(atPath: fixture.path), "KeePassXC's Bitwarden export is not on this machine")
         let url = directory.appendingPathComponent("bitwarden.json")
@@ -194,17 +220,20 @@ final class ImportFlowTests: XCTestCase {
         let session = unlockedSession()
         let flow = try flow(session, on: "bitwarden")
         flow.take(url)
+        await flow.settled()
         XCTAssertEqual(flow.stage, .protected(fileName: "bitwarden.json"))
         XCTAssertEqual(flow.error, "", "asking for a password is not an error")
 
         flow.passwordDraft = "wrong"
         flow.unlockFile()
+        await flow.settled()
         XCTAssertEqual(flow.stage, .protected(fileName: "bitwarden.json"))
         XCTAssertEqual(flow.error, "That password does not open this file.")
         XCTAssertEqual(flow.passwordDraft, "", "the typed password is not kept")
 
         flow.passwordDraft = "a"
         flow.unlockFile()
+        await flow.settled()
         guard case .found(_, let count) = flow.stage else { return XCTFail("\(flow.stage) \(flow.error)") }
         XCTAssertGreaterThan(count, 0)
         flow.commit()
@@ -214,7 +243,7 @@ final class ImportFlowTests: XCTestCase {
 
     // MARK: Choosing in the panel
 
-    func testChooseFileTakesWhatThePanelReturns() throws {
+    func testChooseFileTakesWhatThePanelReturns() async throws {
         let session = unlockedSession()
         let flow = try flow(session)
         let url = try export()
@@ -224,16 +253,18 @@ final class ImportFlowTests: XCTestCase {
             return url
         }
         flow.chooseFile()
+        await flow.settled()
         XCTAssertTrue(asked.contains("Chrome Passwords.csv"), asked)
         XCTAssertEqual(flow.stage, .found(fileName: "Chrome Passwords.csv", count: 2))
         flow.pickFile = { _ in nil }
         flow.chooseFile()
+        await flow.settled()
         XCTAssertEqual(flow.stage, .found(fileName: "Chrome Passwords.csv", count: 2), "Cancel changes nothing")
     }
 
     // MARK: Apple Passwords, without a file
 
-    func testWhatApplePasswordsSendsLandsOnItsPage() throws {
+    func testWhatApplePasswordsSendsLandsOnItsPage() async throws {
         let session = unlockedSession()
         let flow = ImportFlow(session: session)
         flow.receive(.reading)
@@ -249,7 +280,7 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertEqual(session.entries.map(\.groupPath), [["Apple Passwords"]])
     }
 
-    func testAnEmptyHandoverFromApplePasswordsSaysSo() {
+    func testAnEmptyHandoverFromApplePasswordsSaysSo() async {
         let session = unlockedSession()
         let flow = ImportFlow(session: session)
         flow.receive(session.finishCredentialExchange([]))
@@ -257,7 +288,7 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertEqual(flow.stage, .waiting)
     }
 
-    func testOnTheSafariPageAHandoverStaysThere() throws {
+    func testOnTheSafariPageAHandoverStaysThere() async throws {
         let session = unlockedSession()
         let flow = try flow(session, on: "safari")
         flow.receive(.reading)
@@ -266,7 +297,7 @@ final class ImportFlowTests: XCTestCase {
 
     // MARK: Words
 
-    func testABrowserCountsPasswordsAndAPasswordManagerCountsItems() {
+    func testABrowserCountsPasswordsAndAPasswordManagerCountsItems() async {
         XCTAssertEqual(ImportFlow.counted(214, from: .chrome), "214 passwords")
         XCTAssertEqual(ImportFlow.counted(1, from: .chrome), "1 password")
         XCTAssertEqual(ImportFlow.counted(3, from: .onePassword), "3 items")
