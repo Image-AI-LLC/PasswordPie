@@ -1621,7 +1621,8 @@ password in the export, such as a note, never erases a password you saved here.
 
 - The file is read on this Mac. Nothing is sent anywhere: PasswordPie opens no network connection.
 - What was read from the file is held in memory only until you import it, choose another file or source, or close
-  Preferences, and it is dropped when the database locks. The password you type for a protected file is not kept.
+  Preferences, and it is dropped when the database locks. Closing Preferences while the page asks about a plain-text
+  export leaves the question there for when you open it again. The password you type for a protected file is not kept.
 - PasswordPie does not open your browser's password page for you and does not read the export from the Downloads
   folder by itself. You hand it the file.
 

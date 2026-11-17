@@ -370,7 +370,7 @@ private struct ImportSourcePage: View {
     }
 
     private var installedApp: URL? {
-        tile.bundleIDs.lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
+        tile.opensBundleIDs.lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first
     }
 
     private func open() {

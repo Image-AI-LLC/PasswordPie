@@ -23,6 +23,9 @@ struct ImportTile: Identifiable, Equatable {
     /// Drawn on a tile when the source is not an app, or is one of Apple's that this Mac does not have.
     var symbol: String?
 
+    /// The app the page's Open button opens. Safari's passwords are exported from the Passwords app, not from Safari.
+    var opensBundleIDs: [String] { source == .applePasswords ? ["com.apple.Passwords"] : bundleIDs }
+
     var source: BrowserImportSource? {
         if case .source(let source) = kind { return source }
         return nil

@@ -96,6 +96,23 @@ final class ImportFlowTests: XCTestCase {
         XCTAssertEqual(ImportFlow.fileText(try outcome(flow)), "The export file was deleted.")
     }
 
+    func testClosingPreferencesKeepsTheQuestionAboutThePlainTextFile() async throws {
+        let session = unlockedSession()
+        let flow = try flow(session)
+        flow.take(try export())
+        await flow.settled()
+        flow.preferencesClosed()
+        XCTAssertNil(flow.tile, "a file that was only read is forgotten")
+
+        flow.choose(try XCTUnwrap(ImportTile.tile("chrome")))
+        flow.take(try export())
+        await flow.settled()
+        flow.commit()
+        flow.preferencesClosed()
+        XCTAssertEqual(try outcome(flow).file, .ask, "the page still asks when the window comes back")
+        XCTAssertTrue(ImportFlow.fileText(try outcome(flow)).contains("removes it for good"))
+    }
+
     func testKeepFileLeavesItAndSaysItIsStillThere() async throws {
         let session = unlockedSession()
         let flow = try flow(session)

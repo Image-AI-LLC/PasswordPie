@@ -702,8 +702,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if session.editing != nil { session.cancelEditing() }
         } else if window === preferencesWindow {
             preferencesWindow = nil
-            // What a file held does not stay in memory behind a closed window, and Import starts over next time.
-            importFlow.showSources()
+            // What a file held does not stay in memory behind a closed window.
+            importFlow.preferencesClosed()
         } else if window === aboutWindow {
             aboutWindow = nil
         } else if let id = pinnedAccounts.first(where: { $0.value.panel === window })?.key {

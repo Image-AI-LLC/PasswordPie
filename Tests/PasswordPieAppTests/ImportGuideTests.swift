@@ -51,6 +51,11 @@ final class ImportGuideTests: XCTestCase {
         XCTAssertTrue(safari.files.contains("Export Browsing Data to File…"))
     }
 
+    func testSafarisPageOpensThePasswordsAppNotSafari() {
+        XCTAssertEqual(ImportTile.tile("safari")?.opensBundleIDs, ["com.apple.Passwords"])
+        XCTAssertEqual(ImportTile.tile("chrome")?.opensBundleIDs, ["com.google.Chrome"])
+    }
+
     func testApplePasswordsBeforeThePasswordsAppIsInSystemSettings() throws {
         let export = try XCTUnwrap(guide("apple-passwords", macOS: 14).export)
         XCTAssertTrue(export.steps[0].contains("**System Settings > Passwords**"))

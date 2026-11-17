@@ -198,6 +198,13 @@ final class ImportFlow: ObservableObject {
         stage = .done(outcome)
     }
 
+    /// Preferences closed. What a file held is dropped and Import starts over next time, except while the page still
+    /// asks what to do with a plain-text export: that question is there again when the window comes back.
+    func preferencesClosed() {
+        if case .done(let outcome) = stage, outcome.file == .ask { return }
+        showSources()
+    }
+
     /// Back to an empty drop zone on the same source.
     func startOver() {
         forget()
@@ -240,7 +247,7 @@ final class ImportFlow: ObservableObject {
     static func fileText(_ outcome: Outcome) -> String {
         switch outcome.file {
         case .none: return ""
-        case .ask: return "“\(outcome.fileName)” still holds every password in plain text. They are in your database now, so the file is no longer needed."
+        case .ask: return "“\(outcome.fileName)” still holds every password in plain text. They are in your database now, so the file is no longer needed. Delete File removes it for good."
         case .deleted: return "The export file was deleted."
         case .kept: return "The export file is still on disk, in plain text."
         case .deleteFailed: return "Couldn’t delete the export file. It still holds your passwords in plain text, so delete it yourself."
