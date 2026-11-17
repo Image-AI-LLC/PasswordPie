@@ -80,30 +80,31 @@ struct HotKeyConfig: Equatable {
 /// The Carbon hot key ID of the shortcut that opens the menu.
 let menuHotKeyID: UInt32 = 1
 
-/// A copy shortcut that reaches a pinned window from any app.
-struct PinnedCopyHotKey: Equatable {
+/// A shortcut that reaches a pinned window from any app: the three copies and Large Type.
+struct PinnedItemHotKey: Equatable {
     var id: UInt32
     var config: HotKeyConfig
     var shortcut: QuickAccessShortcut
 }
 
-private let allPinnedCopyHotKeys: [PinnedCopyHotKey] = [
-    (UInt32(2), controlKey, QuickAccessShortcut.copyPrimary),
-    (UInt32(3), shiftKey, QuickAccessShortcut.copyPassword),
-    (UInt32(4), optionKey, QuickAccessShortcut.copyOneTimePassword),
-].map { id, modifier, shortcut in
-    PinnedCopyHotKey(
+private let allPinnedItemHotKeys: [PinnedItemHotKey] = [
+    (UInt32(2), kVK_ANSI_C, controlKey, QuickAccessShortcut.copyPrimary),
+    (UInt32(3), kVK_ANSI_C, shiftKey, QuickAccessShortcut.copyPassword),
+    (UInt32(4), kVK_ANSI_C, optionKey, QuickAccessShortcut.copyOneTimePassword),
+    (UInt32(5), kVK_ANSI_O, shiftKey, QuickAccessShortcut.largeTypePassword),
+].map { id, key, modifier, shortcut in
+    PinnedItemHotKey(
         id: id,
-        config: HotKeyConfig(keyCode: UInt32(kVK_ANSI_C), modifiers: UInt32(cmdKey) | UInt32(modifier)),
+        config: HotKeyConfig(keyCode: UInt32(key), modifiers: UInt32(cmdKey) | UInt32(modifier)),
         shortcut: shortcut
     )
 }
 
 /// The same keys as Quick Access. The shortcut the user chose for the menu keeps working if it is one of them.
-func pinnedCopyHotKeys(excluding menuShortcut: HotKeyConfig) -> [PinnedCopyHotKey] {
-    allPinnedCopyHotKeys.filter { $0.config != menuShortcut }
+func pinnedItemHotKeys(excluding menuShortcut: HotKeyConfig) -> [PinnedItemHotKey] {
+    allPinnedItemHotKeys.filter { $0.config != menuShortcut }
 }
 
-func pinnedCopyShortcut(id: UInt32) -> QuickAccessShortcut? {
-    allPinnedCopyHotKeys.first { $0.id == id }?.shortcut
+func pinnedItemShortcut(id: UInt32) -> QuickAccessShortcut? {
+    allPinnedItemHotKeys.first { $0.id == id }?.shortcut
 }

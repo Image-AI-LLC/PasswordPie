@@ -331,6 +331,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         largeTypeWindow = window
     }
 
+    /// False when Large Type is not on screen.
+    @discardableResult
+    func closeLargeType() -> Bool {
+        guard let window = largeTypeWindow, window.isVisible else { return false }
+        window.close()
+        return true
+    }
+
     /// Shows `entry` in its own window. Pinning it again brings that window forward and leaves it in place.
     func showPinnedEntry(_ entry: VaultEntry) {
         switch pinnedWindowPlacement(openIDs: Array(pinnedAccounts.keys), id: entry.id) {
@@ -851,13 +859,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func hotKeyPressed(id: UInt32) {
         if id == menuHotKeyID {
             toggleFromHotkey()
-        } else if let shortcut = pinnedCopyShortcut(id: id) {
-            copyFromPinnedHotKey(shortcut)
+        } else if let shortcut = pinnedItemShortcut(id: id) {
+            runPinnedHotKey(shortcut)
         }
     }
 
-    /// The copy shortcuts belong to the system only while an account is pinned. Recording a new menu shortcut
-    /// releases them so the recorder can see those keys.
+    /// The copy and Large Type shortcuts belong to the system only while an account is pinned. Recording a new menu
+    /// shortcut releases them so the recorder can see those keys.
     private func syncPinnedHotKeys() {
         pinnedHotKeys.forEach { UnregisterEventHotKey($0) }
         pinnedHotKeys = []
@@ -866,7 +874,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         #endif
         guard !pinnedAccounts.isEmpty, !session.recordingHotKey else { return }
         installHotKeyHandlerIfNeeded()
-        for hotKey in pinnedCopyHotKeys(excluding: session.hotKey) {
+        for hotKey in pinnedItemHotKeys(excluding: session.hotKey) {
             var ref: EventHotKeyRef?
             let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: hotKey.id)
             let status = RegisterEventHotKey(hotKey.config.keyCode, hotKey.config.modifiers, hotKeyID, GetEventDispatcherTarget(), 0, &ref)
@@ -875,13 +883,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// While the menu is open it owns these keys, as it does when no account is pinned.
-    private func copyFromPinnedHotKey(_ shortcut: QuickAccessShortcut) {
+    private func runPinnedHotKey(_ shortcut: QuickAccessShortcut) {
         if panelController.isVisible {
             _ = panelController.headerShortcut(shortcut)
             return
         }
         guard let id = pinnedOrder.last else { return }
-        session.runCopyShortcut(shortcut, of: id)
+        if shortcut == .largeTypePassword {
+            session.runLargeTypeShortcut(of: id)
+        } else {
+            session.runCopyShortcut(shortcut, of: id)
+        }
     }
 
     // MARK: Debug hooks
@@ -1042,6 +1054,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "editorSaving": session.editorSaving,
             "editorError": session.editorError,
             "scanWindow": scanWindow?.isVisible == true ? scanWindow?.windowNumber ?? NSNull() : NSNull(),
+            "largeTypeWindow": largeTypeWindow?.isVisible == true ? largeTypeWindow?.windowNumber ?? NSNull() : NSNull(),
+            "pinnedWindows": pinnedAccounts.count,
+            "pinnedHotKeys": pinnedHotKeys.count,
             "scanPhase": otpScan.map { String(describing: $0.phase) } ?? NSNull(),
             "chromeSync": session.chromeSyncEnabled,
             "chromeStatus": session.chromeStatus,
@@ -1051,7 +1066,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "rootRows": menu.root.rows.map(\.title),
             "appActive": NSApp.isActive,
             "inSwitcher": NSApp.activationPolicy() == .regular,
-            "pinnedWindows": pinnedAccounts.values.filter { $0.panel.isVisible }.count,
+            "pinnedWindowsVisible": pinnedAccounts.values.filter { $0.panel.isVisible }.count,
             "frontmostApp": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? NSNull(),
             "panelFrame": NSStringFromRect(panel.frame),
             "systemIdleSeconds": SystemIdle.seconds(),

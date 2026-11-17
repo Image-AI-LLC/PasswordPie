@@ -5,6 +5,8 @@ import SwiftUI
 struct SplitActionButton: View {
     struct Item: Identifiable {
         var title: String
+        /// Shown beside the title in the menu, for an action that also has a key in Quick Access.
+        var shortcut: KeyboardShortcut?
         var action: () -> Void
         var id: String { title }
     }
@@ -134,7 +136,7 @@ private struct ArrowSegment: View {
         Segment(hover: colors.hover, pressed: colors.pressed) {
             Menu {
                 ForEach(items) { item in
-                    Button(item.title, action: item.action)
+                    Button(item.title, action: item.action).keyboardShortcut(item.shortcut)
                 }
             } label: {
                 Image(systemName: "chevron.down")
