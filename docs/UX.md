@@ -1601,6 +1601,11 @@ Importing from the same source again updates it instead of doubling it:
 A browser export is the whole list every time, so a site missing from it was deleted in the browser. A password
 manager often exports one vault or one folder at a time, so a missing item means nothing.
 
+An item is the same one when its site (or its title, when it has no site) and its username match. From a password
+manager it is looked for in the same folder first, so one account kept in both Work and Personal stays two items;
+an item whose folder was renamed in the other app is still found, and stays in the group it has here. A row with no
+password in the export, such as a note, never erases a password you saved here.
+
 ### When it does not apply
 
 - **A locked database.** The pane says to unlock first, and takes no file until then.

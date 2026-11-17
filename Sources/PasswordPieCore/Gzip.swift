@@ -22,7 +22,8 @@ func gzipCompress(_ source: Data) throws -> Data {
     return try transform(source, stream: &stream, finish: true, inflate: false)
 }
 
-func rawInflate(_ source: Data) throws -> Data {
+/// `limit`: the most bytes it may produce. An archive can claim to be small and unpack to gigabytes.
+func rawInflate(_ source: Data, limit: Int = .max) throws -> Data {
     var stream = z_stream()
     let status = inflateInit2_(
         &stream,
@@ -32,7 +33,7 @@ func rawInflate(_ source: Data) throws -> Data {
     )
     guard status == Z_OK else { throw GzipError.failed(status) }
     defer { inflateEnd(&stream) }
-    return try transform(source, stream: &stream, finish: true, inflate: true)
+    return try transform(source, stream: &stream, finish: true, inflate: true, limit: limit)
 }
 
 func gzipDecompress(_ source: Data) throws -> Data {
@@ -48,7 +49,7 @@ func gzipDecompress(_ source: Data) throws -> Data {
     return try transform(source, stream: &stream, finish: true, inflate: true)
 }
 
-private func transform(_ source: Data, stream: inout z_stream, finish: Bool, inflate: Bool) throws -> Data {
+private func transform(_ source: Data, stream: inout z_stream, finish: Bool, inflate: Bool, limit: Int = .max) throws -> Data {
     var output = Data()
     let chunk = 65536
     if source.isEmpty {
@@ -71,6 +72,9 @@ private func transform(_ source: Data, stream: inout z_stream, finish: Bool, inf
             }
             let produced = chunk - Int(stream.avail_out)
             if produced > 0 {
+                guard output.count + produced <= limit else {
+                    throw VaultOpenError.unsupported("This file is too large to read.")
+                }
                 output.append(buffer, count: produced)
             }
             if code == Z_STREAM_END {

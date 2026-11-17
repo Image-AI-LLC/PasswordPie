@@ -234,11 +234,12 @@ func addTag(_ entry: inout VaultEntry, _ tag: String) {
 // MARK: - ZIP (store and raw deflate)
 
 /// The files of a ZIP, by path. Read from the central directory, which always has the sizes: an archive written to a
-/// stream leaves them out of each file's own header.
-func unzip(_ data: Data) throws -> [String: Data] {
+/// stream leaves them out of each file's own header. `limit`: the most bytes all files together may unpack to.
+func unzip(_ data: Data, limit: Int = 1 << 30) throws -> [String: Data] {
     // A slice keeps its parent's indices. Offsets below start at 0.
     let data = Data(data)
-    guard let end = zipEndOfCentralDirectory(data) else { return try unzipSequential(data) }
+    var budget = limit
+    guard let end = zipEndOfCentralDirectory(data) else { return try unzipSequential(data, budget: &budget) }
     let count = Int(readU16LE(data, end + 10))
     var offset = Int(readU32LE(data, end + 16))
     var files: [String: Data] = [:]
@@ -270,16 +271,25 @@ func unzip(_ data: Data) throws -> [String: Data] {
         let start = header + 30 + Int(readU16LE(data, header + 26)) + Int(readU16LE(data, header + 28))
         guard start + Int(compressedSize) <= data.count else { throw VaultOpenError.invalid("The ZIP file is damaged.") }
         let compressed = data.subdata(in: start..<(start + Int(compressedSize)))
-        switch method {
-        case 0:
-            files[name] = compressed
-        case 8:
-            files[name] = try rawInflate(compressed)
-        default:
-            throw VaultOpenError.unsupported("ZIP compression method \(method) is not supported.")
-        }
+        files[name] = try zipContents(compressed, method: method, budget: &budget)
     }
     return files
+}
+
+/// One file's bytes, counted against what the whole archive may unpack to.
+private func zipContents(_ compressed: Data, method: UInt16, budget: inout Int) throws -> Data {
+    let contents: Data
+    switch method {
+    case 0:
+        guard compressed.count <= budget else { throw VaultOpenError.unsupported("This file is too large to read.") }
+        contents = compressed
+    case 8:
+        contents = try rawInflate(compressed, limit: budget)
+    default:
+        throw VaultOpenError.unsupported("ZIP compression method \(method) is not supported.")
+    }
+    budget -= contents.count
+    return contents
 }
 
 /// Where the end-of-central-directory record starts. It is the last thing in the file, before an optional comment.
@@ -295,7 +305,7 @@ private func zipEndOfCentralDirectory(_ data: Data) -> Int? {
 }
 
 /// A ZIP cut short of its directory: the files in the order they were written.
-private func unzipSequential(_ data: Data) throws -> [String: Data] {
+private func unzipSequential(_ data: Data, budget: inout Int) throws -> [String: Data] {
     var cursor = ByteCursor(data: data)
     var files: [String: Data] = [:]
     while cursor.remaining >= 4 {
@@ -318,14 +328,7 @@ private func unzipSequential(_ data: Data) throws -> [String: Data] {
         let compressed = try cursor.take(compressedSize)
         let name = String(data: nameData, encoding: .utf8) ?? ""
         if name.hasSuffix("/") { continue }
-        switch method {
-        case 0:
-            files[name] = compressed
-        case 8:
-            files[name] = try rawInflate(compressed)
-        default:
-            throw VaultOpenError.unsupported("ZIP compression method \(method) is not supported.")
-        }
+        files[name] = try zipContents(compressed, method: method, budget: &budget)
     }
     return files
 }

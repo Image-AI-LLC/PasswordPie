@@ -203,26 +203,44 @@ public enum BrowserImport {
 
         var result = existing
         var summary = BrowserImportSummary()
-        var managed: [String: [Int]] = [:]
+        // Which existing entry each imported one is. First by folder, so the same account kept in two folders is
+        // never paired the other way round; then by site and account alone, which finds an item whose folder was
+        // renamed in the other app, and one deleted here (the recycle bin keeps the tag, not the group).
+        var inFolder: [String: [Int]] = [:]
+        var anywhere: [String: [Int]] = [:]
         // Active entries go first, so a deleted twin never shadows a live entry with the same key.
         for trashed in [false, true] {
             for (index, entry) in existing.enumerated() where entry.trashed == trashed && isManaged(entry, by: source) {
-                managed[matchKey(entry), default: []].append(index)
+                anywhere[matchKey(entry), default: []].append(index)
+                if source.keepsFolders, !trashed { inFolder[folderKey(entry, source: source), default: []].append(index) }
             }
         }
         var matched = Set<Int>()
+        var pairs = [Int?](repeating: nil, count: imported.count)
+        func claim(_ candidates: [Int]?, for position: Int) {
+            guard let index = candidates?.first(where: { !matched.contains($0) }) else { return }
+            matched.insert(index)
+            pairs[position] = index
+        }
+        if source.keepsFolders {
+            for (position, incoming) in imported.enumerated() {
+                claim(inFolder[folderKey(incoming, source: source)], for: position)
+            }
+        }
+        for (position, incoming) in imported.enumerated() where pairs[position] == nil {
+            claim(anywhere[matchKey(incoming)], for: position)
+        }
 
-        for incoming in imported {
-            let key = matchKey(incoming)
-            if let index = managed[key]?.first {
-                managed[key]?.removeFirst()
-                matched.insert(index)
+        for (position, incoming) in imported.enumerated() {
+            if let index = pairs[position] {
                 if existing[index].trashed { continue }
                 var current = result[index]
+                // An export row without a password, such as a note, says nothing about the one stored here.
+                let passwordChanged = !incoming.password.isEmpty && current.password != incoming.password
                 let otpChanged = !incoming.otp.isEmpty && current.otp != incoming.otp
-                if current.password != incoming.password || otpChanged {
-                    current.password = incoming.password
-                    if !incoming.otp.isEmpty { current.otp = incoming.otp }
+                if passwordChanged || otpChanged {
+                    if passwordChanged { current.password = incoming.password }
+                    if otpChanged { current.otp = incoming.otp }
                     result[index] = current
                     summary.updated += 1
                 } else {
@@ -255,6 +273,12 @@ public enum BrowserImport {
         let inGroup = source.keepsFolders ? entry.groupPath.first == source.label : entry.groupPath == [source.label]
         return (entry.trashed || inGroup)
             && entry.tagList.contains { $0.caseInsensitiveCompare(source.label) == .orderedSame }
+    }
+
+    /// `matchKey` within the folder the entry has inside the source's group.
+    private static func folderKey(_ entry: VaultEntry, source: BrowserImportSource) -> String {
+        let folder = entry.groupPath.first == source.label ? entry.groupPath.dropFirst() : []
+        return folder.joined(separator: "\u{2}") + "\u{3}" + matchKey(entry)
     }
 
     /// The same site and account in a new export. Scheme, `www.`, path and letter case do not matter.

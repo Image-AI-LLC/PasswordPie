@@ -275,6 +275,67 @@ final class ImportSourcesTests: XCTestCase {
         XCTAssertEqual(result.summary, BrowserImportSummary(added: 0, updated: 0, unchanged: 1, removed: 0))
     }
 
+    func testABlankPasswordInTheExportNeverErasesAStoredOne() {
+        for source in [BrowserImportSource.lastPass, .chrome] {
+            var existing = item(source, [], "wifi", "", "")
+            existing.password = "added-later"
+            let result = BrowserImport.merge([item(source, [], "wifi", "", "")], into: [existing], source: source)
+            XCTAssertEqual(result.entries.map(\.password), ["added-later"], source.label)
+            XCTAssertEqual(result.summary, BrowserImportSummary(unchanged: 1), source.label)
+        }
+    }
+
+    func testABlankPasswordStillLetsANewCodeIn() {
+        var existing = item(.bitwarden, [], "a", "u", "kept")
+        existing.otp = "otpauth://totp/a?secret=OLD"
+        var incoming = item(.bitwarden, [], "a", "u", "")
+        incoming.otp = "otpauth://totp/a?secret=NEW"
+        let result = BrowserImport.merge([incoming], into: [existing], source: .bitwarden)
+        XCTAssertEqual(result.entries[0].password, "kept")
+        XCTAssertEqual(result.entries[0].otp, "otpauth://totp/a?secret=NEW")
+        XCTAssertEqual(result.summary, BrowserImportSummary(updated: 1))
+    }
+
+    func testTheSameAccountInTwoFoldersIsMatchedByItsFolder() {
+        let work = item(.onePassword, ["Work"], "a", "u", "work-old")
+        let home = item(.onePassword, ["Personal"], "a", "u", "home")
+        // The next export lists them the other way round, and only Work's password changed.
+        let export = [item(.onePassword, ["Personal"], "a", "u", "home"), item(.onePassword, ["Work"], "a", "u", "work-new")]
+        let result = BrowserImport.merge(export, into: [work, home], source: .onePassword)
+        XCTAssertEqual(result.entries.count, 2)
+        XCTAssertEqual(result.entries.first { $0.id == work.id }?.password, "work-new")
+        XCTAssertEqual(result.entries.first { $0.id == home.id }?.password, "home")
+        XCTAssertEqual(result.summary, BrowserImportSummary(updated: 1, unchanged: 1))
+    }
+
+    func testAnItemWhoseFolderWasRenamedIsStillTheSameItem() {
+        let existing = item(.bitwarden, ["Work"], "a", "u", "old")
+        let result = BrowserImport.merge([item(.bitwarden, ["Office"], "a", "u", "new")], into: [existing], source: .bitwarden)
+        XCTAssertEqual(result.entries.count, 1, "no second copy under the new folder name")
+        XCTAssertEqual(result.entries[0].id, existing.id)
+        XCTAssertEqual(result.entries[0].password, "new")
+        XCTAssertEqual(result.entries[0].groupPath, ["Bitwarden", "Work"], "it stays where it is here")
+    }
+
+    func testAnItemDeletedHereStaysDeletedWhateverFolderItComesBackIn() {
+        // The recycle bin keeps the tag, not the group.
+        var deleted = item(.onePassword, ["Work"], "a", "u", "p")
+        deleted.trashed = true
+        deleted.groupPath = []
+        let result = BrowserImport.merge([item(.onePassword, ["Work"], "a", "u", "p")], into: [deleted], source: .onePassword)
+        XCTAssertEqual(result.entries.count, 1)
+        XCTAssertTrue(result.entries[0].trashed)
+        XCTAssertEqual(result.summary, BrowserImportSummary())
+    }
+
+    func testAnArchiveThatUnpacksToMoreThanItMayIsRefused() throws {
+        let data = try XCTUnwrap(Data(base64Encoded: safariZIP))
+        XCTAssertNoThrow(try unzip(data))
+        XCTAssertThrowsError(try unzip(data, limit: 64)) { error in
+            XCTAssertEqual(error as? VaultOpenError, .unsupported("This file is too large to read."))
+        }
+    }
+
     func testABrowsersMissingSitesStillGoToTheRecycleBin() {
         for source in [BrowserImportSource.chrome, .applePasswords, .firefox, .edge, .brave] {
             let gone = item(source, [], "b", "u", "p")
