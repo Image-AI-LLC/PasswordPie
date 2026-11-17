@@ -542,8 +542,8 @@ needs Accessibility to be granted already and never asks for it.
 |---|---|---|
 | Safari extension | yes | yes (needs profiles for the appex and App Group) |
 | Chrome extension (Chrome Web Store), native host | yes | not in v1 |
-| "Add Chrome Extension…" row, and Chrome's line in Preferences → Browser extensions | yes | not compiled / left out |
-| "Enable Safari Extension…" row, and Safari's line in Preferences → Browser extensions | yes | yes |
+| "Add Chrome Extension…" row, and Chrome's line in Preferences > Browsers | yes | not compiled / left out |
+| "Enable Safari Extension…" row, and Safari's line in Preferences > Browsers | yes | yes |
 | AX fallback for the current URL | yes, if Accessibility is granted | same code; untested in the sandbox (see CHANNELS.md) |
 
 ## Testing

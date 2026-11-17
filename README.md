@@ -12,7 +12,7 @@ A keyboard-first KeePass password manager for Mac that lives in the menu bar.
 
 Requires macOS 14 or later on an Apple Silicon Mac. The DMG and the app are signed with Developer ID (Image AI, LLC) and notarized by Apple. Release notes and checksums are on the [releases page](https://github.com/Image-AI-LLC/PasswordPie/releases).
 
-The downloaded app keeps itself up to date: once a week a separate updater inside it asks GitHub for a newer release, checks the same signature and notarization, and installs it while PasswordPie is locked. PasswordPie itself opens no network connection. Turn it off under Preferences > Updates.
+The downloaded app keeps itself up to date: once a week a separate updater inside it asks GitHub for a newer release, checks the same signature and notarization, and installs it while PasswordPie is locked. PasswordPie itself opens no network connection. Turn it off under Preferences > General.
 
 ## What it does
 
