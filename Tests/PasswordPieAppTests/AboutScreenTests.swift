@@ -34,8 +34,8 @@ final class AboutScreenTests: XCTestCase {
         XCTAssertEqual(AboutCopy.versionLabel(short: "0.1.0", build: "1"), "Version 0.1.0 (1)")
         XCTAssertEqual(AboutCopy.versionLabel(short: "0.1.0", build: "0.1.0"), "Version 0.1.0")
         XCTAssertEqual(AboutCopy.versionLabel(short: " 2.0 ", build: "  "), "Version 2.0")
-        XCTAssertEqual(AboutCopy.versionLabel(short: nil, build: "9"), "Version 0.2.1")
-        XCTAssertEqual(AboutCopy.versionLabel(short: "", build: "9"), "Version 0.2.1")
+        XCTAssertEqual(AboutCopy.versionLabel(short: nil, build: "9"), "Version 0.2.2")
+        XCTAssertEqual(AboutCopy.versionLabel(short: "", build: "9"), "Version 0.2.2")
     }
 
     /// The app and its two extensions are one release: macOS and the stores expect the same version and build in all
