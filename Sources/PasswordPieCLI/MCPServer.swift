@@ -124,9 +124,11 @@ final class MCPServer: @unchecked Sendable {
                 state.lock()
                 calls[key] = nil
                 state.unlock()
+                // Done before the reply: a reply that finds the client gone shuts the server down, which must not wait
+                // for this call.
+                running.leave()
                 // A cancelled call gets no answer (MCP's rule); its command has been ended.
                 if !cancellation.isCancelled { reply(id, result: result) }
-                running.leave()
             }
         case "notifications/cancelled":
             guard let requestID = params["requestId"] else { return }
@@ -141,6 +143,7 @@ final class MCPServer: @unchecked Sendable {
     }
 
     private static func key(_ id: Any) -> String {
+        if id is NSNull { return "null" }
         if let number = id as? NSNumber {
             return CFGetTypeID(number) == CFBooleanGetTypeID() ? "b:\(number.boolValue)" : "n:\(number.stringValue)"
         }

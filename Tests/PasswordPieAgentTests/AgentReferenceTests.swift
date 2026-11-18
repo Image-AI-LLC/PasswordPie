@@ -144,6 +144,10 @@ final class OutputMaskerTests: XCTestCase {
         var short = OutputMasker(values: [Data("s3cret-value".utf8)])
         let ordinary = short.feed(Data("its3c".utf8)) + short.finish(cut: true)
         XCTAssertEqual(String(decoding: ordinary, as: UTF8.self), "its3c")
+        // A shorter value that is the longer one's start does not leave the longer one's rest showing.
+        var nested = OutputMasker(values: [Data("abcdef".utf8), Data("abcdefghij".utf8)])
+        let both = nested.feed(Data("x".utf8)) + nested.feed(Data("abcdefgh".utf8)) + nested.finish(cut: true)
+        XCTAssertEqual(String(decoding: both, as: UTF8.self), "x\(AgentConstants.concealed)")
     }
 
     func testALongerValueWinsOverItsPrefix() {

@@ -68,18 +68,19 @@ public struct OutputMasker {
                 held = Array(buffer[index...])
                 break scanning
             }
-            for value in values where value.count <= remaining && starts(buffer, at: index, with: value, length: value.count) {
-                out += concealed
-                concealedCount += 1
-                index += value.count
-                continue scanning
-            }
-            // The stream was cut in the middle of a value: its start, when long enough to say something, is concealed.
+            // The stream was cut in the middle of a value: its start, when long enough to say something, is concealed. Checked before a
+            // shorter whole value, which would leave the longer one's rest showing.
             if cut, remaining >= minimumLength,
                values.contains(where: { $0.count > remaining && starts(buffer, at: index, with: $0, length: remaining) }) {
                 out += concealed
                 concealedCount += 1
                 index = buffer.count
+                continue scanning
+            }
+            for value in values where value.count <= remaining && starts(buffer, at: index, with: value, length: value.count) {
+                out += concealed
+                concealedCount += 1
+                index += value.count
                 continue scanning
             }
             out.append(byte)
