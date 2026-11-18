@@ -614,7 +614,7 @@ final class AgentProgramRuleTests: XCTestCase {
         let deploy = try XCTUnwrap(binding(["npm", "run", "deploy"], program: tool("npm")))
         XCTAssertEqual(deploy.display, "npm run deploy")
         XCTAssertTrue(deploy.contents.keys.contains { $0.hasSuffix("/package.json") }, "bound to package.json")
-        XCTAssertEqual(deploy.contents.filter { $0.key.hasSuffix("/.npmrc") }.values.first, "absent")
+        XCTAssertEqual(deploy.contents[AgentProgramRule.realPath(project.path)! + "/.npmrc"], "absent")
         XCTAssertNotEqual(deploy.key, binding(["npm", "run", "test"], program: tool("npm"))?.key)
         asks(["npm", "exec", "x"], program: tool("npm"))
         let make = try XCTUnwrap(binding(["make", "release"]))

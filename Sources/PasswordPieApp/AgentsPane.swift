@@ -135,7 +135,7 @@ struct AgentsPane: View {
                     Text("Premium has ended on this Mac: these do nothing until it is back.").font(note).foregroundStyle(.secondary)
                 }
                 if access.standing.isEmpty {
-                    Text(access.anyGrants ? "None on this Mac. The database holds some made on another Mac." : "None. Every use asks.")
+                    Text(access.anyGrants ? "None in force on this Mac. The database still holds some (ended, or made on another Mac)." : "None. Every use asks.")
                         .font(note).foregroundStyle(.secondary)
                 }
                 ForEach(access.standing) { grant in
