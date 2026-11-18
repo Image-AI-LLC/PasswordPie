@@ -1,9 +1,15 @@
 import { ChangeWatch } from './change-watch';
 import { findChangeFields, findLoginFields } from './fields';
+import { pressNext, submitForm } from './form-submit';
 import type { FillMessage, FillResult } from './protocol';
 
 export const WAIT_FOR_FIELDS_MS = 30_000;
 export const POLL_MS = 250;
+/**
+ * An agent's login on a page that shows only the username (a two-step sign-in): how long to wait for a password field
+ * before pressing Next. The password then goes in on the next page, or when the same page shows its field.
+ */
+export const USERNAME_SUBMIT_DELAY_MS = 800;
 
 export interface PageEnv {
   document: Document;
@@ -11,8 +17,8 @@ export interface PageEnv {
   origin: string;
   /** True in the top frame, or in a frame that is same-origin with the top frame. */
   frameAllowed: () => boolean;
-  /** Tells the background the password filled after the answer was sent. */
-  notifyPasswordFilled: () => void;
+  /** Tells the background the password filled after the answer was sent, and whether the form was then sent. */
+  notifyPasswordFilled: (submitted: boolean) => void;
   /** Tells the background the form the new password went into is being submitted. */
   notifyChanged?: () => void;
   now?: () => number;
@@ -33,6 +39,9 @@ export function fillInput(el: HTMLInputElement, value: string): void {
 class Session {
   private usernameEl: HTMLInputElement | null = null;
   private passwordFilled = false;
+  /** An agent's login: the form was sent after the password, by this fill. */
+  private submitted = false;
+  private usernameTimer: ReturnType<typeof setTimeout> | undefined;
   /** Change mode: the boxes already filled, so a later look does not write over what the person typed since. */
   private readonly filled = new Set<HTMLInputElement>();
   /** Change mode: the boxes given the new password. */
@@ -48,6 +57,8 @@ class Session {
     private readonly now: () => number,
     /** A box took the new password. */
     private readonly newPasswordFilled: (el: HTMLInputElement) => void,
+    /** Per document, shared by every fill of it: a form is sent at most once, and Next pressed at most once. */
+    private readonly sent: { password: boolean; username: boolean },
   ) {
     this.deadline = now() + Math.min(msg.waitMs ?? WAIT_FOR_FIELDS_MS, WAIT_FOR_FIELDS_MS);
   }
@@ -55,10 +66,34 @@ class Session {
   /** Fills what is there now; keeps watching for the rest. */
   begin(): FillResult {
     this.attempt();
-    const result = { username: this.usernameEl !== null, password: this.passwordFilled };
+    const result: FillResult = { username: this.usernameEl !== null, password: this.passwordFilled };
+    if (this.submitted) result.submitted = true;
     // A fill with a new password keeps looking: a page may show or enable its confirm box only once the new one is filled.
     if (!this.passwordFilled || this.msg.newPassword !== undefined) this.watch();
+    if (!this.passwordFilled) this.planUsernameSubmit();
     return result;
+  }
+
+  /** An agent's login on a username-only page: press Next if no password field shows up in a moment. Once. */
+  private planUsernameSubmit(): void {
+    if (this.msg.submit !== true || this.usernameEl === null || this.sent.username || this.usernameTimer !== undefined) return;
+    this.usernameTimer = setTimeout(() => {
+      this.usernameTimer = undefined;
+      // Look once more first: a password field shown in the last moments means this page has both steps. If it filled
+      // now, the background hears it here, as from the watch.
+      if (!this.passwordFilled && this.now() <= this.deadline) {
+        this.attempt();
+        if (this.passwordFilled) {
+          this.stop();
+          this.env.notifyPasswordFilled(this.submitted);
+          return;
+        }
+      }
+      const username = this.usernameEl;
+      if (this.passwordFilled || this.sent.username || !username?.isConnected || this.now() > this.deadline) return;
+      // Only a sign-in step's own Next or Sign in button: a lone email field can also be a reset or newsletter form.
+      if (pressNext(username)) this.sent.username = true;
+    }, USERNAME_SUBMIT_DELAY_MS);
   }
 
   stop(): void {
@@ -68,6 +103,8 @@ class Session {
     this.poll = undefined;
     if (this.queued !== undefined) clearTimeout(this.queued);
     this.queued = undefined;
+    if (this.usernameTimer !== undefined) clearTimeout(this.usernameTimer);
+    this.usernameTimer = undefined;
   }
 
   private attempt(): void {
@@ -83,6 +120,11 @@ class Session {
     if (password) {
       fillInput(password, this.msg.password);
       this.passwordFilled = true;
+      // An agent's login asked for the form to be sent: its own button, once, right after the password went in.
+      if (this.msg.submit === true && !this.submitted && !this.sent.password) {
+        this.submitted = submitForm(password);
+        if (this.submitted) this.sent.password = true;
+      }
     }
   }
 
@@ -137,9 +179,11 @@ class Session {
         return;
       }
       this.attempt();
+      // A username-only step that rendered after the fill arrived gets its Next too.
+      if (!this.passwordFilled) this.planUsernameSubmit();
       if (this.passwordFilled && !before) {
         if (!change) this.stop();
-        this.env.notifyPasswordFilled();
+        this.env.notifyPasswordFilled(this.submitted);
       }
     };
     // At most one scan per 100 ms however busy the page is. Only added and removed nodes wake it; a field shown by a
@@ -164,6 +208,12 @@ class Session {
 export class PageFiller {
   private session: Session | undefined;
   private changeWatch: ChangeWatch | undefined;
+  /**
+   * What this page sent for the agent login it is filling: the background may deliver one login's fill twice (the
+   * page's ready and its load), and it is sent once. Another login (a retry) starts afresh.
+   */
+  private sent = { password: false, username: false };
+  private sentFor: string | undefined;
 
   constructor(private readonly env: PageEnv) {}
 
@@ -175,7 +225,11 @@ export class PageFiller {
     const changeWatch =
       msg.newPassword !== undefined && notifyChanged ? new ChangeWatch(this.env.document, msg.newPassword, notifyChanged) : undefined;
     this.changeWatch = changeWatch;
-    this.session = new Session(this.env, msg, this.env.now ?? Date.now, (el) => changeWatch?.add(el));
+    if (msg.loginId !== this.sentFor) {
+      this.sent = { password: false, username: false };
+      this.sentFor = msg.loginId;
+    }
+    this.session = new Session(this.env, msg, this.env.now ?? Date.now, (el) => changeWatch?.add(el), this.sent);
     return this.session.begin();
   }
 

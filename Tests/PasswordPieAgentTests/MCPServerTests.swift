@@ -16,6 +16,8 @@ final class MCPServerTests: XCTestCase {
     private var activity: MemoryActivity!
     private var server: AgentServer!
     private var client: MCPTestClient?
+    /// The browser side for `passwordpie_login`.
+    private var logins = FakeLogins()
     /// Every request the MCP server sent to the app.
     private var sent: [AgentRequest] = []
     private let planted = "planted-secret-4b7d2a"
@@ -49,6 +51,7 @@ final class MCPServerTests: XCTestCase {
     private func startServer(grants: AgentGrantStore) throws {
         server?.stop()
         let broker = VaultBroker(vault: vault, approver: approver, grants: grants, activity: activity) { true }
+        broker.logins = logins
         server = AgentServer(handler: { [unowned self] request, caller in
             sent.append(request)
             return await broker.handle(request, from: caller)
@@ -123,13 +126,13 @@ final class MCPServerTests: XCTestCase {
     // MARK: Tools
 
     /// No tool creates, widens or extends a standing permission, shares an item or unlocks: the server offers exactly
-    /// these four, each description carries the guidance, and the read tool says the value enters the conversation.
-    func testTheToolsAreExactlyTheFourWithTheGuidance() async throws {
+    /// these five, each description carries the guidance, and the read tool says the value enters the conversation.
+    func testTheToolsAreExactlyTheFiveWithTheGuidance() async throws {
         let client = try await connect()
         let id = client.request("tools/list", [:])
         let listed = await response(id)
         let tools = try XCTUnwrap((listed?["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read"])
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read", "passwordpie_login"])
         for tool in tools {
             let description = tool["description"] as? String ?? ""
             XCTAssertTrue(description.contains(AgentConstants.mcpGuidance), "\(tool["name"] ?? "")")
@@ -180,6 +183,45 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(sent.allSatisfy { $0.client == "mcp" })
         XCTAssertTrue(sent.allSatisfy { $0.masking != false })
         XCTAssertEqual(vault.shared.count, 1, "nothing was shared")
+    }
+
+    /// `passwordpie_login`: the same request as `passwordpie login`, the window says "through MCP", and the result is the
+    /// outcome and the overview, never the password.
+    func testLoginFillsThroughTheBrowserAndAnswersWithoutThePassword() async throws {
+        let token = try XCTUnwrap(vault.items.first { $0.title == "Token" })
+        logins.websites[token.id] = ["https://github.com/login"]
+        logins.usernames[token.id] = "octocat"
+        allowEverything()
+        try await connect(clientName: "claude-code")
+        let done = try await call("passwordpie_login", ["ref": "pp://Agents/Token", "submit": true, "reason": "Open billing"])
+        XCTAssertFalse(done.isError, done.text)
+        XCTAssertEqual(done.structured["outcome"] as? String, "submitted")
+        XCTAssertEqual((done.structured["item"] as? [String: Any])?["username"] as? String, "octocat")
+        XCTAssertFalse(done.raw.contains(planted))
+        XCTAssertEqual(logins.plans.first?.submit, true)
+        XCTAssertEqual(sent.last?.type, .login)
+        XCTAssertEqual(sent.last?.client, "mcp")
+        XCTAssertEqual(approver.prompts.first?.via, "through MCP; the client says it is “claude-code 9.9”")
+        XCTAssertEqual(approver.prompts.first?.reason, "Open billing")
+
+        let mismatch = try await call("passwordpie_login", ["ref": "pp://Agents/Token", "url": "https://gitlab.com/"])
+        XCTAssertTrue(mismatch.isError)
+        XCTAssertEqual(mismatch.structured["outcome"] as? String, "site-mismatch")
+        let message = mismatch.structured["message"] as? String ?? ""
+        XCTAssertTrue(message.hasSuffix(AgentConstants.mcpGuidance), message)
+        XCTAssertTrue(message.contains("passwordpie_list"), message)
+        XCTAssertFalse(message.contains("`passwordpie "), "no command-line advice to an MCP agent: \(message)")
+        XCTAssertEqual(approver.prompts.count, 1, "no window for a site the item does not list")
+    }
+
+    func testLoginArgumentMistakesAreRefusedBeforeTheApp() async throws {
+        try await connect()
+        for arguments: [String: Any] in [[:], ["ref": "nope"], ["ref": "pp://Agents/Token", "browser": "firefox"], ["ref": "pp://Agents/Token", "submit": "yes"], ["url": "https://a.example/", "grant": true]] {
+            let refused = try await call("passwordpie_login", arguments)
+            XCTAssertTrue(refused.isError, "\(arguments)")
+            XCTAssertTrue(refused.text.hasPrefix("usage: "), refused.text)
+        }
+        XCTAssertTrue(sent.isEmpty)
     }
 
     /// Phase 2: list shows shared items only, and never a value.

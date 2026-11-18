@@ -279,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// withdraws every approval window.
     private func startAgentAccess() {
         agentAccess = AgentAccess(session: session)
+        agentAccess.attachBrowser(bridge)
         agentAccess.onSilentUse = { [weak self] in self?.showSilentUseDot() }
         agentAccess.onNeedsUnlock = { [weak self] in
             guard let self, self.session.locked else { return }

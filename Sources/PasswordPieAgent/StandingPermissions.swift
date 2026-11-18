@@ -69,24 +69,28 @@ public final class StandingPermissions: AgentGrantStore {
     // MARK: AgentGrantStore
 
     public func grant(covering query: AgentGrantQuery) -> String? {
-        guard !query.raw, query.kind == .use, hasPremium() else { return nil }
+        guard !query.raw, query.kind == .use || query.kind == .login, hasPremium() else { return nil }
         let grants = inForce
+        if query.kind == .login { return AgentGrants.covering(query, program: nil, in: grants)?.description }
         guard !grants.isEmpty, case .bound(let binding) = program(for: query) else { return nil }
         return AgentGrants.covering(query, program: binding, in: grants)?.description
     }
 
     public func grants(for caller: AgentCaller) -> [String] {
         guard hasPremium() else { return [] }
-        return AgentGrants.applying(to: caller, in: inForce).map { "\($0.description): \($0.program?.display ?? "") (\($0.labels.joined(separator: ", ")))" }
+        return AgentGrants.applying(to: caller, in: inForce).map { "\($0.description): \($0.program?.display ?? "login") (\($0.labels.joined(separator: ", ")))" }
     }
 
     public func covers(_ item: AgentItem, for caller: AgentCaller) -> Bool {
         guard hasPremium() else { return false }
-        return AgentGrants.applying(to: caller, in: inForce).contains { $0.secrets.contains { $0.item == item.id } }
+        // `list` says whether running with the item would ask; a login grant does not cover that.
+        return AgentGrants.applying(to: caller, in: inForce).contains { $0.kind == .use && $0.secrets.contains { $0.item == item.id } }
     }
 
     public func lastingChoice(for query: AgentGrantQuery) -> AgentLastingChoice {
-        guard !query.raw, query.kind == .use else { return .notOffered }
+        guard !query.raw else { return .notOffered }
+        if query.kind == .login, query.site != nil { return query.caller.agent == nil ? .sessionOnly : .offered }
+        guard query.kind == .use else { return .notOffered }
         switch program(for: query) {
         case .asksEveryTime(let why):
             return .unavailable(why)
@@ -100,6 +104,7 @@ public final class StandingPermissions: AgentGrantStore {
     @discardableResult
     public func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) -> String? {
         let shown = offered.removeValue(forKey: query.id)
+        if query.kind == .login { return approvedLogin(query, decision: decision) }
         guard case .allowLasting(let selected, let length) = decision, !query.raw, query.kind == .use, hasPremium(),
               length == .session || query.caller.agent != nil,
               // What the owner saw when the window opened, and the files are still the same now.
@@ -110,6 +115,23 @@ public final class StandingPermissions: AgentGrantStore {
             mac: mac, created: clock(), length: length, session: length == .session ? query.caller.sessionKey : nil, kind: query.kind,
             agent: query.caller.grantIdentity, agentName: query.caller.agentName, project: query.caller.project, program: binding,
             secrets: chosen.map(AgentGrantSecret.init), labels: chosen.map(\.logLabel)
+        )
+        pending.append(grant)
+        change({ $0.add(grant) }) { [weak self] _ in self?.pending.removeAll { $0.id == grant.id } }
+        return grant.description
+    }
+
+    /// A login grant: the item the owner picked, its site, this agent; no program and no project to bind.
+    private func approvedLogin(_ query: AgentGrantQuery, decision: AgentApprovalDecision) -> String? {
+        guard case .allowLasting(let selected, let length) = decision, !query.raw, hasPremium(), let site = query.site,
+              length == .session || query.caller.agent != nil else { return nil }
+        let chosen = query.secrets.enumerated().filter { selected.contains($0.offset) }.map(\.element)
+        guard chosen.count == 1 else { return nil }
+        let grant = AgentGrant(
+            mac: mac, created: clock(), length: length, session: length == .session ? query.caller.sessionKey : nil, kind: .login,
+            agent: query.caller.grantIdentity, agentName: query.caller.agentName, project: query.caller.project, program: nil,
+            secrets: chosen.map(AgentGrantSecret.init), labels: chosen.map { "\($0.item.folder.isEmpty ? $0.item.title : $0.item.folderText + "/" + $0.item.title) › login" },
+            site: site
         )
         pending.append(grant)
         change({ $0.add(grant) }) { [weak self] _ in self?.pending.removeAll { $0.id == grant.id } }

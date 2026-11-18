@@ -169,6 +169,11 @@ public struct BridgeLinks: Sendable {
         links[peer]?.focused
     }
 
+    /// When `peer` last sent a tab report.
+    public func reportedAt(_ peer: BridgePeer) -> Date? {
+        links[peer]?.reportedAt
+    }
+
     /// The web page `peer` last reported as its active tab, if it is less than `maxAge` old.
     public func url(of peer: BridgePeer, now: Date, maxAge: TimeInterval) -> String? {
         guard let link = links[peer], let url = link.url, let at = link.urlAt, now.timeIntervalSince(at) <= maxAge else { return nil }
@@ -296,6 +301,11 @@ public struct PendingFill: Equatable, Sendable {
     /// Reset Password only: the account's new password, not used yet, for the page's new and confirm boxes. `website` is
     /// then the reset address. Nil for every ordinary fill.
     public let newPassword: String?
+    #if PP_DIRECT
+    /// An agent's approved login (`passwordpie login`, docs/AGENTS.md "Website login"). The tab that takes it is told to
+    /// report how it went, and to send the form when the agent asked. Nil for every fill the owner picked.
+    public var agent: AgentFillTicket?
+    #endif
 
     public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date, link: Int? = nil, newPassword: String? = nil) {
         guard let site = BrowserSite(url: website) else { return nil }
@@ -336,6 +346,55 @@ public struct PendingCode: Equatable, Sendable {
     /// A code just added from a scan: the next `tab` report of its site says to watch for the code field, since no fill
     /// started that watch. Said once.
     var announce = false
+    #if PP_DIRECT
+    /// The agent login whose fill this code follows: whether it went in is part of the agent's answer.
+    var agentToken: UUID?
+    #endif
+}
+
+#if PP_DIRECT
+/// An agent's login, approved by the owner. Holds no credential: the account is the pending fill's.
+public struct AgentFillTicket: Equatable, Sendable {
+    public let token: UUID
+    /// Press the form's own button once the password is in.
+    public let submit: Bool
+
+    public init(token: UUID, submit: Bool) {
+        self.token = token
+        self.submit = submit
+    }
+}
+
+/// A tab took an agent's fill; its `login-result` is expected from that connection and site.
+public struct PendingAgentResult: Equatable, Sendable {
+    public let token: UUID
+    public let browser: BridgeBrowser
+    public let link: Int
+    public let site: BrowserSite
+    public let created: Date
+}
+
+/// What the extension says of an agent's fill (`login-result`).
+public enum AgentFillResult: String, Sendable, CaseIterable {
+    /// The password went in; the form was not sent.
+    case filled
+    /// The password went in and the form's button was pressed.
+    case submitted
+    /// No password field appeared while the fill lasted.
+    case noFields = "no-fields"
+}
+#endif
+
+/// What happened to an agent's fill, for the app to answer the agent. Carries no credential. Only the direct app makes
+/// agent fills, so the App Store app never sees one.
+public enum AgentFillEvent: Equatable, Sendable {
+    /// A tab of the fill's site took it.
+    case taken(UUID)
+    /// The fill's connection reported a tab in front on another site (nil: not a website): the agent's tab is not in front.
+    case otherSite(UUID, site: String?)
+    case result(UUID, String)
+    /// The code request after the fill: the code went in, or not for want of Premium.
+    case code(UUID, filled: Bool)
 }
 
 /// At most one pending fill. It is used once, by the first matching tab report, and dropped after 30 seconds.
@@ -351,6 +410,11 @@ public struct PendingFillStore: Sendable {
     public private(set) var pending: PendingFill?
     public private(set) var code: PendingCode?
     public private(set) var change: PendingChange?
+    #if PP_DIRECT
+    public private(set) var agentResult: PendingAgentResult?
+    /// From the moment a tab took an agent's fill: the fill's own 30 s for the fields to appear, and a little more.
+    public static let agentResultLifetime: TimeInterval = 35
+    #endif
 
     public init() {}
 
@@ -365,7 +429,47 @@ public struct PendingFillStore: Sendable {
         pending = nil
         code = nil
         change = nil
+        #if PP_DIRECT
+        agentResult = nil
+        #endif
     }
+
+    #if PP_DIRECT
+    /// Drops the pending fill if it is the agent login `token`: it was withdrawn, or its tab is not in front.
+    public mutating func withdrawAgentFill(_ token: UUID) {
+        if pending?.agent?.token == token { pending = nil }
+        if code?.agentToken == token { code = nil }
+        if agentResult?.token == token { agentResult = nil }
+    }
+
+    mutating func expectAgentResult(_ result: PendingAgentResult) {
+        agentResult = result
+    }
+
+    /// The agent login waiting for its result, if `browser`'s connection `link` reports from a page of its site in time.
+    /// Taking it deletes it.
+    mutating func takeAgentResult(browser: BridgeBrowser, link: Int, page: BrowserSite, loginId: String?, now: Date) -> PendingAgentResult? {
+        guard let waiting = agentResult, loginId == waiting.token.uuidString else { return nil }
+        let age = now.timeIntervalSince(waiting.created)
+        guard age <= Self.agentResultLifetime, age >= -1 else {
+            agentResult = nil
+            return nil
+        }
+        guard waiting.browser == browser, waiting.link == link, waiting.site.allowsFill(on: page) else { return nil }
+        agentResult = nil
+        return waiting
+    }
+
+    /// The pending fill is an agent's, alive, for `browser`, and this report is from the connection it is for: the one
+    /// named, or with none named any that does not say its profile is elsewhere. Its token, else nil.
+    func agentFillWatching(browser: BridgeBrowser, link: Int, focused: Bool?, now: Date) -> PendingFill? {
+        guard let fill = pending, fill.agent != nil, fill.browser == browser else { return nil }
+        let age = now.timeIntervalSince(fill.created)
+        guard age <= Self.lifetime, age >= -1 else { return nil }
+        if let wanted = fill.link { return wanted == link ? fill : nil }
+        return focused == false ? nil : fill
+    }
+    #endif
 
     /// A new password was just handed to a page; `change` is what its report will be matched against. A newer one
     /// replaces the one before.
@@ -451,6 +555,12 @@ public struct BridgeRequest: Decodable, Sendable {
     public var focused: Bool?
     /// `scan` only: the text of the QR code the user scanned on the page. Never logged or kept by the bridge.
     public var otpauth: String?
+    #if PP_DIRECT
+    /// `login-result` only: `filled`, `submitted` or `no-fields`.
+    public var result: String?
+    /// `login-result` only: the `loginId` of the fill it is about.
+    public var loginId: String?
+    #endif
 }
 
 public struct BridgeFill: Codable, Equatable, Sendable {
@@ -465,6 +575,15 @@ public struct BridgeFill: Codable, Equatable, Sendable {
     /// saved one, for the box that asks for the current password. Left out of every other fill. The extension never
     /// submits the form.
     public var newPassword: String?
+    #if PP_DIRECT
+    /// An agent's login only: press the form's own button once the password is in.
+    public var submit: Bool?
+    /// An agent's login only: say how it went with a `login-result` request.
+    public var report: Bool?
+    /// An agent's login only: which one, echoed in its `login-result`, so word about an older fill is never taken for a
+    /// newer one on the same site. A random id: it says nothing about the account.
+    public var loginId: String?
+    #endif
 }
 
 /// The answer to `code`: the current two-step code for the page.
@@ -600,6 +719,21 @@ public struct BridgeState: Sendable {
         links.forget(browser)
     }
 
+    /// The page `peer` last reported, and whether it was a web page at all, if it reported since `since`.
+    public func report(of peer: BridgePeer, since: Date) -> (url: String?, at: Date)? {
+        guard let at = links.reportedAt(peer), at >= since else { return nil }
+        return (links.url(of: peer, now: at, maxAge: 0), at)
+    }
+
+    #if PP_DIRECT
+    /// The agent's fill is for this connection and its tab in front is elsewhere: drop the fill and say so.
+    private mutating func agentTabElsewhere(browser: BridgeBrowser, link: Int, focused: Bool?, site: String?, now: Date, agent: ((AgentFillEvent) -> Void)?) {
+        guard let fill = pending.agentFillWatching(browser: browser, link: link, focused: focused, now: now), let token = fill.agent?.token else { return }
+        pending.withdrawAgentFill(token)
+        agent?(.otherSite(token, site: site))
+    }
+    #endif
+
     /// Answers one request. `entry` looks up an account by id in the unlocked vault. `codeAllowed` is the Premium check
     /// for a two-step code: whether this Mac has Premium (docs/ACCOUNTS.md, "Who decides"). The extension carries no proof
     /// of its own, so a `code` request says nothing about Premium. `scan` takes a checked QR code with the origin of the page
@@ -614,6 +748,7 @@ public struct BridgeState: Sendable {
         codeAllowed: () -> Bool = { false },
         scan: ((ScannedOTP, String?, BridgeBrowser) -> Void)? = nil,
         changed: ((UUID) -> Void)? = nil,
+        agent: ((AgentFillEvent) -> Void)? = nil,
         entry: (UUID) -> VaultEntry?
     ) -> BridgeResponse {
         if locked { pending.clear() }
@@ -631,9 +766,20 @@ public struct BridgeState: Sendable {
             let url = request.url ?? ""
             guard let page = BrowserSite(url: url) else {
                 links.reported(peer, url: nil, focused: request.focused, now: now)
+                #if PP_DIRECT
+                if !locked { agentTabElsewhere(browser: browser, link: link, focused: links.focused(peer), site: nil, now: now, agent: agent) }
+                #endif
                 return BridgeResponse(type: "tab", id: request.id)
             }
             links.reported(peer, url: url, focused: request.focused, now: now)
+            #if PP_DIRECT
+            // An agent's fill is answered only on its own site: a report of another site from its connection says the
+            // agent's tab is not in front, and the fill is dropped rather than wait for a tab to be switched.
+            if !locked, let fill = pending.agentFillWatching(browser: browser, link: link, focused: links.focused(peer), now: now),
+               !fill.site.allowsFill(on: page) {
+                agentTabElsewhere(browser: browser, link: link, focused: links.focused(peer), site: page.key, now: now, agent: agent)
+            }
+            #endif
             guard !locked,
                   let fill = pending.take(browser: browser, link: link, focused: links.focused(peer), pageURL: url, now: now),
                   let account = entry(fill.entryID),
@@ -647,13 +793,17 @@ public struct BridgeState: Sendable {
             }
             let left = PendingFillStore.lifetime - now.timeIntervalSince(fill.created)
             let hasCode = OneTimeCodes.hasCode(account)
-            pending.expectCode(hasCode ? PendingCode(entryID: account.id, browser: browser, link: link, site: page, created: now) : nil)
+            var code = hasCode ? PendingCode(entryID: account.id, browser: browser, link: link, site: page, created: now) : nil
+            #if PP_DIRECT
+            code?.agentToken = fill.agent?.token
+            #endif
+            pending.expectCode(code)
             // A new password that became the saved one since the pick is no longer new: the fill is an ordinary one.
             let newPassword = fill.newPassword.flatMap { $0.isEmpty || $0 == account.password ? nil : $0 }
             if newPassword != nil {
                 pending.expectChange(PendingChange(entryID: account.id, browser: browser, link: link, site: fill.site, created: now))
             }
-            let credentials = BridgeFill(
+            var credentials = BridgeFill(
                 origin: page.origin,
                 username: account.username,
                 password: account.password,
@@ -661,6 +811,15 @@ public struct BridgeState: Sendable {
                 otp: hasCode ? true : nil,
                 newPassword: newPassword
             )
+            #if PP_DIRECT
+            if let ticket = fill.agent {
+                credentials.submit = ticket.submit ? true : nil
+                credentials.report = true
+                credentials.loginId = ticket.token.uuidString
+                pending.expectAgentResult(PendingAgentResult(token: ticket.token, browser: browser, link: link, site: page, created: now))
+                agent?(.taken(ticket.token))
+            }
+            #endif
             return BridgeResponse(type: "tab", id: request.id, fill: credentials)
         case "changed":
             // The page that got a new password says its form was sent. Said the same way whatever is waiting, and whether
@@ -684,11 +843,17 @@ public struct BridgeState: Sendable {
             }
             guard codeAllowed(),
                   case .available(let settings) = OneTimeCodes.access(for: account, hasPremium: true) else {
+                #if PP_DIRECT
+                if let token = wanted.agentToken { agent?(.code(token, filled: false)) }
+                #endif
                 return BridgeResponse(type: "code", id: request.id, premium: false)
             }
             let period = max(settings.period, 1)
             let elapsed = Int(now.timeIntervalSince1970.rounded(.down)) % period
             let code = BridgeCode(origin: page.origin, code: OneTimeCodes.code(settings: settings, at: now), expiresIn: period - elapsed)
+            #if PP_DIRECT
+            if let token = wanted.agentToken { agent?(.code(token, filled: true)) }
+            #endif
             return BridgeResponse(type: "code", id: request.id, otp: code)
         case "upgrade":
             // "Upgrade" in the page's note about Premium. The app opens its Premium window; the answer only acknowledges
@@ -706,6 +871,17 @@ public struct BridgeState: Sendable {
             case .failure:
                 return .error("bad-otp", id: request.id)
             }
+        #if PP_DIRECT
+        case "login-result":
+            // How an agent's fill went. Counted once, from the connection that took it, from a page of its site, while it
+            // lasts; the answer is the same whatever was waiting, locked or not, and carries nothing.
+            if !locked, let result = request.result.flatMap(AgentFillResult.init(rawValue:)),
+               let page = BrowserSite(url: request.url ?? ""),
+               let waiting = pending.takeAgentResult(browser: browser, link: link, page: page, loginId: request.loginId, now: now) {
+                agent?(.result(waiting.token, result.rawValue))
+            }
+            return BridgeResponse(type: "login-result", id: request.id)
+        #endif
         case "show":
             // The toolbar button. The app opens its panel; the answer only acknowledges it.
             links.noted(peer, now: now)

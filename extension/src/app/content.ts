@@ -21,7 +21,7 @@ export default defineContentScript({
       document,
       origin: location.origin,
       frameAllowed: () => sameOriginWithTop(window),
-      notifyPasswordFilled: () => send({ type: 'filled', password: true }),
+      notifyPasswordFilled: (submitted) => send(submitted ? { type: 'filled', password: true, submitted: true } : { type: 'filled', password: true }),
       notifyChanged: () => send({ type: 'changed' }),
     });
 

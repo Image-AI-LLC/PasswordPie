@@ -1,7 +1,7 @@
 // Message shapes shared by the background, the content script and the native side.
 // The native protocol is in docs/BROWSER_EXTENSION.md, "Messages".
 
-export const EXTENSION_VERSION = '0.6.0'; // manifest.ts version (tests/manifest.test.ts)
+export const EXTENSION_VERSION = '0.7.0'; // manifest.ts version (tests/manifest.test.ts)
 export const PROTOCOL_VERSION = 1;
 export const NATIVE_APP = 'com.passwordpie';
 /** Where the toolbar button goes when PasswordPie is not installed or cannot be started. */
@@ -19,6 +19,9 @@ export const CHANGE_WATCH_MS = 600_000;
 
 export type TabReason = 'activated' | 'updated' | 'focus' | 'poke' | 'startup';
 
+/** How an agent's login went: the password went in, and the form was sent or not; or no password field appeared. */
+export type LoginResult = 'filled' | 'submitted' | 'no-fields';
+
 export interface Credentials {
   origin: string;
   username: string;
@@ -35,6 +38,10 @@ export interface FillMessage extends Credentials {
   type: 'fill';
   /** How long the frame may wait for fields to appear: what is left of the fill's lifetime. */
   waitMs?: number;
+  /** An agent's login that asked for it: press the form's own button once the password is in. */
+  submit?: boolean;
+  /** An agent's login: which one. A page sends at most once per login, however many times its fill arrives. */
+  loginId?: string;
 }
 
 /** content script → background, the answer to a FillMessage */
@@ -42,6 +49,8 @@ export interface FillResult {
   username: boolean;
   /** The password went in. For a fill with `newPassword`: the new one did. */
   password: boolean;
+  /** The form's button was pressed (a fill with `submit` only). */
+  submitted?: boolean;
 }
 
 /** background → content script: look for a two-step code field for a while. Carries no secret. */
@@ -70,7 +79,7 @@ export type FrameMessage = WatchCodeMessage | CodeMessage | CodeHintMessage;
 export type ContentMessage =
   | { type: 'focus' }
   | { type: 'ready' }
-  | { type: 'filled'; password: true }
+  | { type: 'filled'; password: true; submitted?: boolean }
   /** The form the new password was filled into is being submitted. Carries nothing; sent once per fill. */
   | { type: 'changed' }
   /** An empty code field appeared while the frame was watching. */
@@ -94,6 +103,12 @@ export interface TabFill extends Credentials {
   lifetimeMs: number;
   /** The account has a two-step code: watch for its field. */
   otp: boolean;
+  /** An agent's login: press the form's button once the password is in. Left out of every other fill. */
+  submit?: true;
+  /** An agent's login: tell the app how it went (`login-result`). Left out of every other fill. */
+  report?: true;
+  /** An agent's login: its id, echoed in `login-result`. */
+  loginId?: string;
 }
 
 /** The credentials in a `tab` answer, if it carries a well-formed fill. */
@@ -101,14 +116,25 @@ export function fillOfTabAnswer(value: unknown): TabFill | undefined {
   if (!isRecord(value) || value.type !== 'tab') return undefined;
   const fill = value.fill;
   if (!isRecord(fill)) return undefined;
-  const { origin, username, password, expiresIn, otp } = fill;
+  const { origin, username, password, expiresIn, otp, submit, report, loginId } = fill;
   if (typeof origin !== 'string' || typeof username !== 'string' || typeof password !== 'string') return undefined;
   const newPassword = newPasswordOf(fill);
   const lifetimeMs =
     typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn > 0
       ? Math.min(expiresIn * 1000, FILL_LIFETIME_MS)
       : FILL_LIFETIME_MS;
-  return { origin, username, password, ...(newPassword === undefined ? {} : { newPassword }), lifetimeMs, otp: otp === true };
+  return {
+    origin,
+    username,
+    password,
+    ...(newPassword === undefined ? {} : { newPassword }),
+    lifetimeMs,
+    otp: otp === true,
+    // A change-password fill is the person's own: it is never sent for them.
+    ...(submit === true && newPassword === undefined ? { submit: true as const } : {}),
+    ...(report === true ? { report: true as const } : {}),
+    ...(report === true && typeof loginId === 'string' && loginId !== '' ? { loginId } : {}),
+  };
 }
 
 /** A fill's `newPassword`. Anything but a non-empty string is none: the fill is then a plain one. */
@@ -164,19 +190,23 @@ export function parseFillMessage(value: unknown): FillMessage | undefined {
   const newPassword = newPasswordOf(value);
   if (newPassword !== undefined) msg.newPassword = newPassword;
   if (typeof waitMs === 'number' && Number.isFinite(waitMs) && waitMs >= 0) msg.waitMs = waitMs;
+  if (value.submit === true && newPassword === undefined) msg.submit = true;
+  if (typeof value.loginId === 'string' && value.loginId !== '') msg.loginId = value.loginId;
   return msg;
 }
 
 export function parseFillResult(value: unknown): FillResult | undefined {
   if (!isRecord(value) || typeof value.username !== 'boolean' || typeof value.password !== 'boolean') return undefined;
-  return { username: value.username, password: value.password };
+  return { username: value.username, password: value.password, ...(value.submitted === true ? { submitted: true } : {}) };
 }
 
 export function parseContentMessage(value: unknown): ContentMessage | undefined {
   if (!isRecord(value)) return undefined;
   if (value.type === 'focus') return { type: 'focus' };
   if (value.type === 'ready') return { type: 'ready' };
-  if (value.type === 'filled' && value.password === true) return { type: 'filled', password: true };
+  if (value.type === 'filled' && value.password === true) {
+    return value.submitted === true ? { type: 'filled', password: true, submitted: true } : { type: 'filled', password: true };
+  }
   if (value.type === 'changed') return { type: 'changed' };
   if (value.type === 'code-field') return { type: 'code-field' };
   if (value.type === 'upgrade') return { type: 'upgrade' };

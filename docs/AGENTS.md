@@ -12,8 +12,9 @@ Direct download only (`#if PP_DIRECT`, and the App Store app links none of it): 
 **Status.** The app serves `agent.sock` while Preferences > Agents is on, bundles the tool in `Contents/Helpers`, and
 asks the owner for every use (Allow Once, Show to Agent) unless a standing permission covers it ("Allow for 7 days ▾",
 Premium). `passwordpie mcp` serves the same requests as MCP tools, and every run watches the command lines under it for
-the values it handed out. What the owner sees is in "Agents use a secret without seeing it" in [UX.md](UX.md). Website
-login for agents comes next.
+the values it handed out. An agent can also log in on a website in the owner's browser (`passwordpie login`, or the
+`passwordpie_login` MCP tool: "Website login" below). What the owner sees is in "Agents use a secret without seeing it"
+and "Agents log in on a website" in [UX.md](UX.md).
 
 Free or Premium: using a secret with an approval each time is free, and so is a raw read. Standing permissions are
 Premium, checked by the app's own `appHasPremium()`; nothing in a request carries Premium state.
@@ -22,7 +23,8 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 
 | Piece | Where | What it does |
 |---|---|---|
-| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
+| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
+| Website login | `PasswordPieAgent/AgentLogin.swift`, `VaultBroker+Login.swift`; the app's `BrowserBridge+AgentLogin.swift`; the bridge's rules in `PasswordPieCore/BrowserFill.swift` | The broker's `login`, and the browser side that turns an approval into a pending fill |
 | Argument watch | `PasswordPieAgent/ArgumentWatch.swift` | Looks for handed-out values on the command lines under a run |
 | MCP setup lines | `PasswordPieAgent/AgentMCPSetup.swift` | What the Agents pane shows for Claude Code, Codex and Cursor |
 | Messages, references, `.env.pp`, refusal lines, output masking | target `PasswordPieAgent` (`AgentProtocol`, `AgentReference`, `AgentEnvFile`, `AgentErrors`, `OutputMasker`) | Shared by the app and the tool |
@@ -77,8 +79,8 @@ Rules it keeps:
 | Two-step codes | `…/otp` answers `not-available` in this version; the fields that hold a two-step secret (`otp`, `TimeOtp-*`, `TOTP Seed`, `TOTP Settings`) are not offered as custom fields |
 
 The seams for later work: `AgentGrantStore` (`lastingChoice(for:)` says whether the window offers a lasting choice;
-`approved(_:decision:)` records one); `AgentRequestKind.login` (reserved for website login, answered `usage` for now; a
-grant carries its `kind`, so login grants can be added beside `use` ones).
+`approved(_:decision:)` records one). A grant carries its `kind`: `use` grants are bound as below, `login` grants to the
+item, the site and the agent ("Website login").
 
 ## Standing permissions
 
@@ -98,7 +100,11 @@ A grant covers a request only when every binding matches:
 | Program | `AgentProgramBinding` (below) | A grant for the release script is not a grant for `curl` |
 | Time | `ends`; for a session grant also the agent session (`sessionKey`: pid and start time) | Nothing is forever |
 | Mac | `AgentMacIdentity`: SHA-256 of PasswordPie's label and the hardware UUID, 16 bytes in hex | The same file opened on another Mac does not use it |
-| Kind | `use` | A run grant is not a website login grant |
+| Kind | `use`, or `login` | A run grant is not a website login grant, nor the other way round |
+
+A `login` grant ("Website login", step 5) is bound to the items, the agent, the time, the Mac and the **site**
+(registrable domain) instead of the project and the program: a login runs no command. It does not bind `--submit`, the
+browser or the Chrome profile: it lets that agent log in with that account on that site again.
 
 A request is covered when one grant names every secret it asks for (a subset of the grant's), with the same delivery
 and name each.
@@ -242,6 +248,7 @@ credential: the tool holds no token.
 | `read` | one secret with `as: "shown"`, `reason`, `wait` | `secrets` with the one value |
 | `list` | `query`, `wait` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Never a value |
 | `status` | none | `status`: `locked`, `access`, `agent`, `project`, `grants` |
+| `login` | `secrets` with at most one `{ref, as: "fill"}`, `url`, `submit`, `browser` (`chrome`, `safari`), `reason`, `wait` | `login` (below), `by` (`once`). Never a value |
 | `argument` | one secret (`name`, `ref`, `as`) and `program`: the argument watch saw its value on that program's command line | nothing (one activity line). Never the command line, which holds the value |
 | `error` | | `code` (below), `ref` (the reference it is about, as the agent typed it), `refs` (for `ambiguous`) |
 
@@ -285,6 +292,7 @@ literally. `#` starts a comment, `export ` is allowed. No shell expansion; one p
     passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
     passwordpie list [QUERY] [--json] [--wait SECONDS]
     passwordpie status [--json]
+    passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
 
 **`run`** asks the app for the values, starts `COMMAND` as its child with them, and waits.
 
@@ -352,6 +360,7 @@ process is one agent session, and the agent is its parent in the process tree.
 | `passwordpie_list` | `query?`, `cwd` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Shared items only, never a value |
 | `passwordpie_run` | `command` (an argument array), `cwd`, `env?` `{NAME: ref}`, `files?` `{NAME: ref}`, `stdin?` ref, `envFile?` (relative to `cwd`), `reason?`, `timeoutSeconds?` (default 600, at most 3600) | `exitCode`, `stdout`, `stderr`, `concealed` (how many values were replaced), `truncated`, and when there are any `timedOut`, `warnings` |
 | `passwordpie_read` | `ref`, `reason?` | `value` (UTF-8 text) or `base64`. Asks every time, "Show to Agent" |
+| `passwordpie_login` | `ref?`, `url?` (one of the two), `submit?`, `browser?` (`chrome`, `safari`), `reason?` | The `login` answer ("Website login"): `outcome`, `item` (title, username, websites; only once the owner allowed it), `site`, `browser`, `code`, `detail`, and `message`, the tool's line. An outcome other than `filled` or `submitted` comes with `isError`. Never a value |
 
 - **Errors** are tool results with `isError`, whose text starts with the code's name, as the exit codes are named:
   `denied: PasswordPie: The owner denied this request. …`. They say what to do in the tools' terms ("Check the name with
@@ -362,8 +371,8 @@ process is one agent session, and the agent is its parent in the process tree.
   rather than ignored.
 - **The project.** The app reads the tool's working folder from the kernel, as for the command-line tool. The server
   moves to the folder a tool call names for as long as the app takes to answer it, so the app's reading is that folder;
-  one request goes to the app at a time. The command then starts in that folder. `status` and `read` name none: the
-  folder the agent started the server in.
+  one request goes to the app at a time. The command then starts in that folder. `status`, `read` and `login` name
+  none: the folder the agent started the server in.
 - **The command** runs without a shell, in a process group of its own, with an empty standard input unless a secret goes
   there (never the server's, which carries the MCP messages), its output captured and masked as by `run`. Each stream
   keeps its first and last 32 KiB with a line saying how much was cut between. Output cut off inside a value (a
@@ -394,6 +403,10 @@ is the party asking.
 | 71 | `access-off` | Agent access is off in Preferences |
 | 72 | `too-many-requests` | Too many denied prompts from this agent session |
 | 73 | `premium-required` | Reserved for Premium-only parts |
+| 74 | `no-matching-tab` | `login`: the tab in front is not on the site, or no extension speaks for the browser |
+| 75 | `site-mismatch` | `login`: the site asked for is not one of the item's websites; nobody was asked |
+| 76 | `timed-out` | `login`: no tab took the fill within 30 seconds |
+| 77 | `no-fields` | `login`: the tab took the fill, but no password field appeared within 30 seconds |
 
 Each refusal prints one line (control characters from what the agent typed are percent-encoded) on standard error that
 says what to do, for the agent to relay, and ends with "Do not ask
@@ -404,13 +417,84 @@ agent itself sent, so `not-available` never says which of its two cases it is:
     item exists, ask the owner to choose Share with Agents on it (or its folder) in PasswordPie. Do not ask the owner to
     paste the value into the conversation.
 
+## Website login
+
+`passwordpie login` fills an item's username and password into the sign-in form of the tab in front of the owner's
+browser, through PasswordPie's extension, after the owner approves; `--submit` also presses the form's own button. The
+agent gets the outcome and the item's overview (title, username, websites), never the password or the code. What the
+owner sees is "Agents log in on a website" in [UX.md](UX.md); the extension's side is "Agent logins" in
+[BROWSER_EXTENSION.md](BROWSER_EXTENSION.md).
+
+    → {"type":"login","id":2,"secrets":[{"ref":"pp://Web/GitHub","as":"fill"}],"submit":true,"reason":"Open billing","wait":60}
+    ← {"type":"login","id":2,"by":"once","login":{"outcome":"submitted","site":"github.com","browser":"Google Chrome",
+       "code":"none","item":{"title":"GitHub","username":"octocat","websites":["https://github.com/login"]}}}
+
+How the broker answers one (`VaultBroker+Login.swift`), in order:
+
+1. **Which item.** The reference, resolved among shared items only (unshared and nonexistent answer the same
+   `not-available`); a field reference (`…/username`) is `usage`. Without a reference, `--url` offers every shared item
+   with a website on that page's site, and the owner picks one in the window.
+2. **Which browser.** `--browser`, else Chrome when its extension is connected, else Safari when its extension is on.
+   In Chrome, the profile in front, or the one used last when Chrome is not the app in front (the agent's terminal often
+   is). None: `no-matching-tab` before anyone is asked.
+3. **The tab in front.** The extension is poked and given 1.5 seconds to report its tab.
+4. **Which website.** The fill is bound to one of the item's websites (or its reset link), by the extension's same-site
+   rule: registrable domain, no step down from https. With `--url`: the item's website for that page, else
+   `site-mismatch`. Without: the website for the reported tab, else `site-mismatch`; with no report, the item's main
+   website. A tab known to be elsewhere (another site, or not a website) is `no-matching-tab`. All of these are answered
+   before any prompt, and carry no overview and never the site of the owner's tab (only the site the agent asked for):
+   without an approval, `login` tells the agent nothing it did not already know.
+5. **A standing permission** for this item, this site and this agent (a `login` grant, Premium) lets it through with no
+   window, in any project: a login runs no command and the browser serves every project, so a grant is bound to the
+   item, the site (registrable domain) and the agent instead of a project and a program. Only with a reference or a
+   single item: a choice among several is always the owner's. A login grant never covers `run`, and `list`'s `covered`
+   is about `run`. It does not bind `--submit`, the browser or the profile. A login let through this way shows the
+   menu-bar dot, and its activity line reads "filled and sent, by 7 days, github.com" (the one that made the grant:
+   "…, and for 7 days, github.com").
+6. **The prompt**: the site, the account (title, folder, username), the browser and profile, whether the form is sent,
+   the two-step code line, the agent and its reason. Allow Once, or "Allow for 7 days ▾" (Premium), each with Touch ID.
+   Rate limit, one prompt per session and the 2-minute timeout are as for `use`.
+7. **The fill.** After the approval the item must still be shared and still list the site. The browser side makes a
+   pending fill for that browser, connection and website, marked as the agent's, and waits for how it went.
+8. **One activity line**, with the outcome (`filled`, `filled and sent`, `no matching tab`, `site mismatch`, `no tab
+   took the fill`, `no sign-in fields`, or the refusal; with ", by 7 days, github.com" when a standing permission let it
+   through, ", and for 7 days, github.com" when the window made one), the item, and the delivery `fill <browser> <site>`.
+
+The browser side (`BrowserBridge+AgentLogin.swift`) ends the wait:
+
+| What happens | Answer |
+|---|---|
+| The extension reports `submitted` or `filled` | that outcome |
+| It reports `no-fields` (no password field within the fill's 30 seconds) | `no-fields` |
+| The fill's connection reports a tab of another site, or not a website | `no-matching-tab`, and the fill is dropped at once: it is never left for a tab switch |
+| No tab took it within 30 seconds | `timed-out`, and the fill is dropped |
+| A tab took it and said nothing within 35 seconds (an extension from before `login-result`) | `filled`, with a word that the extension did not say |
+| The vault locks | `locked` |
+| The tool hangs up | a fill no tab has taken is withdrawn; one a tab took finishes its page |
+| A newer agent login | the older one answers `timed-out` if no tab took it, `no-fields` if a tab took it and had not said the password went in (an extension before 0.7.0 never says), else what it reported (the code then `not-filled`) |
+| Agent access is turned off | a fill no tab has taken is withdrawn; the socket closes, so the tool says PasswordPie did not answer, and Activity records `agent access turned off`. A tab that already took the fill finishes its page, two-step code included, and Activity records what is known of it. Turning it off while the window is up fills nothing; the window closes and Activity records `timed out` |
+
+**Two-step code.** The fill carries `otp: true` when the item has a code, as for people, and the page's `code` request is
+answered under the same rule: this Mac's Premium (`browserCodeAllowed`), nothing in a request. The answer's `code`:
+`none` (no code), `premium-required` (not filled), `filled`, `not-filled` (the form was sent and no code field asked
+within 30 seconds), or `waiting` (the form was not sent, or the request ended first; the code goes in if the site asks within 30 seconds). The code
+itself never reaches the agent.
+
+Decision: the outcome of a login that ran is an answer, not an error, so it can carry the item's overview; the tool maps
+it to exit codes 74 to 77. `timed-out` (no tab took the fill) is not `timeout` (nobody answered the prompt).
+
+Decision: a report of another site from the fill's own connection ends the login at once with `no-matching-tab`, rather
+than waiting for the 30 seconds to run out. The agent opened the page before asking; a tab that is elsewhere when the
+fill is made is not going to be the right one by itself, and PasswordPie never switches tabs.
+
 ## Activity
 
-Every `run`, `read` and `list` request is one JSON line in `~/Library/Application Support/PasswordPie/agent-activity.jsonl`,
+Every `run`, `read`, `list` and `login` request is one JSON line in `~/Library/Application Support/PasswordPie/agent-activity.jsonl`,
 mode 0600, whether it was allowed or not: time, kind, outcome (allowed once, allowed and granted, allowed by a standing
 permission and which, shown to the agent, denied, timed out, locked, not available, ambiguous, too many requests, not
-understood, and from the argument watch, value seen on a command line), `via` (`MCP` through the MCP server), agent and signature,
-the agent's pid, project, command, items and fields (or the reference as typed when it found nothing), deliveries, the
+understood, from the argument watch, value seen on a command line, and for a login its outcome), `via` (`MCP` through the
+MCP server), agent and signature,
+the agent's pid, project, command, items and fields (or the reference as typed when it found nothing; a login's `--url` only as its origin, never its path or query), deliveries, the
 agent's reason, and the walked chain (pid, path and signature of each ancestor). Never a value. Lines older than 90 days
 are dropped. It is not tamper-proof: same-user code can edit or delete it.
 
@@ -434,6 +518,10 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Prompt injection uses a granted secret | Grants are bound to the program and, unless it is a content-bound script, its arguments: `curl` is not the granted script; inline code always asks; scripts by content, other programs by their identity on disk; code-loading variables in the tool's environment or its `.env.pp` ask | A granted script that can itself be steered (one that takes a URL argument, or calls a program by name found through `PATH`); files a granted command loads that are not bound (files named in its arguments, the files `package.json`'s scripts run, workspace packages, `node_modules`, the owner's own startup files such as `~/.zshenv`, which same-user code can edit); an older copy of the database file put back by same-user code brings back the grants it held |
 | The agent widens its own grant | No message creates or widens a grant; they live in the database, not the preferences; only the window's button with Touch ID makes one; raw reads and `--no-masking` never get one | An owner who picks long grants by habit |
 | A script changes between the check and the run | The app hashes the script when the request comes | The file can be swapped before it runs (a time-of-check to time-of-use race); the same-user attacker who wins it can also read the temporary file |
+| A login for one site lands on another | The fill is bound to one of the item's websites before the prompt; the extension takes it only on that site (same registrable domain, no downgrade) and only in the connection it is for; a report of another site drops it | The owner approves a login for an item whose website was set wrong |
+| The agent sees the password through a login | The answer is the outcome and the item's overview; the fill goes to the page, not to the tool | A page the agent controls on the item's own site could read its own form |
+| An agent watches what the owner browses through `login` | Answers given before an approval carry no overview and never name the site of the owner's tab | Whether the tab in front is on one site the agent names (one `no-matching-tab` per guess, logged in Activity) |
+| A login sends a form that is not a sign-in (a password reset on the same site) | The username-only step presses only a Next, Continue, Sign in or Log in button; a page sends at most once | The owner approves a login on a page that is not a sign-in page |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |
 
@@ -461,3 +549,11 @@ against a scripted process table and reads a real process's arguments without it
 (PRD check 7, Premium, lengths, sessions, revoking before the write lands); `AgentAccessTests` covers the window's
 Premium gate, grants in a real database file, a forged preference and another Mac's grant (PRD check 9), and unsharing;
 `CommandLineToolTests.testAStandingPermissionAndCodeLoadingVariables` runs a grant through the real tool.
+
+Website login: `AgentLoginTests` (the broker: which item and website, what is refused before a prompt, the code line, no
+password in any answer or log line), `CommandLineToolTests/testLogin…` (the real tool's output and exit codes),
+`BridgeAgentLoginTests` in PasswordPieCoreTests (a fill for site A is never answered on site B, the fill's keys, the
+result counted once from the connection and site that took it, the code with and without Premium),
+`AgentLoginBridgeTests` in PasswordPieAppTests (the app's session and bridge with a scripted extension: submitted, another
+tab, the 30-second expiry, locking, hanging up, Premium), and `extension/tests/agent-login.test.ts` (pressing the form's
+own button, the username-only step, `login-result`).

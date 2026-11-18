@@ -49,6 +49,8 @@ public enum AgentDelivery: String, Codable, Sendable, CaseIterable {
     case stdin
     /// The value itself, to the agent (`passwordpie read`, or a run with masking off). Asks every time.
     case shown
+    /// Filled into the item's sign-in form in the owner's browser (`passwordpie login`). The agent gets no value.
+    case fill
 }
 
 public enum AgentRequestKind: String, Codable, Sendable {
@@ -59,7 +61,7 @@ public enum AgentRequestKind: String, Codable, Sendable {
     case read
     case list
     case status
-    /// Reserved for logging in on a website in the owner's browser.
+    /// Log in on a website in the owner's browser (`passwordpie login`): the extension fills the form.
     case login
     /// During a run, a value it handed out appeared on the command line of a process under it (the argument watch).
     /// Written to Activity; answered with nothing. It carries the variable, the reference and the program, never the
@@ -105,6 +107,12 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     /// Seconds to wait for an unlock.
     public var wait: Int?
     public var query: String?
+    /// `login`: the page to log in on. Without a reference, the shared items for its site are offered.
+    public var url: String?
+    /// `login`: press the form's own button after filling it.
+    public var submit: Bool?
+    /// `login`: `chrome` or `safari`. Without it, the app picks the browser whose extension is connected.
+    public var browser: String?
     /// What an MCP client calls itself (its `clientInfo`). Its own claim: shown only as a secondary detail ("through MCP;
     /// the client says it is …"), never as the agent, which the app works out from the process tree.
     public var mcpClient: String?
@@ -209,6 +217,8 @@ public struct AgentResponse: Codable, Equatable, Sendable {
     public var refs: [String]?
     /// For `usage`: what was wrong, when the app found it.
     public var detail: String?
+    /// For `login`: how it went, and the item's overview. Never a value.
+    public var login: AgentLoginAnswer?
 
     public init(type: String, id: Int) {
         self.type = type

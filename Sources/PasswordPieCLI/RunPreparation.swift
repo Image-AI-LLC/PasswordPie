@@ -82,6 +82,9 @@ struct PreparedRun {
         values.append(bytes)
         watched.append(ArgumentWatch.Watched(name: secret.name, ref: secret.ref, delivery: secret.delivery, value: bytes))
         switch secret.delivery {
+        case .fill:
+            // Never asked for by `run` (the app refuses it); nothing goes to the command.
+            return
         case .env, .shown:
             guard let text = String(data: bytes, encoding: .utf8), !text.contains("\0") else {
                 throw Refusal(.usage, detail: "\(secret.ref) is binary and cannot be an environment variable; use a file (--file \(secret.name ?? "NAME")=\(secret.ref)).")

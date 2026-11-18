@@ -87,6 +87,28 @@ func readCommand(_ options: ReadOptions) -> Never {
     exit(0)
 }
 
+func loginCommand(_ options: LoginOptions) -> Never {
+    var request = AgentRequest(type: .login, id: 1)
+    request.version = AgentConstants.protocolVersion
+    request.client = "cli"
+    request.secrets = options.ref.map { [AgentSecretRequest(name: nil, ref: $0, delivery: .fill)] }
+    request.url = options.url
+    request.submit = options.submit
+    request.browser = options.browser?.rawValue
+    request.reason = options.reason
+    request.wait = options.wait
+    guard let login = ask(request).login else { refuse(.appUnavailable, detail: "PasswordPie gave no answer about the login.") }
+    if options.json {
+        FileHandle.standardOutput.write(AgentCoding.encode(login) + Data("\n".utf8))
+        if !login.outcome.succeeded { printError(login.line) }
+    } else if login.outcome.succeeded {
+        print(login.line)
+    } else {
+        printError(login.line)
+    }
+    exit(login.outcome.exitCode)
+}
+
 func listCommand(query: String?, json: Bool, wait: Int?) -> Never {
     var request = AgentRequest(type: .list, id: 1)
     request.version = AgentConstants.protocolVersion
@@ -166,6 +188,8 @@ case .list(let query, let json, let wait):
     listCommand(query: query, json: json, wait: wait)
 case .read(let options):
     readCommand(options)
+case .login(let options):
+    loginCommand(options)
 case .run(let options):
     runCommand(options)
 case .mcp:

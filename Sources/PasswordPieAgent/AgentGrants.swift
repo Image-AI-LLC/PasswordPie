@@ -82,7 +82,7 @@ public struct AgentGrant: Codable, Equatable, Identifiable, Sendable {
     public var length: AgentGrantLength
     /// For "this agent session": the agent session it belongs to (`AgentCaller.sessionKey`).
     public var session: String?
-    /// `run` (`use`); website login later.
+    /// `run` (`use`), or `login`.
     public var kind: AgentRequestKind
     /// The agent program's identity (`AgentProcess.identity`), or "none" with no agent in the chain.
     public var agent: String
@@ -92,10 +92,13 @@ public struct AgentGrant: Codable, Equatable, Identifiable, Sendable {
     public var secrets: [AgentGrantSecret]
     /// "Developer/Token › password", for the Agents pane. Names, never values.
     public var labels: [String]
+    /// `login`: the site ("github.com"). A login grant is bound to the item, this site and the agent, in any project.
+    public var site: String?
 
     public init(
         id: UUID = UUID(), mac: String, created: Date, length: AgentGrantLength, session: String?, kind: AgentRequestKind, agent: String,
-        agentName: String, project: String, program: AgentProgramBinding?, secrets: [AgentGrantSecret], labels: [String]
+        agentName: String, project: String, program: AgentProgramBinding?, secrets: [AgentGrantSecret], labels: [String],
+        site: String? = nil
     ) {
         self.id = id
         self.mac = mac
@@ -110,11 +113,12 @@ public struct AgentGrant: Codable, Equatable, Identifiable, Sendable {
         self.program = program
         self.secrets = secrets
         self.labels = labels
+        self.site = site
     }
 
     /// "7 days, this project": Activity's "allowed by …" and the tool's `status`.
     public var description: String {
-        "\(length.label), this project"
+        kind == .login ? "\(length.label), \(site ?? "this site")" : "\(length.label), this project"
     }
 
     public func isInForce(at now: Date) -> Bool { now < ends }
@@ -179,19 +183,23 @@ public struct AgentGrants: Equatable, Sendable {
         guard !query.raw, !query.secrets.isEmpty else { return nil }
         let asked = Set(query.secrets.map(AgentGrantSecret.init))
         return grants.first { grant in
-            grant.kind == query.kind
-                && grant.agent == query.caller.grantIdentity
-                && grant.project == query.caller.project
-                && (grant.session == nil || grant.session == query.caller.sessionKey)
-                && grant.program?.key == program?.key
-                && asked.isSubset(of: Set(grant.secrets))
+            guard grant.kind == query.kind, grant.agent == query.caller.grantIdentity,
+                  grant.session == nil || grant.session == query.caller.sessionKey,
+                  asked.isSubset(of: Set(grant.secrets)) else { return false }
+            if query.kind == .login {
+                // The item, the site and the agent: a login runs no command, and the same browser serves every project.
+                guard let site = query.site else { return false }
+                return grant.site == site
+            }
+            return grant.project == query.caller.project && grant.program?.key == program?.key
         }
     }
 
     /// The grants for this agent in this project.
     public static func applying(to caller: AgentCaller, in grants: [AgentGrant]) -> [AgentGrant] {
         grants.filter { grant in
-            grant.agent == caller.grantIdentity && grant.project == caller.project && (grant.session == nil || grant.session == caller.sessionKey)
+            grant.agent == caller.grantIdentity && (grant.kind == .login || grant.project == caller.project)
+                && (grant.session == nil || grant.session == caller.sessionKey)
         }
     }
 

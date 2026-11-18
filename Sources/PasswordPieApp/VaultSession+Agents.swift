@@ -49,6 +49,23 @@ extension VaultSession: AgentVault {
         }
     }
 
+    /// A shared item's entry in the database PasswordPie unlocked, for a login. Nil when it is no longer there or no
+    /// longer shared.
+    func agentEntry(_ item: AgentItem) -> VaultEntry? {
+        guard !agentVaultLocked, let file = agentFile, file.url.path == item.database,
+              let entry = file.vault.entries.first(where: { $0.id == item.id && !$0.trashed }),
+              AgentSharing(customData: file.vault.customData).covers(entry) else { return nil }
+        return entry
+    }
+
+    /// The id the list (and the browser bridge) knows a shared item by. It differs from the stored one only when two open
+    /// files share a UUID.
+    func agentListID(_ item: AgentItem) -> UUID? {
+        guard agentEntry(item) != nil else { return nil }
+        return listOrigins.first { $0.value == item.id && listPaths[$0.key] == item.database }?.key
+            ?? (listPaths[item.id] == item.database ? item.id : nil)
+    }
+
     /// The custom fields an agent may name: what the details view shows as fields, without PasswordPie's own bookkeeping.
     static func agentFieldNames(_ entry: VaultEntry) -> [String] {
         // The two-step secret, in any of the ways KeePass apps keep it, is not a field agents get.

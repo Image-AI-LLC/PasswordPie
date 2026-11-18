@@ -12,7 +12,7 @@ import PasswordPieAgent
 final class MCPServer: @unchecked Sendable {
     /// Protocol versions this server speaks, newest first. A client asking for another gets the newest.
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
-    static let toolNames = ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read"]
+    static let toolNames = ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read", "passwordpie_login"]
 
     private let output = NSLock()
     /// One request to the app at a time: the app reads this process's working folder as the project, so the server moves
@@ -174,9 +174,14 @@ final class MCPServer: @unchecked Sendable {
             case "passwordpie_status": structured = try status(arguments, cancellation: cancellation)
             case "passwordpie_list": structured = try list(arguments, cancellation: cancellation)
             case "passwordpie_run": structured = try run(arguments, cancellation: cancellation)
+            case "passwordpie_login": structured = try login(arguments, cancellation: cancellation)
             default: structured = try read(arguments, cancellation: cancellation)
             }
-            return ["content": [["type": "text", "text": Self.text(structured)]], "structuredContent": structured, "isError": false]
+            // A login that ran but signed nothing in (another tab in front, a site the item does not list) is an error
+            // to the agent, with what to do in its message.
+            let failed = name == "passwordpie_login"
+                && ((structured["outcome"] as? String).flatMap(AgentLoginOutcome.init(rawValue:)).map { !$0.succeeded } ?? false)
+            return ["content": [["type": "text", "text": Self.text(structured)]], "structuredContent": structured, "isError": failed]
         } catch let refusal as Refusal {
             return [
                 "content": [["type": "text", "text": refusal.mcpText]],
@@ -277,6 +282,32 @@ final class MCPServer: @unchecked Sendable {
         guard let value = answer.secrets?.first, value.bytes != nil else { throw Refusal(.denied) }
         if let text = value.value { return ["value": text] }
         return ["base64": value.base64 ?? ""]
+    }
+
+    /// `passwordpie login` as a tool: the same request, the same window, the same answer. Never a value.
+    private func login(_ arguments: [String: Any], cancellation: Cancellation) throws -> [String: Any] {
+        let input = Input(arguments, allowed: ["ref", "url", "submit", "browser", "reason"])
+        let ref = try input.string("ref").flatMap { $0.isEmpty ? nil : $0 }
+        let url = try input.string("url").flatMap { $0.isEmpty ? nil : $0 }
+        let submit = try input.boolean("submit") ?? false
+        let browser = try input.string("browser")
+        let reason = try input.string("reason")
+        try input.done()
+        if let ref { try Input.check(reference: ref) }
+        guard ref != nil || url != nil else {
+            throw Refusal(.usage, detail: "ref or url is required: the item to log in with, or the page to be offered the shared items for.")
+        }
+        if let browser, AgentBrowserName(rawValue: browser) == nil { throw Refusal(.usage, detail: "browser must be chrome or safari.") }
+        var request = request(.login)
+        request.secrets = ref.map { [AgentSecretRequest(name: nil, ref: $0, delivery: .fill)] }
+        request.url = url
+        request.submit = submit
+        request.browser = browser
+        request.reason = reason
+        guard let login = try ask(request, in: home, cancellation: cancellation).login else { throw Refusal(.appUnavailable) }
+        var result = (try? JSONSerialization.jsonObject(with: AgentCoding.encode(login))) as? [String: Any] ?? [:]
+        result["message"] = login.line(mcp: true)
+        return result
     }
 
     private func run(_ arguments: [String: Any], cancellation: Cancellation) throws -> [String: Any] {
@@ -381,7 +412,9 @@ final class MCPServer: @unchecked Sendable {
     static let instructions = """
     PasswordPie keeps the owner's passwords and keys on this Mac. Use passwordpie_run to run a command with secrets: \
     PasswordPie gives the values to the command, not to you, and conceals them in its output. passwordpie_list shows \
-    what the owner shared with agents. Each use asks the owner, who approves with Touch ID. \
+    what the owner shared with agents. To sign in on a website in the owner's browser, open its sign-in page and use \
+    passwordpie_login: PasswordPie fills the form, and you never see the password. Each use asks the owner, who \
+    approves with Touch ID. \
     \(AgentConstants.mcpGuidance)
     """
 
@@ -447,6 +480,23 @@ final class MCPServer: @unchecked Sendable {
                 ],
                 "annotations": ["readOnlyHint": true, "openWorldHint": false],
             ],
+            [
+                "name": "passwordpie_login",
+                "title": "Log in on a website",
+                "description": "Signs in on a website in the owner's own browser (Chrome or Safari, with PasswordPie's extension), after the owner approves with Touch ID: PasswordPie fills the username and password into the sign-in form of the tab in front, and with submit also presses the form's own button. Open the site's sign-in page in that tab first; PasswordPie never switches tabs. You never see the password or the two-step code. The result is the outcome (filled, submitted, no-matching-tab, site-mismatch, timed-out, no-fields) and, once the owner allowed it, the item's title, username and websites. Check the page afterwards to see whether the site accepted it. Not for a headless browser: use passwordpie_run there." + guidance,
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "ref": ["type": "string", "description": "The item to log in with: pp://<folder>/<item> or pp://id/<UUID> (no field). Leave out to be offered the shared items for url's site."],
+                        "url": ["type": "string", "description": "The sign-in page's address. Without ref, the owner picks among the shared items for its site."],
+                        "submit": ["type": "boolean", "description": "Also press the form's own button after filling it. Default false."],
+                        "browser": ["type": "string", "enum": ["chrome", "safari"], "description": "Which browser. Leave out for the one whose PasswordPie extension is connected."],
+                        "reason": ["type": "string", "description": "Why, in a few words, for the owner's approval window."],
+                    ],
+                    "additionalProperties": false,
+                ],
+                "annotations": ["readOnlyHint": false, "destructiveHint": false, "openWorldHint": true],
+            ],
         ]
     }
 }
@@ -489,6 +539,12 @@ struct Input {
             guard let ref = object[name] as? String else { throw Refusal(.usage, detail: "\(key).\(name) must be a reference string.") }
             return (name, ref)
         }
+    }
+
+    func boolean(_ key: String) throws -> Bool? {
+        guard let value = arguments[key], !(value is NSNull) else { return nil }
+        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { throw Refusal(.usage, detail: "\(key) must be true or false.") }
+        return number.boolValue
     }
 
     func integer(_ key: String, in range: ClosedRange<Int>) throws -> Int? {

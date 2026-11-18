@@ -450,6 +450,64 @@ final class CommandLineToolTests: XCTestCase {
         let ran = try await run(["run", "--env", "T=pp://Agents/Token", "--", "true"])
         XCTAssertEqual(ran.code, 70)
     }
+
+    // MARK: login
+
+    private func browserSide() -> FakeLogins {
+        let logins = FakeLogins()
+        let token = vault.items.first { $0.title == "Token" }!
+        logins.websites[token.id] = ["https://github.com/login"]
+        logins.usernames[token.id] = "octocat"
+        broker.logins = logins
+        return logins
+    }
+
+    /// The tool prints the outcome and the item's overview, never the password, and exits 0.
+    func testLoginPrintsTheOutcomeAndNeverThePassword() async throws {
+        let logins = browserSide()
+        allowEverything()
+        let ran = try await run(["login", "pp://Agents/Token", "--submit", "--reason", "Open billing"])
+        XCTAssertEqual(ran.code, 0, ran.err)
+        XCTAssertEqual(ran.out, "PasswordPie: filled Token (octocat) on github.com in Google Chrome and pressed the form's sign-in button. Check the page to see whether the site accepted it.\n")
+        XCTAssertEqual(ran.err, "")
+        XCTAssertEqual(logins.plans.first?.submit, true)
+        XCTAssertEqual(approver.prompts.first?.reason, "Open billing")
+        let json = try await run(["login", "pp://Agents/Token", "--json"])
+        XCTAssertEqual(json.code, 0, json.err)
+        let answer = try XCTUnwrap(AgentCoding.decode(AgentLoginAnswer.self, from: Data(json.out.utf8)))
+        XCTAssertEqual(answer.item?.username, "octocat")
+        XCTAssertEqual(logins.plans.last?.submit, false)
+        for output in [ran.out, ran.err, json.out, json.err] { XCTAssertFalse(output.contains(planted)) }
+    }
+
+    func testLoginOutcomesHaveTheirExitCodes() async throws {
+        let logins = browserSide()
+        let mismatch = try await run(["login", "pp://Agents/Token", "--url", "https://gitlab.com/"])
+        XCTAssertEqual(mismatch.code, 75, mismatch.err)
+        XCTAssertTrue(mismatch.err.hasSuffix(AgentConstants.pasteWarning + "\n"), mismatch.err)
+        XCTAssertEqual(mismatch.out, "")
+        logins.target = nil
+        let noTab = try await run(["login", "pp://Agents/Token"])
+        XCTAssertEqual(noTab.code, 74, noTab.err)
+        logins.target = AgentLoginTarget(browser: .chrome, profile: nil, link: 1, page: .unknown)
+        allowEverything()
+        for (end, code) in [(AgentLoginOutcome.timedOut, Int32(76)), (.noFields, 77), (.filled, 0)] {
+            logins.end = .finished(end, code: nil, detail: nil)
+            let ran = try await run(["login", "pp://Agents/Token"])
+            XCTAssertEqual(ran.code, code, ran.err)
+            XCTAssertFalse((ran.out + ran.err).contains(planted))
+        }
+        XCTAssertTrue(approver.prompts.allSatisfy { $0.kind == .login })
+    }
+
+    func testLoginArgumentMistakesAreUsage() async throws {
+        _ = browserSide()
+        for arguments in [["login"], ["login", "nope"], ["login", "pp://Agents/Token", "--browser", "firefox"], ["login", "--submit"]] {
+            let ran = try await run(arguments)
+            XCTAssertEqual(ran.code, 64, arguments.joined(separator: " "))
+        }
+        XCTAssertTrue(approver.prompts.isEmpty)
+    }
 }
 
 /// Check 6: the socket serves only `com.passwordpie.cli` signed by our team. This test process is not, so it is refused.

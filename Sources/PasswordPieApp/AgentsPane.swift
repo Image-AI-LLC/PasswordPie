@@ -77,7 +77,7 @@ struct AgentsPane: View {
 
     private var mcpSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read and passwordpie_status. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
+            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read, passwordpie_status and passwordpie_login. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
                 .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(access.mcpHosts) { host in
                 VStack(alignment: .leading, spacing: 4) {
@@ -156,7 +156,7 @@ struct AgentsPane: View {
             Text("Unlock PasswordPie to see standing permissions. They are kept in the database.").font(note).foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Choose Allow for 7 days ▾ in an agent's approval window to stop it asking every time, for the same items, agent, project and program. Premium.")
+                Text("Choose Allow for 7 days ▾ in an agent's approval window to stop it asking every time, for the same items, agent, project and program (a login: the same item, site and agent, in any project). Premium.")
                     .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !access.enabled, !access.standing.isEmpty {
                     Text("Agent access is off: these do nothing until it is on again.").font(note).foregroundStyle(.secondary)
@@ -218,7 +218,12 @@ private struct StandingRow: View {
                 if let program = grant.program {
                     Text(program.display).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
-                Text(AgentAccess.tilde(grant.project)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                if grant.kind == .login {
+                    // A login grant counts in every project: its site is what it is bound to.
+                    Text("Log in on \(grant.site ?? "its site"), any project").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    Text(AgentAccess.tilde(grant.project)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
             }
             Spacer()
             Button("Revoke", action: revoke).controlSize(.small)

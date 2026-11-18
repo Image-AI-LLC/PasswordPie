@@ -82,7 +82,7 @@ final class AgentAccess: ObservableObject {
         broker.onWaitingChanged = { [weak session] waiting in session?.agentWaitingLine = AgentWaiting.lockScreenLine(waiting) }
         relay.appended = { [weak self] record in
             self?.activity.insert(record, at: 0)
-            if record.outcome == .allowedByGrant { self?.onSilentUse?() }
+            if record.ranUnderGrant { self?.onSilentUse?() }
         }
         grants.onChange = { [weak self] in self?.refreshStanding() }
         activity = log.records().reversed()
@@ -105,6 +105,15 @@ final class AgentAccess: ObservableObject {
         #endif
     }
 
+    /// The browser bridge an approved login waits in; turning access off withdraws it there.
+    private weak var bridge: BrowserBridge?
+
+    /// `passwordpie login`: fills through the browser extension (docs/AGENTS.md, "Website login").
+    func attachBrowser(_ bridge: BrowserBridge) {
+        self.bridge = bridge
+        broker.logins = AgentLoginBridge(session: session, bridge: bridge)
+    }
+
     /// At launch: open the socket when the switch is on.
     func start() {
         if enabled { openSocket() }
@@ -120,6 +129,7 @@ final class AgentAccess: ObservableObject {
         } else {
             server.stop()
             approver.withdrawAll()
+            bridge?.withdrawAgentLoginForAccessOff()
             problem = nil
             // "This agent session" permissions end; the others stay and do nothing until it is on again.
             grants.endSessions()

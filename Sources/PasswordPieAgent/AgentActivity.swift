@@ -18,6 +18,15 @@ public enum AgentOutcome: String, Codable, Sendable {
     case usage = "not understood"
     /// The argument watch saw a value the run handed out on a command line under it. Detection, not prevention.
     case argumentSeen = "value seen on a command line"
+    /// Agent access was turned off while the request waited.
+    case accessOff = "agent access turned off"
+    // `login`, each after the owner allowed it once (or before the prompt, for a site or tab that does not match).
+    case filled = "filled"
+    case submitted = "filled and sent"
+    case noMatchingTab = "no matching tab"
+    case siteMismatch = "site mismatch"
+    case fillTimedOut = "no tab took the fill"
+    case noFields = "no sign-in fields"
 }
 
 /// One line of the activity log. It holds no value, ever: names of items and fields, the command, the agent and its
@@ -36,7 +45,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     }
 
     public var time: Date
-    /// `run`, `read` or `list`.
+    /// `run`, `read`, `list` or `login`.
     public var kind: String
     public var outcome: AgentOutcome
     /// The standing permission that allowed it, described.
@@ -49,7 +58,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     /// "Developer/App Store Connect API key › attachment AuthKey_ABC123.p8"; for a reference that found nothing, the
     /// reference as the agent typed it.
     public var items: [String]
-    /// "env NOTARY_KEY_ID", "file NOTARY_KEY", "stdin", "shown".
+    /// "env NOTARY_KEY_ID", "file NOTARY_KEY", "stdin", "shown", "fill Google Chrome github.com".
     public var delivery: [String]
     /// The agent's own words, kept as its claim.
     public var reason: String?
@@ -57,10 +66,13 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     public var chain: [Link]
     /// "MCP" when the request came through `passwordpie mcp`.
     public var via: String?
+    /// A login that ran under a standing permission, with no window (`grant` names it). False or absent: the window
+    /// was shown, and `grant` is the one it started, if any.
+    public var silent: Bool?
 
     public init(
         time: Date, kind: String, outcome: AgentOutcome, grant: String? = nil, caller: AgentCaller?, command: String?,
-        items: [String], delivery: [String], reason: String?, via: String? = nil
+        items: [String], delivery: [String], reason: String?, via: String? = nil, silent: Bool? = nil
     ) {
         self.time = time
         self.kind = kind
@@ -76,12 +88,20 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
         self.reason = reason
         chain = caller?.chain.map(Link.init) ?? []
         self.via = via
+        self.silent = silent
+    }
+
+    /// Let through by a standing permission with no window: the menu-bar dot shows for it.
+    public var ranUnderGrant: Bool {
+        outcome == .allowedByGrant || (kind == "login" && silent == true && grant != nil)
     }
 
     /// "allowed once", "allowed by 7 days, this project", "denied".
     public var outcomeText: String {
         if outcome == .allowedByGrant, let grant { return "allowed by \(grant)" }
         if outcome == .allowedAndGranted, let grant { return "allowed, and for \(grant)" }
+        // A login's outcome is what happened in the browser; the standing permission it ran under, or started, follows.
+        if kind == "login", let grant { return silent == true ? "\(outcome.rawValue), by \(grant)" : "\(outcome.rawValue), and for \(grant)" }
         return outcome.rawValue
     }
 }

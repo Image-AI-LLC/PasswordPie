@@ -125,6 +125,9 @@ password for you"): the page is a change-password form. `password` is still the 
 current password; `newPassword` goes in the new and the confirm box. The key is left out of every other fill. The
 extension never submits the form and never presses the site's button. See `changed` below.
 
+`submit: true`, `report: true` and `loginId` are there only for an agent's login (see "Agent logins" below). Every
+other fill leaves them out.
+
 ### `code`
 
     → {"type":"code","id":5,"url":"https://github.com/"}
@@ -177,6 +180,19 @@ Compatibility, both ways harmless:
 - An app from before this never sends `newPassword`, so the extension has nothing to report. If it did send `changed`,
   that app answers `{"type":"error","code":"bad-request"}`, which the extension ignores.
 - The App Store app and Safari never get `newPassword`: Reset Password only opens the page there.
+
+### `login-result`
+
+    → {"type":"login-result","id":7,"url":"https://github.com/","result":"submitted","loginId":"6F2C…"}
+    ← {"type":"login-result","id":7}
+
+Direct app only. How an agent's login went on the page, sent once after a fill marked `report`: `submitted` (the password
+went in and the form's button was pressed), `filled` (it went in, the form was not sent), or `no-fields` (no password field
+appeared while the fill lasted, or the fill ended first: the tab closed, or another fill replaced it). `url` is the
+fill's `origin` as the app gave it, written as in `tab`. `loginId` is the fill's, so word about an older login on the same
+site (dropped when a newer one replaced it) is never taken for the newer one. The app counts it only with that id, from
+the connection that took the fill, for a page of that site, within 35 seconds of the fill, while unlocked, once. The answer is the same
+whatever was waiting, and carries nothing. The App Store app answers `bad-request`, which the extension ignores.
 
 ### `focus`
 
@@ -404,7 +420,37 @@ an account with a code, on that origin, for 30 seconds.
   written to disk by the app. The host and appex log only sizes and error codes.
 - Tab URLs are used for matching, the "this site" list and `wantIcon` only: held in memory, never logged, never saved.
   A cached icon is the only trace of a visit on disk, and only for a site the vault already has an account on.
-- The fill never submits the form.
+- The fill never submits the form, except an agent's approved login that asked for it (`submit`, "Agent logins").
+
+## Agent logins
+
+An agent on the Mac asks PasswordPie to log in on a website (`passwordpie login`, docs/AGENTS.md "Website login"). After
+the owner allows it with Touch ID, the app makes an ordinary pending fill, with three differences:
+
+- It is bound to the browser and connection the app chose (in Chrome, the profile in front or used last) and to one of
+  the item's websites, picked before the prompt. "Same site", "No downgrade", "The profile in front" and "Fresh and once"
+  apply as to any fill. A report of another site, or of a page that is not a website, from that connection drops it at
+  once, and the agent hears `no-matching-tab`: PasswordPie never switches tabs, and a fill for site A is never answered on
+  site B.
+- The `tab` answer that carries it has `report: true` and a random `loginId`, and `submit: true` when the agent asked
+  to send the form.
+- The extension answers with `login-result` once: when the password went in (with or without the form sent), or when
+  the fill ended without a password field (`no-fields`: it ran out, the tab closed, or another fill replaced it). A
+  `filled` word from a frame of another origin is ignored.
+
+In the page, `submit` presses the form's own button once, right after the password went in: the form's submit button
+(a `<button>` with no type counts, and a submit button outside the form that names it with `form=`), else
+`requestSubmit()` on the form, else, with no form around the fields, a button within four levels of them that says Sign
+in, Log in, Next, Continue, Submit or Go. It never types Return. A page sends at most once per login (`loginId`), however
+many times its fill reaches it; a retry is another login. On a page that shows only the username (a two-step sign-in),
+it presses that step's own Next, Continue, Sign in or Log in button (in its form, naming it with `form=`, or next to the
+field) once if no password field appears within 0.8 seconds, and nothing else (a lone email
+field may be a reset or newsletter form); the password then goes in on the next page of the same origin (or when the
+same page shows its field) and that form is sent. A change-password fill
+(`newPassword`) is never sent for anyone. The two-step code is filled as after any fill and is not sent.
+
+An extension from before this (0.6.0 and earlier) ignores `submit` and `report`: it fills, never sends the form, and says
+nothing; the app then tells the agent `filled` with a word that the extension did not say.
 
 ## Chrome profiles
 
@@ -553,6 +599,8 @@ needs Accessibility to be granted already and never asks for it.
 - `swift test --filter 'BridgeLinks|BridgeProfiles|BrowserProfiles|ChromeFillRoute|ExtensionStatus'`: which connection is
   in front (focus said, lost, never said, held by the panel), that another profile's tab is neither the page nor
   filled, the banner for a profile without the extension, where the store page opens, and Preferences' lines.
+- `swift test --filter 'BridgeAgentLogin|AgentLoginBridge'` and `cd extension && pnpm test tests/agent-login.test.ts`:
+  agent logins (docs/AGENTS.md, "Testing").
 - `cd extension && pnpm test`: choosing and scaling the tab's icon; field finding and filling against HTML fixtures
   (autocomplete hints, forms with no attributes, React controlled inputs, open shadow DOM, two-step sign-in, cross-origin
   refusal), code fields (one field, split boxes, decoys), the code flow in the background, the note and its Upgrade, the

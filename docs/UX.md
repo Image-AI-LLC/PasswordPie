@@ -1728,7 +1728,7 @@ plain text on disk or in the model's context, and none asks the owner first.
 Some agents work better with MCP tools than with a shell command, and some have no shell at all. Preferences > Agents >
 **MCP server** shows the line to paste for **Claude Code** (a `claude mcp add` command for Terminal), **Codex** (lines for
 `~/.codex/config.toml`) and **Cursor** (an entry for `~/.cursor/mcp.json`), each with a **Copy** button. PasswordPie does
-not edit other apps' settings. The agent then has four tools:
+not edit other apps' settings. The agent then has five tools:
 
 | Tool | What it does |
 |---|---|
@@ -1736,6 +1736,7 @@ not edit other apps' settings. The agent then has four tools:
 | `passwordpie_list` | What you shared, never a value |
 | `passwordpie_read` | The value itself, after **Show to Agent**, every time |
 | `passwordpie_status` | Running, locked, access on, who PasswordPie sees asking |
+| `passwordpie_login` | Signs in on a website in your browser, exactly like `passwordpie login` ("Agents log in on a website"): the agent gets how it went and the account's name, never the password |
 
 Nothing an MCP tool does shares an item, unlocks, or makes an approval last: those are only in PasswordPie, on your
 initiative. Every tool tells the agent that it never receives a password unless it uses `passwordpie_read` and you
@@ -1910,3 +1911,95 @@ a terminal.
 11. Add a line to `demo.sh` and run it again: the window comes back. Run `passwordpie run --env T=pp://Agents/Token -- sh -c
    'echo "$T"'`: the third button is grey.
 12. Gear menu > **Revoke Agent Permissions**, run step 10's command: the window comes back.
+
+## Agents log in on a website
+
+**In one line:** an agent that drives your browser (Claude in Chrome, a computer-use agent) says "log in to this site with
+PasswordPie", you approve with Touch ID, and PasswordPie's extension fills the sign-in form in that browser, and sends it
+if asked. The agent hears whether it worked and which account it was, never the password. Direct download only. The
+reference is "Website login" in [AGENTS.md](AGENTS.md).
+
+### The problem
+
+An agent working in your browser reaches a sign-in page. Today it stops and asks you to type the password, or asks you to
+paste it into the chat, where it stays. Neither is what you want: the first breaks the run, the second hands the password
+to the model.
+
+### What happens now
+
+1. The agent opens the site's sign-in page in your browser, then runs
+   `passwordpie login pp://Web/GitHub --submit --reason "Open the billing page"` (or calls the `passwordpie_login` MCP
+   tool). Without a reference,
+   `passwordpie login --url https://github.com/login` offers every shared item for that site.
+2. PasswordPie shows the approval window over whatever is in front: the site, the account, the browser, the agent and
+   what it says.
+3. **Allow Once**, Touch ID. The extension fills the username and password into the tab in front, in the browser and
+   Chrome profile the agent is working in, and with `--submit` presses the form's own button.
+4. The agent hears `submitted` (or `filled`) with the item's title, username and websites, and checks the page for
+   whether the site accepted it. The password never leaves PasswordPie and the browser.
+
+Two-step code: if the account has one and this Mac has Premium, the code goes into the code field when the site shows it,
+exactly as when you fill it yourself. Without Premium the code is not filled; the page shows the usual note with Upgrade,
+and the agent hears "two-step code not filled: needs PasswordPie Premium".
+
+### The approval window
+
+    Claude Code wants to log in to github.com
+
+    ◉ GitHub  (Web)
+      octocat · username and password, then sends the form
+    Site      github.com
+    Browser   Google Chrome
+    Agent     Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)
+    The agent says:
+    “Open the billing page”
+
+    [ Deny ]                                   [ Allow Once ]
+
+- One row per account. With `--url` and several shared accounts on that site, pick one; Allow Once stays off until you
+  do.
+- **Browser** names the Chrome profile only when several have the extension: "the profile in front", or "the profile used
+  last" when Chrome is not the app in front (the agent's terminal often is).
+- The window never shows the password, and nothing in it is the agent's but the quoted line.
+- Every Allow asks for Touch ID, so an agent that can click cannot approve its own login.
+- **Allow for 7 days ▾** (Premium, as for secrets) lets that agent log in with that account on that site again without
+  asking, from any project, until the time runs out. Preferences > Agents > Standing permissions lists it as "Log in on
+  github.com, any project", with Revoke. A login it lets through shows the menu-bar dot, as any silent use does. It
+  covers the account and the site, not whether the form is sent or which browser. Without Premium the button says so and opens the Premium window; Allow Once
+  still works. With several accounts offered, the lasting choice is for the one you picked; a login with several
+  accounts to pick from always asks.
+
+### What the agent hears
+
+| Answer | Meaning | Exit code |
+|---|---|---|
+| `submitted` | Filled, and the form's own button was pressed. Whether the site accepted it shows on the page | 0 |
+| `filled` | Filled; the form was not sent (no `--submit`, or no button was found) | 0 |
+| `no-matching-tab` | The tab in front is not on the site: the agent's tab is in the background, or another page is open. PasswordPie never switches tabs | 74 |
+| `site-mismatch` | The site asked for is not one of the item's websites. Nothing was filled, and nobody was asked | 75 |
+| `timed-out` | No tab of that browser answered within 30 seconds: the extension is off or not installed in that profile | 76 |
+| `no-fields` | The tab is on the site, but no password field appeared within 30 seconds | 77 |
+
+Once you allowed it, every answer carries the item's title, username and websites. Never the password, never the code.
+An answer given without asking you (the site or the tab did not match) carries neither the username nor the site your
+tab is on: an agent cannot use `login` to watch what you browse.
+
+### When it does not apply
+
+- A site the item does not list. A request for github.com is never filled into another site, whatever the agent says.
+- A headless browser, or a browser on another Mac: they have no PasswordPie extension. Agents there use `passwordpie run`.
+- Safari fills, but only on sites where you allowed the extension.
+- While locked: the request waits for you to unlock, as for a secret.
+
+### Demo script
+
+Use the direct download with the Chrome extension, an item **Demo Login** in **Agents** with website
+`https://the-internet.herokuapp.com/login`, username `tomsmith` and password `SuperSecretPassword!`, and a terminal.
+
+1. In Chrome open `https://the-internet.herokuapp.com/login`.
+2. `passwordpie login 'pp://Agents/Demo Login' --submit`. The window says "wants to log in to
+   the-internet.herokuapp.com"; Allow Once, Touch ID. The page shows "You logged into a secure area!"; the terminal prints `submitted` with the title, username and
+   website, and no password.
+3. Open another site in that tab and run step 2 again: `no-matching-tab`, nothing filled.
+4. `passwordpie login 'pp://Agents/Demo Login' --url https://example.com/`: `site-mismatch` at once, no window.
+5. Preferences > Agents > Activity shows each line with its outcome.

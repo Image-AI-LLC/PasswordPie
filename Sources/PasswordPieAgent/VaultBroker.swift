@@ -40,6 +40,7 @@ public struct AgentResolvedSecret: Equatable, Sendable {
         case .file: return "file \(name ?? "")"
         case .stdin: return "stdin"
         case .shown: return "shown"
+        case .fill: return "fill"
         }
     }
 }
@@ -59,6 +60,8 @@ public struct AgentGrantQuery: Sendable {
     public var added: [String]?
     /// Names this request, so what the grant store worked out when the window opened is what a lasting choice records.
     public var id = UUID()
+    /// `login`: the site the fill is bound to ("github.com"). A login grant is bound to it instead of a program.
+    public var site: String?
 
     public init(
         caller: AgentCaller, kind: AgentRequestKind, raw: Bool, program: String?, argv: [String], secrets: [AgentResolvedSecret],
@@ -116,6 +119,10 @@ public struct AgentApprovalRow: Equatable, Sendable {
     public var name: String?
     /// Shorter than `AgentConstants.minimumMaskedLength`: the command's output is not masked for it.
     public var tooShortToMask: Bool
+    /// `login`: the account's username, shown so the owner can tell two accounts of a site apart.
+    public var username: String? = nil
+    /// `login`: what happens with the two-step code, when the item has one.
+    public var note: String? = nil
 }
 
 public struct AgentApprovalPrompt: Equatable, Sendable {
@@ -135,6 +142,11 @@ public struct AgentApprovalPrompt: Equatable, Sendable {
     /// The agent's `--reason`: its claim, shown in quotes and never reworded.
     public var reason: String?
     public var rows: [AgentApprovalRow]
+    /// `login`: the site ("github.com"), the browser and profile, and whether the form is sent after the fill. With more
+    /// than one row the owner picks exactly one.
+    public var site: String? = nil
+    public var browser: String? = nil
+    public var submit: Bool = false
     /// Whether "Allow for 7 days ▾" is offered beside Allow Once. Whether Premium is here is the app's own check, not
     /// the prompt's.
     public var lasting: AgentLastingChoice = .notOffered
@@ -214,6 +226,8 @@ public final class VaultBroker {
     public let approver: AgentApprover
     public let grants: AgentGrantStore
     public let activity: AgentActivityLogging
+    /// The browser side of `login`. Without it a login answers `usage`.
+    public var logins: AgentBrowserLogins?
     /// Agent access is on (Preferences > Agents).
     public var isEnabled: () -> Bool
     public var clock: () -> Date = Date.init
@@ -227,7 +241,7 @@ public final class VaultBroker {
         didSet { onWaitingChanged?(Array(waiting.values)) }
     }
 
-    private var limiter = DenialLimiter()
+    var limiter = DenialLimiter()
     private var stateWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var busySessions: Set<String> = []
     private var sessionQueues: [String: [CheckedContinuation<Void, Never>]] = [:]
@@ -271,7 +285,7 @@ public final class VaultBroker {
         case .use, .read:
             return await use(request, caller: caller)
         case .login:
-            return .error(.usage, id: request.id)
+            return await login(request, caller: caller)
         case .argument:
             return argument(request, caller: caller)
         }
@@ -293,6 +307,7 @@ public final class VaultBroker {
             case .file: return "file \(secret.name ?? "")"
             case .stdin: return "stdin"
             case .shown: return "shown"
+            case .fill: return "fill"
             }
         })
         return AgentResponse(type: request.type.rawValue, id: request.id)
@@ -324,7 +339,7 @@ public final class VaultBroker {
             }
             references.append(reference)
         }
-        guard !asked.isEmpty, request.type != .read || asked.count == 1 else {
+        guard !asked.isEmpty, request.type != .read || asked.count == 1, !asked.contains(where: { $0.delivery == .fill }) else {
             log(request, caller: caller, outcome: .usage, items: [], delivery: [])
             return .error(.usage, id: request.id)
         }
@@ -472,9 +487,6 @@ public final class VaultBroker {
                 tooShortToMask: !raw && length < AgentConstants.minimumMaskedLength
             )
         }
-        let terminal = caller.chain.first { process in
-            process.identifier.map(AgentHosts.terminals.contains) ?? false
-        }
         return AgentApprovalPrompt(
             id: UUID(),
             kind: request.type,
@@ -482,7 +494,7 @@ public final class VaultBroker {
             agent: caller.agentName,
             signature: caller.signatureText,
             agentPID: caller.agent?.pid,
-            startedIn: terminal.map { ($0.path as NSString).lastPathComponent.replacingOccurrences(of: ".app", with: "") },
+            startedIn: Self.startedIn(caller),
             command: Self.commandText(request.argv),
             program: request.program,
             project: caller.project,
@@ -490,6 +502,14 @@ public final class VaultBroker {
             rows: rows,
             via: Self.viaText(request)
         )
+    }
+
+    /// The terminal or app the agent runs in, when the chain shows one.
+    static func startedIn(_ caller: AgentCaller) -> String? {
+        let terminal = caller.chain.first { process in
+            process.identifier.map(AgentHosts.terminals.contains) ?? false
+        }
+        return terminal.map { ($0.path as NSString).lastPathComponent.replacingOccurrences(of: ".app", with: "") }
     }
 
     /// Stands in for the answer's `by` when its size is checked: a standing permission's description is longer than
@@ -519,7 +539,7 @@ public final class VaultBroker {
     }
 
     /// The approval window's answer, or `.dismissed` when nobody answered in time.
-    private func ask(_ prompt: AgentApprovalPrompt) async -> AgentApprovalDecision {
+    func ask(_ prompt: AgentApprovalPrompt) async -> AgentApprovalDecision {
         let answered = await firstOf(seconds: approvalSeconds) { [approver] in await approver.present(prompt) }
         guard let answered else {
             approver.withdraw(prompt.id)
@@ -531,7 +551,7 @@ public final class VaultBroker {
     // MARK: Waiting
 
     /// True once the vault is unlocked, at once when it is. While waiting, the lock screen says who waits for how many.
-    private func waitForUnlock(_ request: AgentRequest, caller: AgentCaller, count: Int) async -> Bool {
+    func waitForUnlock(_ request: AgentRequest, caller: AgentCaller, count: Int) async -> Bool {
         guard vault.agentVaultLocked else { return true }
         let seconds = Double(min(max(request.wait ?? AgentConstants.defaultWaitSeconds, 0), AgentConstants.maxWaitSeconds))
         let deadline = clock().addingTimeInterval(seconds)
@@ -556,7 +576,7 @@ public final class VaultBroker {
         return true
     }
 
-    private func acquire(_ session: String) async {
+    func acquire(_ session: String) async {
         guard busySessions.contains(session) else {
             busySessions.insert(session)
             return
@@ -566,7 +586,7 @@ public final class VaultBroker {
         }
     }
 
-    private func release(_ session: String) {
+    func release(_ session: String) {
         if var queue = sessionQueues[session], !queue.isEmpty {
             let next = queue.removeFirst()
             sessionQueues[session] = queue.isEmpty ? nil : queue
@@ -598,8 +618,9 @@ public final class VaultBroker {
         }
     }
 
-    private func log(
-        _ request: AgentRequest, caller: AgentCaller, outcome: AgentOutcome, grant: String? = nil, items: [String], delivery: [String]
+    func log(
+        _ request: AgentRequest, caller: AgentCaller, outcome: AgentOutcome, grant: String? = nil, silent: Bool = false, items: [String],
+        delivery: [String]
     ) {
         let kind: String
         switch request.type {
@@ -618,7 +639,8 @@ public final class VaultBroker {
             items: items,
             delivery: delivery,
             reason: request.reason,
-            via: request.client == "mcp" ? "MCP" : nil
+            via: request.client == "mcp" ? "MCP" : nil,
+            silent: silent ? true : nil
         ))
     }
 }

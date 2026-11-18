@@ -16,6 +16,7 @@ import {
   type Credentials,
   type FillMessage,
   type FrameMessage,
+  type LoginResult,
   type TabFill,
   type TabReason,
 } from './protocol';
@@ -79,6 +80,12 @@ interface Entry extends Credentials {
   tabId: number;
   expiresAt: number;
   expiry: TimerHandle;
+  /** An agent's login: press the form's button once the password is in. */
+  submit: boolean;
+  /** An agent's login: tell the app how it went, once. */
+  report: boolean;
+  /** An agent's login: its id from the app. */
+  loginId?: string;
 }
 
 /**
@@ -188,6 +195,11 @@ export class FillController {
     } else if (msg.type === 'changed') {
       this.changed(tabId, sender);
     } else {
+      // The password went in after the answer was sent (a field that appeared late, the next page of a sign-in). Only
+      // frames of the fill's origin are ever filled, so word from any other frame is not about this fill.
+      const entry = this.entries.get(tabId);
+      if (!entry || (sender.url !== undefined && originOf(sender.url) !== entry.origin)) return;
+      this.passwordIn(entry, msg.submitted === true);
       this.drop(tabId);
     }
   }
@@ -339,8 +351,17 @@ export class FillController {
     this.drop(tabId);
     const credentials: Credentials = { origin: fill.origin, username: fill.username, password: fill.password };
     if (fill.newPassword !== undefined) credentials.newPassword = fill.newPassword;
-    const expiry = this.timers.setTimeout(() => this.drop(tabId), fill.lifetimeMs);
-    this.entries.set(tabId, { ...credentials, tabId, expiresAt: this.timers.now() + fill.lifetimeMs, expiry });
+    const expiry = this.timers.setTimeout(() => this.expire(tabId), fill.lifetimeMs);
+    this.entries.set(tabId, {
+      ...credentials,
+      tabId,
+      expiresAt: this.timers.now() + fill.lifetimeMs,
+      expiry,
+      submit: fill.submit === true,
+      // Without an id the app could not tell which login a result is about: such a fill reports nothing.
+      report: fill.report === true && fill.loginId !== undefined,
+      ...(fill.loginId === undefined ? {} : { loginId: fill.loginId }),
+    });
     // The newest fill decides: a plain one after it ends the wait for a submit.
     this.dropChange(tabId);
     if (fill.newPassword !== undefined) {
@@ -352,9 +373,29 @@ export class FillController {
     }
   }
 
+  /** The fill ran out. */
+  private expire(tabId: number): void {
+    this.drop(tabId);
+  }
+
+  /** The password of `entry` went in: an agent's login says how it went, once. */
+  private passwordIn(entry: Entry, submitted: boolean): void {
+    if (entry.report) this.sendResult(entry, submitted ? 'submitted' : 'filled');
+  }
+
+  /** Only the origin goes, as in a tab report. The answer says nothing. */
+  private sendResult(entry: Entry, result: LoginResult): void {
+    if (!entry.report || entry.loginId === undefined) return;
+    entry.report = false;
+    void this.channel.request({ type: 'login-result', url: `${entry.origin}/`, result, loginId: entry.loginId }).catch(() => undefined);
+  }
+
   private drop(tabId: number): void {
     const entry = this.entries.get(tabId);
     if (!entry) return;
+    // An agent's login dropped before its password went in (it ran out, the tab closed, another fill replaced it) says
+    // so, rather than leave the app to guess. After the password went in, `report` is already off.
+    if (entry.report) this.sendResult(entry, 'no-fields');
     this.timers.clearTimeout(entry.expiry);
     this.entries.delete(tabId);
   }
@@ -393,6 +434,8 @@ export class FillController {
       password: entry.password,
       ...(entry.newPassword === undefined ? {} : { newPassword: entry.newPassword }),
       waitMs: Math.max(0, entry.expiresAt - this.timers.now()),
+      ...(entry.submit ? { submit: true } : {}),
+      ...(entry.loginId === undefined ? {} : { loginId: entry.loginId }),
     };
     const targets = frames.filter(
       (frame) => originOf(frame.url) === entry.origin && (onlyFrameId === undefined || frame.frameId === onlyFrameId),
@@ -405,7 +448,11 @@ export class FillController {
         } catch {
           return; // no content script in that frame (yet)
         }
-        if (parseFillResult(answer)?.password && this.entries.get(tabId) === entry) this.drop(tabId);
+        const result = parseFillResult(answer);
+        if (result?.password && this.entries.get(tabId) === entry) {
+          this.passwordIn(entry, result.submitted === true);
+          this.drop(tabId);
+        }
       }),
     );
   }

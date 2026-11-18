@@ -1,4 +1,4 @@
-import { messageId, type TabReason } from './protocol';
+import { messageId, type LoginResult, type TabReason } from './protocol';
 import { Backoff, systemTimers, type TimerHandle, type Timers } from './timers';
 
 export const REQUEST_TIMEOUT_MS = 5_000;
@@ -27,7 +27,12 @@ export type Request =
    * The form a new password was filled into was submitted on this page: the app asks whether the site accepted it
    * (docs/UX.md, "Reset Password makes the new password for you"). An app from before it answers with an error.
    */
-  | { type: 'changed'; url: string };
+  | { type: 'changed'; url: string }
+  /**
+   * How an agent's login went on this page (docs/BROWSER_EXTENSION.md, "`login-result`"). Sent once, only after a fill the
+   * app marked `report`. Carries no credential. An app from before it answers with an error.
+   */
+  | { type: 'login-result'; url: string; result: LoginResult; loginId: string };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */
