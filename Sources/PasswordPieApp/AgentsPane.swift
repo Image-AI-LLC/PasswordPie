@@ -14,6 +14,7 @@ struct AgentsPane: View {
         VStack(alignment: .leading, spacing: 26) {
             group("Agent access") { accessSection }
             group("Command-line tool") { toolSection }
+            group("MCP server") { mcpSection }
             group("Shared with agents") { sharingSection }
             group("Activity") { activitySection }
         }
@@ -67,6 +68,35 @@ struct AgentsPane: View {
                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    // MARK: MCP server
+
+    private var mcpSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read and passwordpie_status. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
+                .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(access.mcpHosts) { host in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(host.name).font(.system(size: 12, weight: .medium))
+                        Text(host.place).font(note).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Copy") { AgentsPane.copy(host.text) }
+                            .controlSize(.small)
+                            .accessibilityIdentifier("agents.mcp.copy.\(host.name)")
+                    }
+                    Text(host.text)
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: Sharing
@@ -153,7 +183,10 @@ private struct ActivityRow: View {
             HStack(spacing: 6) {
                 Text(Self.time.string(from: record.time)).font(.system(size: 11)).foregroundStyle(.secondary)
                 Text(record.agent).font(.system(size: 12, weight: .medium))
-                Text(record.outcomeText).font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(record.outcomeText).font(.system(size: 11)).foregroundStyle(record.outcome == .argumentSeen ? .orange : .secondary)
+                if let via = record.via {
+                    Text("via \(via)").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 Spacer()
                 Text(record.kind).font(.system(size: 11)).foregroundStyle(.secondary)
             }

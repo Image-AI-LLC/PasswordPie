@@ -17,14 +17,12 @@ func refuse(_ code: AgentErrorCode, ref: String? = nil, refs: [String] = [], det
 
 /// The app's answer, or the tool exits with the refusal.
 func ask(_ request: AgentRequest) -> AgentResponse {
-    switch AppConnection.send(request) {
-    case .failure(let failure):
-        refuse(failure.code, detail: failure.detail)
-    case .success(let answer):
-        if let code = answer.errorCode {
-            refuse(code, ref: answer.ref, refs: answer.refs ?? [], detail: answer.detail)
-        }
-        return answer
+    do {
+        return try AppConnection.ask(request)
+    } catch let refusal as Refusal {
+        refuse(refusal.code, ref: refusal.ref, refs: refusal.refs, detail: refusal.detail)
+    } catch {
+        refuse(.appUnavailable)
     }
 }
 
@@ -44,56 +42,31 @@ func runCommand(_ options: RunOptions) -> Never {
     request.wait = options.wait
     let answer = ask(request)
 
-    RunFolder.removeStale()
     var childEnvironment = environment
     for literal in options.literals { childEnvironment[literal.name] = literal.value }
-    var folder: URL?
-    var stdin: Data?
-    var values: [Data] = []
-    let given = answer.secrets ?? []
-    for (secret, value) in zip(options.secrets, given) {
-        guard let bytes = value.bytes else {
-            // Not an inherited variable of the same name either: the command runs without it.
-            if let name = secret.name { childEnvironment[name] = nil }
-            // Standard input was asked for: the command reads an empty one, not the agent's.
-            if secret.delivery == .stdin { stdin = Data() }
-            printError("PasswordPie: the owner did not allow \(secret.name ?? "the standard input") (\(secret.ref)); the command runs without it.")
-            continue
-        }
-        values.append(bytes)
-        switch secret.delivery {
-        case .env, .shown:
-            guard let text = String(data: bytes, encoding: .utf8), !text.contains("\0") else {
-                if let folder { RunFolder.remove(folder) }
-                refuse(.usage, detail: "\(secret.ref) is binary and cannot be an environment variable; use --file \(secret.name ?? "NAME")=\(secret.ref).")
-            }
-            childEnvironment[secret.name ?? ""] = text
-        case .file:
-            do {
-                let current = try folder ?? RunFolder.create()
-                folder = current
-                let name = secret.name ?? "SECRET"
-                childEnvironment[name] = try RunFolder.write(bytes, named: RunFolder.fileName(variable: name, ref: secret.ref), in: current).path
-            } catch {
-                if let folder { RunFolder.remove(folder) }
-                refuse(.usage, detail: (error as? UsageError)?.message)
-            }
-        case .stdin:
-            stdin = bytes
-        }
+    let prepared: PreparedRun
+    do {
+        prepared = try PreparedRun.make(secrets: options.secrets, answer: answer, environment: childEnvironment, masking: options.masking)
+    } catch let refusal as Refusal {
+        refuse(refusal.code, ref: refusal.ref, refs: refusal.refs, detail: refusal.detail)
+    } catch {
+        refuse(.usage)
     }
-    let masker = OutputMasker(values: values)
-    if options.masking, masker.skipped > 0 {
-        printError("PasswordPie: \(masker.skipped == 1 ? "1 value is" : "\(masker.skipped) values are") shorter than \(AgentConstants.minimumMaskedLength) characters and not masked in the output.")
-    }
+    prepared.notes.forEach(printError)
     let code = ChildProcess.run(ChildProcess.Plan(
         path: program,
         argv: options.command,
-        environment: childEnvironment,
-        stdin: stdin,
-        mask: options.masking ? values : nil
+        environment: prepared.environment,
+        stdin: prepared.stdin,
+        mask: options.masking ? prepared.values : nil,
+        watched: prepared.watched,
+        report: { finding in
+            printError(finding.warning)
+            ArgumentNotice.send(finding, client: "cli")
+        }
     ))
-    if let folder { RunFolder.remove(folder) }
+    prepared.removeFiles()
+    ArgumentNotice.wait()
     exit(code)
 }
 
@@ -194,4 +167,6 @@ case .read(let options):
     readCommand(options)
 case .run(let options):
     runCommand(options)
+case .mcp:
+    MCPServer().serve()
 }
