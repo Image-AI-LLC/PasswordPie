@@ -251,8 +251,10 @@ struct AgentApprovalView: View {
             Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
             Text(value)
                 .font(.system(size: 12, design: label == "Command" ? .monospaced : .default))
-                .lineLimit(1)
+                // Only the command is cut (in the middle, full text on hover): who signed the agent is never hidden.
+                .lineLimit(label == "Command" ? 1 : 3)
                 .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
                 .help(full)
         }
     }
