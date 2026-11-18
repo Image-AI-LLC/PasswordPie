@@ -6,6 +6,7 @@ import Foundation
 /// masked (`skipped` counts them), and transformed values (base64, a substring, URL-encoded) are not caught.
 public struct OutputMasker {
     private let values: [[UInt8]]
+    private let minimumLength: Int
     private let firstBytes: Set<UInt8>
     private let concealed = Array(AgentConstants.concealed.utf8)
     private var held: [UInt8] = []
@@ -26,6 +27,7 @@ public struct OutputMasker {
             if !unique.contains(bytes) { unique.append(bytes) }
         }
         self.values = unique.sorted { $0.count > $1.count }
+        self.minimumLength = minimumLength
         firstBytes = Set(unique.compactMap(\.first))
         skipped = short
     }
@@ -39,14 +41,16 @@ public struct OutputMasker {
     }
 
     /// What is still held, at the end of the stream, with any whole value in it masked: a held tail can start a longer
-    /// value that never came and still hold a shorter one.
-    public mutating func finish() -> Data {
+    /// value that never came and still hold a shorter one. `cut`: the stream did not end, it was cut (a timeout, a
+    /// cancelled run), so a held start of a value at least `minimumLength` long is concealed too: the command was
+    /// stopped in the middle of writing the value. A stream that ended keeps what the command wrote.
+    public mutating func finish(cut: Bool = false) -> Data {
         guard !held.isEmpty else { return Data() }
-        return scan(held, final: true)
+        return scan(held, final: true, cut: cut)
     }
 
     /// Masks `buffer`. Unless `final`, a tail that could still become a value is kept in `held` for the next piece.
-    private mutating func scan(_ buffer: [UInt8], final: Bool) -> Data {
+    private mutating func scan(_ buffer: [UInt8], final: Bool, cut: Bool = false) -> Data {
         held = []
         var out: [UInt8] = []
         out.reserveCapacity(buffer.count)
@@ -68,6 +72,14 @@ public struct OutputMasker {
                 out += concealed
                 concealedCount += 1
                 index += value.count
+                continue scanning
+            }
+            // The stream was cut in the middle of a value: its start, when long enough to say something, is concealed.
+            if cut, remaining >= minimumLength,
+               values.contains(where: { $0.count > remaining && starts(buffer, at: index, with: $0, length: remaining) }) {
+                out += concealed
+                concealedCount += 1
+                index = buffer.count
                 continue scanning
             }
             out.append(byte)

@@ -246,6 +246,13 @@ final class MCPServerTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(started), 10)
         XCTAssertEqual(ran.structured["timedOut"] as? Bool, true)
         XCTAssertEqual(ran.structured["exitCode"] as? Int, 128 + Int(SIGTERM))
+        // Cut off in the middle of a value: its start is concealed, not handed to the agent.
+        let cut = try await call("passwordpie_run", [
+            "command": ["sh", "-c", "printf 'key: %s' \"${T%???}\"; sleep 30"], "cwd": inside.path, "env": ["T": "pp://Agents/Token"],
+            "timeoutSeconds": 1,
+        ])
+        XCTAssertEqual(cut.structured["stdout"] as? String, "key: \(AgentConstants.concealed)")
+        XCTAssertFalse(cut.raw.contains("planted-secret"))
         let over = try await call("passwordpie_run", [
             "command": ["true"], "cwd": inside.path, "env": ["T": "pp://Agents/Token"], "timeoutSeconds": 3601,
         ])
@@ -380,6 +387,24 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(gone)
     }
 
+    /// A request id still in use is refused: it would otherwise take over the first call's cancellation.
+    func testAnIdInUseIsRefused() async throws {
+        allowEverything()
+        let client = try await connect()
+        let pidFile = folder.appendingPathComponent("pid")
+        let first: [String: Any] = ["jsonrpc": "2.0", "id": 77, "method": "tools/call", "params": ["name": "passwordpie_run", "arguments": [
+            "command": ["sh", "-c", "echo $$ > '\(pidFile.path)'; exec sleep 30"], "cwd": inside.path, "env": ["T": "pp://Agents/Token"],
+        ]]]
+        client.raw(first)
+        let pid = try await childPID(pidFile)
+        client.raw(["jsonrpc": "2.0", "id": 77, "method": "tools/call", "params": ["name": "passwordpie_status", "arguments": [String: Any]()]])
+        let refused = await response(77)
+        XCTAssertEqual((refused?["error"] as? [String: Any])?["code"] as? Int, -32600)
+        client.notify("notifications/cancelled", ["requestId": 77])
+        let ended = await eventually(timeout: 5) { kill(pid, 0) != 0 }
+        XCTAssertTrue(ended, "the first call can still be cancelled")
+    }
+
     private func childPID(_ file: URL) async throws -> pid_t {
         let written = await eventually(timeout: 10) {
             (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
@@ -453,6 +478,11 @@ final class MCPTestClient: @unchecked Sendable {
         lock.unlock()
         write(["jsonrpc": "2.0", "id": id, "method": method, "params": params])
         return id
+    }
+
+    /// A message as given, with its own id.
+    func raw(_ message: [String: Any]) {
+        write(message)
     }
 
     func notify(_ method: String, _ params: [String: Any]) {

@@ -21,6 +21,7 @@ final class MCPServer: @unchecked Sendable {
     private let state = NSLock()
     private var clientName: String?
     private var calls: [String: Cancellation] = [:]
+    private var finishing = false
     private let running = DispatchGroup()
     /// The folder the agent started the server in: the project for the tools that name none.
     private let home = FileManager.default.currentDirectoryPath
@@ -41,9 +42,15 @@ final class MCPServer: @unchecked Sendable {
         finish()
     }
 
-    /// The client went away: every call is cancelled, its command ended and its files removed, then the server exits.
+    /// The client went away (end of input, a signal, or its end of our output closed): every call is cancelled, its
+    /// command ended and its files removed, then the server exits. Runs once; a second caller waits for the exit.
     private func finish() -> Never {
         state.lock()
+        if finishing {
+            state.unlock()
+            while true { DispatchSemaphore(value: 0).wait() }
+        }
+        finishing = true
         let open = Array(calls.values)
         state.unlock()
         open.forEach { $0.cancel() }
@@ -100,6 +107,15 @@ final class MCPServer: @unchecked Sendable {
             let cancellation = Cancellation()
             let key = Self.key(id)
             state.lock()
+            if finishing {
+                state.unlock()
+                return
+            }
+            // An id still in use would take over the first call's cancellation: the first could no longer be ended.
+            guard calls[key] == nil else {
+                state.unlock()
+                return send(["jsonrpc": "2.0", "id": id, "error": ["code": -32600, "message": "Request id \(id) is already in use."]])
+            }
             calls[key] = cancellation
             state.unlock()
             running.enter()
@@ -125,7 +141,9 @@ final class MCPServer: @unchecked Sendable {
     }
 
     private static func key(_ id: Any) -> String {
-        if let number = id as? NSNumber { return "n:\(number.stringValue)" }
+        if let number = id as? NSNumber {
+            return CFGetTypeID(number) == CFBooleanGetTypeID() ? "b:\(number.boolValue)" : "n:\(number.stringValue)"
+        }
         return "s:\(id)"
     }
 
@@ -138,12 +156,10 @@ final class MCPServer: @unchecked Sendable {
         guard var data = try? JSONSerialization.data(withJSONObject: message, options: [.withoutEscapingSlashes]) else { return }
         data.append(0x0A)
         output.lock()
-        defer { output.unlock() }
-        do {
-            try FileHandle.standardOutput.write(contentsOf: data)
-        } catch {
-            exit(0)
-        }
+        let written = (try? FileHandle.standardOutput.write(contentsOf: data)) != nil
+        output.unlock()
+        // The client closed its end: it is gone, so everything it started ends as when its input ends.
+        if !written { finish() }
     }
 
     // MARK: Tools
@@ -331,10 +347,12 @@ final class MCPServer: @unchecked Sendable {
             mask: prepared.values,
             timeout: TimeInterval(timeout),
             watched: prepared.watched,
-            report: { finding in
+            report: { [self] finding in
                 warnings.append(finding.warning)
                 FileHandle.standardError.write(Data((finding.warning + "\n").utf8))
-                ArgumentNotice.send(finding, client: "mcp", mcpClient: client)
+                // From the run's folder, in turn with the other requests, so Activity names the run's project.
+                let notice = ArgumentNotice.request(finding, client: "mcp", mcpClient: client)
+                ArgumentNotice.dispatch { [self] in _ = try? exchange(notice, in: cwd, cancellation: Cancellation()) }
             }
         ), cancellation: cancellation)
         var result: [String: Any] = [

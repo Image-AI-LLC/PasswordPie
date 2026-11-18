@@ -107,7 +107,7 @@ struct PreparedRun {
 enum ArgumentNotice {
     private static let group = DispatchGroup()
 
-    static func send(_ finding: ArgumentWatch.Finding, client: String, mcpClient: String? = nil) {
+    static func request(_ finding: ArgumentWatch.Finding, client: String, mcpClient: String? = nil) -> AgentRequest {
         var request = AgentRequest(type: .argument, id: 1)
         request.version = AgentConstants.protocolVersion
         request.client = client
@@ -115,9 +115,20 @@ enum ArgumentNotice {
         request.secrets = [AgentSecretRequest(name: finding.name, ref: finding.ref, delivery: finding.delivery)]
         request.program = finding.program
         request.wait = 0
+        return request
+    }
+
+    /// The command-line tool's notice: straight to the app, from the tool's own working folder.
+    static func send(_ finding: ArgumentWatch.Finding, client: String) {
+        let notice = request(finding, client: client)
+        dispatch { _ = AppConnection.send(notice) }
+    }
+
+    /// Runs `work` (a notice on its way) on its own thread, counted for `wait`.
+    static func dispatch(_ work: @escaping @Sendable () -> Void) {
         group.enter()
         Thread.detachNewThread {
-            _ = AppConnection.send(request)
+            work()
             group.leave()
         }
     }

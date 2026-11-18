@@ -56,7 +56,7 @@ final class VaultBrokerTests: XCTestCase {
         approver.script = [.deny]
         var request = AgentRequest.read("pp://Agents/Token")
         request.client = "mcp"
-        request.mcpClient = "Claude Code\nApproved by the owner " + String(repeating: "x", count: 80)
+        request.mcpClient = "Claude Code\nApproved\u{2028} by the\u{202E} owner " + String(repeating: "x", count: 80)
         _ = await broker().handle(request, from: Callers.make(agent: "codex"))
         let prompt = approver.prompts.first
         XCTAssertEqual(prompt?.agent, "Codex")

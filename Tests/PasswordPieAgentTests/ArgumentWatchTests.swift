@@ -82,7 +82,7 @@ final class AgentMCPSetupTests: XCTestCase {
         let hosts = AgentMCPSetup.hosts(tool: "/Applications/Pass Word Pie.app/Contents/Helpers/passwordpie")
         XCTAssertEqual(hosts.map(\.name), ["Claude Code", "Codex", "Cursor"])
         XCTAssertEqual(hosts[0].text, "claude mcp add --scope user passwordpie -- '/Applications/Pass Word Pie.app/Contents/Helpers/passwordpie' mcp")
-        XCTAssertEqual(hosts[1].text, "[mcp_servers.passwordpie]\ncommand = \"/Applications/Pass Word Pie.app/Contents/Helpers/passwordpie\"\nargs = [\"mcp\"]")
+        XCTAssertEqual(hosts[1].text, "[mcp_servers.passwordpie]\ncommand = \"/Applications/Pass Word Pie.app/Contents/Helpers/passwordpie\"\nargs = [\"mcp\"]\ntool_timeout_sec = 3900")
         let cursor = try XCTUnwrap(JSONSerialization.jsonObject(with: Data("{\(hosts[2].text)}".utf8)) as? [String: [String: Any]])
         XCTAssertEqual(cursor["passwordpie"]?["command"] as? String, "/Applications/Pass Word Pie.app/Contents/Helpers/passwordpie")
         XCTAssertEqual(cursor["passwordpie"]?["args"] as? [String], ["mcp"])

@@ -14,6 +14,8 @@ public enum AgentMCPSetup {
 
     /// The server's name in each agent's configuration.
     public static let serverName = "passwordpie"
+    /// Long enough for the approval window (2 minutes), an unlock wait (1 minute) and the longest run (1 hour).
+    public static let toolTimeoutSeconds = 3900
 
     /// `tool` is the absolute path of the `passwordpie` binary.
     public static func hosts(tool: String) -> [Host] {
@@ -27,7 +29,8 @@ public enum AgentMCPSetup {
             Host(
                 name: "Codex",
                 place: "In ~/.codex/config.toml",
-                text: "[mcp_servers.\(serverName)]\ncommand = \(tomlString(tool))\nargs = [\"mcp\"]"
+                // Codex gives a tool call 60 seconds by default: too short for the approval window plus a run.
+                text: "[mcp_servers.\(serverName)]\ncommand = \(tomlString(tool))\nargs = [\"mcp\"]\ntool_timeout_sec = \(toolTimeoutSeconds)"
             ),
             Host(
                 name: "Cursor",

@@ -133,6 +133,19 @@ final class OutputMaskerTests: XCTestCase {
         XCTAssertEqual(String(decoding: out, as: UTF8.self), "xx\(AgentConstants.concealed)yy abcdef12")
     }
 
+    /// A stream cut inside a value (a timeout, a killed command) ends with the value's start: concealed when it is at
+    /// least 6 bytes, left alone when shorter (it says nothing, and would hide ordinary text). A stream that ended keeps
+    /// what the command wrote (`testOneByteAtATime`).
+    func testTheStartOfAValueAtACutIsConcealed() {
+        var cut = OutputMasker(values: [Data("s3cret-value".utf8)])
+        let out = cut.feed(Data("token: s3cret-va".utf8)) + cut.finish(cut: true)
+        XCTAssertEqual(String(decoding: out, as: UTF8.self), "token: \(AgentConstants.concealed)")
+        XCTAssertEqual(cut.concealedCount, 1)
+        var short = OutputMasker(values: [Data("s3cret-value".utf8)])
+        let ordinary = short.feed(Data("its3c".utf8)) + short.finish(cut: true)
+        XCTAssertEqual(String(decoding: ordinary, as: UTF8.self), "its3c")
+    }
+
     func testALongerValueWinsOverItsPrefix() {
         var masker = OutputMasker(values: [Data("abcdef".utf8), Data("abcdefghij".utf8)])
         var out = masker.feed(Data("<abcdef".utf8))

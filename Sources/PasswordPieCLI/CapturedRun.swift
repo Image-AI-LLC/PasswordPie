@@ -9,7 +9,7 @@ final class Cancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
     private var socket: Int32 = -1
-    private var group: pid_t = 0
+    private var group: ProcessGroup?
 
     var isCancelled: Bool {
         lock.lock()
@@ -33,36 +33,36 @@ final class Cancellation: @unchecked Sendable {
     }
 
     /// False when already cancelled: the caller then ends the group itself.
-    func attach(group pgid: pid_t) -> Bool {
+    func attach(group: ProcessGroup) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard !cancelled else { return false }
-        group = pgid
+        self.group = group
         return true
     }
 
     func detachGroup() {
         lock.lock()
-        group = 0
+        group = nil
         lock.unlock()
     }
 
     func cancel() {
         lock.lock()
         cancelled = true
-        let fd = socket
-        let pgid = group
+        // Under the lock: the connection's owner closes it only after `detachSocket`, so the number is still this one.
+        if socket >= 0 { shutdown(socket, SHUT_RDWR) }
+        let group = group
         lock.unlock()
-        if fd >= 0 { shutdown(fd, SHUT_RDWR) }
-        if pgid > 0 { CapturedRun.end(group: pgid) }
+        group?.terminate()
     }
 
     /// SIGKILL to the command's group now, when the server exits before SIGTERM worked.
     func forceEnd() {
         lock.lock()
-        let pgid = group
+        let group = group
         lock.unlock()
-        if pgid > 0 { killpg(pgid, SIGKILL) }
+        group?.signal(SIGKILL)
     }
 }
 
@@ -156,7 +156,8 @@ enum CapturedRun {
             if stdinWriter >= 0 { close(stdinWriter) }
             throw Refusal(.usage, detail: "Could not start \(plan.argv.first ?? plan.path): \(String(cString: strerror(spawned))).")
         }
-        if !cancellation.attach(group: child) { end(group: child) }
+        let group = ProcessGroup(child)
+        if !cancellation.attach(group: group) { group.terminate() }
         defer { cancellation.detachGroup() }
 
         if let input = plan.stdin, stdinWriter >= 0 {
@@ -170,20 +171,28 @@ enum CapturedRun {
         watch?.start()
         defer { watch?.stop() }
 
-        // The command's end, from its own thread, wakes the loop below.
+        // The command's end, seen from its own thread without reaping it (so its pid, the group's id, stays taken
+        // until the group is ended below), wakes the loop.
         var wake: [Int32] = [0, 0]
-        pipe(&wake)
+        guard pipe(&wake) == 0 else {
+            group.terminate()
+            _ = group.reap()
+            readers.forEach { close($0) }
+            throw Refusal(.usage, detail: "Could not create a pipe.")
+        }
+        let woke = DispatchSemaphore(value: 0)
         defer {
+            // The waiting thread has written its byte before the pipe is closed.
+            woke.wait()
             close(wake[0])
             close(wake[1])
         }
-        let status = StatusCell()
         Thread.detachNewThread {
-            var code: Int32 = 0
-            while waitpid(child, &code, 0) < 0, errno == EINTR {}
-            status.set(code)
+            var info = siginfo_t()
+            while waitid(P_PID, id_t(child), &info, WEXITED | WNOWAIT) < 0, errno == EINTR {}
             var byte: UInt8 = 1
             _ = write(wake[1], &byte, 1)
+            woke.signal()
         }
 
         var maskers = readers.map { _ in OutputMasker(values: plan.mask) }
@@ -206,7 +215,7 @@ enum CapturedRun {
             }
             if !exited, !timedOut, Date() >= deadline {
                 timedOut = true
-                end(group: child)
+                group.terminate()
             }
             if !exited, let last = polled.last, last.revents != 0 {
                 exited = true
@@ -223,15 +232,18 @@ enum CapturedRun {
             }
             open.removeAll { closed.contains($0) }
         }
+        // A stream still open now was cut (the command was ended, or left something writing): a value it was in the middle
+        // of is concealed from its start.
+        let stopped = timedOut || cancellation.isCancelled
         for index in readers.indices {
-            kept[index].append(maskers[index].finish())
+            kept[index].append(maskers[index].finish(cut: stopped || open.contains(index)))
             close(readers[index])
         }
         parentEnds = []
         // Whatever the command left running in its group (a background job holding the output) ends with it.
-        killpg(child, SIGKILL)
+        let code = group.reap()
         return Outcome(
-            exitCode: ChildProcess.exitCode(status.wait()),
+            exitCode: ChildProcess.exitCode(code),
             stdout: kept[0].text,
             stderr: kept[1].text,
             concealed: maskers.reduce(0) { $0 + $1.concealedCount },
@@ -240,11 +252,40 @@ enum CapturedRun {
         )
     }
 
-    /// SIGTERM to the command's process group, SIGKILL two seconds later if it is still there.
-    static func end(group pgid: pid_t) {
-        guard pgid > 0 else { return }
-        killpg(pgid, SIGTERM)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { killpg(pgid, SIGKILL) }
+}
+
+/// The command's process group, whose id is the command's pid. It is signalled only until the command is reaped: while
+/// the command (alive, or a zombie not yet reaped) holds its pid, no other process can get it, so no other group is hit.
+final class ProcessGroup: @unchecked Sendable {
+    let id: pid_t
+    private let lock = NSLock()
+    private var reaped = false
+
+    init(_ id: pid_t) {
+        self.id = id
+    }
+
+    func signal(_ number: Int32) {
+        lock.lock()
+        defer { lock.unlock() }
+        if !reaped { killpg(id, number) }
+    }
+
+    /// SIGTERM, then SIGKILL two seconds later unless the command was reaped meanwhile.
+    func terminate() {
+        signal(SIGTERM)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [self] in signal(SIGKILL) }
+    }
+
+    /// Ends what is left of the group, then reaps the command and returns its wait status.
+    func reap() -> Int32 {
+        lock.lock()
+        if !reaped { killpg(id, SIGKILL) }
+        reaped = true
+        lock.unlock()
+        var status: Int32 = 0
+        while waitpid(id, &status, 0) < 0, errno == EINTR {}
+        return status
     }
 }
 
@@ -300,20 +341,5 @@ struct Clipped {
         var back = tail
         while let first = back.first, first & 0xC0 == 0x80 { back.removeFirst() }
         return String(decoding: front, as: UTF8.self) + "\n[… \(dropped) bytes cut by PasswordPie …]\n" + String(decoding: back, as: UTF8.self)
-    }
-}
-
-private final class StatusCell: @unchecked Sendable {
-    private let done = DispatchSemaphore(value: 0)
-    private var status: Int32 = 0
-
-    func set(_ value: Int32) {
-        status = value
-        done.signal()
-    }
-
-    func wait() -> Int32 {
-        done.wait()
-        return status
     }
 }

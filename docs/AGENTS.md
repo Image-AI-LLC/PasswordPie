@@ -247,7 +247,8 @@ tool waits up to 2 seconds for its notices to reach the app before it exits.
 `passwordpie mcp` is an MCP server on standard input and output (JSON-RPC 2.0, one message per line; protocol versions
 2024-11-05 to 2025-11-25), started by the agent from its MCP configuration. The Agents pane shows the lines to paste for
 Claude Code (`claude mcp add --scope user passwordpie -- <tool> mcp`), Codex (`[mcp_servers.passwordpie]` in
-`~/.codex/config.toml`) and Cursor (an entry in `~/.cursor/mcp.json`); the app does not edit their files. It is the same
+`~/.codex/config.toml`, with `tool_timeout_sec = 3900`: Codex gives a tool call 60 seconds by default, too short for the
+approval window and a run) and Cursor (an entry in `~/.cursor/mcp.json`); the app does not edit their files. It is the same
 binary on the same socket, so the broker, prompts, permissions and Activity are the command-line tool's. One server
 process is one agent session, and the agent is its parent in the process tree.
 
@@ -271,7 +272,8 @@ process is one agent session, and the agent is its parent in the process tree.
   folder the agent started the server in.
 - **The command** runs without a shell, in a process group of its own, with an empty standard input unless a secret goes
   there (never the server's, which carries the MCP messages), its output captured and masked as by `run`. Each stream
-  keeps its first and last 32 KiB with a line saying how much was cut between. At the timeout, or when the client cancels
+  keeps its first and last 32 KiB with a line saying how much was cut between. Output cut off inside a value (a
+  timeout) ends with the value's start: concealed too when it is at least 6 bytes. At the timeout, or when the client cancels
   the call (`notifications/cancelled`) or goes away (end of input, SIGTERM), the group gets SIGTERM, then SIGKILL two
   seconds later; files are removed. A cancelled call is not answered. A request still waiting on the app has its
   connection closed, so its prompt is withdrawn.

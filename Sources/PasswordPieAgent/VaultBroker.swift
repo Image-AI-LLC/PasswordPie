@@ -454,7 +454,9 @@ public final class VaultBroker {
     /// name is its own claim: quoted, cut to 60 characters, never put where the agent's name goes.
     public static func viaText(_ request: AgentRequest) -> String? {
         guard request.client == "mcp" else { return nil }
-        let said = (request.mcpClient ?? "").unicodeScalars.filter { $0.properties.generalCategory != .control }
+        // No control or format characters and no line breaks: nothing in the claim can draw a line of its own.
+        let hidden: Set<Unicode.GeneralCategory> = [.control, .format, .lineSeparator, .paragraphSeparator]
+        let said = (request.mcpClient ?? "").unicodeScalars.filter { !hidden.contains($0.properties.generalCategory) }
         let name = String(String.UnicodeScalarView(said)).trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return "through MCP" }
         return "through MCP; the client says it is “\(name.count > 60 ? String(name.prefix(59)) + "…" : name)”"
