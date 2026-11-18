@@ -131,10 +131,24 @@ final class AgentAccess: ObservableObject {
 
     var linkURL: URL { linkFolder.appendingPathComponent(AgentConstants.toolName) }
 
-    /// The exact command the button runs, shown beside it.
+    /// The exact command the button runs, shown beside it, each path quoted for the shell.
     var linkCommand: String {
         let tool = toolURL?.path ?? "/Applications/PasswordPie.app/\(AgentConstants.toolPathInBundle)"
-        return "mkdir -p \(Self.tilde(linkFolder.path)) && ln -sf '\(tool)' \(Self.tilde(linkURL.path))"
+        return "mkdir -p \(Self.shellQuoted(linkFolder.path)) && ln -sf \(Self.shellQuoted(tool)) \(Self.shellQuoted(linkURL.path))"
+    }
+
+    /// `~/rest` stays expandable; anything that needs it is single-quoted, with a quote in it written as `'\''`.
+    static func shellQuoted(_ path: String) -> String {
+        let short = tilde(path)
+        let safe = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/._-+,:@~")
+        if short.unicodeScalars.allSatisfy(safe.contains) { return short }
+        var prefix = ""
+        var rest = short
+        if short.hasPrefix("~/") {
+            prefix = "~/"
+            rest = String(short.dropFirst(2))
+        }
+        return prefix + "'" + rest.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// True when the link exists and points at this app's tool.

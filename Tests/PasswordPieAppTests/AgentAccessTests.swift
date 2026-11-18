@@ -232,6 +232,13 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertNotNil(access.linkStatus)
     }
 
+    func testTheLinkCommandQuotesPaths() {
+        XCTAssertEqual(AgentAccess.shellQuoted("/Applications/PasswordPie.app/Contents/Helpers/passwordpie"), "/Applications/PasswordPie.app/Contents/Helpers/passwordpie")
+        XCTAssertEqual(AgentAccess.shellQuoted("/Volumes/My Apps/O'Neil.app"), "'/Volumes/My Apps/O'\\''Neil.app'")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertEqual(AgentAccess.shellQuoted(home + "/my bin"), "~/'my bin'")
+    }
+
     func testTheLockScreenNamesTheWaitingAgent() {
         let session = VaultSession(writes: .inline)
         session.restore()

@@ -58,6 +58,7 @@ final class KDBXCustomDataTests: XCTestCase {
         XCTAssertEqual(vault.attachment(named: "inline.txt", of: entry.id), Data("inline".utf8))
         XCTAssertNil(vault.attachment(named: "missing", of: entry.id))
         XCTAssertEqual(vault.attachmentNames(of: UUID()), [])
+        XCTAssertEqual(vault.attachmentNames()[entry.id], ["AuthKey.p8", "inline.txt"], "the dangling reference is no attachment")
     }
 }
 

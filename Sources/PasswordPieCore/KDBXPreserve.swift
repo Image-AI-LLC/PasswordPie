@@ -157,11 +157,12 @@ final class KDBXPreserve: @unchecked Sendable {
 
     // MARK: Attachments
 
-    /// The attachments' names of every live entry, in one walk.
+    /// The attachments' names of every live entry, in one walk. Only attachments with bytes the file holds.
     func attachmentNames() -> [UUID: [String]] {
+        let payloads = binaryPayloads
         var names: [UUID: [String]] = [:]
         for live in walkDatabase().entries where !live.location.trashed {
-            let keys = direct(live.element, "Binary").compactMap { direct($0, "Key").first?.stringValue }.filter { !$0.isEmpty }
+            let keys = readAttachments(live.element, payloads: payloads).map(\.name)
             if !keys.isEmpty { names[live.id] = keys }
         }
         return names
@@ -170,9 +171,14 @@ final class KDBXPreserve: @unchecked Sendable {
     /// The attachments of the live entry `id`, by name, read from the file on demand: the model does not hold them.
     func attachments(of id: UUID) -> [(name: String, data: Data)] {
         guard let live = walkDatabase().entries.first(where: { $0.id == id && !$0.location.trashed }) else { return [] }
-        let payloads = binaryPayloads
+        return readAttachments(live.element, payloads: binaryPayloads)
+    }
+
+    /// An entry's `Binary` elements that resolve to bytes: a KDBX 4 reference into the inner header's binaries (stored
+    /// as they are; their flag only asks to protect them in memory), or a KDBX 3 inline value.
+    private func readAttachments(_ entry: XMLElement, payloads: [Data]) -> [(name: String, data: Data)] {
         var found: [(name: String, data: Data)] = []
-        for binary in direct(live.element, "Binary") {
+        for binary in direct(entry, "Binary") {
             let key = direct(binary, "Key").first?.stringValue ?? ""
             guard !key.isEmpty, let value = direct(binary, "Value").first else { continue }
             if let ref = value.attribute(forName: "Ref")?.stringValue {
