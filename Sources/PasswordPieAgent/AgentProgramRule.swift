@@ -78,7 +78,7 @@ public enum AgentProgramRule {
     /// Folders of a project that hold other people's code: a script there is bound with its arguments.
     static let dependencyFolders: Set<String> = ["node_modules", ".venv", "venv", "vendor", "Pods", ".tox", "site-packages", "__pypackages__"]
     /// Package managers' settings that can change what `run` runs.
-    static let packageManagerSettings = [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs"]
+    static let packageManagerSettings = [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs", "bunfig.toml"]
     /// Apple's tools found by xcrun that are given different arguments each time (a release's file): bound by name.
     static let xcrunTools: Set<String> = ["notarytool", "stapler", "altool"]
 
@@ -424,6 +424,15 @@ public enum AgentProgramRule {
                     guard let file = script(name) else { return .asksEveryTime("The makefile \(name) could not be read.") }
                     files.append(file)
                 }
+            }
+            // A makefile that includes another reads a file not bound here: it asks rather than follow includes.
+            for file in files {
+                let text = (try? String(contentsOfFile: file.path, encoding: .utf8)) ?? ""
+                let includes = text.split(whereSeparator: \.isNewline).contains { line in
+                    let word = line.drop { $0 == " " || $0 == "\t" }.prefix { !$0.isWhitespace }
+                    return ["include", "-include", "sinclude"].contains(String(word))
+                }
+                if includes { return .asksEveryTime("The makefile includes another file, which PasswordPie does not bind.") }
             }
             var bound = binding
             for file in files {

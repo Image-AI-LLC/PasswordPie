@@ -518,6 +518,12 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertTrue(deploy.contents.keys.contains(home + "/.npmrc"), "the owner's own .npmrc is bound too")
     }
 
+    func testAMakefileThatIncludesAnotherAsks() throws {
+        try "include rules.mk\nrelease:\n".write(to: project.appendingPathComponent("Makefile"), atomically: true, encoding: .utf8)
+        asks(["make", "release"])
+        XCTAssertNil(ProcessFactsWithoutEnvironment().environmentNames(1), "a reader that does not say is unreadable")
+    }
+
     func testEveryMakefileIsBound() throws {
         try "evil:\n".write(to: project.appendingPathComponent("evil.mk"), atomically: true, encoding: .utf8)
         let plain = try XCTUnwrap(binding(["make", "release"]))
@@ -636,4 +642,13 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertEqual(AgentProgramRule.family("git"), "git")
         XCTAssertEqual(AgentProgramRule.family("node22"), "node")
     }
+}
+
+/// Facts that do not read environments: the default answer counts as unreadable.
+private struct ProcessFactsWithoutEnvironment: ProcessFacts {
+    func info(_ pid: Int32) -> ProcessRecord? { nil }
+    func workingDirectory(_ pid: Int32) -> String? { nil }
+    func arguments(_ pid: Int32) -> [String] { [] }
+    func sessionID(_ pid: Int32) -> Int32? { nil }
+    func signature(_ pid: Int32) -> (team: String?, identifier: String?, signer: String?) { (nil, nil, nil) }
 }

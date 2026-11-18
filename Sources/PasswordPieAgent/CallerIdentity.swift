@@ -186,7 +186,8 @@ public protocol ProcessFacts: Sendable {
 }
 
 public extension ProcessFacts {
-    func environmentNames(_ pid: Int32) -> [String]? { [] }
+    /// Not read: no standing permission is used (fail closed).
+    func environmentNames(_ pid: Int32) -> [String]? { nil }
 }
 
 public struct ProcessRecord: Equatable, Sendable {

@@ -121,9 +121,9 @@ and name each.
   file in the working folder; `env` and the path it starts (with the variables it sets); `xcrun` and its tool, with the
   SDK by name (`notarytool`, `stapler` and `altool` take another file each time, so their arguments are not bound);
   `npm`, `pnpm`, `yarn` or `bun run <script>` with that `package.json`, the package manager's settings files (`.npmrc`,
-  `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs` in the working folder, the project and the home folder, bound present or
+  `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs`, `bunfig.toml` in the working folder, the project and the home folder, bound present or
   absent) and the arguments; `npx`, `bunx` or `uvx` and the
-  package; `uv run` and the script or path it runs; `make` with every makefile it reads and its targets. A link named
+  package; `uv run` and the script or path it runs; `make` with every makefile named (one that `include`s another asks) and its targets. A link named
   `deploy` to `/bin/sh` is read as `sh`.
 - Never a grant for: inline code (`sh -c`, `bash -ec`, `sh -s`, a shell reading standard input, `python3 -c`,
   `node -e`, `tsx -e`, `perl -e`, `osascript -e`, `npx -c`); a login or interactive shell (`-l`, `--login`, `-i`), whose
@@ -431,7 +431,7 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Leaks into logs | No value in any log or the activity file; tests plant values and grep | The command's own logs |
 | Leaks into the transcript | Output masking of exact values; files removed at exit | Transformed values; a command that writes the value to a project file |
 | Clicking the prompt | Touch ID (or the login password) on every Allow, lasting or not | none known |
-| Prompt injection uses a granted secret | Grants are bound to the program and, unless it is a content-bound script, its arguments: `curl` is not the granted script; inline code always asks; scripts by content, other programs by their identity on disk; code-loading variables in the tool's environment or its `.env.pp` ask | A granted script that can itself be steered (one that takes a URL argument, or calls a program by name found through `PATH`); files a granted command loads that are not bound (a Makefile's includes, the files `package.json`'s scripts run, `node_modules`, the owner's own startup files such as `~/.zshenv`, which same-user code can edit); an older copy of the database file put back by same-user code brings back the grants it held |
+| Prompt injection uses a granted secret | Grants are bound to the program and, unless it is a content-bound script, its arguments: `curl` is not the granted script; inline code always asks; scripts by content, other programs by their identity on disk; code-loading variables in the tool's environment or its `.env.pp` ask | A granted script that can itself be steered (one that takes a URL argument, or calls a program by name found through `PATH`); files a granted command loads that are not bound (files named in its arguments, the files `package.json`'s scripts run, workspace packages, `node_modules`, the owner's own startup files such as `~/.zshenv`, which same-user code can edit); an older copy of the database file put back by same-user code brings back the grants it held |
 | The agent widens its own grant | No message creates or widens a grant; they live in the database, not the preferences; only the window's button with Touch ID makes one; raw reads and `--no-masking` never get one | An owner who picks long grants by habit |
 | A script changes between the check and the run | The app hashes the script when the request comes | The file can be swapped before it runs (a time-of-check to time-of-use race); the same-user attacker who wins it can also read the temporary file |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
