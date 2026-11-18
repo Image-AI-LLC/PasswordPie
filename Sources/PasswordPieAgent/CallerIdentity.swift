@@ -130,7 +130,6 @@ public enum AgentHosts {
         if let identifier, let name = byIdentifier[identifier] { return name }
         let executable = (path as NSString).lastPathComponent.lowercased()
         if let name = byName[executable] { return name }
-        if let first = arguments.first, let name = byName[(first as NSString).lastPathComponent.lowercased()] { return name }
         if interpreters.contains(executable) || interpreters.contains(where: { executable.hasPrefix($0) }) {
             for argument in arguments.dropFirst() where !argument.hasPrefix("-") {
                 var script = (argument as NSString).lastPathComponent.lowercased()
@@ -345,6 +344,12 @@ public enum CodeSignature {
         guard let certificates = details[kSecCodeInfoCertificates as String] as? [SecCertificate], let leaf = certificates.first else {
             return (nil, nil, nil)
         }
+        // Read from disk: bound to the running code by its code directory hash, as the bridge's peer check does.
+        guard let cdhash = details[kSecCodeInfoUnique as String] as? Data, !cdhash.isEmpty else { return (nil, nil, nil) }
+        let hex = cdhash.map { String(format: "%02x", $0) }.joined()
+        var bound: SecRequirement?
+        guard SecRequirementCreateWithString("cdhash H\"\(hex)\"" as CFString, [], &bound) == errSecSuccess,
+              SecCodeCheckValidity(code, [], bound) == errSecSuccess else { return (nil, nil, nil) }
         let summary = SecCertificateCopySubjectSummary(leaf) as String? ?? ""
         return (team, identifier, signerName(summary, team: team))
     }

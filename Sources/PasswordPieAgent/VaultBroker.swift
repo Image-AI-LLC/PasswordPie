@@ -103,6 +103,8 @@ public struct AgentApprovalPrompt: Equatable, Sendable {
     /// The terminal or app the agent runs in, when the chain shows one.
     public var startedIn: String?
     public var command: String?
+    /// The resolved path of what the command runs, as the tool found it on the PATH.
+    public var program: String?
     public var project: String
     /// The agent's `--reason`: its claim, shown in quotes and never reworded.
     public var reason: String?
@@ -323,6 +325,16 @@ public final class VaultBroker {
                 log(request, caller: caller, outcome: .locked, items: resolved.map(\.logLabel), delivery: [])
                 return .error(.locked, id: request.id)
             }
+            // What was approved must still be there, and still fit, after the wait.
+            let approved = resolved.indices.filter { selected.contains($0) }
+            if let gone = approved.first(where: { vault.agentSecret(resolved[$0].item, field: resolved[$0].field) == nil }) {
+                log(request, caller: caller, outcome: .notAvailable, items: [resolved[gone].ref], delivery: [])
+                return .error(.notAvailable, id: request.id, ref: resolved[gone].ref)
+            }
+            if AgentCoding.encode(answer(request, resolved: resolved, selected: selected, by: "once")).count + 4 > BridgeFrame.maxLength {
+                log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
+                return .error(.usage, id: request.id, ref: resolved.first?.ref)
+            }
             // A raw approval is never a standing permission's start.
             if !raw { grants.approved(query, decision: decision) }
             return deliver(request, caller: caller, resolved: resolved, selected: selected, outcome: raw ? .shown : .allowedOnce, grant: nil)
@@ -404,6 +416,7 @@ public final class VaultBroker {
             agentPID: caller.agent?.pid,
             startedIn: terminal.map { ($0.path as NSString).lastPathComponent.replacingOccurrences(of: ".app", with: "") },
             command: Self.commandText(request.argv),
+            program: request.program,
             project: caller.project,
             reason: request.reason.flatMap { $0.isEmpty ? nil : $0 },
             rows: rows
