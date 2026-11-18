@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import PasswordPieBridge
+import Security
 
 /// The app's end of `agent.sock`. It exists only while agent access is on. It serves only PasswordPie's command-line tool
 /// signed by our team (the browser bridge's peer check), works out the caller from the kernel for every request, and
@@ -111,16 +112,21 @@ public final class AgentServer: @unchecked Sendable {
         var timeout = timeval(tv_sec: 5, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         guard peerCheck(fd), let pid = Self.peerPID(fd) else { return }
-        // The process behind the connection, by pid and start time. Every request checks the walk found that same
-        // process, not a later one that got the pid after the tool exited.
-        let started = identify(pid)?.cli.startTime
+        // The walk goes by pid. A walk is only taken when, after it, the audit token's exact process (pid and pid
+        // version) is still running: while it runs, its pid cannot belong to anything else. Its start time then names it
+        // for every later request on this connection.
+        func walk() -> AgentCaller? {
+            guard let caller = identify(pid), Self.peerIsRunning(fd) else { return nil }
+            return caller
+        }
+        let started = walk()?.cli.startTime
         var reader = BridgeFrame.Reader()
         var pending: [Data] = []
         while let frame = try? BridgeSocket.readFrame(fd, reader: &reader, pending: &pending) {
             let answer: AgentResponse
             if let request = AgentCoding.decode(AgentRequest.self, from: frame) {
                 // Every request, not once per connection: the agent that started the tool may have gone meanwhile.
-                if let caller = identify(pid), caller.cli.startTime == started {
+                if let caller = walk(), caller.cli.startTime == started {
                     answer = Self.wait(handler, request, caller, fd: fd)
                 } else {
                     answer = .error(.appUnavailable, id: request.id)
@@ -130,6 +136,17 @@ public final class AgentServer: @unchecked Sendable {
             }
             guard (try? BridgeSocket.writeAll(fd, BridgeFrame.encode(AgentCoding.encode(answer)))) != nil else { return }
         }
+    }
+
+    /// True while the exact process behind the connection's audit token is running. A token names a process by pid and
+    /// pid version, so it fails once that process has exited, even when the pid was given to another.
+    static func peerIsRunning(_ fd: Int32) -> Bool {
+        var token = audit_token_t()
+        var length = socklen_t(MemoryLayout<audit_token_t>.size)
+        guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &length) == 0 else { return false }
+        var code: SecCode?
+        let attributes = [kSecGuestAttributeAudit: Data(bytes: &token, count: Int(length))] as CFDictionary
+        return SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess && code != nil
     }
 
     /// The peer's pid, from the kernel's audit token for the connection.

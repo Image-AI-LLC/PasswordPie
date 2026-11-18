@@ -16,7 +16,7 @@ enum RunFolder {
 
     /// A new folder for this run, mode 0700.
     static func create() throws -> URL {
-        var template = Array(base.appendingPathComponent("\(prefix)\(getpid()).XXXXXXXX").path.utf8CString)
+        var template = Array(base.appendingPathComponent("\(prefix)\(getpid()).\(startTime(getpid()) ?? 0).XXXXXXXX").path.utf8CString)
         guard let made = mkdtemp(&template) else { throw UsageError("Could not create a folder in \(base.path).") }
         let path = String(cString: made)
         chmod(path, 0o700)
@@ -61,6 +61,11 @@ enum RunFolder {
         return safe.isEmpty ? variable : "\(variable).\(safe)"
     }
 
+    /// A process's start time in microseconds, or nil when no such process runs.
+    static func startTime(_ pid: Int32) -> UInt64? {
+        LiveProcessFacts.shared.info(pid)?.startTime
+    }
+
     static func remove(_ folder: URL) {
         try? FileManager.default.removeItem(at: folder)
     }
@@ -69,9 +74,11 @@ enum RunFolder {
     static func removeStale() {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: base.path) else { return }
         for name in names where name.hasPrefix(prefix) {
-            let pidText = name.dropFirst(prefix.count).prefix { $0 != "." }
-            guard let pid = Int32(pidText), pid != getpid() else { continue }
-            if kill(pid, 0) == 0 || errno == EPERM { continue }
+            // passwordpie-run.<pid>.<start time>.<random>: the tool that made it, by pid and start time, so a later
+            // process that got the pid does not keep it alive.
+            let parts = name.dropFirst(prefix.count).split(separator: ".")
+            guard parts.count >= 2, let pid = Int32(parts[0]) else { continue }
+            if let started = UInt64(parts[1]), let running = startTime(pid), running == started { continue }
             let path = base.appendingPathComponent(name).path
             var info = stat()
             guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR, info.st_uid == getuid() else { continue }

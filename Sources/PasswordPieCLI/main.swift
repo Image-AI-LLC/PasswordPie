@@ -55,6 +55,8 @@ func runCommand(_ options: RunOptions) -> Never {
         guard let bytes = value.bytes else {
             // Not an inherited variable of the same name either: the command runs without it.
             if let name = secret.name { childEnvironment[name] = nil }
+            // Standard input was asked for: the command reads an empty one, not the agent's.
+            if secret.delivery == .stdin { stdin = Data() }
             printError("PasswordPie: the owner did not allow \(secret.name ?? "the standard input") (\(secret.ref)); the command runs without it.")
             continue
         }

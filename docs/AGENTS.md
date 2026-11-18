@@ -72,8 +72,9 @@ can start it, so the app looks further, itself, for every request (not once per 
    other users such as the root `login` between a terminal and its shell). For each: pid, start time, executable path,
    and code signature (team, identifier, the certificate's organisation) when it is valid and anchored to Apple
    (Developer ID, App Store, or Apple's own; a self-signed certificate can name any team, so it counts as not signed).
-   The tool's own pid is checked against the start time seen when it connected, so a later process that got the pid is
-   not taken for it. A parent that started after
+   A walk counts only when, after it, the connection's audit token (pid and pid version) still names a running process:
+   while that process runs, its pid cannot belong to another. Each request also checks the tool's start time against
+   the one seen when it connected. A parent that started after
    its child is a later process that got an exited parent's pid: the walk stops there.
 3. **The agent** is the nearest ancestor on the list of known agent hosts (`AgentHosts`: by signing identifier, by
    executable name, or for an interpreter such as `node` by its script's name), else the first that is not a shell,
@@ -143,7 +144,7 @@ credential: the tool holds no token.
 - References resolve against the database PasswordPie unlocked (the current one in the database list). Other open
   databases are not searched: a reference does not name a database, and two copies of a file share item UUIDs. An
   item's UUID is its KeePass UUID.
-- One answer carries at most 700 KB of values (base64 and JSON must fit the 1 MiB frame). Larger asks are refused with
+- An answer must fit one 1 MiB frame as it would be sent (binary values travel as base64). A larger ask is refused with
   `usage` before anyone is asked.
 
 ### `.env.pp`

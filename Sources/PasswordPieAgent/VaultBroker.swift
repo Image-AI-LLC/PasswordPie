@@ -1,4 +1,5 @@
 import Foundation
+import PasswordPieBridge
 
 // The broker: the one place in the app where a request that is not the owner clicking in PasswordPie is answered. It
 // (1) takes the caller as the app worked it out from the kernel, (2) resolves references against shared items only,
@@ -47,6 +48,8 @@ public struct AgentResolvedSecret: Equatable, Sendable {
 public struct AgentGrantQuery: Sendable {
     public var caller: AgentCaller
     public var kind: AgentRequestKind
+    /// The agent can end up with the value (a read, or masking off). Never covered or recorded by a standing permission.
+    public var raw: Bool
     /// The resolved path of what the command runs, and the command as typed. From the tool: a claim, checked by the grant
     /// store against the file itself.
     public var program: String?
@@ -283,15 +286,15 @@ public final class VaultBroker {
             log(request, caller: caller, outcome: failure.code == .ambiguous ? .ambiguous : .notAvailable, items: [failure.ref], delivery: [])
             return .error(failure.code, id: request.id, ref: failure.ref, refs: failure.refs)
         }
-        // The answer must fit one frame. Said before anyone is asked, not after the owner approved.
-        let total = resolved.reduce(0) { $0 + (vault.agentSecret($1.item, field: $1.field)?.count ?? 0) }
-        if total > AgentConstants.maxAnswerBytes {
+        // The answer must fit one frame, encoded as it would be sent with everything allowed. Said before anyone is asked,
+        // not after the owner approved. The values stay in this process.
+        if AgentCoding.encode(answer(request, resolved: resolved, selected: Set(resolved.indices), by: "once")).count + 4 > BridgeFrame.maxLength {
             log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
-            var answer = AgentResponse.error(.usage, id: request.id, ref: resolved.first?.ref)
-            answer.detail = "The values asked for are larger than \(AgentConstants.maxAnswerBytes / 1024) KB, more than agents can be given."
-            return answer
+            var refusal = AgentResponse.error(.usage, id: request.id, ref: resolved.first?.ref)
+            refusal.detail = "The values asked for are too large to hand over (an answer is at most 1 MiB)."
+            return refusal
         }
-        let query = AgentGrantQuery(caller: caller, kind: request.type, program: request.program, argv: request.argv ?? [], secrets: resolved)
+        let query = AgentGrantQuery(caller: caller, kind: request.type, raw: raw, program: request.program, argv: request.argv ?? [], secrets: resolved)
         if !raw, let grant = grants.grant(covering: query) {
             return deliver(request, caller: caller, resolved: resolved, selected: Set(resolved.indices), outcome: .allowedByGrant, grant: grant)
         }
@@ -320,7 +323,8 @@ public final class VaultBroker {
                 log(request, caller: caller, outcome: .locked, items: resolved.map(\.logLabel), delivery: [])
                 return .error(.locked, id: request.id)
             }
-            grants.approved(query, decision: decision)
+            // A raw approval is never a standing permission's start.
+            if !raw { grants.approved(query, decision: decision) }
             return deliver(request, caller: caller, resolved: resolved, selected: selected, outcome: raw ? .shown : .allowedOnce, grant: nil)
         case .allow, .deny:
             limiter.recordDenial(caller.sessionKey, now: clock())
@@ -360,14 +364,19 @@ public final class VaultBroker {
     private func deliver(
         _ request: AgentRequest, caller: AgentCaller, resolved: [AgentResolvedSecret], selected: Set<Int>, outcome: AgentOutcome, grant: String?
     ) -> AgentResponse {
+        let answer = answer(request, resolved: resolved, selected: selected, by: grant ?? "once")
+        let given = resolved.enumerated().filter { selected.contains($0.offset) }.map(\.element)
+        log(request, caller: caller, outcome: outcome, grant: grant, items: given.map(\.logLabel), delivery: given.map(\.deliveryLabel))
+        return answer
+    }
+
+    private func answer(_ request: AgentRequest, resolved: [AgentResolvedSecret], selected: Set<Int>, by: String) -> AgentResponse {
         var answer = AgentResponse(type: request.type.rawValue, id: request.id)
         answer.secrets = resolved.enumerated().map { index, secret in
             let bytes = selected.contains(index) ? (vault.agentSecret(secret.item, field: secret.field) ?? Data()) : nil
             return AgentSecretValue(name: secret.name, ref: secret.ref, bytes: bytes)
         }
-        answer.by = grant ?? "once"
-        let given = resolved.enumerated().filter { selected.contains($0.offset) }.map(\.element)
-        log(request, caller: caller, outcome: outcome, grant: grant, items: given.map(\.logLabel), delivery: given.map(\.deliveryLabel))
+        answer.by = by
         return answer
     }
 

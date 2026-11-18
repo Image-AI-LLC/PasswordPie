@@ -346,6 +346,22 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertEqual(ran.out, "-----BEGIN PRIVATE KEY-----planted")
     }
 
+    func testADeclinedStandardInputIsEmpty() async throws {
+        approver.script = [.allow([0])]
+        let ran = try await run(["run", "--env", "T=pp://Agents/Token", "--stdin", "pp://Agents/Token/Key ID", "--", "sh", "-c", "echo \"[$(cat)]\""])
+        XCTAssertEqual(ran.out, "[]\n")
+    }
+
+    /// A folder whose pid now belongs to another process (a different start time) is left over, and removed.
+    func testAFolderOfAReusedPIDIsRemoved() async throws {
+        allowEverything()
+        let left = temporary.appendingPathComponent("passwordpie-run.\(getpid()).1.abcdefgh")
+        try FileManager.default.createDirectory(at: left, withIntermediateDirectories: true)
+        let ran = try await run(["run", "--env", "T=pp://Agents/Token", "--", "true"])
+        XCTAssertEqual(ran.code, 0, ran.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: left.path))
+    }
+
     func testDeclinedSecretsAreLeftOutAndSaidSo() async throws {
         approver.script = [.allow([1])]
         inherited = ["T": "inherited-from-the-agent"]
