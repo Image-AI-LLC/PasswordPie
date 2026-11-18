@@ -6,6 +6,10 @@ HOST_ID := com.passwordpie.browser-host
 # The updater, direct channel only: the one executable that opens a network connection (docs/CHANNELS.md, "Updates").
 UPDATER := PasswordPieUpdater
 UPDATER_ID := com.passwordpie.updater
+# The command-line tool for agents, direct channel only (docs/AGENTS.md). In Contents/Helpers: Contents/MacOS/passwordpie
+# would be the app's own executable on a case-insensitive volume.
+CLI := PasswordPieCLI
+CLI_ID := com.passwordpie.cli
 # The browser extension (WXT). The Safari build goes inside the Safari appex; the Chrome build is loaded unpacked
 # or uploaded to the Chrome Web Store. Needs Node and pnpm.
 SAFARI_EXT := extension/.output/safari-mv3
@@ -72,11 +76,12 @@ define assemble_app
 	cp -R "$(SAFARI_EXT)/." "$(2)/Contents/PlugIns/$(SAFARI_APPEX)/Contents/Resources/"
 	$(if $(3),cp "$(1)/$(HOST)" "$(2)/Contents/MacOS/$(HOST)")
 	$(if $(3),cp "$(1)/$(UPDATER)" "$(2)/Contents/MacOS/$(UPDATER)")
+	$(if $(3),mkdir -p "$(2)/Contents/Helpers" && cp "$(1)/$(CLI)" "$(2)/Contents/Helpers/passwordpie")
 endef
 
 # sign_app_sh <app> <codesign flags> <app entitlements> [with-chrome-host]: nested code first, the app last, joined
 # with && so it also works inside one shell line.
-sign_app_sh = $(if $(4),codesign --force $(2) --identifier $(HOST_ID) --entitlements Entitlements/browser-host.entitlements "$(1)/Contents/MacOS/$(HOST)" && codesign --force $(2) --identifier $(UPDATER_ID) "$(1)/Contents/MacOS/$(UPDATER)" && )codesign --force $(2) --entitlements Entitlements/safari-extension.entitlements "$(1)/Contents/PlugIns/$(SAFARI_APPEX)" && codesign --force $(2) --entitlements $(call ents,Entitlements/autofill-extension.entitlements) "$(1)/Contents/PlugIns/$(APPEX)" && codesign --force $(2) --entitlements $(3) "$(1)"
+sign_app_sh = $(if $(4),codesign --force $(2) --identifier $(HOST_ID) --entitlements Entitlements/browser-host.entitlements "$(1)/Contents/MacOS/$(HOST)" && codesign --force $(2) --identifier $(UPDATER_ID) "$(1)/Contents/MacOS/$(UPDATER)" && codesign --force $(2) --identifier $(CLI_ID) --entitlements Entitlements/cli.entitlements "$(1)/Contents/Helpers/passwordpie" && )codesign --force $(2) --entitlements Entitlements/safari-extension.entitlements "$(1)/Contents/PlugIns/$(SAFARI_APPEX)" && codesign --force $(2) --entitlements $(call ents,Entitlements/autofill-extension.entitlements) "$(1)/Contents/PlugIns/$(APPEX)" && codesign --force $(2) --entitlements $(3) "$(1)"
 
 # sign_app: the same, as one recipe line.
 sign_app = $(call sign_app_sh,$(1),$(2),$(3),$(4))

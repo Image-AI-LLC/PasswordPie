@@ -91,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var passwordChangeWindow: NSWindow?
     private(set) var passwordChange: PasswordChangeModel!
     private(set) var updates: UpdateCoordinator!
+    /// Agents on this Mac asking for secrets (docs/AGENTS.md). The socket is open only while its switch is on.
+    private(set) var agentAccess: AgentAccess!
     #endif
     private var cancellables = Set<AnyCancellable>()
     #if DEBUG
@@ -170,6 +172,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panelController = PanelController(session: session)
         session.hidePanel = { [weak self] in self?.panelController.hide() }
         startBrowserBridge()
+        #if PP_DIRECT
+        startAgentAccess()
+        #endif
         buildStatusItem()
         registerHotkey()
         session.$editing
@@ -265,8 +270,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         session.flushClipboard()
         #if PP_DIRECT
         updates.appWillTerminate()
+        agentAccess.stop()
         #endif
     }
+
+    #if PP_DIRECT
+    /// A request that waits for the unlock shows the lock screen; agent use is never activity for auto-lock. Locking
+    /// withdraws every approval window.
+    private func startAgentAccess() {
+        agentAccess = AgentAccess(session: session)
+        agentAccess.onNeedsUnlock = { [weak self] in
+            guard let self, self.session.locked else { return }
+            if self.panelController.isVisible { self.panelController.bringForward() } else { self.panelController.show(.hotkey) }
+        }
+        Publishers.CombineLatest(session.$locked, session.$unlocking)
+            .map { $0 || $1 }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] locked in self?.agentAccess.vaultStateChanged(locked: locked) }
+            .store(in: &cancellables)
+        agentAccess.start()
+    }
+    #endif
 
     // MARK: Panel
 
@@ -466,6 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         var view = PreferencesView(session: session, navigator: preferencesNavigator, importFlow: importFlow, bridge: bridge)
         #if PP_DIRECT
         view.updates = updates
+        view.agentAccess = agentAccess
         #endif
         return view
     }

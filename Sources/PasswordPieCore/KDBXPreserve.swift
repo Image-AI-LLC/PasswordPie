@@ -71,6 +71,7 @@ final class KDBXPreserve: @unchecked Sendable {
     func makeVault(kdf: KDFParameters) -> Vault {
         let walked = walkDatabase()
         var vault = Vault(name: walked.databaseName, rootName: walked.rootName, entries: walked.entries.map(\.model), kdf: kdf)
+        vault.customData = metaCustomData()
         vault.preserve = self
         return vault
     }
@@ -99,6 +100,91 @@ final class KDBXPreserve: @unchecked Sendable {
             let bin = try ensureRecycleBin(fallbackName: walked.rootName)
             move(live.element, to: bin)
         }
+        if vault.customData != metaCustomData() {
+            applyMetaCustomData(vault.customData)
+        }
+    }
+
+    // MARK: Database custom data
+
+    /// `Meta/CustomData`: the database's own key-value settings, which KeePass apps keep and pass on. PasswordPie keeps
+    /// what agents may ask for there (docs/AGENTS.md, "Sharing"), so it moves with the file and is under the master key.
+    func metaCustomData() -> [String: String] {
+        guard let file = document.rootElement(), let meta = direct(file, "Meta").first,
+              let custom = direct(meta, "CustomData").first else { return [:] }
+        var values: [String: String] = [:]
+        for item in direct(custom, "Item") {
+            guard let key = direct(item, "Key").first?.stringValue else { continue }
+            values[key] = direct(item, "Value").first?.stringValue ?? ""
+        }
+        return values
+    }
+
+    /// Makes `Meta/CustomData` hold exactly `values`. Items keep their place; new ones go last.
+    private func applyMetaCustomData(_ values: [String: String]) {
+        guard let file = document.rootElement() else { return }
+        let meta = direct(file, "Meta").first ?? {
+            let created = XMLElement(name: "Meta")
+            file.insertChild(created, at: 0)
+            return created
+        }()
+        let custom = direct(meta, "CustomData").first ?? {
+            let created = XMLElement(name: "CustomData")
+            meta.addChild(created)
+            return created
+        }()
+        var remaining = values
+        for item in direct(custom, "Item") {
+            let key = direct(item, "Key").first?.stringValue ?? ""
+            if let value = remaining.removeValue(forKey: key) {
+                let valueNode = direct(item, "Value").first ?? {
+                    let created = leaf("Value", "")
+                    item.addChild(created)
+                    return created
+                }()
+                if valueNode.stringValue != value { valueNode.stringValue = value }
+            } else {
+                custom.removeChild(at: item.index)
+            }
+        }
+        for key in remaining.keys.sorted() {
+            let item = XMLElement(name: "Item")
+            item.addChild(leaf("Key", key))
+            item.addChild(leaf("Value", remaining[key] ?? ""))
+            custom.addChild(item)
+        }
+    }
+
+    // MARK: Attachments
+
+    /// The attachments' names of every live entry, in one walk.
+    func attachmentNames() -> [UUID: [String]] {
+        var names: [UUID: [String]] = [:]
+        for live in walkDatabase().entries where !live.location.trashed {
+            let keys = direct(live.element, "Binary").compactMap { direct($0, "Key").first?.stringValue }.filter { !$0.isEmpty }
+            if !keys.isEmpty { names[live.id] = keys }
+        }
+        return names
+    }
+
+    /// The attachments of the live entry `id`, by name, read from the file on demand: the model does not hold them.
+    func attachments(of id: UUID) -> [(name: String, data: Data)] {
+        guard let live = walkDatabase().entries.first(where: { $0.id == id && !$0.location.trashed }) else { return [] }
+        let payloads = binaryPayloads
+        var found: [(name: String, data: Data)] = []
+        for binary in direct(live.element, "Binary") {
+            let key = direct(binary, "Key").first?.stringValue ?? ""
+            guard !key.isEmpty, let value = direct(binary, "Value").first else { continue }
+            if let ref = value.attribute(forName: "Ref")?.stringValue, let index = Int(ref), payloads.indices.contains(index) {
+                found.append((key, payloads[index]))
+            } else if !isInnerProtected(value) {
+                let text = (value.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let data = Data(base64Encoded: text, options: .ignoreUnknownCharacters) else { continue }
+                let compressed = value.attribute(forName: "Compressed")?.stringValue?.lowercased() == "true"
+                found.append((key, compressed ? ((try? gzipDecompress(data)) ?? data) : data))
+            }
+        }
+        return found
     }
 
     func encryptedXML(streamKey: Data) throws -> Data {

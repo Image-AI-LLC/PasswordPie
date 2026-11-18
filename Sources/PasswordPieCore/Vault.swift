@@ -114,6 +114,8 @@ public struct Vault: Equatable, Sendable {
     public var rootName: String
     public var entries: [VaultEntry]
     public var kdf: KDFParameters
+    /// The database's custom data (`Meta/CustomData`): settings that belong to the file, such as what is shared with agents.
+    public var customData: [String: String] = [:]
     /// Decrypted KDBX document for a file this process opened or created. Nil until the first save of a new database.
     var preserve: KDBXPreserve?
     /// Set when this document was read by repairing damaged XML and the file on disk is still damaged.
@@ -141,6 +143,21 @@ public struct Vault: Equatable, Sendable {
         preserve?.passwordDates() ?? [:]
     }
 
+    /// The names of an entry's attachments, as the file holds them. Empty for a database not read from a KDBX file.
+    public func attachmentNames(of id: UUID) -> [String] {
+        preserve?.attachments(of: id).map(\.name) ?? []
+    }
+
+    /// Every live entry's attachment names, read in one pass.
+    public func attachmentNames() -> [UUID: [String]] {
+        preserve?.attachmentNames() ?? [:]
+    }
+
+    /// One attachment's bytes.
+    public func attachment(named name: String, of id: UUID) -> Data? {
+        preserve?.attachments(of: id).first { $0.name == name }?.data
+    }
+
     /// Records what the file holds after a read or a write.
     public mutating func noteFileContents(_ data: Data) {
         fileBaseline = data
@@ -148,6 +165,7 @@ public struct Vault: Equatable, Sendable {
 
     public static func == (lhs: Vault, rhs: Vault) -> Bool {
         lhs.name == rhs.name && lhs.rootName == rhs.rootName && lhs.entries == rhs.entries && lhs.kdf == rhs.kdf
+            && lhs.customData == rhs.customData
     }
 }
 

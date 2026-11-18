@@ -3,16 +3,16 @@
 An AI coding agent on this Mac (Claude Code, Codex, Cursor and the like) can run a command with a secret from
 PasswordPie after the owner approves it with Touch ID, without the secret passing through the agent's conversation, the
 command line or a file in the project. This file is the reference for the pieces, the messages on `agent.sock`, the
-command-line tool, references, exit codes and the security model. What the owner sees is in "Agents" in
-[UX.md](UX.md) once the app side ships.
+command-line tool, references, exit codes and the security model. What the owner sees is in "Agents use a secret
+without seeing it" in [UX.md](UX.md).
 
 Direct download only (`#if PP_DIRECT`, and the App Store app links none of it): a sandboxed `passwordpie run` would start
 `notarytool`, `psql` or `npm` inside PasswordPie's sandbox, unable to read the project.
 
-**Status.** The shared library and the `passwordpie` tool are in the source tree; the app does not serve `agent.sock`
-yet, so the tool answers `access-off` or `app-unavailable`. The app side (the socket server in the app, the Agents
-pane, Share with Agents, the approval window, the lock screen line) comes next. Standing permissions ("do not ask me
-every time", Premium), the MCP server and website login for agents come after that.
+**Status.** The app serves `agent.sock` while Preferences > Agents is on, bundles the tool in `Contents/Helpers`, and
+asks the owner for every use (Allow Once, Show to Agent). What the owner sees is in "Agents use a secret without seeing
+it" in [UX.md](UX.md). Standing permissions ("do not ask me every time", Premium), the MCP server and website login for
+agents come next.
 
 Free or Premium: using a secret with an approval each time is free, and so is a raw read. Standing permissions will be
 Premium, checked by the app's own `appHasPremium()`; nothing in a request carries Premium state.
@@ -27,6 +27,19 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 | `VaultBroker` | `PasswordPieAgent/VaultBroker.swift` | The one place a request that is not the owner clicking in PasswordPie is answered |
 | `agent.sock` server | `PasswordPieAgent/AgentServer.swift` | Peer check, caller walk per request, hands requests to the broker |
 | Activity log | `PasswordPieAgent/AgentActivity.swift`, file `~/Library/Application Support/PasswordPie/agent-activity.jsonl` | One line per request, no values |
+| The app's side | `AgentAccess.swift` (switch, socket, link), `AgentApproval.swift` (the window, Touch ID), `AgentsPane.swift`, `VaultSession+Agents.swift` (what agents see, sharing) | Direct download only |
+| Sharing | `PasswordPieCore/AgentSharing.swift`, in the database's custom data (`Meta/CustomData`, key `PasswordPie.AgentSharing`) | Items by UUID, folders by path |
+
+## Sharing
+
+Agents see nothing until the owner shares it: an item (Share with Agents in its details) or a folder (Preferences >
+Agents), which covers what is in it now, later and in its subfolders, never the Recycle Bin. What is shared is kept in
+the database file itself, in its custom data: under the master key, moving with the file, written on every change. Not in
+the app's preferences, so `defaults write` cannot share anything. The switch itself is a preference
+(`agentAccessEnabled`): turning it on that way only opens the socket; every use still asks.
+
+Decision: a folder is kept by its path, so renaming it unshares it until it is ticked again (failing closed). Folders are
+shared from the Agents pane, which lists the database's folders; the panel's folder submenus have no context menu today.
 
 Decision: the tool lives in `Contents/Helpers`, not `Contents/MacOS` as first planned. On a case-insensitive volume (the
 default) `Contents/MacOS/passwordpie` would be the app's own `PasswordPie` executable. `Contents/Helpers` is where Apple

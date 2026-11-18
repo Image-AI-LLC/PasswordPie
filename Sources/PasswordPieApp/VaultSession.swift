@@ -220,6 +220,9 @@ final class VaultSession: ObservableObject {
     /// Why the editor's last save was not written. Shown in the editor, which stays open with what was typed.
     @Published private(set) var editorError = ""
     @Published var touchIDAvailable = false
+    /// "Claude Code is waiting for 2 secrets." under the lock screen's database name, while an agent's request waits for
+    /// the unlock (direct download only). See "Agents" in docs/UX.md.
+    @Published var agentWaitingLine: String?
     @Published var touchIDEnabled = false
     @Published var touchIDHardware = false
     @Published var touchIDBusy = false
@@ -1403,6 +1406,22 @@ final class VaultSession: ObservableObject {
             return path
         }, done: { [weak self] failure in
             if failure == nil, changed, !stored { self?.keepChromeLastUsed(id) }
+            done(failure == nil && changed)
+        })
+    }
+
+    /// One change to a database's own data (its custom data, not its entries), saved. `change` returns false when it has
+    /// nothing to save. `done` gets true when the file holds the change.
+    func changeDatabase(at path: String, _ change: @escaping (inout Vault) -> Bool, then done: @escaping (Bool) -> Void = { _ in }) {
+        var changed = false
+        enqueueWrite({ [weak self] in
+            guard let self, let index = self.openedFiles.firstIndex(where: { $0.url.path == path }) else { return nil }
+            var vault = self.openedFiles[index].vault
+            guard change(&vault) else { return nil }
+            changed = true
+            self.openedFiles[index].vault = vault
+            return path
+        }, done: { failure in
             done(failure == nil && changed)
         })
     }

@@ -1695,3 +1695,99 @@ scrolling past everything else, and each new feature made the page longer.
 1. Open Preferences from the gear menu: General, with the shortcut recorder.
 2. Click Security, Database and Browsers in turn: each is one screen, with no scrolling at the default size.
 3. Close Preferences. In the menu, choose Browser Extensions… from the gear: Preferences opens on Browsers.
+
+## Agents use a secret without seeing it
+
+**In one line:** an AI agent on your Mac (Claude Code, Codex, Cursor) runs a command with a secret from PasswordPie after
+you approve it with Touch ID, and the secret goes to the command, not into the agent's conversation, a command line or a
+file in the project. Direct download only. The reference is [AGENTS.md](AGENTS.md).
+
+### The problem
+
+Agents need secrets all the time: a release needs the notarization key, a deploy needs an API token. Today the value comes
+from a `.env` file in some project, a shell profile, or the owner pasting it into the chat. Each of these puts the value in
+plain text on disk or in the model's context, and none asks the owner first.
+
+### What happens now
+
+1. **Turn it on.** Preferences > Agents > **Allow agents to ask for secrets**. Off by default; while off, PasswordPie opens
+   no socket for agents and the tool answers "Agent access is off".
+2. **Put the tool on the PATH.** **Create Link in ~/.local/bin** links `passwordpie` from inside the app
+   (`PasswordPie.app/Contents/Helpers/passwordpie`); the pane shows the exact command it runs. No administrator password.
+3. **Share what agents may ask for.** Agents see nothing until you share it. Tick a folder in Preferences > Agents (it
+   covers what is in it now, later, and in its subfolders; never the Recycle Bin), or tick **Share with Agents** in an
+   item's details. Suggested: a folder **Agents** or **Developer** with the keys and tokens agents need.
+4. **The agent asks.** It runs `passwordpie run --env TOKEN=pp://Agents/Cloudflare -- npm run deploy`. PasswordPie
+   shows the approval window over whatever is in front.
+5. **You approve.** Allow Once, then Touch ID (or your login password on a Mac without Touch ID). The command runs with the
+   value in its environment, and every occurrence of the value in its output reads `[concealed by PasswordPie]`.
+
+### The approval window
+
+    Claude Code wants to use 1 secret
+
+    ☑ App Store Connect API key  (Developer)
+      attachment AuthKey_ABC123.p8 · a file for the command, path in $NOTARY_KEY
+    Command   Scripts/release-direct.sh
+    Project   ~/projects/PasswordPie/swift
+    Agent     Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)
+    The agent says:
+    “Notarize the 0.3.0 DMG”
+
+    [ Deny ]                                   [ Allow Once ]
+
+- One row per secret, each with a checkbox: untick what the agent should not get. The command then runs without it.
+- **The agent says** is the agent's own `--reason`, in quotes, in the secondary colour. It may have been written by a
+  prompt injection; the window never puts it in its own words.
+- **Agent** is worked out by PasswordPie from the processes that started the tool, with their code signature, never from
+  anything the agent says. "not signed: /opt/homebrew/bin/node" means PasswordPie cannot tell that agent from other node
+  programs.
+- Hovering the command shows it in full and the program it resolves to.
+- A raw read (`passwordpie read`, or `run --no-masking`) says **wants to see**, has **Show to Agent** instead of Allow
+  Once, and the line "The agent will see the value. It stays in the conversation, and in the model provider's records if
+  the model is hosted."
+- Every Allow asks for Touch ID. A program can click a button; it cannot touch the sensor.
+- Esc is Deny. Nothing is approved by Return.
+- The window waits 2 minutes, then the agent hears `timeout`. One window at a time per agent session; three denials in 10
+  minutes and that session gets `too-many-requests` without a window for 10 minutes.
+
+### Locked
+
+A request while PasswordPie is locked does not fail at once. The lock screen opens with a line under the database name,
+**Claude Code is waiting for 1 secret.** Unlock, and the request continues to the approval window. Nobody but you
+unlocks; agent use never counts as activity for auto-lock. After 60 seconds (`--wait`, up to 600) the agent hears
+`locked`. Locking closes any approval window that is open.
+
+### Activity
+
+Preferences > Agents > Activity lists every request, allowed or not, newest first: time, agent, outcome (allowed once,
+shown to the agent, denied, timed out, locked, not available), items and fields, command and project. Hover a line for
+the processes that started the tool. The filter matches agent, project, command or item. The file keeps 90 days and
+never holds a value.
+
+### What it will not do
+
+- Show an agent anything you did not share. A reference to an item that is not shared answers exactly like one that does
+  not exist, so an agent cannot probe for titles.
+- Offer to share something from the approval window: sharing happens only in PasswordPie's own settings, on your
+  initiative.
+- Remember an approval. Every use asks (lasting permissions come later, with Premium).
+- Hand anything out while locked, or unlock.
+- Put a value on a command line, or in a log.
+- Hide a value the command transforms (base64, part of it), or stop a command from sending what it was given elsewhere.
+- Serve another database than the one you unlocked, or an agent on another Mac.
+
+### Demo script
+
+Use the direct download, a database with a folder **Agents** holding an item **Token** (password `demo-token-123`), and
+a terminal.
+
+1. `passwordpie status`: "Agent access: off". Preferences > Agents: turn it on, Create Link in ~/.local/bin.
+2. `passwordpie run --env T=pp://Agents/Token -- sh -c 'echo "$T"'`: "Nothing shared with agents matches". Tick
+   **Agents** under Shared with agents and run it again: the approval window names Terminal (typed by you, no agent in
+   between), the command and the project. Allow Once, Touch ID: the output is `[concealed by PasswordPie]`.
+3. Run it again and press Deny: exit code 67, one line telling the agent what to do. Activity shows both lines.
+4. `passwordpie read pp://Agents/Token`: the window says **wants to see** and **Show to Agent**; after Touch ID the value
+   prints.
+5. Lock with ⌘L, run step 2 again: the lock screen says "Terminal is waiting for 1 secret". Unlock: the window appears.
+6. Untick **Agents**, run step 2 again: the same answer as for an item that does not exist.

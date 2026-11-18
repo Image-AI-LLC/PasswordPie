@@ -207,7 +207,9 @@ public enum CallerInspector {
             let leaderStart = facts.info(sid)?.startTime ?? 0
             sessionKey = "session:\(sid):\(leaderStart)"
         }
-        return AgentCaller(cli: cli, chain: chain, agent: agent ?? firstOther, sessionKey: sessionKey, cwd: cwd, project: project(for: cwd))
+        // Typed in a terminal with no agent in between: the terminal app is who asks.
+        let terminal = chain.first { $0.identifier.map(AgentHosts.terminals.contains) ?? false }
+        return AgentCaller(cli: cli, chain: chain, agent: agent ?? firstOther ?? terminal, sessionKey: sessionKey, cwd: cwd, project: project(for: cwd))
     }
 
     /// The nearest folder at or above `cwd` that holds `.git` (a folder, or a worktree's file), else `cwd`.
