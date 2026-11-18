@@ -494,7 +494,7 @@ mode 0600, whether it was allowed or not: time, kind, outcome (allowed once, all
 permission and which, shown to the agent, denied, timed out, locked, not available, ambiguous, too many requests, not
 understood, from the argument watch, value seen on a command line, and for a login its outcome), `via` (`MCP` through the
 MCP server), agent and signature,
-the agent's pid, project, command, items and fields (or the reference as typed when it found nothing), deliveries, the
+the agent's pid, project, command, items and fields (or the reference as typed when it found nothing; a login's `--url` only as its origin, never its path or query), deliveries, the
 agent's reason, and the walked chain (pid, path and signature of each ancestor). Never a value. Lines older than 90 days
 are dropped. It is not tamper-proof: same-user code can edit or delete it.
 

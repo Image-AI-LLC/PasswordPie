@@ -235,10 +235,17 @@ extension VaultBroker {
     }
 
     /// `https://example.com:8443/` for any address with a scheme and a host: never its path, query or fragment.
+    /// A bare host ("github.com/login") gets https, as the site rules read it; scheme and host are lowercased, a default
+    /// port dropped, an IPv6 host bracketed.
     static func loggedAddress(_ address: String) -> String {
-        guard let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)), let scheme = url.scheme, let host = url.host,
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        let full = trimmed.contains("://") ? trimmed : "https://" + trimmed
+        guard let url = URL(string: full), let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased(),
               !host.isEmpty else { return "a web address" }
-        return "\(scheme)://\(host)" + (url.port.map { ":\($0)" } ?? "") + "/"
+        let defaultPort = scheme == "https" ? 443 : scheme == "http" ? 80 : nil
+        let port = url.port.flatMap { $0 == defaultPort ? nil : $0 }
+        let shownHost = host.contains(":") ? "[\(host)]" : host
+        return "\(scheme)://\(shownHost)" + (port.map { ":\($0)" } ?? "") + "/"
     }
 
     /// For the activity log: "Web/GitHub › login".

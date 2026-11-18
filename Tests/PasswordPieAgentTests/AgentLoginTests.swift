@@ -247,6 +247,10 @@ final class AgentLoginTests: XCTestCase {
         let logged = encoded(activity.records)
         XCTAssertFalse(logged.contains("planted-reset-token-42"), logged)
         XCTAssertEqual(activity.records.first?.items, ["https://bank.example/"])
+        XCTAssertEqual(VaultBroker.loggedAddress("bank.example/reset?token=x"), "https://bank.example/")
+        XCTAssertEqual(VaultBroker.loggedAddress("http://[::1]:8080/reset?t=x"), "http://[::1]:8080/")
+        XCTAssertEqual(VaultBroker.loggedAddress("HTTPS://Bank.Example:443/x"), "https://bank.example/")
+        XCTAssertEqual(VaultBroker.loggedAddress("localhost:8000/login?x=1"), "https://localhost:8000/")
     }
 
     func testMalformedLoginsAreUsage() async {
