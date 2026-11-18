@@ -100,7 +100,11 @@ A grant covers a request only when every binding matches:
 | Program | `AgentProgramBinding` (below) | A grant for the release script is not a grant for `curl` |
 | Time | `ends`; for a session grant also the agent session (`sessionKey`: pid and start time) | Nothing is forever |
 | Mac | `AgentMacIdentity`: SHA-256 of PasswordPie's label and the hardware UUID, 16 bytes in hex | The same file opened on another Mac does not use it |
-| Kind | `use` | A run grant is not a website login grant |
+| Kind | `use`, or `login` | A run grant is not a website login grant, nor the other way round |
+
+A `login` grant ("Website login", step 5) is bound to the items, the agent, the time, the Mac and the **site**
+(registrable domain) instead of the project and the program: a login runs no command. It does not bind `--submit`, the
+browser or the Chrome profile: it lets that agent log in with that account on that site again.
 
 A request is covered when one grant names every secret it asks for (a subset of the grant's), with the same delivery
 and name each.
@@ -444,7 +448,9 @@ How the broker answers one (`VaultBroker+Login.swift`), in order:
    window, in any project: a login runs no command and the browser serves every project, so a grant is bound to the
    item, the site (registrable domain) and the agent instead of a project and a program. Only with a reference or a
    single item: a choice among several is always the owner's. A login grant never covers `run`, and `list`'s `covered`
-   is about `run`.
+   is about `run`. It does not bind `--submit`, the browser or the profile. A login let through this way shows the
+   menu-bar dot, and its activity line reads "filled and sent, by 7 days, github.com" (the one that made the grant:
+   "…, and for 7 days, github.com").
 6. **The prompt**: the site, the account (title, folder, username), the browser and profile, whether the form is sent,
    the two-step code line, the agent and its reason. Allow Once, or "Allow for 7 days ▾" (Premium), each with Touch ID.
    Rate limit, one prompt per session and the 2-minute timeout are as for `use`.
@@ -452,7 +458,7 @@ How the broker answers one (`VaultBroker+Login.swift`), in order:
    pending fill for that browser, connection and website, marked as the agent's, and waits for how it went.
 8. **One activity line**, with the outcome (`filled`, `filled and sent`, `no matching tab`, `site mismatch`, `no tab
    took the fill`, `no sign-in fields`, or the refusal; with ", by 7 days, github.com" when a standing permission let it
-   through or the window made one), the item, and the delivery `fill <browser> <site>`.
+   through, ", and for 7 days, github.com" when the window made one), the item, and the delivery `fill <browser> <site>`.
 
 The browser side (`BrowserBridge+AgentLogin.swift`) ends the wait:
 

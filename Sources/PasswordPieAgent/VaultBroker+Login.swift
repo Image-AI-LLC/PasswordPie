@@ -8,7 +8,8 @@ import Foundation
 extension VaultBroker {
     func login(_ request: AgentRequest, caller: AgentCaller) async -> AgentResponse {
         let asked = request.secrets ?? []
-        let typed = asked.first?.ref ?? request.url ?? ""
+        // A page's address goes into Activity only as its origin: a query string can hold a token or a reset code.
+        let typed = asked.first?.ref ?? request.url.map(Self.loggedAddress) ?? ""
         func usage(_ detail: String) -> AgentResponse {
             log(request, caller: caller, outcome: .usage, items: typed.isEmpty ? [] : [typed], delivery: [])
             var refusal = AgentResponse.error(.usage, id: request.id, ref: asked.first?.ref)
@@ -124,7 +125,7 @@ extension VaultBroker {
         // a login runs no command). Raw never applies.
         var query = AgentGrantQuery(
             caller: caller, kind: .login, raw: false, program: nil, argv: [],
-            secrets: candidates.map { AgentResolvedSecret(item: $0, field: .password, delivery: .fill, name: nil, ref: asked.first?.ref ?? request.url ?? "") }
+            secrets: candidates.map { AgentResolvedSecret(item: $0, field: .password, delivery: .fill, name: nil, ref: typed) }
         )
         query.site = site
 
@@ -150,7 +151,7 @@ extension VaultBroker {
             case .locked:
                 return refuse(.locked, outcome: .locked, items: [labels[index]])
             case .finished(let outcome, let code, let detail):
-                log(request, caller: caller, outcome: outcome.activityOutcome, grant: grant ?? started, items: [labels[index]], delivery: delivery)
+                log(request, caller: caller, outcome: outcome.activityOutcome, grant: grant ?? started, silent: grant != nil, items: [labels[index]], delivery: delivery)
                 var answer = loginAnswer(request, AgentLoginAnswer(
                     outcome: outcome,
                     item: logins.loginOverview(item),
@@ -231,6 +232,13 @@ extension VaultBroker {
         var answer = AgentResponse(type: AgentRequestKind.login.rawValue, id: request.id)
         answer.login = login
         return answer
+    }
+
+    /// `https://example.com:8443/` for any address with a scheme and a host: never its path, query or fragment.
+    static func loggedAddress(_ address: String) -> String {
+        guard let url = URL(string: address.trimmingCharacters(in: .whitespacesAndNewlines)), let scheme = url.scheme, let host = url.host,
+              !host.isEmpty else { return "a web address" }
+        return "\(scheme)://\(host)" + (url.port.map { ":\($0)" } ?? "") + "/"
     }
 
     /// For the activity log: "Web/GitHub › login".

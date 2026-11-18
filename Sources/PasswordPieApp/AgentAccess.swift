@@ -82,7 +82,7 @@ final class AgentAccess: ObservableObject {
         broker.onWaitingChanged = { [weak session] waiting in session?.agentWaitingLine = AgentWaiting.lockScreenLine(waiting) }
         relay.appended = { [weak self] record in
             self?.activity.insert(record, at: 0)
-            if record.outcome == .allowedByGrant { self?.onSilentUse?() }
+            if record.ranUnderGrant { self?.onSilentUse?() }
         }
         grants.onChange = { [weak self] in self?.refreshStanding() }
         activity = log.records().reversed()

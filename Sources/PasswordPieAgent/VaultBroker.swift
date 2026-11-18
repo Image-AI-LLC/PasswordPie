@@ -619,7 +619,8 @@ public final class VaultBroker {
     }
 
     func log(
-        _ request: AgentRequest, caller: AgentCaller, outcome: AgentOutcome, grant: String? = nil, items: [String], delivery: [String]
+        _ request: AgentRequest, caller: AgentCaller, outcome: AgentOutcome, grant: String? = nil, silent: Bool = false, items: [String],
+        delivery: [String]
     ) {
         let kind: String
         switch request.type {
@@ -638,7 +639,8 @@ public final class VaultBroker {
             items: items,
             delivery: delivery,
             reason: request.reason,
-            via: request.client == "mcp" ? "MCP" : nil
+            via: request.client == "mcp" ? "MCP" : nil,
+            silent: silent ? true : nil
         ))
     }
 }

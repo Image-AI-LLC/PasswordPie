@@ -156,7 +156,7 @@ struct AgentsPane: View {
             Text("Unlock PasswordPie to see standing permissions. They are kept in the database.").font(note).foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Choose Allow for 7 days ▾ in an agent's approval window to stop it asking every time, for the same items, agent, project and program. Premium.")
+                Text("Choose Allow for 7 days ▾ in an agent's approval window to stop it asking every time, for the same items, agent, project and program (a login: the same item, site and agent, in any project). Premium.")
                     .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if !access.enabled, !access.standing.isEmpty {
                     Text("Agent access is off: these do nothing until it is on again.").font(note).foregroundStyle(.secondary)

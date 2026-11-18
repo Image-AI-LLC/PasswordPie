@@ -66,10 +66,13 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     public var chain: [Link]
     /// "MCP" when the request came through `passwordpie mcp`.
     public var via: String?
+    /// A login that ran under a standing permission, with no window (`grant` names it). False or absent: the window
+    /// was shown, and `grant` is the one it started, if any.
+    public var silent: Bool?
 
     public init(
         time: Date, kind: String, outcome: AgentOutcome, grant: String? = nil, caller: AgentCaller?, command: String?,
-        items: [String], delivery: [String], reason: String?, via: String? = nil
+        items: [String], delivery: [String], reason: String?, via: String? = nil, silent: Bool? = nil
     ) {
         self.time = time
         self.kind = kind
@@ -85,6 +88,12 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
         self.reason = reason
         chain = caller?.chain.map(Link.init) ?? []
         self.via = via
+        self.silent = silent
+    }
+
+    /// Let through by a standing permission with no window: the menu-bar dot shows for it.
+    public var ranUnderGrant: Bool {
+        outcome == .allowedByGrant || (kind == "login" && silent == true && grant != nil)
     }
 
     /// "allowed once", "allowed by 7 days, this project", "denied".
@@ -92,7 +101,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
         if outcome == .allowedByGrant, let grant { return "allowed by \(grant)" }
         if outcome == .allowedAndGranted, let grant { return "allowed, and for \(grant)" }
         // A login's outcome is what happened in the browser; the standing permission it ran under, or started, follows.
-        if kind == "login", let grant { return "\(outcome.rawValue), by \(grant)" }
+        if kind == "login", let grant { return silent == true ? "\(outcome.rawValue), by \(grant)" : "\(outcome.rawValue), and for \(grant)" }
         return outcome.rawValue
     }
 }

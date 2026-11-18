@@ -1964,7 +1964,8 @@ and the agent hears "two-step code not filled: needs PasswordPie Premium".
 - Every Allow asks for Touch ID, so an agent that can click cannot approve its own login.
 - **Allow for 7 days ▾** (Premium, as for secrets) lets that agent log in with that account on that site again without
   asking, from any project, until the time runs out. Preferences > Agents > Standing permissions lists it as "Log in on
-  github.com, any project", with Revoke. Without Premium the button says so and opens the Premium window; Allow Once
+  github.com, any project", with Revoke. A login it lets through shows the menu-bar dot, as any silent use does. It
+  covers the account and the site, not whether the form is sent or which browser. Without Premium the button says so and opens the Premium window; Allow Once
   still works. With several accounts offered, the lasting choice is for the one you picked; a login with several
   accounts to pick from always asks.
 

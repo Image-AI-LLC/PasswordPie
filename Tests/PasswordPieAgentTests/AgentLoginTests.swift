@@ -240,6 +240,15 @@ final class AgentLoginTests: XCTestCase {
         XCTAssertTrue(logins.plans.isEmpty)
     }
 
+    /// A page's address is logged as its origin only: its path and query can hold a token.
+    func testActivityKeepsOnlyTheOriginOfAnAddress() async {
+        _ = await broker().handle(.login(nil, url: "https://bank.example/reset?token=planted-reset-token-42#x"), from: Callers.make())
+        _ = await broker().handle(.login(nil, url: "ftp://bank.example/?token=planted-reset-token-42"), from: Callers.make())
+        let logged = encoded(activity.records)
+        XCTAssertFalse(logged.contains("planted-reset-token-42"), logged)
+        XCTAssertEqual(activity.records.first?.items, ["https://bank.example/"])
+    }
+
     func testMalformedLoginsAreUsage() async {
         let broker = broker()
         let nothing = await broker.handle(.login(nil), from: Callers.make())
@@ -290,12 +299,15 @@ final class AgentLoginTests: XCTestCase {
         XCTAssertEqual(first.login?.outcome, .submitted)
         XCTAssertEqual(approver.prompts.first?.lasting, .offered)
         XCTAssertEqual(AgentGrants(customData: database.customData).all.map(\.site), ["github.com"])
-        XCTAssertEqual(activity.records.last?.outcomeText, "filled and sent, by 7 days, github.com")
+        XCTAssertEqual(activity.records.last?.outcomeText, "filled and sent, and for 7 days, github.com")
+        XCTAssertEqual(activity.records.last?.ranUnderGrant, false, "the owner saw that one")
 
         let again = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make(project: "/tmp/elsewhere"))
         XCTAssertEqual(again.login?.outcome, .submitted)
         XCTAssertEqual(again.by, "7 days, github.com")
         XCTAssertEqual(approver.prompts.count, 1, "no window under the grant, in another project too")
+        XCTAssertEqual(activity.records.last?.outcomeText, "filled and sent, by 7 days, github.com")
+        XCTAssertEqual(activity.records.last?.ranUnderGrant, true, "the menu-bar dot shows for it")
         XCTAssertEqual(logins.plans.count, 2)
 
         approver.script = [.deny, .deny, .deny]
