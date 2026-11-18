@@ -176,6 +176,15 @@ final class VaultBrokerTests: XCTestCase {
         XCTAssertEqual(activity.records.first?.items, ["Agents/Token › field Key ID"])
     }
 
+    /// An answer that could not fit a frame is refused before the owner is asked.
+    func testValuesTooLargeForOneAnswerAreRefusedBeforeAsking() async {
+        vault.add("Big", password: "x", attachments: ["blob.bin": Data(repeating: 7, count: AgentConstants.maxAnswerBytes + 1)])
+        let answer = await broker().handle(.use([AgentSecretRequest(name: "B", ref: "pp://Agents/Big/attachment/blob.bin", delivery: .file)]), from: Callers.make())
+        XCTAssertEqual(answer.errorCode, .usage)
+        XCTAssertNotNil(answer.detail)
+        XCTAssertTrue(approver.prompts.isEmpty)
+    }
+
     func testAccessOffAnswersAccessOff() async {
         enabled = false
         let answer = await broker().handle(.use([env("pp://Agents/Token")]), from: Callers.make())

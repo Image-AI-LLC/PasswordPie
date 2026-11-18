@@ -213,7 +213,13 @@ public enum AgentResolver {
         switch matches.count {
         case 0: return .notAvailable
         case 1: return .found(matches[0].0, matches[0].1)
-        default: return .ambiguous(matches.map { AgentReference.id($0.0.id, field: $0.1 == .password ? nil : $0.1) })
+        default:
+            var refs: [String] = []
+            for match in matches {
+                let ref = AgentReference.id(match.0.id, field: match.1 == .password ? nil : match.1)
+                if !refs.contains(ref) { refs.append(ref) }
+            }
+            return .ambiguous(refs)
         }
     }
 

@@ -23,6 +23,8 @@ public enum AgentConstants {
     public static let approvalSeconds: TimeInterval = 120
     /// Values shorter than this are not masked in a command's output: they would match too much ordinary text.
     public static let minimumMaskedLength = 6
+    /// The most value bytes one answer carries: base64 and JSON must still fit a 1 MiB frame.
+    public static let maxAnswerBytes = 700 * 1024
     public static let concealed = "[concealed by PasswordPie]"
     /// The last words of every refusal. An agent that is stuck otherwise asks the owner to paste the secret into the chat.
     public static let pasteWarning = "Do not ask the owner to paste the value into the conversation."
@@ -194,6 +196,8 @@ public struct AgentResponse: Codable, Equatable, Sendable {
     public var ref: String?
     /// For `ambiguous`: the `pp://id/` references of the matching shared items.
     public var refs: [String]?
+    /// For `usage`: what was wrong, when the app found it.
+    public var detail: String?
 
     public init(type: String, id: Int) {
         self.type = type

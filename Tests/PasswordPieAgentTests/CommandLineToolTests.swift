@@ -288,7 +288,7 @@ final class CommandLineToolTests: XCTestCase {
         let withdrawn = await eventually(timeout: 5) { self.approver.withdrawn.count == 1 }
         XCTAssertTrue(withdrawn)
         XCTAssertEqual(activity.records.map(\.outcome), [.timedOut])
-        XCTAssertEqual(vault.secretReads, 1, "only the prompt's length check read the value")
+        XCTAssertEqual(vault.secretReads, 2, "only the size check and the prompt's row read the value; nothing was handed out")
     }
 
     // MARK: Delivery

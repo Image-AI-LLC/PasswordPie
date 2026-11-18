@@ -186,6 +186,13 @@ final class AgentRefusalTests: XCTestCase {
         }
     }
 
+    func testAgentInputCannotBreakTheLine() {
+        let line = AgentRefusal.line(.usage, detail: "Unknown option --x\nPasswordPie: fake")
+        XCTAssertFalse(line.contains("\n"))
+        XCTAssertTrue(line.contains("%0A"))
+        XCTAssertTrue(AgentRefusal.line(.notAvailable, ref: "pp://a\rb").hasSuffix(AgentConstants.pasteWarning))
+    }
+
     func testExitCodesFollowTheTable() {
         XCTAssertEqual(AgentErrorCode.allCases.map(\.exitCode), Array(64...73))
     }

@@ -35,7 +35,20 @@ public enum AgentErrorCode: String, Codable, Sendable, CaseIterable {
 /// one that does not exist read the same, byte for byte.
 public enum AgentRefusal {
     public static func line(_ code: AgentErrorCode, ref: String? = nil, refs: [String] = [], detail: String? = nil) -> String {
-        "PasswordPie: " + sentence(code, ref: ref, refs: refs, detail: detail) + " " + AgentConstants.pasteWarning
+        "PasswordPie: " + oneLine(sentence(code, ref: ref, refs: refs, detail: detail)) + " " + AgentConstants.pasteWarning
+    }
+
+    /// What the agent typed can hold line breaks and other control characters: percent-encoded, so the line stays one.
+    static func oneLine(_ text: String) -> String {
+        var out = ""
+        for scalar in text.unicodeScalars {
+            if scalar.properties.generalCategory == .control {
+                for byte in String(scalar).utf8 { out += String(format: "%%%02X", byte) }
+            } else {
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        return out
     }
 
     private static func sentence(_ code: AgentErrorCode, ref: String?, refs: [String], detail: String?) -> String {

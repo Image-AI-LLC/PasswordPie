@@ -10,7 +10,8 @@ import Foundation
 public protocol AgentVault: AnyObject {
     /// True while no database is unlocked. Nothing is handed out then.
     var agentVaultLocked: Bool { get }
-    /// The items shared with agents in the unlocked database, without the Recycle Bin.
+    /// The items shared with agents in the database PasswordPie unlocked, without the Recycle Bin. One database: a
+    /// reference does not name one, and the same item UUID can be in two copies of a file.
     func agentSharedItems() -> [AgentItem]
     /// The bytes of one field or attachment of a shared item. Nil when it has none.
     func agentSecret(_ item: AgentItem, field: AgentField) -> Data?
@@ -155,6 +156,9 @@ public struct DenialLimiter: Sendable {
     }
 
     public mutating func recordDenial(_ session: String, now: Date) {
+        // Forget sessions whose block ended and whose denials are old: session keys are unique per agent process.
+        blockedUntil = blockedUntil.filter { now < $0.value }
+        recent = recent.filter { $0.value.contains { now.timeIntervalSince($0) < Self.window } }
         var list = (recent[session] ?? []).filter { now.timeIntervalSince($0) < Self.window }
         list.append(now)
         if list.count >= Self.denials {
@@ -278,6 +282,14 @@ public final class VaultBroker {
         case .failure(let failure):
             log(request, caller: caller, outcome: failure.code == .ambiguous ? .ambiguous : .notAvailable, items: [failure.ref], delivery: [])
             return .error(failure.code, id: request.id, ref: failure.ref, refs: failure.refs)
+        }
+        // The answer must fit one frame. Said before anyone is asked, not after the owner approved.
+        let total = resolved.reduce(0) { $0 + (vault.agentSecret($1.item, field: $1.field)?.count ?? 0) }
+        if total > AgentConstants.maxAnswerBytes {
+            log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
+            var answer = AgentResponse.error(.usage, id: request.id, ref: resolved.first?.ref)
+            answer.detail = "The values asked for are larger than \(AgentConstants.maxAnswerBytes / 1024) KB, more than agents can be given."
+            return answer
         }
         let query = AgentGrantQuery(caller: caller, kind: request.type, program: request.program, argv: request.argv ?? [], secrets: resolved)
         if !raw, let grant = grants.grant(covering: query) {

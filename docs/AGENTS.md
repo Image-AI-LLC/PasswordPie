@@ -140,8 +140,11 @@ credential: the tool holds no token.
 - `pp://id/<UUID>` survives renames and moves; the path form reads well in a committed `.env.pp`. `list` prints both.
 - A path can be read more than one way (is the last part a field or the title?). Every reading is tried against the
   shared items. More than one match answers `ambiguous` with the matches' `pp://id/` references, only among shared items.
-- References resolve against the unlocked database. With several databases open, all are searched; an item's UUID is
-  its KeePass UUID.
+- References resolve against the database PasswordPie unlocked (the current one in the database list). Other open
+  databases are not searched: a reference does not name a database, and two copies of a file share item UUIDs. An
+  item's UUID is its KeePass UUID.
+- One answer carries at most 700 KB of values (base64 and JSON must fit the 1 MiB frame). Larger asks are refused with
+  `usage` before anyone is asked.
 
 ### `.env.pp`
 
@@ -210,7 +213,8 @@ socket. Running without a socket means agent access is off.
 | 72 | `too-many-requests` | Too many denied prompts from this agent session |
 | 73 | `premium-required` | Reserved for Premium-only parts |
 
-Each refusal prints one line on standard error that says what to do, for the agent to relay, and ends with "Do not ask
+Each refusal prints one line (control characters from what the agent typed are percent-encoded) on standard error that
+says what to do, for the agent to relay, and ends with "Do not ask
 the owner to paste the value into the conversation." (`AgentRefusal`). The line is built from the code and what the
 agent itself sent, so `not-available` never says which of its two cases it is:
 

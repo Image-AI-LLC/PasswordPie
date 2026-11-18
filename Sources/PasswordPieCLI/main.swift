@@ -22,7 +22,7 @@ func ask(_ request: AgentRequest) -> AgentResponse {
         refuse(failure.code, detail: failure.detail)
     case .success(let answer):
         if let code = answer.errorCode {
-            refuse(code, ref: answer.ref, refs: answer.refs ?? [])
+            refuse(code, ref: answer.ref, refs: answer.refs ?? [], detail: answer.detail)
         }
         return answer
     }
