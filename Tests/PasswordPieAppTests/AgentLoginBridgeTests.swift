@@ -178,9 +178,10 @@ final class AgentLoginBridgeTests: XCTestCase {
         let waiting = await eventually { self.bridge.agentLogin != nil }
         XCTAssertTrue(waiting)
         task.cancel()
-        _ = await task.value
-        let gone = await eventually { self.bridge.state.pending.pending == nil }
+        // At once, not when the fill's 30 seconds run out.
+        let gone = await eventually(timeout: 2) { self.bridge.state.pending.pending == nil && self.bridge.agentLogin == nil }
         XCTAssertTrue(gone)
+        _ = await task.value
     }
 
     /// Without Premium the code is not filled and the agent hears why; with Premium it goes in after the form was sent.
