@@ -27,7 +27,7 @@ function enabled(el: HTMLElement): boolean {
 
 function label(el: HTMLElement): string {
   const text =
-    el instanceof HTMLInputElement ? (el.type === 'image' ? (el.alt || el.value) : el.value) : (el.textContent ?? '');
+    el instanceof HTMLInputElement ? (el.type === 'image' ? (el.getAttribute('aria-label') || el.alt || el.value) : el.value) : (el.textContent ?? '');
   return (text || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
 }
 
