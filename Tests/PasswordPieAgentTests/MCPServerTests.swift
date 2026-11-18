@@ -206,7 +206,10 @@ final class MCPServerTests: XCTestCase {
         let mismatch = try await call("passwordpie_login", ["ref": "pp://Agents/Token", "url": "https://gitlab.com/"])
         XCTAssertTrue(mismatch.isError)
         XCTAssertEqual(mismatch.structured["outcome"] as? String, "site-mismatch")
-        XCTAssertTrue((mismatch.structured["message"] as? String ?? "").hasSuffix(AgentConstants.pasteWarning))
+        let message = mismatch.structured["message"] as? String ?? ""
+        XCTAssertTrue(message.hasSuffix(AgentConstants.mcpGuidance), message)
+        XCTAssertTrue(message.contains("passwordpie_list"), message)
+        XCTAssertFalse(message.contains("`passwordpie "), "no command-line advice to an MCP agent: \(message)")
         XCTAssertEqual(approver.prompts.count, 1, "no window for a site the item does not list")
     }
 

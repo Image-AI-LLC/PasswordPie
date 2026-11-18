@@ -74,7 +74,7 @@ struct AgentsPane: View {
 
     private var mcpSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read and passwordpie_status. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
+            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read, passwordpie_status and passwordpie_login. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
                 .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(access.mcpHosts) { host in
                 VStack(alignment: .leading, spacing: 4) {

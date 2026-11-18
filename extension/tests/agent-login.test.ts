@@ -277,6 +277,17 @@ describe('agent login: the page', () => {
     expect(sent).toEqual(['next']);
   });
 
+  it('presses Next on a username step that renders after the fill arrived', async () => {
+    document.body.innerHTML = `<div id="app"></div>`;
+    const sent = submits();
+    makeFiller().handle(agentFill);
+    document.getElementById('app')!.innerHTML = `<form><input id="user" autocomplete="username"><button id="next">Next</button></form>`;
+    const late = submits();
+    await vi.advanceTimersByTimeAsync(300 + USERNAME_SUBMIT_DELAY_MS + 100);
+    expect(input('user').value).toBe('octocat');
+    expect([...sent, ...late]).toEqual(['next']);
+  });
+
   it('fills and sends a password field that appears later, and tells the background', async () => {
     document.body.innerHTML = `<form><input id="user" autocomplete="username"><button id="go">Continue</button></form>`;
     const sent = submits();

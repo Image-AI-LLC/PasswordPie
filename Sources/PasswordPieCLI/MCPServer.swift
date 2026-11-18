@@ -179,7 +179,8 @@ final class MCPServer: @unchecked Sendable {
             }
             // A login that ran but signed nothing in (another tab in front, a site the item does not list) is an error
             // to the agent, with what to do in its message.
-            let failed = (structured["outcome"] as? String).flatMap(AgentLoginOutcome.init(rawValue:)).map { !$0.succeeded } ?? false
+            let failed = name == "passwordpie_login"
+                && ((structured["outcome"] as? String).flatMap(AgentLoginOutcome.init(rawValue:)).map { !$0.succeeded } ?? false)
             return ["content": [["type": "text", "text": Self.text(structured)]], "structuredContent": structured, "isError": failed]
         } catch let refusal as Refusal {
             return [
@@ -305,7 +306,7 @@ final class MCPServer: @unchecked Sendable {
         request.reason = reason
         guard let login = try ask(request, in: home, cancellation: cancellation).login else { throw Refusal(.appUnavailable) }
         var result = (try? JSONSerialization.jsonObject(with: AgentCoding.encode(login))) as? [String: Any] ?? [:]
-        result["message"] = login.line
+        result["message"] = login.line(mcp: true)
         return result
     }
 

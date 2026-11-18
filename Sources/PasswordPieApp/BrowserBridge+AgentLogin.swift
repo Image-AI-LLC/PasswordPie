@@ -14,7 +14,7 @@ final class AgentLoginWait {
     private(set) var taken = false
     private(set) var result: AgentFillResult?
     /// The code request came before the result did.
-    private var codeFilled: Bool?
+    private(set) var codeFilled: Bool?
     private(set) var end: AgentLoginEnd?
     private var continuation: CheckedContinuation<AgentLoginEnd, Never>?
     private var timer: Task<Void, Never>?
@@ -172,9 +172,10 @@ extension BrowserBridge {
         wait.finish(.finished(.timedOut, code: nil, detail: "The request was withdrawn."))
     }
 
-    /// Agent access was turned off: a login still waiting is withdrawn, so no tab takes it afterwards.
+    /// Agent access was turned off: a login no tab has taken yet is withdrawn, so none takes it afterwards. One a tab
+    /// already took finishes its page, and its outcome stands.
     func withdrawAgentLoginForAccessOff() {
-        guard let wait = agentLogin else { return }
+        guard let wait = agentLogin, !wait.taken else { return }
         state.pending.withdrawAgentFill(wait.token)
         wait.finish(.finished(.timedOut, code: nil, detail: "Agent access was turned off."))
     }
@@ -202,9 +203,15 @@ extension BrowserBridge {
             // The form was sent and no code field asked within the code's 30 s.
             wait.finish(.finished(AgentLoginWait.outcome(result), code: .notFilled, detail: nil))
         } else {
-            // An extension from before `login-result` fills and says nothing more.
+            // An extension from before `login-result` fills and says nothing more. Its code request, if one came, says
+            // how the code went.
             state.pending.withdrawAgentFill(token)
-            let code: AgentLoginCode? = wait.code == .needsPremium ? .premiumRequired : wait.code == .none ? AgentLoginCode.none : nil
+            let code: AgentLoginCode?
+            switch wait.code {
+            case .none: code = AgentLoginCode.none
+            case .needsPremium: code = .premiumRequired
+            case .fill: code = wait.codeFilled.map { $0 ? .filled : .premiumRequired }
+            }
             wait.finish(.finished(.filled, code: code, detail: "The extension did not say how it went; update PasswordPie's extension."))
         }
     }

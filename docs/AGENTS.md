@@ -274,8 +274,8 @@ process is one agent session, and the agent is its parent in the process tree.
   rather than ignored.
 - **The project.** The app reads the tool's working folder from the kernel, as for the command-line tool. The server
   moves to the folder a tool call names for as long as the app takes to answer it, so the app's reading is that folder;
-  one request goes to the app at a time. The command then starts in that folder. `status` and `read` name none: the
-  folder the agent started the server in.
+  one request goes to the app at a time. The command then starts in that folder. `status`, `read` and `login` name
+  none: the folder the agent started the server in.
 - **The command** runs without a shell, in a process group of its own, with an empty standard input unless a secret goes
   there (never the server's, which carries the MCP messages), its output captured and masked as by `run`. Each stream
   keeps its first and last 32 KiB with a line saying how much was cut between. Output cut off inside a value (a

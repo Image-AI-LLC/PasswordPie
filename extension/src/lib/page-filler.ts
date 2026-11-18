@@ -76,7 +76,7 @@ class Session {
 
   /** An agent's login on a username-only page: press Next if no password field shows up in a moment. Once. */
   private planUsernameSubmit(): void {
-    if (this.msg.submit !== true || this.usernameEl === null || this.sent.username) return;
+    if (this.msg.submit !== true || this.usernameEl === null || this.sent.username || this.usernameTimer !== undefined) return;
     this.usernameTimer = setTimeout(() => {
       this.usernameTimer = undefined;
       const username = this.usernameEl;
@@ -169,6 +169,8 @@ class Session {
         return;
       }
       this.attempt();
+      // A username-only step that rendered after the fill arrived gets its Next too.
+      if (!this.passwordFilled) this.planUsernameSubmit();
       if (this.passwordFilled && !before) {
         if (!change) this.stop();
         this.env.notifyPasswordFilled(this.submitted);

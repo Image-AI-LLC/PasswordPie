@@ -110,7 +110,12 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
 
     /// The tool's one line. Success goes to standard output; anything else to standard error, saying what to do, and
     /// ending, as every refusal does, with `AgentConstants.pasteWarning`.
-    public var line: String {
+    public var line: String { line(mcp: false) }
+
+    /// For the MCP tool: what to do in the tools' terms, and a failure ends with `AgentConstants.mcpGuidance`.
+    public func line(mcp: Bool) -> String {
+        let listHint = mcp ? "passwordpie_list" : "`passwordpie list`"
+        let offerHint = mcp ? "passwordpie_login with url" : "`passwordpie login --url URL`"
         let account = item.map { $0.username.isEmpty ? $0.title : "\($0.title) (\($0.username))" } ?? "the account"
         let place = [site.map { " on \($0)" }, browser.map { " in \($0)" }].compactMap { $0 }.joined()
         var text: String
@@ -120,7 +125,7 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
         case .noMatchingTab:
             text = "PasswordPie: the tab in front\(browser.map { " in \($0)" } ?? "") is not on \(site ?? "the site"); nothing was filled. Bring the sign-in page's tab to the front (PasswordPie does not switch tabs), then try again."
         case .siteMismatch:
-            text = "PasswordPie: \(account) is not for \(site ?? "the site of the tab in front"); nothing was filled. Use an item whose website is this site (`passwordpie list`), or `passwordpie login --url URL` to be offered one."
+            text = "PasswordPie: \(account) is not for \(site ?? "the site of the tab in front"); nothing was filled. Use an item whose website is this site (\(listHint)), or \(offerHint) to be offered one."
         case .timedOut:
             text = "PasswordPie: no tab\(browser.map { " of \($0)" } ?? "") took the fill within 30 seconds. Check that PasswordPie's extension is on in that browser and profile, then try again."
         case .noFields:
@@ -134,7 +139,7 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
         case .notFilled?: text += " No two-step code field appeared, so the code was not filled."
         case .none?, nil: break
         }
-        return AgentRefusal.oneLine(outcome.succeeded ? text : text + " " + AgentConstants.pasteWarning)
+        return AgentRefusal.oneLine(outcome.succeeded ? text : text + " " + (mcp ? AgentConstants.mcpGuidance : AgentConstants.pasteWarning))
     }
 }
 

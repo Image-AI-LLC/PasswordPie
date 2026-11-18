@@ -169,7 +169,10 @@ extension VaultBroker {
             guard isEnabled() else { return refuse(.accessOff, outcome: .accessOff, items: [labels[index]]) }
             let plan = AgentLoginPlan(item: item, website: websites[index], target: target, submit: request.submit == true, code: codes[index])
             let end = await logins.login(plan)
-            guard isEnabled() else { return refuse(.accessOff, outcome: .accessOff, items: [labels[index]]) }
+            // Withdrawn because access was turned off before any tab took it. A fill a tab took keeps its outcome.
+            if case .finished(.timedOut, _, _) = end, !isEnabled() {
+                return refuse(.accessOff, outcome: .accessOff, items: [labels[index]])
+            }
             switch end {
             case .locked:
                 return refuse(.locked, outcome: .locked, items: [labels[index]])

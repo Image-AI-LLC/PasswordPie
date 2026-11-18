@@ -188,6 +188,36 @@ final class AgentLoginBridgeTests: XCTestCase {
         XCTAssertEqual(answer.errorCode, .accessOff)
     }
 
+    /// Turning access off after a tab took the fill leaves it: the page finishes and the outcome stands.
+    func testTurningAccessOffKeepsAFillATabAlreadyTook() async throws {
+        try add("GitHub", url: "https://github.com/login")
+        reply = nil
+        bridge.agentResultLifetime = 0.5
+        let task = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: self.caller) }
+        let taken = await eventually { self.bridge.agentLogin?.taken == true }
+        XCTAssertTrue(taken)
+        bridge.withdrawAgentLoginForAccessOff()
+        XCTAssertNotNil(bridge.agentLogin, "a taken fill is not withdrawn")
+        broker.isEnabled = { false }
+        let answer = await task.value
+        XCTAssertEqual(answer.login?.outcome, .filled)
+    }
+
+    /// An extension that answers the code request but not `login-result` still tells the agent how the code went.
+    func testACodeRequestCountsWhenTheResultNeverComes() async throws {
+        try add("GitHub", url: "https://github.com/login", code: true)
+        premium = true
+        reply = nil
+        bridge.agentResultLifetime = 0.8
+        let task = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: self.caller) }
+        let taken = await eventually { self.bridge.agentLogin?.taken == true }
+        XCTAssertTrue(taken)
+        _ = bridge.answer(Data(#"{"type":"code","id":3,"url":"https://github.com/"}"#.utf8), from: .chrome, link: 1)
+        let answer = await task.value
+        XCTAssertEqual(answer.login?.outcome, .filled)
+        XCTAssertEqual(answer.login?.code, .filled)
+    }
+
     /// A newer login does not tell an older one that a tab already took "no tab took it".
     func testANewerLoginEndsATakenOneWithWhatIsKnown() async throws {
         try add("GitHub", url: "https://github.com/login", code: true)
