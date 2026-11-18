@@ -40,14 +40,23 @@ enum AppConnection {
     /// same agent session, each up to the 2-minute approval window. The app enforces the real limits.
     static let answerSeconds = 30 * 60
 
-    /// Sends `request` and waits for the answer.
-    static func send(_ request: AgentRequest) -> Result<AgentResponse, Failure> {
+    /// Sends `request` and waits for the answer. `cancellation` (the MCP server's) can end the wait: the connection is
+    /// shut, so the app withdraws the request's prompt.
+    static func send(_ request: AgentRequest, cancellation: Cancellation? = nil) -> Result<AgentResponse, Failure> {
         let fd: Int32
-        switch connect(startingApp: request.type != .status) {
+        // `status` reports on the app as it is, and a notice from the argument watch follows a run the app answered.
+        switch connect(startingApp: request.type != .status && request.type != .argument) {
         case .success(let connected): fd = connected
         case .failure(let failure): return .failure(failure)
         }
-        defer { close(fd) }
+        guard cancellation?.attach(socket: fd) ?? true else {
+            close(fd)
+            return .failure(Failure(code: .appUnavailable, detail: "The request was cancelled."))
+        }
+        defer {
+            cancellation?.detachSocket()
+            close(fd)
+        }
         let seconds = (request.wait ?? AgentConstants.defaultWaitSeconds) + answerSeconds
         BridgeSocket.setTimeout(fd, seconds: seconds)
         guard (try? BridgeSocket.writeAll(fd, BridgeFrame.encode(AgentCoding.encode(request)))) != nil else {

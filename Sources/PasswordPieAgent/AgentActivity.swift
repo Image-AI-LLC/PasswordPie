@@ -14,6 +14,8 @@ public enum AgentOutcome: String, Codable, Sendable {
     case ambiguous = "ambiguous"
     case tooManyRequests = "too many requests"
     case usage = "not understood"
+    /// The argument watch saw a value the run handed out on a command line under it. Detection, not prevention.
+    case argumentSeen = "value seen on a command line"
     /// Agent access was turned off while the request waited.
     case accessOff = "agent access turned off"
     // `login`, each after the owner allowed it once (or before the prompt, for a site or tab that does not match).
@@ -60,10 +62,12 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     public var reason: String?
     /// The walked chain, nearest parent first.
     public var chain: [Link]
+    /// "MCP" when the request came through `passwordpie mcp`.
+    public var via: String?
 
     public init(
         time: Date, kind: String, outcome: AgentOutcome, grant: String? = nil, caller: AgentCaller?, command: String?,
-        items: [String], delivery: [String], reason: String?
+        items: [String], delivery: [String], reason: String?, via: String? = nil
     ) {
         self.time = time
         self.kind = kind
@@ -78,6 +82,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
         self.delivery = delivery
         self.reason = reason
         chain = caller?.chain.map(Link.init) ?? []
+        self.via = via
     }
 
     /// "allowed once", "allowed by 7 days, this project", "denied".

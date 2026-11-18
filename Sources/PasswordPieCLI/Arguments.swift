@@ -8,6 +8,8 @@ enum Command: Equatable {
     case login(LoginOptions)
     case list(query: String?, json: Bool, wait: Int?)
     case status(json: Bool)
+    /// `passwordpie mcp`: the MCP server on standard input and output.
+    case mcp
     case help
     case version
 }
@@ -79,6 +81,9 @@ enum Arguments {
         case "status":
             for next in rest where next != "--json" { throw UsageError("Unknown option \(next) for status.") }
             return .status(json: rest.contains("--json"))
+        case "mcp":
+            guard rest.isEmpty else { throw UsageError("mcp takes no options; agents start it from their MCP configuration.") }
+            return .mcp
         case "help", "-h", "--help": return .help
         case "version", "--version", "-V": return .version
         default: throw UsageError("Unknown command \(verb).")
@@ -228,6 +233,7 @@ enum Arguments {
       passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
       passwordpie list [QUERY] [--json]
       passwordpie status [--json]
+      passwordpie mcp
 
     REF is pp://<folder>/<item>[/<field>] or pp://id/<UUID>[/<field>]; the field is password (the default), username,
     url, notes, a custom field's name, or attachment/<name>. `passwordpie list` shows what is shared with agents.
@@ -242,10 +248,17 @@ enum Arguments {
     read prints the value itself: it enters your conversation. Prefer run. Never ask the owner to paste a secret
     into the conversation.
 
+    While a command runs, PasswordPie watches the command lines of the processes under it and warns when a value it
+    handed out appears on one, where any process can read it.
+
     login fills REF's username and password into the sign-in form of the tab in front of the owner's browser, through
     PasswordPie's extension, after the owner approves; --submit also presses the form's button. Open the sign-in page
     first. Without REF, --url offers the owner the shared items for that site. You get the outcome and the item's
     title, username and websites, never the password.
+
+    mcp is an MCP server on standard input and output, for agents that use MCP tools: passwordpie_status,
+    passwordpie_list, passwordpie_run and passwordpie_read. Add it to the agent's MCP configuration (Preferences >
+    Agents shows the lines for Claude Code, Codex and Cursor).
 
     Exit codes: the command's own, or 64 usage, 65 not-available, 66 ambiguous, 67 denied, 68 timeout, 69 locked,
     70 app-unavailable, 71 access-off, 72 too-many-requests, 73 premium-required; for login, 74 no-matching-tab,

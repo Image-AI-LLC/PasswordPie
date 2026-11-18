@@ -152,7 +152,8 @@ extension VaultBroker {
             rows: rows,
             site: site,
             browser: target.text,
-            submit: request.submit == true
+            submit: request.submit == true,
+            via: Self.viaText(request)
         )
         let delivery = ["fill \(target.browser.displayName) \(site)"]
         switch await ask(prompt) {

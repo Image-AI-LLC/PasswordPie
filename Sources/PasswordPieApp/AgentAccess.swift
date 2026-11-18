@@ -141,6 +141,11 @@ final class AgentAccess: ObservableObject {
 
     var linkURL: URL { linkFolder.appendingPathComponent(AgentConstants.toolName) }
 
+    /// The lines to paste into Claude Code, Codex and Cursor to add `passwordpie mcp`. The app never edits their files.
+    var mcpHosts: [AgentMCPSetup.Host] {
+        AgentMCPSetup.hosts(tool: toolURL?.path ?? "/Applications/PasswordPie.app/\(AgentConstants.toolPathInBundle)")
+    }
+
     /// The exact command the button runs, shown beside it, each path quoted for the shell.
     var linkCommand: String {
         let tool = toolURL?.path ?? "/Applications/PasswordPie.app/\(AgentConstants.toolPathInBundle)"

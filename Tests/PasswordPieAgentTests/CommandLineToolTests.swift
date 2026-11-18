@@ -260,6 +260,28 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertEqual(approver.prompts.count, 3)
     }
 
+    /// Phase 2, the argument watch: a value on the command line of a process under the run is reported on standard
+    /// error and in Activity within a second (the planted process lives one second), without the value. The same value
+    /// in the environment, where it belongs, is not reported.
+    func testArgumentWatchWarnsAboutAValueOnACommandLine() async throws {
+        allowEverything()
+        let quiet = try await run(["run", "--env", "T=pp://Agents/Token", "--", "sh", "-c", "/bin/sh -c 'sleep 1; true'; true"])
+        XCTAssertEqual(quiet.code, 0)
+        XCTAssertFalse(quiet.err.contains("appeared on the command line"), quiet.err)
+        let planted = try await run(["run", "--env", "T=pp://Agents/Token", "--", "sh", "-c", "/bin/sh -c 'sleep 1; true' planted --password \"$T\"; true"])
+        XCTAssertEqual(planted.code, 0)
+        XCTAssertTrue(planted.err.contains("PasswordPie: the value of T (pp://Agents/Token) appeared on the command line of "), planted.err)
+        XCTAssertFalse((planted.out + planted.err).contains(self.planted))
+        let seen = await eventually { self.activity.records.contains { $0.outcome == .argumentSeen } }
+        XCTAssertTrue(seen)
+        XCTAssertEqual(activity.records.filter { $0.outcome == .argumentSeen }.count, 1)
+        let record = try XCTUnwrap(activity.records.first { $0.outcome == .argumentSeen })
+        XCTAssertEqual(record.items, ["pp://Agents/Token"])
+        XCTAssertNil(record.via)
+        let everything = String(decoding: try JSONEncoder().encode(activity.records), as: UTF8.self)
+        XCTAssertFalse(everything.contains(self.planted))
+    }
+
     /// Check 11: one activity line per request, and no planted value in the activity or in the tool's own output.
     func testActivityAndToolOutputHoldNoValue() async throws {
         approver.script = [.allow([0, 1]), .deny]

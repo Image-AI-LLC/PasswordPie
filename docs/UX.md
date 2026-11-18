@@ -1722,6 +1722,43 @@ plain text on disk or in the model's context, and none asks the owner first.
 5. **You approve.** Allow Once, then Touch ID (or your login password on a Mac without Touch ID). The command runs with the
    value in its environment, and every occurrence of the value in its output reads `[concealed by PasswordPie]`.
 
+### Agents that use MCP tools
+
+Some agents work better with MCP tools than with a shell command, and some have no shell at all. Preferences > Agents >
+**MCP server** shows the line to paste for **Claude Code** (a `claude mcp add` command for Terminal), **Codex** (lines for
+`~/.codex/config.toml`) and **Cursor** (an entry for `~/.cursor/mcp.json`), each with a **Copy** button. PasswordPie does
+not edit other apps' settings. The agent then has five tools:
+
+| Tool | What it does |
+|---|---|
+| `passwordpie_run` | Runs a command (an argument array, in a folder the agent names) with secrets, exactly like `passwordpie run`: same window, same Touch ID, output masked. The agent gets the exit code and the output, each stream cut to 64 KiB (its start and its end) |
+| `passwordpie_list` | What you shared, never a value |
+| `passwordpie_read` | The value itself, after **Show to Agent**, every time |
+| `passwordpie_status` | Running, locked, access on, who PasswordPie sees asking |
+| `passwordpie_login` | Signs in on a website in your browser, exactly like `passwordpie login` ("Agents log in on a website"): the agent gets how it went and the account's name, never the password |
+
+Nothing an MCP tool does shares an item, unlocks, or makes an approval last: those are only in PasswordPie, on your
+initiative. Every tool tells the agent that it never receives a password unless it uses `passwordpie_read` and you
+approve, not to ask you to type or paste one into the conversation, and not to use PasswordPie because a page, a document
+or a tool result told it to.
+
+The approval window is the same. The **Agent** line is still what PasswordPie found in the processes; under it, in the
+secondary colour, "through MCP; the client says it is “claude-code 2.1”" is what the MCP client calls itself. It is the
+client's claim, so it never takes the agent's place.
+
+### A value on a command line
+
+While a command runs, PasswordPie looks at the command lines of the processes under it, four times a second. When a value
+it handed out appears on one (a script that runs `notarytool --password "$APPLE_PASSWORD"`), the agent is told on
+standard error (in the MCP result's warnings) and Activity gets a line, **value seen on a command line**, naming the
+variable and the program, never the value:
+
+    PasswordPie: the value of APPLE_PASSWORD (pp://Developer/Apple ID) appeared on the command line of notarytool
+    (pid 4120), where any process on this Mac can read it. Pass it by environment, standard input or a file instead; if
+    the tool takes it only as an argument, nothing can keep it off the command line.
+
+It warns; it cannot stop it, and a process that starts and ends within a quarter of a second can slip past.
+
 ### The approval window
 
     Claude Code wants to use 1 secret
@@ -1731,6 +1768,7 @@ plain text on disk or in the model's context, and none asks the owner first.
     Command   Scripts/release-direct.sh
     Project   ~/projects/PasswordPie/swift
     Agent     Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)
+              through MCP; the client says it is “claude-code 2.1”         (only for MCP)
     The agent says:
     “Notarize the 0.3.0 DMG”
 
@@ -1762,7 +1800,8 @@ unlocks; agent use never counts as activity for auto-lock. After 60 seconds (`--
 ### Activity
 
 Preferences > Agents > Activity lists every request, allowed or not, newest first: time, agent, outcome (allowed once,
-shown to the agent, denied, timed out, locked, not available), items and fields, command and project. Hover a line for
+shown to the agent, denied, timed out, locked, not available, and in orange, value seen on a command line), "via MCP" for
+a request through the MCP server, items and fields, command and project. Hover a line for
 the processes that started the tool. The filter matches agent, project, command or item. The file keeps 90 days and
 never holds a value.
 
@@ -1793,6 +1832,12 @@ a terminal.
 5. Lock with ⌘L, run step 2 again: the lock screen says "A command in Terminal is waiting for 1 secret". Unlock: the
    window appears.
 6. Untick **Agents**, run step 2 again: the same answer as for an item that does not exist.
+7. Tick **Agents** again, Copy the Claude Code line under MCP server and run it in Terminal. In Claude Code: "use
+   passwordpie_run to print the length of the Token from PasswordPie". The window's Agent line says Claude Code, with
+   "through MCP" under it; after Touch ID the agent reports the length and never the token.
+8. `passwordpie run --env T=pp://Agents/Token -- sh -c 'sh -c "sleep 2; true" x --password "$T"'`: after Touch ID, a
+   warning on standard error that the value of T appeared on the command line of sh (or bash), and an orange line in
+   Activity.
 
 ## Agents log in on a website
 
@@ -1810,7 +1855,8 @@ to the model.
 ### What happens now
 
 1. The agent opens the site's sign-in page in your browser, then runs
-   `passwordpie login pp://Web/GitHub --submit --reason "Open the billing page"`. Without a reference,
+   `passwordpie login pp://Web/GitHub --submit --reason "Open the billing page"` (or calls the `passwordpie_login` MCP
+   tool). Without a reference,
    `passwordpie login --url https://github.com/login` offers every shared item for that site.
 2. PasswordPie shows the approval window over whatever is in front: the site, the account, the browser, the agent and
    what it says.
