@@ -263,7 +263,7 @@ struct AgentApprovalView: View {
             if model.isLogin {
                 // One account per login: a radio, not a checkbox.
                 Image(systemName: model.ticked.contains(index) ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(model.ticked.contains(index) ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(model.ticked.contains(index) ? Palette.accentText(dark: dark) : Palette.secondaryText(dark: dark))
                     .onTapGesture { model.toggle(index) }
                     .accessibilityAddTraits(model.ticked.contains(index) ? [.isButton, .isSelected] : .isButton)
             } else {
