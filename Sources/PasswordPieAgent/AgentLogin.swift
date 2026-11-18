@@ -66,7 +66,8 @@ public enum AgentLoginCode: String, Codable, Sendable {
     case none
     /// The code went into the site's code field.
     case filled
-    /// It will go in if the site shows a code field within 30 seconds of the fill (the form was not sent).
+    /// It will go in if the site shows a code field within 30 seconds of the fill: the form was not sent, or the request
+    /// ended before the site asked.
     case waiting
     /// No code field appeared in time.
     case notFilled = "not-filled"

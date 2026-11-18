@@ -79,6 +79,16 @@ final class AgentLoginWait {
         return .finished(Self.outcome(result), code: filled ? .filled : .premiumRequired, detail: nil)
     }
 
+    /// What is known of the code without waiting longer: none, needs Premium, or how the code request went (nil when
+    /// none came).
+    var knownCode: AgentLoginCode? {
+        switch code {
+        case .none: return AgentLoginCode.none
+        case .needsPremium: return .premiumRequired
+        case .fill: return codeFilled.map { $0 ? .filled : .premiumRequired }
+        }
+    }
+
     static func outcome(_ result: AgentFillResult) -> AgentLoginOutcome {
         switch result {
         case .filled: return .filled
@@ -176,9 +186,10 @@ extension BrowserBridge {
             return
         }
         if let result = wait.result {
-            wait.finish(.finished(AgentLoginWait.outcome(result), code: .waiting, detail: nil))
+            // The code may still go in: the page keeps its pending code.
+            wait.finish(.finished(AgentLoginWait.outcome(result), code: wait.knownCode ?? .waiting, detail: nil))
         } else {
-            wait.finish(.finished(.filled, code: nil, detail: "The request ended before the extension said how it went."))
+            wait.finish(.finished(.filled, code: wait.knownCode, detail: "The request ended before the extension said how it went."))
         }
     }
 
@@ -216,12 +227,7 @@ extension BrowserBridge {
             // An extension from before `login-result` fills and says nothing more. Its code request, if one came, says
             // how the code went.
             state.pending.withdrawAgentFill(token)
-            let code: AgentLoginCode?
-            switch wait.code {
-            case .none: code = AgentLoginCode.none
-            case .needsPremium: code = .premiumRequired
-            case .fill: code = wait.codeFilled.map { $0 ? .filled : .premiumRequired }
-            }
+            let code = wait.knownCode
             wait.finish(.finished(.filled, code: code, detail: "The extension did not say how it went; update PasswordPie's extension."))
         }
     }

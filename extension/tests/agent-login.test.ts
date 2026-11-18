@@ -277,6 +277,24 @@ describe('agent login: the page', () => {
     expect(sent).toEqual(['next']);
   });
 
+  it('tells the background when the Next timer finds and fills a late password field', async () => {
+    document.body.innerHTML = `<form><input id="user" autocomplete="username"><button id="go" type="submit">Sign in</button></form>`;
+    const sent = submits();
+    makeFiller().handle(agentFill);
+    // The password field shows just before the timer fires, before the watch's next look.
+    await vi.advanceTimersByTimeAsync(USERNAME_SUBMIT_DELAY_MS - 30);
+    const pass = document.createElement('input');
+    pass.type = 'password';
+    pass.id = 'pass';
+    document.querySelector('form')?.insertBefore(pass, document.getElementById('go'));
+    await vi.advanceTimersByTimeAsync(40);
+    expect(pass.value).toBe('s3cret');
+    expect(sent).toEqual(['go']);
+    expect(late).toEqual([true]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(late).toEqual([true]);
+  });
+
   it('presses Next on a username step that renders after the fill arrived', async () => {
     document.body.innerHTML = `<div id="app"></div>`;
     const sent = submits();

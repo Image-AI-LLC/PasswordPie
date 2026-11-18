@@ -372,7 +372,7 @@ The browser side (`BrowserBridge+AgentLogin.swift`) ends the wait:
 **Two-step code.** The fill carries `otp: true` when the item has a code, as for people, and the page's `code` request is
 answered under the same rule: this Mac's Premium (`browserCodeAllowed`), nothing in a request. The answer's `code`:
 `none` (no code), `premium-required` (not filled), `filled`, `not-filled` (the form was sent and no code field asked
-within 30 seconds), or `waiting` (the form was not sent; the code goes in if the site asks within 30 seconds). The code
+within 30 seconds), or `waiting` (the form was not sent, or the request ended first; the code goes in if the site asks within 30 seconds). The code
 itself never reaches the agent.
 
 Decision: the outcome of a login that ran is an answer, not an error, so it can carry the item's overview; the tool maps
