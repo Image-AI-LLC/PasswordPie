@@ -85,6 +85,19 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertNil(session.agentSecret(token, field: .custom("PasswordPie.PreviousPasswords")))
     }
 
+    /// A two-step secret, however a KeePass app keeps it, is not a field an agent can name.
+    func testTwoStepSecretsAreNotFields() throws {
+        let session = unlockedSession()
+        session.saveEditing(entry("Legacy", in: ["Developer"], password: "pw-legacy-1", fields: [
+            VaultField(key: "TOTP Seed", value: "GEZDGNBVGY3TQOJQ"), VaultField(key: "TOTP Settings", value: "30;6"),
+            VaultField(key: "TimeOtp-Secret-Base32", value: "GEZDGNBVGY3TQOJQ"), VaultField(key: "Region", value: "eu"),
+        ]))
+        session.setFolderSharedWithAgents(["Developer"], true)
+        let item = try XCTUnwrap(session.agentSharedItems().first)
+        XCTAssertEqual(item.fields, ["Region"])
+        XCTAssertNil(session.agentSecret(item, field: .custom("TOTP Seed")))
+    }
+
     func testUnsharingEndsAccessAndTheRecycleBinNeverCounts() throws {
         let session = populated()
         session.setFolderSharedWithAgents(["Developer"], true)
@@ -185,9 +198,11 @@ final class AgentAccessTests: XCTestCase {
         access.setEnabled(true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: socket))
         XCTAssertTrue(defaults.bool(forKey: AgentConstants.enabledKey))
+        XCTAssertTrue(session.agentAccessOn, "Share with Agents shows in details")
         access.setEnabled(false)
         XCTAssertFalse(FileManager.default.fileExists(atPath: socket))
         XCTAssertFalse(access.isListening)
+        XCTAssertFalse(session.agentAccessOn)
     }
 
     func testTurningOffOrLockingWithdrawsPrompts() async throws {
@@ -253,6 +268,20 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertEqual(decisions, [.allow([1])], "only the rows left ticked")
     }
 
+    /// Withdrawn while the Touch ID sheet is up: the sheet is closed and nothing is allowed even if it succeeds after.
+    func testAWithdrawnPromptClosesItsTouchIDSheet() async {
+        let slow = SlowConfirmation()
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.prompt(raw: false), confirmation: slow) { decisions.append($0) }
+        model.allow()
+        for _ in 0..<20 { await Task.yield() }
+        model.dismiss()
+        XCTAssertTrue(slow.cancelled)
+        slow.finish(true)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(decisions, [.dismissed])
+    }
+
     func testUntickingEverythingCannotAllowAndDenyAnswersAtOnce() {
         var decisions: [AgentApprovalDecision] = []
         let model = AgentApprovalModel(prompt: Self.prompt(raw: false), confirmation: Confirms(true)) { decisions.append($0) }
@@ -295,6 +324,19 @@ private final class Confirms: OwnerConfirmation {
     let answer: Bool
     init(_ answer: Bool) { self.answer = answer }
     func confirm(reason: String) async -> Bool { answer }
+    func cancel() {}
+}
+
+@MainActor
+private final class SlowConfirmation: OwnerConfirmation {
+    var cancelled = false
+    private var pending: CheckedContinuation<Bool, Never>?
+    func confirm(reason: String) async -> Bool { await withCheckedContinuation { pending = $0 } }
+    func cancel() { cancelled = true }
+    func finish(_ answer: Bool) {
+        pending?.resume(returning: answer)
+        pending = nil
+    }
 }
 
 private final class Activity: AgentActivityLogging {

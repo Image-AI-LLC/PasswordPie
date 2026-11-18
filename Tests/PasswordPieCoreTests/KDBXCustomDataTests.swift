@@ -16,6 +16,7 @@ final class KDBXCustomDataTests: XCTestCase {
         <String><Key>Password</Key><Value Protected="True">pw</Value></String>
         <Binary><Key>AuthKey.p8</Key><Value Ref="0"/></Binary>
         <Binary><Key>inline.txt</Key><Value>aW5saW5l</Value></Binary>
+        <Binary><Key>dangling.bin</Key><Value Ref="7"/></Binary>
         </Entry></Group></Root></KeePassFile>
         """
     }

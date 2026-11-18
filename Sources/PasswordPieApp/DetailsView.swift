@@ -590,9 +590,7 @@ struct DetailsView: View {
                     }
                 }
                 #if PP_DIRECT
-                if model.session.agentAccessOn, model.session.canShareWithAgents(model.entryID) {
-                    DetailChrome(label: "agents") { AgentShareRow(session: model.session, id: model.entryID) }
-                }
+                AgentShareSlot(session: model.session, id: model.entryID)
                 #endif
             }
             .background(GeometryReader { Color.clear.preference(key: ContentHeightKey.self, value: $0.size.height) })
@@ -1161,6 +1159,19 @@ struct PieSlice: Shape {
 }
 
 #if PP_DIRECT
+/// The "agents" row, while agent access is on, for an item that can be shared. Watches the session, so turning the
+/// switch shows or hides it at once.
+private struct AgentShareSlot: View {
+    @ObservedObject var session: VaultSession
+    let id: UUID
+
+    var body: some View {
+        if session.agentAccessOn, session.canShareWithAgents(id) {
+            DetailChrome(label: "agents") { AgentShareRow(session: session, id: id) }
+        }
+    }
+}
+
 /// Share with Agents, in an item's details: agents may then ask for it (and every use still asks the owner). An item in
 /// a shared folder says so; sharing the folder is changed in Preferences > Agents.
 private struct AgentShareRow: View {

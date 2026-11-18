@@ -1740,7 +1740,8 @@ plain text on disk or in the model's context, and none asks the owner first.
 - **The agent says** is the agent's own `--reason`, in quotes, in the secondary colour. It may have been written by a
   prompt injection; the window never puts it in its own words.
 - **Agent** is worked out by PasswordPie from the processes that started the tool, with their code signature, never from
-  anything the agent says. "not signed: /opt/homebrew/bin/node" means PasswordPie cannot tell that agent from other node
+  anything the agent says. With only shells between the tool and a terminal it says "A command in Terminal, no agent
+  found": an agent can start a command in a Terminal window too, so this is not proof that you typed it. "not signed: /opt/homebrew/bin/node" means PasswordPie cannot tell that agent from other node
   programs.
 - Hovering the command shows it in full and the program it resolves to.
 - A raw read (`passwordpie read`, or `run --no-masking`) says **wants to see**, has **Show to Agent** instead of Allow
@@ -1784,10 +1785,11 @@ a terminal.
 
 1. `passwordpie status`: "Agent access: off". Preferences > Agents: turn it on, Create Link in ~/.local/bin.
 2. `passwordpie run --env T=pp://Agents/Token -- sh -c 'echo "$T"'`: "Nothing shared with agents matches". Tick
-   **Agents** under Shared with agents and run it again: the approval window names Terminal (typed by you, no agent in
-   between), the command and the project. Allow Once, Touch ID: the output is `[concealed by PasswordPie]`.
+   **Agents** under Shared with agents and run it again: the approval window says "A command in Terminal" with "no agent
+   found" (nothing but shells between it and Terminal), the command and the project. Allow Once, Touch ID: the output is `[concealed by PasswordPie]`.
 3. Run it again and press Deny: exit code 67, one line telling the agent what to do. Activity shows both lines.
 4. `passwordpie read pp://Agents/Token`: the window says **wants to see** and **Show to Agent**; after Touch ID the value
    prints.
-5. Lock with ⌘L, run step 2 again: the lock screen says "Terminal is waiting for 1 secret". Unlock: the window appears.
+5. Lock with ⌘L, run step 2 again: the lock screen says "A command in Terminal is waiting for 1 secret". Unlock: the
+   window appears.
 6. Untick **Agents**, run step 2 again: the same answer as for an item that does not exist.

@@ -175,11 +175,13 @@ final class KDBXPreserve: @unchecked Sendable {
         for binary in direct(live.element, "Binary") {
             let key = direct(binary, "Key").first?.stringValue ?? ""
             guard !key.isEmpty, let value = direct(binary, "Value").first else { continue }
-            if let ref = value.attribute(forName: "Ref")?.stringValue, let index = Int(ref), payloads.indices.contains(index) {
+            if let ref = value.attribute(forName: "Ref")?.stringValue {
+                // A reference to a binary the file does not have is no attachment, not an empty one.
+                guard let index = Int(ref), payloads.indices.contains(index) else { continue }
                 found.append((key, payloads[index]))
             } else if !isInnerProtected(value) {
                 let text = (value.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let data = Data(base64Encoded: text, options: .ignoreUnknownCharacters) else { continue }
+                guard !text.isEmpty, let data = Data(base64Encoded: text, options: .ignoreUnknownCharacters) else { continue }
                 let compressed = value.attribute(forName: "Compressed")?.stringValue?.lowercased() == "true"
                 found.append((key, compressed ? ((try? gzipDecompress(data)) ?? data) : data))
             }

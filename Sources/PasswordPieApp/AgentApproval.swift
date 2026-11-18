@@ -9,15 +9,25 @@ import SwiftUI
 @MainActor
 protocol OwnerConfirmation: AnyObject {
     func confirm(reason: String) async -> Bool
+    /// The prompt went away: a Touch ID sheet still up for it closes.
+    func cancel()
 }
 
 @MainActor
 final class SystemOwnerConfirmation: OwnerConfirmation {
+    private var context: LAContext?
+
     func confirm(reason: String) async -> Bool {
         let context = LAContext()
+        self.context = context
         context.localizedFallbackTitle = "Use Password…"
         // Separate from unlocking the vault with Touch ID, and from its 7-day rule.
         return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
+    }
+
+    func cancel() {
+        context?.invalidate()
+        context = nil
     }
 }
 
@@ -102,6 +112,7 @@ final class AgentApprovalModel: ObservableObject {
 
     /// The broker withdrew it, or the vault locked.
     func dismiss() {
+        if confirming { confirmation.cancel() }
         resolve(.dismissed)
     }
 
@@ -115,7 +126,7 @@ final class AgentApprovalModel: ObservableObject {
 /// Shows approval windows over whatever is in front, one per prompt, drawn by PasswordPie itself.
 @MainActor
 final class AgentApprovalController: AgentApprover {
-    private let confirmation: OwnerConfirmation
+    private let makeConfirmation: () -> OwnerConfirmation
     /// Puts a model on screen and returns how to take it away. Tests pass one that shows nothing.
     private let show: (AgentApprovalModel) -> () -> Void
     private(set) var open: [UUID: (model: AgentApprovalModel, close: () -> Void)] = [:]
@@ -123,13 +134,14 @@ final class AgentApprovalController: AgentApprover {
     var onPresent: ((AgentApprovalModel) -> Void)?
 
     init(confirmation: OwnerConfirmation? = nil, show: ((AgentApprovalModel) -> () -> Void)? = nil) {
-        self.confirmation = confirmation ?? SystemOwnerConfirmation()
+        makeConfirmation = { confirmation ?? SystemOwnerConfirmation() }
         self.show = show ?? AgentApprovalController.window(for:)
     }
 
     func present(_ prompt: AgentApprovalPrompt) async -> AgentApprovalDecision {
         await withCheckedContinuation { continuation in
-            let model = AgentApprovalModel(prompt: prompt, confirmation: confirmation) { [weak self] decision in
+            // Each prompt its own confirmation, so withdrawing one closes only its own Touch ID sheet.
+        let model = AgentApprovalModel(prompt: prompt, confirmation: makeConfirmation()) { [weak self] decision in
                 self?.open.removeValue(forKey: prompt.id)?.close()
                 continuation.resume(returning: decision)
             }

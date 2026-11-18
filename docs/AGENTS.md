@@ -38,7 +38,9 @@ the database file itself, in its custom data: under the master key, moving with 
 the app's preferences, so `defaults write` cannot share anything. The switch itself is a preference
 (`agentAccessEnabled`): turning it on that way only opens the socket; every use still asks.
 
-Decision: a folder is kept by its path, so renaming it unshares it until it is ticked again (failing closed). Folders are
+Decision: a folder is kept by its path, so renaming it unshares it until it is ticked again (failing closed). Two
+sibling folders with the same name are one path, so one tick covers both. An item's fields can grow when PasswordPie
+merges a duplicate login into it ("The newest password wins" in UX.md); a shared item shares what it holds. Folders are
 shared from the Agents pane, which lists the database's folders; the panel's folder submenus have no context menu today.
 
 Decision: the tool lives in `Contents/Helpers`, not `Contents/MacOS` as first planned. On a case-insensitive volume (the
@@ -68,7 +70,7 @@ Rules it keeps:
 | Hang-up | When the tool's connection closes (the agent killed it), its prompt is withdrawn and its wait for an unlock ends. A request queued behind another prompt notices when its turn comes |
 | Partial approval | The owner can untick secrets in the window; unticked ones come back `declined` and the tool runs without them, saying so on standard error |
 | Raw | `read`, and `run --no-masking`, show "The agent will see the value" and ask every time |
-| Two-step codes | `…/otp` answers `not-available` in this version |
+| Two-step codes | `…/otp` answers `not-available` in this version; the fields that hold a two-step secret (`otp`, `TimeOtp-*`, `TOTP Seed`, `TOTP Settings`) are not offered as custom fields |
 
 The seams for later work: `AgentGrantStore` (standing permissions fill `grant(covering:)`, `grants(for:)`, `covers` and
 record a lasting choice in `approved(_:decision:)`); `AgentApprovalDecision` (an "Allow ▾" length can be added beside
@@ -91,7 +93,10 @@ can start it, so the app looks further, itself, for every request (not once per 
    its child is a later process that got an exited parent's pid: the walk stops there.
 3. **The agent** is the nearest ancestor on the list of known agent hosts (`AgentHosts`: by signing identifier, by
    executable name, or for an interpreter such as `node` by its script's name), else the first that is not a shell,
-   terminal or launcher.
+   terminal or launcher. A shell or launcher counts as one only when it is Apple's or in a protected system folder
+   (`/bin`, `/usr/bin`…): any program can be named `zsh`. With nothing else in the chain the request is "A command in
+   Terminal, no agent found"; the terminal's signature is never lent to it, since an agent can open a Terminal window
+   too.
 4. **The agent session** is that process, by pid **and** start time. With no known agent in the chain, it is the tool's
    POSIX session (`getsid`), by the session leader's pid and start time.
 

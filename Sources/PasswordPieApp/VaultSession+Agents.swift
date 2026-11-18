@@ -50,7 +50,8 @@ extension VaultSession: AgentVault {
 
     /// The custom fields an agent may name: what the details view shows as fields, without PasswordPie's own bookkeeping.
     static func agentFieldNames(_ entry: VaultEntry) -> [String] {
-        let standard: Set<String> = ["title", "username", "password", "url", "notes", "otp"]
+        // The two-step secret, in any of the ways KeePass apps keep it, is not a field agents get.
+        let standard: Set<String> = ["title", "username", "password", "url", "notes", "otp", "totp seed", "totp settings"]
         return entry.fields.filter { field in
             !standard.contains(field.key.lowercased()) && !field.key.lowercased().hasPrefix("timeotp")
                 && !EntryMerge.isReservedKey(field.key) && !field.value.isEmpty
@@ -58,9 +59,6 @@ extension VaultSession: AgentVault {
     }
 
     // MARK: Sharing, for the owner's UI
-
-    /// The switch in Preferences > Agents. Share with Agents shows in an item's details only while it is on.
-    var agentAccessOn: Bool { UserDefaults.standard.bool(forKey: AgentConstants.enabledKey) }
 
     /// What is shared in the current database.
     var agentSharing: AgentSharing {

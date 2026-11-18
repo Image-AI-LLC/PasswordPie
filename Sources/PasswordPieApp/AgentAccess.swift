@@ -62,6 +62,7 @@ final class AgentAccess: ObservableObject {
         broker.onWaitingChanged = { [weak session] waiting in session?.agentWaitingLine = AgentWaiting.lockScreenLine(waiting) }
         relay.appended = { [weak self] record in self?.activity.insert(record, at: 0) }
         activity = log.records().reversed()
+        session.agentAccessOn = enabled
     }
 
     /// Debug builds only: `PASSWORDPIE_AGENT_APPROVE=allow|deny` shows the window, then answers it after 2 seconds without
@@ -87,6 +88,7 @@ final class AgentAccess: ObservableObject {
     /// The switch in Preferences > Agents. Off closes the socket at once.
     func setEnabled(_ on: Bool) {
         enabled = on
+        session.agentAccessOn = on
         defaults.set(on, forKey: AgentConstants.enabledKey)
         if on {
             openSocket()
@@ -185,6 +187,7 @@ final class AgentAccess: ObservableObject {
 @MainActor
 private final class DebugConfirmation: OwnerConfirmation {
     func confirm(reason: String) async -> Bool { true }
+    func cancel() {}
 }
 #endif
 

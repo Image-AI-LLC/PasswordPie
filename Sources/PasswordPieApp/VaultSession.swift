@@ -223,6 +223,8 @@ final class VaultSession: ObservableObject {
     /// "Claude Code is waiting for 2 secrets." under the lock screen's database name, while an agent's request waits for
     /// the unlock (direct download only). See "Agents" in docs/UX.md.
     @Published var agentWaitingLine: String?
+    /// The switch in Preferences > Agents, mirrored here: Share with Agents shows in an item's details only while it is on.
+    @Published var agentAccessOn = false
     @Published var touchIDEnabled = false
     @Published var touchIDHardware = false
     @Published var touchIDBusy = false
