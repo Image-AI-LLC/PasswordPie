@@ -279,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// withdraws every approval window.
     private func startAgentAccess() {
         agentAccess = AgentAccess(session: session)
+        agentAccess.attachBrowser(bridge)
         agentAccess.onNeedsUnlock = { [weak self] in
             guard let self, self.session.locked else { return }
             if self.panelController.isVisible { self.panelController.bringForward() } else { self.panelController.show(.hotkey) }

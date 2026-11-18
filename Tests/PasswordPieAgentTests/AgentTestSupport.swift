@@ -149,3 +149,88 @@ func eventually(timeout: TimeInterval = 5, _ condition: @MainActor () -> Bool) a
     }
     return condition()
 }
+
+/// The browser side of `login`, scripted. Sites are compared by host with one leading `www.` dropped; a website and a page
+/// match when their hosts do and the page does not step down from https to http.
+@MainActor
+final class FakeLogins: AgentBrowserLogins {
+    /// The tab in front; nil target means no extension is connected.
+    var target: AgentLoginTarget? = AgentLoginTarget(browser: .chrome, profile: "the profile in use", link: 3, page: .unknown)
+    var websites: [UUID: [String]] = [:]
+    var usernames: [UUID: String] = [:]
+    var codePlans: [UUID: AgentLoginCodePlan] = [:]
+    /// What `login` answers. Nil: it waits until `finish` (or the task is cancelled).
+    var end: AgentLoginEnd? = .finished(.submitted, code: AgentLoginCode.none, detail: nil)
+    var plans: [AgentLoginPlan] = []
+    var targetsAsked: [AgentBrowserName?] = []
+    var withdrawn = 0
+    private var waiting: CheckedContinuation<AgentLoginEnd, Never>?
+
+    func loginTarget(_ browser: AgentBrowserName?) async -> AgentLoginTarget? {
+        targetsAsked.append(browser)
+        guard var target else { return nil }
+        if let browser { target.browser = browser }
+        return target
+    }
+
+    func loginOverview(_ item: AgentItem) -> AgentLoginOverview? {
+        AgentLoginOverview(title: item.title, username: usernames[item.id] ?? "user", websites: websites[item.id] ?? [])
+    }
+
+    func loginWebsite(of item: AgentItem, for page: String?) -> String? {
+        let all = websites[item.id] ?? []
+        guard let page else { return all.first }
+        return all.first { loginAllows(website: $0, on: page) }
+    }
+
+    func loginSite(_ address: String) -> String? {
+        Self.host(address)
+    }
+
+    func loginAllows(website: String, on page: String) -> Bool {
+        guard let site = Self.host(website), let other = Self.host(page), site == other else { return false }
+        return !(website.hasPrefix("https:") && page.hasPrefix("http:"))
+    }
+
+    func loginCodePlan(_ item: AgentItem) -> AgentLoginCodePlan {
+        codePlans[item.id] ?? .none
+    }
+
+    func login(_ plan: AgentLoginPlan) async -> AgentLoginEnd {
+        plans.append(plan)
+        if let end { return end }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { waiting = $0 }
+        } onCancel: {
+            Task { @MainActor in
+                self.withdrawn += 1
+                self.finish(.finished(.timedOut, code: nil, detail: "withdrawn"))
+            }
+        }
+    }
+
+    func finish(_ end: AgentLoginEnd) {
+        waiting?.resume(returning: end)
+        waiting = nil
+    }
+
+    static func host(_ address: String) -> String? {
+        let text = address.contains("://") ? address : "https://" + address
+        guard let url = URL(string: text), let scheme = url.scheme, scheme == "http" || scheme == "https", var host = url.host?.lowercased() else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return host
+    }
+}
+
+extension AgentRequest {
+    static func login(_ ref: String?, url: String? = nil, submit: Bool = true, browser: String? = nil, wait: Int? = 0, reason: String? = nil) -> AgentRequest {
+        var request = AgentRequest(type: .login, id: 9)
+        request.secrets = ref.map { [AgentSecretRequest(name: nil, ref: $0, delivery: .fill)] }
+        request.url = url
+        request.submit = submit
+        request.browser = browser
+        request.wait = wait
+        request.reason = reason
+        return request
+    }
+}

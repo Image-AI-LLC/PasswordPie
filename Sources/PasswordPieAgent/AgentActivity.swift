@@ -14,6 +14,13 @@ public enum AgentOutcome: String, Codable, Sendable {
     case ambiguous = "ambiguous"
     case tooManyRequests = "too many requests"
     case usage = "not understood"
+    // `login`, each after the owner allowed it once (or before the prompt, for a site or tab that does not match).
+    case filled = "filled"
+    case submitted = "filled and sent"
+    case noMatchingTab = "no matching tab"
+    case siteMismatch = "site mismatch"
+    case fillTimedOut = "no tab took the fill"
+    case noFields = "no sign-in fields"
 }
 
 /// One line of the activity log. It holds no value, ever: names of items and fields, the command, the agent and its
@@ -32,7 +39,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     }
 
     public var time: Date
-    /// `run`, `read` or `list`.
+    /// `run`, `read`, `list` or `login`.
     public var kind: String
     public var outcome: AgentOutcome
     /// The standing permission that allowed it, described.
@@ -45,7 +52,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     /// "Developer/App Store Connect API key › attachment AuthKey_ABC123.p8"; for a reference that found nothing, the
     /// reference as the agent typed it.
     public var items: [String]
-    /// "env NOTARY_KEY_ID", "file NOTARY_KEY", "stdin", "shown".
+    /// "env NOTARY_KEY_ID", "file NOTARY_KEY", "stdin", "shown", "fill Google Chrome github.com".
     public var delivery: [String]
     /// The agent's own words, kept as its claim.
     public var reason: String?

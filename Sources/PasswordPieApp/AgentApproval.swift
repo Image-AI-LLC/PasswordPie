@@ -48,20 +48,24 @@ final class AgentApprovalModel: ObservableObject {
         self.prompt = prompt
         self.confirmation = confirmation
         self.finish = finish
-        ticked = Set(prompt.rows.indices)
+        // A login fills one account: with several to choose from, the owner picks one; nothing is picked for them.
+        ticked = prompt.kind == .login && prompt.rows.count > 1 ? [] : Set(prompt.rows.indices)
     }
+
+    var isLogin: Bool { prompt.kind == .login }
 
     var answered: Bool { finish == nil }
 
     /// "Claude Code wants to use 2 secrets" / "… wants to see 1 secret".
     var title: String {
+        if isLogin { return "\(prompt.agent) wants to log in to \(prompt.site ?? "a website")" }
         let count = prompt.rows.count == 1 ? "1 secret" : "\(prompt.rows.count) secrets"
         return "\(prompt.agent) wants to \(prompt.raw ? "see" : "use") \(count)"
     }
 
     var allowTitle: String { prompt.raw ? "Show to Agent" : "Allow Once" }
 
-    var canAllow: Bool { !ticked.isEmpty && !confirming }
+    var canAllow: Bool { (isLogin ? ticked.count == 1 : !ticked.isEmpty) && !confirming }
 
     /// "Claude Code, signed by Anthropic PBC, started in Terminal (pid 4182)".
     var agentLine: String {
@@ -77,13 +81,25 @@ final class AgentApprovalModel: ObservableObject {
         case .file: return "a file for the command, path in $\(row.name ?? "")"
         case .stdin: return "the command's standard input"
         case .shown: return "shown to the agent"
+        case .fill: return prompt.submit ? "filled in, then the form is sent" : "filled in"
         }
+    }
+
+    /// "password · environment variable T"; for a login "octocat · username and password, filled in, then the form is sent".
+    func rowLine(_ row: AgentApprovalRow) -> String {
+        guard isLogin else { return "\(row.field) · \(deliveryText(row))" }
+        let who = row.username.flatMap { $0.isEmpty ? nil : $0 + " · " } ?? ""
+        return "\(who)\(row.field), \(deliveryText(row))"
     }
 
     static let rawWarning = "The agent will see the value. It stays in the conversation, and in the model provider's records if the model is hosted."
 
     func toggle(_ index: Int) {
         guard !confirming else { return }
+        if isLogin {
+            ticked = [index]
+            return
+        }
         if ticked.contains(index) { ticked.remove(index) } else { ticked.insert(index) }
     }
 
@@ -97,7 +113,7 @@ final class AgentApprovalModel: ObservableObject {
         confirming = true
         notConfirmed = false
         let rows = ticked
-        let reason = prompt.raw ? "show a secret to \(prompt.agent)" : "let \(prompt.agent) use \(rows.count == 1 ? "1 secret" : "\(rows.count) secrets")"
+        let reason = isLogin ? "let \(prompt.agent) log in to \(prompt.site ?? "a website")" : prompt.raw ? "show a secret to \(prompt.agent)" : "let \(prompt.agent) use \(rows.count == 1 ? "1 secret" : "\(rows.count) secrets")"
         Task { @MainActor in
             let confirmed = await confirmation.confirm(reason: reason)
             confirming = false
@@ -201,10 +217,14 @@ struct AgentApprovalView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 5) {
+                if model.isLogin {
+                    detail("Site", model.prompt.site ?? "", full: model.prompt.site ?? "")
+                    if let browser = model.prompt.browser { detail("Browser", browser, full: browser) }
+                }
                 if let command = model.prompt.command {
                     detail("Command", command, full: [command, model.prompt.program].compactMap { $0 }.joined(separator: "\n"))
                 }
-                detail("Project", abbreviated(model.prompt.project), full: model.prompt.project)
+                if !model.isLogin { detail("Project", abbreviated(model.prompt.project), full: model.prompt.project) }
                 detail("Agent", model.agentLine, full: model.agentLine)
             }
             if let reason = model.prompt.reason {
@@ -240,16 +260,27 @@ struct AgentApprovalView: View {
 
     private func secretRow(_ index: Int, _ row: AgentApprovalRow) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if model.isLogin {
+                // One account per login: a radio, not a checkbox.
+                Image(systemName: model.ticked.contains(index) ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(model.ticked.contains(index) ? Color.accentColor : Color.secondary)
+                    .onTapGesture { model.toggle(index) }
+                    .accessibilityAddTraits(model.ticked.contains(index) ? [.isButton, .isSelected] : .isButton)
+            } else {
             Toggle("", isOn: Binding(get: { model.ticked.contains(index) }, set: { _ in model.toggle(index) }))
                 .toggleStyle(.checkbox)
                 .labelsHidden()
                 .disabled(model.prompt.rows.count == 1)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(row.title).font(.system(size: 13, weight: .medium))
                     if !row.folder.isEmpty { Text("(\(row.folder))").font(.system(size: 12)).foregroundStyle(.secondary) }
                 }
-                Text("\(row.field) · \(model.deliveryText(row))").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(model.rowLine(row)).font(.system(size: 11)).foregroundStyle(.secondary)
+                if let note = row.note {
+                    Text(note).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
                 if row.tooShortToMask {
                     Text("Shorter than 6 characters: not hidden in the command's output.").font(.system(size: 11)).foregroundStyle(.secondary)
                 }

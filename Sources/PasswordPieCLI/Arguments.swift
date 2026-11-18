@@ -5,6 +5,7 @@ import PasswordPieAgent
 enum Command: Equatable {
     case run(RunOptions)
     case read(ReadOptions)
+    case login(LoginOptions)
     case list(query: String?, json: Bool, wait: Int?)
     case status(json: Bool)
     case help
@@ -35,6 +36,16 @@ struct ReadOptions: Equatable {
     var newline = true
 }
 
+struct LoginOptions: Equatable {
+    var ref: String?
+    var url: String?
+    var submit = false
+    var browser: AgentBrowserName?
+    var reason: String?
+    var wait: Int?
+    var json = false
+}
+
 struct UsageError: Error, Equatable {
     var message: String
     init(_ message: String) { self.message = message }
@@ -48,6 +59,7 @@ enum Arguments {
         switch verb {
         case "run": return .run(try parseRun(&rest, readFile: readFile))
         case "read": return .read(try parseRead(&rest))
+        case "login": return .login(try parseLogin(&rest))
         case "list", "ls":
             var json = false
             var wait: Int?
@@ -163,6 +175,33 @@ enum Arguments {
         return options
     }
 
+    private static func parseLogin(_ rest: inout [String]) throws -> LoginOptions {
+        var options = LoginOptions()
+        while let next = rest.first {
+            rest.removeFirst()
+            let (flag, inline) = split(next)
+            switch flag {
+            case "--url": options.url = try inline ?? take(&rest, after: flag)
+            case "--submit": options.submit = true
+            case "--browser":
+                let name = try inline ?? take(&rest, after: flag)
+                guard let browser = AgentBrowserName(rawValue: name) else { throw UsageError("--browser takes chrome or safari.") }
+                options.browser = browser
+            case "--reason": options.reason = try inline ?? take(&rest, after: flag)
+            case "--wait": options.wait = try waitValue(try inline ?? take(&rest, after: flag))
+            case "--json": options.json = true
+            default:
+                guard !next.hasPrefix("-"), options.ref == nil else { throw UsageError("Unknown option \(next) for login.") }
+                options.ref = next
+            }
+        }
+        if let ref = options.ref, (try? AgentReference(ref)) == nil { throw UsageError("\(ref) is not a reference (pp://folder/item).") }
+        guard options.ref != nil || options.url != nil else {
+            throw UsageError("login needs a reference, or --url to be offered the shared items for that site: passwordpie login pp://folder/item [--url URL].")
+        }
+        return options
+    }
+
     private static func split(_ argument: String) -> (String, String?) {
         guard argument.hasPrefix("--"), let equals = argument.firstIndex(of: "=") else { return (argument, nil) }
         return (String(argument[..<equals]), String(argument[argument.index(after: equals)...]))
@@ -186,6 +225,7 @@ enum Arguments {
       passwordpie run [--env NAME=REF]... [--file NAME=REF]... [--stdin REF] [--env-file PATH]
                       [--reason TEXT] [--wait SECONDS] [--no-masking] -- COMMAND [ARG]...
       passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
+      passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
       passwordpie list [QUERY] [--json]
       passwordpie status [--json]
 
@@ -202,7 +242,13 @@ enum Arguments {
     read prints the value itself: it enters your conversation. Prefer run. Never ask the owner to paste a secret
     into the conversation.
 
+    login fills REF's username and password into the sign-in form of the tab in front of the owner's browser, through
+    PasswordPie's extension, after the owner approves; --submit also presses the form's button. Open the sign-in page
+    first. Without REF, --url offers the owner the shared items for that site. You get the outcome and the item's
+    title, username and websites, never the password.
+
     Exit codes: the command's own, or 64 usage, 65 not-available, 66 ambiguous, 67 denied, 68 timeout, 69 locked,
-    70 app-unavailable, 71 access-off, 72 too-many-requests, 73 premium-required. See docs/AGENTS.md.
+    70 app-unavailable, 71 access-off, 72 too-many-requests, 73 premium-required; for login, 74 no-matching-tab,
+    75 site-mismatch, 76 timed-out, 77 no-fields. See docs/AGENTS.md.
     """
 }

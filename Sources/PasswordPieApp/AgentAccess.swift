@@ -80,6 +80,11 @@ final class AgentAccess: ObservableObject {
         #endif
     }
 
+    /// `passwordpie login`: fills through the browser extension (docs/AGENTS.md, "Website login").
+    func attachBrowser(_ bridge: BrowserBridge) {
+        broker.logins = AgentLoginBridge(session: session, bridge: bridge)
+    }
+
     /// At launch: open the socket when the switch is on.
     func start() {
         if enabled { openSocket() }

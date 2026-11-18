@@ -166,8 +166,9 @@ final class BrowserBridge: ObservableObject {
     @Published private(set) var safariEnabled = false
     var chromeConnected: Bool { chromeProfiles > 0 }
 
-    private unowned let session: VaultSession
-    private var state = BridgeState()
+    unowned let session: VaultSession
+    /// Internal, not private, for the agent login (`BrowserBridge+AgentLogin.swift`).
+    var state = BridgeState()
     /// The site icons asked for in `tab` answers, waiting for the extension's `icon` request.
     private var iconLedger = SiteIconLedger()
     /// Where icons from the extension go.
@@ -212,6 +213,18 @@ final class BrowserBridge: ObservableObject {
     /// host for the question. Only the person can say whether the site took it.
     var onPasswordChanged: ((UUID, String) -> Void)?
     var now: () -> Date = Date.init
+    /// Whether a two-step code may go to the browser: this Mac's own Premium (`browserCodeAllowed`). Tests stand in an answer.
+    var codeAllowed: () -> Bool = { browserCodeAllowed() }
+    #if PP_DIRECT
+    /// The agent login waiting for its tab (docs/AGENTS.md, "Website login"). At most one, as there is one pending fill.
+    var agentLogin: AgentLoginWait?
+    /// How long an agent's fill waits for a tab of its site, and then for the tab to say how it went. Tests shorten them.
+    var agentFillLifetime: TimeInterval = PendingFillStore.lifetime
+    var agentResultLifetime: TimeInterval = PendingFillStore.agentResultLifetime
+    var agentCodeLifetime: TimeInterval = PendingFillStore.codeLifetime
+    /// How long to wait for the tab report a poke asks for, before the prompt.
+    var agentPokeWait: TimeInterval = 1.5
+    #endif
 
     init(session: VaultSession) {
         self.session = session
@@ -238,6 +251,9 @@ final class BrowserBridge: ObservableObject {
             .sink { [weak self] _ in
                 self?.state.pending.clear()
                 self?.iconLedger.clear()
+                #if PP_DIRECT
+                self?.agentLogin?.finish(.locked)
+                #endif
             }
             .store(in: &cancellables)
     }
@@ -329,16 +345,21 @@ final class BrowserBridge: ObservableObject {
             let now = now()
             var scanned: (ScannedOTP, String?, BridgeBrowser)?
             var changedEntry: UUID?
+            var agentEvents: [AgentFillEvent] = []
             response = state.handle(
                 request,
                 from: browser,
                 link: link,
                 locked: session.locked,
                 now: now,
-                codeAllowed: { browserCodeAllowed() },
+                codeAllowed: { [codeAllowed] in codeAllowed() },
                 scan: { scanned = ($0, $1, $2) },
-                changed: { changedEntry = $0 }
+                changed: { changedEntry = $0 },
+                agent: { agentEvents.append($0) }
             ) { [session] id in session.entry(id) }
+            #if PP_DIRECT
+            for event in agentEvents { agentFillEvent(event) }
+            #endif
             if let changedEntry, let host = request.url.flatMap({ BrowserSite(url: $0) })?.host {
                 // After the answer is on its way, as for `show`. The answer says the same whatever happens next.
                 DispatchQueue.main.async { [weak self] in

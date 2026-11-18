@@ -1830,7 +1830,7 @@ and the agent hears "two-step code not filled: needs PasswordPie Premium".
     ◉ GitHub  (Web)
       octocat · username and password, then sends the form
     Site      github.com
-    Browser   Google Chrome, the profile in use
+    Browser   Google Chrome
     Agent     Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)
     The agent says:
     “Open the billing page”
@@ -1839,6 +1839,8 @@ and the agent hears "two-step code not filled: needs PasswordPie Premium".
 
 - One row per account. With `--url` and several shared accounts on that site, pick one; Allow Once stays off until you
   do.
+- **Browser** names the Chrome profile only when several have the extension: "the profile in front", or "the profile used
+  last" when Chrome is not the app in front (the agent's terminal often is).
 - The window never shows the password, and nothing in it is the agent's but the quoted line.
 - Every Allow asks for Touch ID, so an agent that can click cannot approve its own login.
 - Lasting permissions for logins come with Premium, as for secrets; until then every login asks.

@@ -62,6 +62,9 @@ func runCommand(_ options: RunOptions) -> Never {
         }
         values.append(bytes)
         switch secret.delivery {
+        case .fill:
+            // Never asked for by `run`; a value for it is not handed to the command.
+            continue
         case .env, .shown:
             guard let text = String(data: bytes, encoding: .utf8), !text.contains("\0") else {
                 if let folder { RunFolder.remove(folder) }
@@ -111,6 +114,28 @@ func readCommand(_ options: ReadOptions) -> Never {
     if options.newline, !RunFolder.namesAttachment(options.ref) { output.append(0x0A) }
     FileHandle.standardOutput.write(output)
     exit(0)
+}
+
+func loginCommand(_ options: LoginOptions) -> Never {
+    var request = AgentRequest(type: .login, id: 1)
+    request.version = AgentConstants.protocolVersion
+    request.client = "cli"
+    request.secrets = options.ref.map { [AgentSecretRequest(name: nil, ref: $0, delivery: .fill)] }
+    request.url = options.url
+    request.submit = options.submit
+    request.browser = options.browser?.rawValue
+    request.reason = options.reason
+    request.wait = options.wait
+    guard let login = ask(request).login else { refuse(.appUnavailable, detail: "PasswordPie gave no answer about the login.") }
+    if options.json {
+        FileHandle.standardOutput.write(AgentCoding.encode(login) + Data("\n".utf8))
+        if !login.outcome.succeeded { printError(login.line) }
+    } else if login.outcome.succeeded {
+        print(login.line)
+    } else {
+        printError(login.line)
+    }
+    exit(login.outcome.exitCode)
 }
 
 func listCommand(query: String?, json: Bool, wait: Int?) -> Never {
@@ -192,6 +217,8 @@ case .list(let query, let json, let wait):
     listCommand(query: query, json: json, wait: wait)
 case .read(let options):
     readCommand(options)
+case .login(let options):
+    loginCommand(options)
 case .run(let options):
     runCommand(options)
 }
