@@ -79,6 +79,8 @@ class Session {
     if (this.msg.submit !== true || this.usernameEl === null || this.sent.username || this.usernameTimer !== undefined) return;
     this.usernameTimer = setTimeout(() => {
       this.usernameTimer = undefined;
+      // Look once more first: a password field shown in the last moments means this page has both steps.
+      if (!this.passwordFilled && this.now() <= this.deadline) this.attempt();
       const username = this.usernameEl;
       if (this.passwordFilled || this.sent.username || !username?.isConnected || this.now() > this.deadline) return;
       // Only a sign-in step's own Next or Sign in button: a lone email field can also be a reset or newsletter form.

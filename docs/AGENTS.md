@@ -365,9 +365,9 @@ The browser side (`BrowserBridge+AgentLogin.swift`) ends the wait:
 | No tab took it within 30 seconds | `timed-out`, and the fill is dropped |
 | A tab took it and said nothing within 35 seconds (an extension from before `login-result`) | `filled`, with a word that the extension did not say |
 | The vault locks | `locked` |
-| The tool hangs up | the fill is withdrawn |
+| The tool hangs up | a fill no tab has taken is withdrawn; one a tab took finishes its page |
 | A newer agent login | the older one answers `timed-out` if no tab took it, `no-fields` if a tab took it and had not said the password went in (an extension before 0.7.0 never says), else what it reported (the code then `not-filled`) |
-| Agent access is turned off | a fill no tab has taken is withdrawn; the socket closes, so the tool says PasswordPie did not answer, and Activity records `agent access turned off`. A tab that already took the fill finishes its page. Turning it off while the window is up fills nothing; the window closes and Activity records `timed out` |
+| Agent access is turned off | a fill no tab has taken is withdrawn; the socket closes, so the tool says PasswordPie did not answer, and Activity records `agent access turned off`. A tab that already took the fill finishes its page, two-step code included, and Activity records what is known of it. Turning it off while the window is up fills nothing; the window closes and Activity records `timed out` |
 
 **Two-step code.** The fill carries `otp: true` when the item has a code, as for people, and the page's `code` request is
 answered under the same rule: this Mac's Premium (`browserCodeAllowed`), nothing in a request. The answer's `code`:

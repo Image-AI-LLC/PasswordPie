@@ -257,8 +257,8 @@ enum Arguments {
     title, username and websites, never the password.
 
     mcp is an MCP server on standard input and output, for agents that use MCP tools: passwordpie_status,
-    passwordpie_list, passwordpie_run, passwordpie_read and passwordpie_login. Add it to the agent's MCP configuration (Preferences >
-    Agents shows the lines for Claude Code, Codex and Cursor).
+    passwordpie_list, passwordpie_run, passwordpie_read and passwordpie_login. Add it to the agent's MCP
+    configuration (Preferences > Agents shows the lines for Claude Code, Codex and Cursor).
 
     Exit codes: the command's own, or 64 usage, 65 not-available, 66 ambiguous, 67 denied, 68 timeout, 69 locked,
     70 app-unavailable, 71 access-off, 72 too-many-requests, 73 premium-required; for login, 74 no-matching-tab,

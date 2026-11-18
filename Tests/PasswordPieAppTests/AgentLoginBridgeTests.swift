@@ -196,10 +196,13 @@ final class AgentLoginBridgeTests: XCTestCase {
         let task = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: self.caller) }
         let taken = await eventually { self.bridge.agentLogin?.taken == true }
         XCTAssertTrue(taken)
+        // As the app does it: the switch, then the closed socket hangs the request up.
         bridge.withdrawAgentLoginForAccessOff()
         XCTAssertNotNil(bridge.agentLogin, "a taken fill is not withdrawn")
         broker.isEnabled = { false }
+        task.cancel()
         let answer = await task.value
+        XCTAssertNil(answer.errorCode, "not access-off: the tab took it")
         XCTAssertEqual(answer.login?.outcome, .filled)
     }
 

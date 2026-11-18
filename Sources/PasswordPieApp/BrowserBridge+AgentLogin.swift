@@ -165,11 +165,21 @@ extension BrowserBridge {
         }
     }
 
-    /// The agent hung up: the fill is withdrawn, so no tab takes it after nobody waits for the answer.
+    /// The agent hung up (or agent access was turned off, which closes its connection). A fill no tab has taken is
+    /// withdrawn, so none takes it after nobody waits for the answer. One a tab already took finishes its page, its
+    /// two-step code included, and the wait ends with what is known of it.
     func withdrawAgentLogin(_ token: UUID) {
         guard let wait = agentLogin, wait.token == token else { return }
-        state.pending.withdrawAgentFill(token)
-        wait.finish(.finished(.timedOut, code: nil, detail: "The request was withdrawn."))
+        guard wait.taken else {
+            state.pending.withdrawAgentFill(token)
+            wait.finish(.finished(.timedOut, code: nil, detail: "The request was withdrawn."))
+            return
+        }
+        if let result = wait.result {
+            wait.finish(.finished(AgentLoginWait.outcome(result), code: .waiting, detail: nil))
+        } else {
+            wait.finish(.finished(.filled, code: nil, detail: "The request ended before the extension said how it went."))
+        }
     }
 
     /// Agent access was turned off: a login no tab has taken yet is withdrawn, so none takes it afterwards. One a tab
