@@ -62,17 +62,27 @@ public struct AgentCaller: Equatable, Sendable {
     /// The nearest folder above `cwd` (or `cwd` itself) holding `.git`, else `cwd`.
     public var project: String
 
-    public init(cli: AgentProcess, chain: [AgentProcess], agent: AgentProcess?, sessionKey: String, cwd: String, project: String) {
+    /// The terminal app the chain passes through, if any.
+    public var terminal: AgentProcess?
+
+    public init(cli: AgentProcess, chain: [AgentProcess], agent: AgentProcess?, terminal: AgentProcess? = nil, sessionKey: String, cwd: String, project: String) {
         self.cli = cli
         self.chain = chain
         self.agent = agent
+        self.terminal = terminal
         self.sessionKey = sessionKey
         self.cwd = cwd
         self.project = project
     }
 
-    public var agentName: String { agent?.name ?? "A program" }
-    public var signatureText: String { agent?.signatureText ?? "not signed" }
+    /// The agent's name; with no agent in the chain, "A command in Terminal" (or "A program").
+    public var agentName: String {
+        if let agent { return agent.name }
+        if let terminal { return "A command in \(terminal.name)" }
+        return "A program"
+    }
+
+    public var signatureText: String { agent?.signatureText ?? "no agent found" }
 }
 
 /// Agent programs the app knows by name, and what is not an agent (shells, terminals, multiplexers).
@@ -141,10 +151,17 @@ public enum AgentHosts {
         return nil
     }
 
+    /// Folders macOS protects (System Integrity Protection): a program there is what it says it is.
+    static let systemFolders = ["/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/", "/usr/libexec/", "/System/"]
+
+    /// A terminal (by its signature), or a shell or launcher that is Apple's own or in a protected system folder. By name
+    /// alone it would not count: any program can be called `zsh` and so hide what started it.
     public static func isPassThrough(_ process: AgentProcess) -> Bool {
+        if process.pid <= 1 { return true }
         if let identifier = process.identifier, terminals.contains(identifier) { return true }
         let name = (process.path as NSString).lastPathComponent.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return passThrough.contains(name) || process.pid <= 1
+        guard passThrough.contains(name) else { return false }
+        return process.signer == "Apple" || systemFolders.contains { process.path.hasPrefix($0) }
     }
 }
 
@@ -207,7 +224,10 @@ public enum CallerInspector {
             let leaderStart = facts.info(sid)?.startTime ?? 0
             sessionKey = "session:\(sid):\(leaderStart)"
         }
-        return AgentCaller(cli: cli, chain: chain, agent: agent ?? firstOther, sessionKey: sessionKey, cwd: cwd, project: project(for: cwd))
+        // No agent in between: said as such. The terminal is not taken for the agent, nor its signature lent to the
+        // request, since an agent can start a command in a terminal window (`open -a Terminal x.command`).
+        let terminal = chain.first { $0.identifier.map(AgentHosts.terminals.contains) ?? false }
+        return AgentCaller(cli: cli, chain: chain, agent: agent ?? firstOther, terminal: terminal, sessionKey: sessionKey, cwd: cwd, project: project(for: cwd))
     }
 
     /// The nearest folder at or above `cwd` that holds `.git` (a folder, or a worktree's file), else `cwd`.

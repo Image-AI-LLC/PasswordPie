@@ -294,6 +294,12 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
                           session.$keyFileName.dropFirst().map { _ in () }, session.$databaseURL.dropFirst().map { _ in () })
             .sink { [weak self] in DispatchQueue.main.async { self?.lockFormChanged() } }
             .store(in: &cancellables)
+        // An agent's request starts or stops waiting for the unlock: its line comes and goes under the database name.
+        session.$agentWaitingLine
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.lockFormChanged() } }
+            .store(in: &cancellables)
         session.$touchIDBusy
             .removeDuplicates()
             .sink { [weak self] busy in

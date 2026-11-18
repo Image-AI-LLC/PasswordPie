@@ -41,6 +41,8 @@ struct LockScreenPresentation: Equatable {
     var busy = false
     /// Just locked by ⌘L: the locked card replaces the form until the panel fades out.
     var locking = false
+    /// An agent's request waits for this unlock: "Claude Code is waiting for 1 secret."
+    var agentWaiting: String?
 }
 
 extension LockScreenPresentation {
@@ -51,7 +53,7 @@ extension LockScreenPresentation {
                   showsKeyFile: session.showsKeyFile, keyFileName: session.keyFileName,
                   touchIDAvailable: session.touchIDAvailable,
                   unlocking: session.unlocking, busy: session.unlocking || !session.locked,
-                  locking: locking)
+                  locking: locking, agentWaiting: session.agentWaitingLine)
     }
 }
 
@@ -117,8 +119,19 @@ struct LockScreenContent: View {
     private var secondary: Color { Palette.secondaryText(dark: dark) }
 
     private var databaseTitle: some View {
-        databaseNameLabel
-            .padding(.top, 4)
+        VStack(spacing: 2) {
+            databaseNameLabel
+            if let waiting = presentation.agentWaiting {
+                Text(waiting)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(foreground)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("lock.agentWaiting")
+            }
+        }
+        .padding(.top, 4)
     }
 
     private var databaseNameLabel: some View {

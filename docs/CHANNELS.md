@@ -15,11 +15,17 @@ App Store builds do not contain direct-only code.
 | Network from the app | **none** of its own; the separate updater asks GitHub for a newer version once a week (see "Network" and "Updates" below) | **none**: no `URLSession`, no `network.client` entitlement |
 | Updates | `PasswordPieUpdater`, inside the app: weekly, from GitHub releases | the App Store; the updater is **not in the bundle** |
 | Extension toolbar button | Opens PasswordPie. No popup, no account, no request to the site. Right-click: Scan QR code on this page, and in Chrome Open passwordpie.com | The same Safari build as the direct channel's: no line that opens the site |
+| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
 
     strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -ci -e 'safe storage' -e saltysalt   # expect 0
+
+Check the store app has no agent access:
+
+    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e agent.sock -e com.passwordpie.cli -e agentAccessEnabled -e PasswordPie.AgentSharing   # expect 0
+    test ! -e build/mas/PasswordPie.app/Contents/Helpers && echo ok                                  # expect ok
 
 Check no debug preview or mock site can reach a release store build, and that the direct binary does not link StoreKit:
 

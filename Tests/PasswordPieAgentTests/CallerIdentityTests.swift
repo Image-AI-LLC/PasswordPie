@@ -84,6 +84,39 @@ final class CallerIdentityTests: XCTestCase {
         XCTAssertEqual(caller.sessionKey, "session:77:77")
     }
 
+    func testTypedInATerminalTheTerminalAsks() throws {
+        let facts = TableFacts(
+            records: [
+                1: record(1, parent: 0, start: 1, "/sbin/launchd"),
+                10: record(10, parent: 1, start: 10, "/System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal"),
+                15: record(15, parent: 10, start: 15, "/usr/bin/login"),
+                20: record(20, parent: 15, start: 20, "/bin/zsh"),
+                50: record(50, parent: 20, start: 50, "/x/passwordpie"),
+            ],
+            signatures: [10: (nil, "com.apple.Terminal", "Apple"), 15: (nil, "com.apple.login", "Apple"), 20: (nil, "com.apple.zsh", "Apple")]
+        )
+        let caller = try XCTUnwrap(CallerInspector.identify(pid: 50, facts: facts))
+        XCTAssertNil(caller.agent, "the terminal is not taken for an agent")
+        XCTAssertEqual(caller.agentName, "A command in Terminal")
+        XCTAssertEqual(caller.signatureText, "no agent found", "the terminal's signature is not lent to the request")
+    }
+
+    /// A program named like a shell is not skipped unless it is Apple's or in a protected system folder.
+    func testAProgramNamedLikeAShellIsNotSkipped() throws {
+        let facts = TableFacts(
+            records: [
+                1: record(1, parent: 0, start: 1, "/sbin/launchd"),
+                20: record(20, parent: 1, start: 20, "/tmp/evil/zsh"),
+                30: record(30, parent: 20, start: 30, "/bin/sh"),
+                50: record(50, parent: 30, start: 50, "/x/passwordpie"),
+            ],
+            signatures: [30: (nil, "com.apple.sh", "Apple")]
+        )
+        let caller = try XCTUnwrap(CallerInspector.identify(pid: 50, facts: facts))
+        XCTAssertEqual(caller.agent?.path, "/tmp/evil/zsh")
+        XCTAssertEqual(caller.signatureText, "not signed: /tmp/evil/zsh")
+    }
+
     /// A parent that started after its child is a later process that got an exited parent's pid: the walk stops there.
     func testAReusedParentPIDEndsTheWalk() throws {
         let facts = TableFacts(records: [

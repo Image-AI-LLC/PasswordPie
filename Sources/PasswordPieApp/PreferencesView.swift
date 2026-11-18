@@ -11,6 +11,8 @@ enum PreferencesPane: String, CaseIterable, Identifiable {
     case security
     case database
     case browsers
+    /// Direct download only (docs/AGENTS.md).
+    case agents
     case importPasswords
     case premium
 
@@ -22,6 +24,7 @@ enum PreferencesPane: String, CaseIterable, Identifiable {
         case .security: return "Security"
         case .database: return "Database"
         case .browsers: return "Browsers"
+        case .agents: return "Agents"
         case .importPasswords: return "Import"
         case .premium: return "Premium"
         }
@@ -33,6 +36,7 @@ enum PreferencesPane: String, CaseIterable, Identifiable {
         case .security: return "When PasswordPie locks, and how it unlocks."
         case .database: return "The file your passwords are in, and its keys."
         case .browsers: return "Filling sign-in forms in your browser."
+        case .agents: return "AI agents on this Mac using secrets you approve."
         case .importPasswords: return "Bring your passwords from a browser or another password manager."
         case .premium: return "Two-step codes."
         }
@@ -45,6 +49,7 @@ enum PreferencesPane: String, CaseIterable, Identifiable {
         case .security: return "lock"
         case .database: return "cylinder.split.1x2"
         case .browsers: return "globe"
+        case .agents: return "terminal"
         case .importPasswords: return "square.and.arrow.down"
         case .premium: return "star"
         }
@@ -57,6 +62,7 @@ enum PreferencesSection: Hashable {
     case browserExtensions
     #if PP_DIRECT
     case chrome
+    case agents
     #endif
 
     var pane: PreferencesPane {
@@ -65,6 +71,7 @@ enum PreferencesSection: Hashable {
         case .browserExtensions: return .browsers
         #if PP_DIRECT
         case .chrome: return .browsers
+        case .agents: return .agents
         #endif
         }
     }
@@ -134,6 +141,8 @@ struct PreferencesView: View {
     #if PP_DIRECT
     /// The downloaded app's updater, for "Updates". Nil leaves the card out.
     var updates: UpdateCoordinator?
+    /// Agent access, for "Agents". Nil leaves the pane out.
+    var agentAccess: AgentAccess?
     #endif
     @StateObject private var recorder = ShortcutRecorder()
     @Environment(\.colorScheme) private var colorScheme
@@ -154,6 +163,12 @@ struct PreferencesView: View {
                 return bridge != nil
                 #endif
             case .importPasswords: return importFlow != nil
+            case .agents:
+                #if PP_DIRECT
+                return agentAccess != nil
+                #else
+                return false
+                #endif
             default: return true
             }
         }
@@ -250,6 +265,10 @@ struct PreferencesView: View {
             }
             #if PP_DIRECT
             section("Chrome passwords") { chromeSync }
+            #endif
+        case .agents:
+            #if PP_DIRECT
+            if let agentAccess { AgentsPane(access: agentAccess, session: session) }
             #endif
         case .importPasswords:
             if let importFlow {

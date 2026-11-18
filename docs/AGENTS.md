@@ -3,16 +3,16 @@
 An AI coding agent on this Mac (Claude Code, Codex, Cursor and the like) can run a command with a secret from
 PasswordPie after the owner approves it with Touch ID, without the secret passing through the agent's conversation, the
 command line or a file in the project. This file is the reference for the pieces, the messages on `agent.sock`, the
-command-line tool, references, exit codes and the security model. What the owner sees is in "Agents" in
-[UX.md](UX.md) once the app side ships.
+command-line tool, references, exit codes and the security model. What the owner sees is in "Agents use a secret
+without seeing it" in [UX.md](UX.md).
 
 Direct download only (`#if PP_DIRECT`, and the App Store app links none of it): a sandboxed `passwordpie run` would start
 `notarytool`, `psql` or `npm` inside PasswordPie's sandbox, unable to read the project.
 
-**Status.** The shared library and the `passwordpie` tool are in the source tree; the app does not serve `agent.sock`
-yet, so the tool answers `access-off` or `app-unavailable`. The app side (the socket server in the app, the Agents
-pane, Share with Agents, the approval window, the lock screen line) comes next. Standing permissions ("do not ask me
-every time", Premium), the MCP server and website login for agents come after that.
+**Status.** The app serves `agent.sock` while Preferences > Agents is on, bundles the tool in `Contents/Helpers`, and
+asks the owner for every use (Allow Once, Show to Agent). What the owner sees is in "Agents use a secret without seeing
+it" in [UX.md](UX.md). Standing permissions ("do not ask me every time", Premium), the MCP server and website login for
+agents come next.
 
 Free or Premium: using a secret with an approval each time is free, and so is a raw read. Standing permissions will be
 Premium, checked by the app's own `appHasPremium()`; nothing in a request carries Premium state.
@@ -27,6 +27,21 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 | `VaultBroker` | `PasswordPieAgent/VaultBroker.swift` | The one place a request that is not the owner clicking in PasswordPie is answered |
 | `agent.sock` server | `PasswordPieAgent/AgentServer.swift` | Peer check, caller walk per request, hands requests to the broker |
 | Activity log | `PasswordPieAgent/AgentActivity.swift`, file `~/Library/Application Support/PasswordPie/agent-activity.jsonl` | One line per request, no values |
+| The app's side | `AgentAccess.swift` (switch, socket, link), `AgentApproval.swift` (the window, Touch ID), `AgentsPane.swift`, `VaultSession+Agents.swift` (what agents see, sharing) | Direct download only |
+| Sharing | `PasswordPieCore/AgentSharing.swift`, in the database's custom data (`Meta/CustomData`, key `PasswordPie.AgentSharing`) | Items by UUID, folders by path |
+
+## Sharing
+
+Agents see nothing until the owner shares it: an item (Share with Agents in its details) or a folder (Preferences >
+Agents), which covers what is in it now, later and in its subfolders, never the Recycle Bin. What is shared is kept in
+the database file itself, in its custom data: under the master key, moving with the file, written on every change. Not in
+the app's preferences, so `defaults write` cannot share anything. The switch itself is a preference
+(`agentAccessEnabled`): turning it on that way only opens the socket; every use still asks.
+
+Decision: a folder is kept by its path, so renaming it unshares it until it is ticked again (failing closed). Two
+sibling folders with the same name are one path, so one tick covers both. An item's fields can grow when PasswordPie
+merges a duplicate login into it ("The newest password wins" in UX.md); a shared item shares what it holds. Folders are
+shared from the Agents pane, which lists the database's folders; the panel's folder submenus have no context menu today.
 
 Decision: the tool lives in `Contents/Helpers`, not `Contents/MacOS` as first planned. On a case-insensitive volume (the
 default) `Contents/MacOS/passwordpie` would be the app's own `PasswordPie` executable. `Contents/Helpers` is where Apple
@@ -55,7 +70,7 @@ Rules it keeps:
 | Hang-up | When the tool's connection closes (the agent killed it), its prompt is withdrawn and its wait for an unlock ends. A request queued behind another prompt notices when its turn comes |
 | Partial approval | The owner can untick secrets in the window; unticked ones come back `declined` and the tool runs without them, saying so on standard error |
 | Raw | `read`, and `run --no-masking`, show "The agent will see the value" and ask every time |
-| Two-step codes | `…/otp` answers `not-available` in this version |
+| Two-step codes | `…/otp` answers `not-available` in this version; the fields that hold a two-step secret (`otp`, `TimeOtp-*`, `TOTP Seed`, `TOTP Settings`) are not offered as custom fields |
 
 The seams for later work: `AgentGrantStore` (standing permissions fill `grant(covering:)`, `grants(for:)`, `covers` and
 record a lasting choice in `approved(_:decision:)`); `AgentApprovalDecision` (an "Allow ▾" length can be added beside
@@ -78,7 +93,10 @@ can start it, so the app looks further, itself, for every request (not once per 
    its child is a later process that got an exited parent's pid: the walk stops there.
 3. **The agent** is the nearest ancestor on the list of known agent hosts (`AgentHosts`: by signing identifier, by
    executable name, or for an interpreter such as `node` by its script's name), else the first that is not a shell,
-   terminal or launcher.
+   terminal or launcher. A shell or launcher counts as one only when it is Apple's or in a protected system folder
+   (`/bin`, `/usr/bin`…): any program can be named `zsh`. With nothing else in the chain the request is "A command in
+   Terminal, no agent found"; the terminal's signature is never lent to it, since an agent can open a Terminal window
+   too.
 4. **The agent session** is that process, by pid **and** start time. With no known agent in the chain, it is the tool's
    POSIX session (`getsid`), by the session leader's pid and start time.
 

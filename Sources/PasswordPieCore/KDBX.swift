@@ -732,6 +732,13 @@ private func xmlDocument(_ vault: Vault, stream: inout ChaCha20) -> Data {
     let recycle = UUID()
     xml += "<RecycleBinEnabled>True</RecycleBinEnabled>\n"
     xml += tag("RecycleBinUUID", base64UUID(recycle))
+    if !vault.customData.isEmpty {
+        xml += "<CustomData>\n"
+        for key in vault.customData.keys.sorted() {
+            xml += "<Item>" + tag("Key", key).trimmingCharacters(in: .newlines) + tag("Value", vault.customData[key] ?? "").trimmingCharacters(in: .newlines) + "</Item>\n"
+        }
+        xml += "</CustomData>\n"
+    }
     xml += "</Meta>\n<Root>\n"
     xml += groupTreeXML(
         name: vault.rootName.isEmpty ? "PasswordPie" : vault.rootName,

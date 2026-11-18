@@ -589,6 +589,9 @@ struct DetailsView: View {
                         Text(model.tags.joined(separator: ", ")).font(.system(size: 13))
                     }
                 }
+                #if PP_DIRECT
+                AgentShareSlot(session: model.session, id: model.entryID)
+                #endif
             }
             .background(GeometryReader { Color.clear.preference(key: ContentHeightKey.self, value: $0.size.height) })
         }
@@ -1154,3 +1157,40 @@ struct PieSlice: Shape {
         return path
     }
 }
+
+#if PP_DIRECT
+/// The "agents" row, while agent access is on, for an item that can be shared. Watches the session, so turning the
+/// switch shows or hides it at once.
+private struct AgentShareSlot: View {
+    @ObservedObject var session: VaultSession
+    let id: UUID
+
+    var body: some View {
+        if session.agentAccessOn, session.canShareWithAgents(id) {
+            DetailChrome(label: "agents") { AgentShareRow(session: session, id: id) }
+        }
+    }
+}
+
+/// Share with Agents, in an item's details: agents may then ask for it (and every use still asks the owner). An item in
+/// a shared folder says so; sharing the folder is changed in Preferences > Agents.
+private struct AgentShareRow: View {
+    @ObservedObject var session: VaultSession
+    let id: UUID
+
+    var body: some View {
+        if let folder = session.agentSharedFolder(of: id) {
+            Text("Shared with agents through the folder \(folder.joined(separator: " / "))")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        } else {
+            Toggle("Share with Agents", isOn: Binding(
+                get: { session.isSharedWithAgents(id) },
+                set: { session.setSharedWithAgents(id, $0) }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.system(size: 12))
+            .help("Agents may ask to use this item. Every use still asks you.")
+        }
+    }
+}
+#endif
