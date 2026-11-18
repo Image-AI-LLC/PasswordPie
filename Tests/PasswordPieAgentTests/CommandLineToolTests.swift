@@ -62,7 +62,8 @@ final class CommandLineToolTests: XCTestCase {
     private var inherited: [String: String] = [:]
 
     private func environment() -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment.merging(inherited) { _, new in new }
+        // The test runner's own loader variables (DYLD_…) would make every run ask, as they should for an agent.
+        var environment = ProcessInfo.processInfo.environment.filter { !AgentProgramRule.isCodeLoading($0.key) }.merging(inherited) { _, new in new }
         environment["PASSWORDPIE_AGENT_SOCKET"] = socketPath
         environment["TMPDIR"] = temporary.path + "/"
         return environment
@@ -311,6 +312,39 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertEqual(ran.code, 0, ran.err)
         XCTAssertEqual(ran.out, "\(AgentConstants.concealed) 2S468LUF8V\nfile\n")
         XCTAssertEqual(approver.prompts.first?.rows.map(\.delivery), [.file, .env])
+    }
+
+    /// A standing permission through the real tool: the next identical run asks nothing, and a run started with a
+    /// variable that makes programs load other code asks again, whether the agent's shell set it or the `.env.pp` did.
+    @MainActor
+    func testAStandingPermissionAndCodeLoadingVariables() async throws {
+        let database = FakeGrantDatabase()
+        let store = StandingPermissions(mac: "test-mac", hasPremium: { true }, read: { database.read() }, write: { database.write($0, $1) })
+        store.sessionAlive = { _ in true }
+        try startServer(grants: store)
+        try "echo \"$T\"\n".write(to: folder.appendingPathComponent("deploy.sh"), atomically: true, encoding: .utf8)
+        approver.onPresent = { [unowned self] prompt in
+            let decision: AgentApprovalDecision = prompt.lasting == .offered ? .allowLasting([0], .days7) : .allow([0])
+            DispatchQueue.main.async { self.approver.answer(decision) }
+        }
+        let command = ["run", "--env", "T=pp://Agents/Token", "--", "sh", "deploy.sh"]
+        let first = try await run(command)
+        XCTAssertEqual(first.code, 0, first.err)
+        XCTAssertEqual(approver.prompts.last?.lasting, .offered)
+        XCTAssertEqual(store.inForce.count, 1)
+        let second = try await run(command)
+        XCTAssertEqual(second.out, "\(AgentConstants.concealed)\n")
+        XCTAssertEqual(approver.prompts.count, 1, "no window the second time")
+        inherited = ["BASH_ENV": folder.appendingPathComponent("evil.sh").path]
+        _ = try await run(command)
+        inherited = [:]
+        XCTAssertEqual(approver.prompts.count, 2, "BASH_ENV in the tool's environment asks")
+        XCTAssertEqual(approver.prompts.last?.lasting, .unavailable("Started with BASH_ENV set, which makes programs load other code."))
+        let envFile = folder.appendingPathComponent("x.env.pp")
+        try "T=pp://Agents/Token\nBASH_ENV=\(folder.appendingPathComponent("evil.sh").path)\n".write(to: envFile, atomically: true, encoding: .utf8)
+        _ = try await run(["run", "--env-file", envFile.path, "--", "sh", "deploy.sh"])
+        XCTAssertEqual(approver.prompts.count, 3, "BASH_ENV from the .env.pp asks")
+        XCTAssertEqual(approver.prompts.last?.lasting, .unavailable("Started with BASH_ENV set, which makes programs load other code."))
     }
 
     /// Output to a terminal: the command gets a pseudo-terminal, and its output is still masked.

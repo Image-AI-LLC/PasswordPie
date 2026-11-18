@@ -384,6 +384,23 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertEqual(decisions.count, 1, "no Touch ID, nothing allowed")
     }
 
+    /// No agent in the chain: only "this agent session", and the length chosen last for agents is left as it was.
+    func testWithNoAgentOnlyTheSessionIsOffered() async {
+        let probe = LastingProbe(premium: true)
+        probe.last = .days30
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.lastingPrompt(.sessionOnly), confirmation: Confirms(true), lasting: probe.options) { decisions.append($0) }
+        XCTAssertEqual(model.lengths, [.session])
+        XCTAssertEqual(model.lastingTitle, "Allow for This Agent Session")
+        model.allow(for: .days30)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(decisions.isEmpty)
+        model.allow(for: .session)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(decisions, [.allowLasting([0], .session)])
+        XCTAssertEqual(probe.last, .days30)
+    }
+
     func testNoLastingChoiceForRawReadsOrInlineCode() async {
         let probe = LastingProbe(premium: true)
         let raw = AgentApprovalModel(prompt: Self.lastingPrompt(.notOffered, raw: true), confirmation: Confirms(true), lasting: probe.options) { _ in }
@@ -419,6 +436,7 @@ final class AgentAccessTests: XCTestCase {
         request.argv = ["Scripts/deploy.sh"]
         request.masking = true
         request.wait = 0
+        request.environment = []
         return request
     }
 
@@ -504,9 +522,11 @@ final class AgentAccessTests: XCTestCase {
         let token = try XCTUnwrap(session.agentSharedItems().first)
         let secret = AgentResolvedSecret(item: token, field: .password, delivery: .env, name: "T", ref: "pp://Developer/Token")
         let query = AgentGrantQuery(caller: caller(in: project), kind: .use, raw: false, program: deploy(project).program, argv: ["Scripts/deploy.sh"], secrets: [secret])
+        XCTAssertEqual(access.grants.lastingChoice(for: query), .offered)
         XCTAssertNil(access.grants.approved(query, decision: .allowLasting([0], .days7)))
         XCTAssertNil(session.agentGrants?.all.first)
         probe.premium = true
+        XCTAssertEqual(access.grants.lastingChoice(for: query), .offered)
         XCTAssertNotNil(access.grants.approved(query, decision: .allowLasting([0], .days7)), "the same call with Premium does make one")
     }
 

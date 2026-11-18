@@ -3,19 +3,26 @@ import Darwin
 import Foundation
 
 // The program rule of a standing permission (docs/AGENTS.md, "Standing permissions"): a grant names what the command
-// runs, not "whatever the agent runs next". The program is the resolved first word; for a launcher (a shell, an
-// interpreter, `env`, `xcrun`, `npx`, `uv`, `make`, a package manager's `run`), it is the launcher plus what it runs.
-// A file inside the project, and any script a launcher runs, is bound by its content (SHA-256), so an edit asks again.
-// Inline code and launchers this file does not know how to read never get a standing permission: they ask every time.
+// runs, not "whatever the agent runs next".
+//
+// - The program is the resolved first word. A launcher this file reads (a shell, an interpreter, `env`, `xcrun`, `make`,
+//   a package manager's `run`, `npx`, `uv run`) is bound with what it runs.
+// - A script whose content is bound (SHA-256) may be given other arguments: the project's own scripts, and the script a
+//   shell or an interpreter runs. Everything else is bound with its arguments too, so a program this file does not know
+//   (`tsx -e …`, `git -c alias.x=!sh …`) is granted for exactly that command and nothing else.
+// - Every program file outside the system's protected folders is bound by its identity on disk (device, inode, size,
+//   change time): replacing or editing it asks again.
+// - Inline code, launchers that run other code in ways read nowhere here, and commands started with variables that
+//   make programs load other code never get a standing permission: they ask every time.
 
 /// What a standing permission binds a command to. Two commands are the same program when `key` is equal.
 public struct AgentProgramBinding: Codable, Equatable, Sendable {
-    /// The resolved path of the first word (symbolic links followed), or a bare name a launcher looks up itself.
+    /// The resolved path of the first word (symbolic links followed).
     public var program: String
-    /// For a launcher, what it runs: a script's resolved path, a tool ("notarytool"), a module ("-m twine"), a package
-    /// script ("run deploy"), make's targets. Each launcher in the chain adds one.
+    /// What the launchers in the chain run, and the arguments when they are bound: each adds its part.
     public var targets: [String]
-    /// SHA-256 (hex) of each file whose content is bound, by resolved path.
+    /// What is bound of each file, by resolved path: "sha256:<hex>" for a script's content, "file:<dev>:<inode>:<size>:
+    /// <change time>" for a program's identity on disk.
     public var contents: [String: String]
     /// How the owner sees it: "Scripts/release-direct.sh", "xcrun notarytool", "npm run deploy".
     public var display: String
@@ -36,7 +43,7 @@ public struct AgentProgramBinding: Codable, Equatable, Sendable {
 public enum AgentProgramVerdict: Equatable, Sendable {
     /// The command can be covered by a standing permission bound to this.
     case bound(AgentProgramBinding)
-    /// It asks every time. The reason is shown on the window's lasting-choice button.
+    /// It asks every time. The reason is shown under the window's lasting-choice button.
     case asksEveryTime(String)
 }
 
@@ -50,9 +57,10 @@ public enum AgentProgramRule {
         "xargs", "sudo", "doas", "nohup", "nice", "time", "timeout", "gtimeout", "caffeinate", "script", "arch", "exec",
         "command", "builtin", "open", "watch", "entr", "parallel", "find", "busybox", "java", "javaw", "jshell", "dotnet",
         "go", "cargo", "swift", "swiftc", "deno", "pwsh", "nu", "elvish", "xonsh", "awk", "gawk", "mawk", "nawk",
-        "expect", "wish", "tmux", "screen", "ssh", "launchctl", "su", "login", "pnpx",
-        "gradle", "mvn", "rake", "bundle", "poetry", "pipenv", "hatch", "pdm", "rye", "pixi", "conda", "mamba", "tox",
-        "nox", "just", "task", "direnv", "mise", "asdf", "devbox", "nix", "nix-shell", "docker", "podman", "kubectl",
+        "expect", "wish", "tmux", "screen", "ssh", "launchctl", "su", "login", "pnpx", "julia", "irb", "r", "lldb", "gdb",
+        "brew", "pipx", "gradle", "mvn", "rake", "bundle", "poetry", "pipenv", "hatch", "pdm", "rye", "pixi", "conda",
+        "mamba", "tox", "nox", "just", "task", "direnv", "mise", "asdf", "devbox", "nix", "nix-shell", "docker",
+        "podman", "kubectl",
     ]
     /// Variables that make a program load other code. A command started with one set never gets a standing permission:
     /// a granted script would run whatever the variable points at, with the secret in its environment.
@@ -62,21 +70,40 @@ public enum AgentProgramRule {
         "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONINSPECT", "PYTHONUSERBASE", "PYTHONEXECUTABLE",
         "PERL5OPT", "PERL5LIB", "PERLLIB", "PERL5DB", "RUBYOPT", "RUBYLIB",
         "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS",
-        "DEVELOPER_DIR", "MAKEFLAGS", "MAKEFILES", "GNUMAKEFLAGS", "NPM_CONFIG_SCRIPT_SHELL", "npm_config_script_shell",
+        "DEVELOPER_DIR", "TOOLCHAINS", "SDKROOT", "MAKEFLAGS", "MAKEFILES", "GNUMAKEFLAGS",
     ]
+    /// Folders macOS protects (System Integrity Protection): a program there is not bound by its identity on disk.
+    static let systemFolders = ["/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/", "/usr/libexec/", "/System/"]
+    /// Folders of a project that hold other people's code: a script there is bound with its arguments.
+    static let dependencyFolders: Set<String> = ["node_modules", ".venv", "venv", "vendor", "Pods", ".tox", "site-packages", "__pypackages__"]
+    /// Package managers' settings that can change what `run` runs.
+    static let packageManagerSettings = [".npmrc", ".yarnrc", ".yarnrc.yml", ".pnpmfile.cjs"]
+    /// Apple's tools found by xcrun that are given different arguments each time (a release's file): bound by name.
+    static let xcrunTools: Set<String> = ["notarytool", "stapler", "altool"]
 
     /// True for a variable that makes programs load other code.
     public static func isCodeLoading(_ name: String) -> Bool {
-        codeLoadingVariables.contains(name) || name.hasPrefix("DYLD_") || name.hasPrefix("LD_")
+        if codeLoadingVariables.contains(name) { return true }
+        let lower = name.lowercased()
+        return name.hasPrefix("DYLD_") || name.hasPrefix("LD_") || name.hasPrefix("BASH_FUNC_") || lower.hasPrefix("npm_config_")
+            || name.hasPrefix("YARN_")
     }
 
-    /// The binding for a `use` request, or why it asks every time. `program` is the tool's resolved first word, `argv`
-    /// the command as typed, `cwd` the tool's working folder read from the kernel, `project` its project, and
-    /// `environment` the names of the variables set in the tool's environment.
-    public static func bind(program: String?, argv: [String], cwd: String, project: String, environment: [String] = []) -> AgentProgramVerdict {
-        if let variable = environment.first(where: isCodeLoading) {
+    /// The binding for a `use` request, or why it asks every time.
+    /// - `program`: the tool's resolved first word; `argv`: the command as typed.
+    /// - `cwd`: the tool's working folder read from the kernel; `project`: its project.
+    /// - `environment`: the names of the variables in the tool's own environment, read from the kernel; nil when they
+    ///   could not be read.
+    /// - `added`: the names the tool sets in the command's environment besides the secrets (an `.env.pp`'s plain lines);
+    ///   nil when the request did not say.
+    public static func bind(
+        program: String?, argv: [String], cwd: String, project: String, environment: [String]? = [], added: [String]? = []
+    ) -> AgentProgramVerdict {
+        guard let environment, let added else { return .asksEveryTime("The command's environment could not be read.") }
+        if let variable = (environment + added).first(where: isCodeLoading) {
             return .asksEveryTime("Started with \(variable) set, which makes programs load other code.")
         }
+        if added.contains("PATH") { return .asksEveryTime("The command's PATH is set by its .env.pp.") }
         guard let program, program.hasPrefix("/"), let first = argv.first, !first.isEmpty else {
             return .asksEveryTime("There is no command to bind it to.")
         }
@@ -89,16 +116,16 @@ public enum AgentProgramRule {
         }
         guard let resolved = realPath(program), isRegularFile(resolved) else { return .asksEveryTime("The command's program could not be read.") }
         let context = Context(cwd: realPath(cwd) ?? cwd, project: realPath(project) ?? project)
-        return context.bind(path: resolved, typedName: typedName, arguments: Array(argv.dropFirst()), depth: 0)
+        return context.bind(path: resolved, typed: absolute(program, cwd: cwd), typedName: typedName, arguments: Array(argv.dropFirst()), depth: 0)
     }
 
-    /// "python3.12" → "python", "Rscript" → "rscript", "-zsh" → "zsh".
+    /// "python3.12" → "python", "python3-intel64" → "python", "tsx" → "node", "-zsh" → "zsh".
     static func family(_ name: String) -> String {
         var lower = name.lowercased()
         while lower.hasPrefix("-") { lower.removeFirst() }
-        for base in ["python", "ruby", "perl", "node", "php", "lua", "pypy"] where lower.hasPrefix(base) {
-            let rest = lower.dropFirst(base.count)
-            if rest.allSatisfy({ $0.isNumber || $0 == "." }) { return base == "pypy" ? "python" : base }
+        if ["tsx", "ts-node", "esno", "esr"].contains(lower) { return "node" }
+        for base in ["python", "pypy", "ruby", "perl", "node", "php", "lua"] where lower.hasPrefix(base) {
+            return base == "pypy" ? "python" : base
         }
         return lower
     }
@@ -136,11 +163,25 @@ public enum AgentProgramRule {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
+    /// A file's identity on disk: device, inode, size and change time. Editing or replacing it changes one of them, and
+    /// the change time cannot be set back.
+    static func identity(ofFile path: String) -> String? {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        return "file:\(info.st_dev):\(info.st_ino):\(info.st_size):\(info.st_ctimespec.tv_sec).\(info.st_ctimespec.tv_nsec)"
+    }
+
     private struct Context {
         var cwd: String
         var project: String
 
         func inProject(_ path: String) -> Bool { path.hasPrefix(project == "/" ? "/" : project + "/") }
+
+        /// The project's own file, not one in a folder of other people's code.
+        func isProjectScript(_ path: String) -> Bool {
+            guard inProject(path) else { return false }
+            return !path.dropFirst(project.count + 1).split(separator: "/").dropLast().contains { dependencyFolders.contains(String($0)) }
+        }
 
         /// "Scripts/a.sh" inside the project, "~/bin/x" in the home folder, else the path.
         func shown(_ path: String) -> String {
@@ -152,19 +193,24 @@ public enum AgentProgramRule {
         /// A file the command runs, resolved against the working folder, with its content bound.
         func script(_ word: String) -> (path: String, hash: String)? {
             guard let path = realPath(absolute(word, cwd: cwd)), isRegularFile(path), let hash = sha256(ofFile: path) else { return nil }
-            return (path, hash)
+            return (path, "sha256:" + hash)
         }
 
-        /// The program at `path` (resolved) run with `arguments`. `typedName` is the first word as typed, so a link named
-        /// `deploy` to `/bin/sh` is read as `sh`.
-        func bind(path: String, typedName: String, arguments: [String], depth: Int) -> AgentProgramVerdict {
+        /// The program at `path` (resolved; `typed` before links were followed) run with `arguments`. `typedName` is the
+        /// first word as typed, so a link named `deploy` to `/bin/sh` is read as `sh`.
+        func bind(path: String, typed: String, typedName: String, arguments: [String], depth: Int) -> AgentProgramVerdict {
             guard depth < 4 else { return .asksEveryTime("The command starts too many launchers to follow.") }
             let names = [family((path as NSString).lastPathComponent), family(typedName)]
             func any(_ set: Set<String>) -> String? { names.first(where: set.contains) }
             var binding = AgentProgramBinding(program: path, display: shown(path))
+            // A virtual environment's `python` is a link to the shared one: which link was run is bound too.
+            if typed != path { binding.targets.append("typed:" + typed) }
             if inProject(path) {
                 guard let hash = sha256(ofFile: path) else { return .asksEveryTime("The command's program could not be read.") }
-                binding.contents[path] = hash
+                binding.contents[path] = "sha256:" + hash
+            } else if !systemFolders.contains(where: path.hasPrefix) {
+                guard let identity = identity(ofFile: path) else { return .asksEveryTime("The command's program could not be read.") }
+                binding.contents[path] = identity
             }
             if let shell = any(shells) { return self.shell(shell, binding, arguments) }
             if let interpreter = any(interpreters) { return self.interpreter(interpreter, binding, arguments) }
@@ -177,10 +223,20 @@ public enum AgentProgramRule {
             if let unknown = any(unknownLaunchers) {
                 return .asksEveryTime("\(unknown) runs other programs in ways PasswordPie does not read.")
             }
-            return .bound(binding)
+            // The project's own script may be given other arguments: its content is bound. Anything else is bound with
+            // its arguments, so it covers that command and nothing else.
+            if isProjectScript(path) { return .bound(binding) }
+            return .bound(withArguments(binding, arguments))
         }
 
         private static let inline = "Inline code asks every time."
+
+        private func withArguments(_ binding: AgentProgramBinding, _ arguments: [String]) -> AgentProgramBinding {
+            var next = binding
+            next.targets.append("arguments:" + arguments.joined(separator: "\u{0}"))
+            if !arguments.isEmpty { next.display += " " + arguments.joined(separator: " ") }
+            return next
+        }
 
         /// Adds what a launcher runs to `binding`.
         private func adding(_ binding: AgentProgramBinding, target: String, display: String, file: (path: String, hash: String)? = nil) -> AgentProgramBinding {
@@ -192,7 +248,7 @@ public enum AgentProgramRule {
         }
 
         private func shell(_ name: String, _ binding: AgentProgramBinding, _ arguments: [String]) -> AgentProgramVerdict {
-            let harmlessLong: Set<String> = ["--login", "--norc", "--noprofile", "--posix", "--no-config", "--private", "--noediting"]
+            let harmlessLong: Set<String> = ["--norc", "--noprofile", "--posix", "--no-config", "--private", "--noediting"]
             var index = 0
             while index < arguments.count {
                 let argument = arguments[index]
@@ -208,6 +264,8 @@ public enum AgentProgramRule {
                 let letters = argument.dropFirst()
                 if letters.contains("c") || letters.contains("C") || letters.contains("s") { return .asksEveryTime(Self.inline) }
                 if letters.contains("i") { return .asksEveryTime("An interactive shell asks every time.") }
+                // A login shell runs the owner's profile files first, which are not bound.
+                if letters.contains("l") { return .asksEveryTime("A login shell asks every time.") }
                 // `-o pipefail`: the option's name is the next word.
                 if letters.contains("o") || letters.contains("O") { index += 1 }
                 index += 1
@@ -227,6 +285,7 @@ public enum AgentProgramRule {
                 "python": ["-u", "-B", "-I", "-E", "-s", "-S", "-O", "-OO", "-q"], "node": ["--no-warnings", "--enable-source-maps"],
                 "ruby": ["-w", "-W"], "perl": ["-w", "-W", "-T"],
             ]
+            let shownName = (binding.program as NSString).lastPathComponent
             var index = 0
             while index < arguments.count {
                 let argument = arguments[index]
@@ -235,38 +294,33 @@ public enum AgentProgramRule {
                     return .asksEveryTime(Self.inline)
                 }
                 if name == "python", argument == "-m", index + 1 < arguments.count {
+                    // Only a module that is a file in the working folder can be bound by its content; one found in the
+                    // interpreter's packages can be swapped without a trace here.
                     let module = arguments[index + 1]
-                    // `python -m x` finds ./x.py (or a folder ./x) in the working folder first: then that is what runs.
-                    let top = module.split(separator: ".").first.map(String.init) ?? module
-                    var isFolder: ObjCBool = false
-                    if FileManager.default.fileExists(atPath: absolute(top, cwd: cwd), isDirectory: &isFolder), isFolder.boolValue {
-                        return .asksEveryTime("The module \(module) is a folder in the working folder.")
+                    guard !module.contains("."), let file = script(module + ".py") else {
+                        return .asksEveryTime("python -m \(module) runs a module PasswordPie cannot bind by its content.")
                     }
-                    let shownName = (binding.program as NSString).lastPathComponent
-                    if let file = script(top + ".py") {
-                        return .bound(adding(binding, target: "-m \(module)", display: "\(shownName) -m \(module)", file: file))
-                    }
-                    return .bound(adding(binding, target: "-m \(module)", display: "\(shownName) -m \(module)"))
+                    return .bound(adding(binding, target: "-m \(module)", display: "\(shownName) -m \(module)", file: file))
                 }
                 guard (harmless[name] ?? []).contains(argument) else { return .asksEveryTime("\(name) \(argument) is not read by PasswordPie.") }
                 index += 1
             }
             guard index < arguments.count else { return .asksEveryTime(Self.inline) }
             guard let file = script(arguments[index]) else { return .asksEveryTime("The script \(arguments[index]) could not be read.") }
-            return .bound(adding(binding, target: file.path, display: "\((binding.program as NSString).lastPathComponent) \(shown(file.path))", file: file))
+            var bound = adding(binding, target: file.path, display: "\(shownName) \(shown(file.path))", file: file)
+            // A script from other people's code (node_modules…) is bound with its arguments, as an unknown program is.
+            if inProject(file.path), !isProjectScript(file.path) { bound = withArguments(bound, Array(arguments.dropFirst(index + 1))) }
+            return .bound(bound)
         }
 
-        /// The rest of the command, from its first word: a path is resolved here; a bare name is looked up by the
-        /// launcher, so it is kept as typed (and read for being a launcher itself).
+        /// The rest of the command after `env` or `uv run`, from its first word. A bare name would be looked up later on a
+        /// PATH this file does not see, so only a path is read.
         private func next(_ binding: AgentProgramBinding, launcher: String, rest: [String], depth: Int) -> AgentProgramVerdict {
             guard let word = rest.first, !word.isEmpty else { return .asksEveryTime("There is no command to bind it to.") }
-            let inner: AgentProgramVerdict
-            if word.contains("/") {
-                guard let path = realPath(absolute(word, cwd: cwd)), isRegularFile(path) else { return .asksEveryTime("\(word) could not be read.") }
-                inner = bind(path: path, typedName: (word as NSString).lastPathComponent, arguments: Array(rest.dropFirst()), depth: depth + 1)
-            } else {
-                inner = bind(path: word, typedName: word, arguments: Array(rest.dropFirst()), depth: depth + 1)
-            }
+            guard word.contains("/") else { return .asksEveryTime("\(launcher) \(word) finds \(word) on a PATH PasswordPie does not read.") }
+            let typed = absolute(word, cwd: cwd)
+            guard let path = realPath(typed), isRegularFile(path) else { return .asksEveryTime("\(word) could not be read.") }
+            let inner = bind(path: path, typed: typed, typedName: (word as NSString).lastPathComponent, arguments: Array(rest.dropFirst()), depth: depth + 1)
             guard case .bound(let found) = inner else { return inner }
             var combined = binding
             combined.targets.append(found.program)
@@ -286,22 +340,30 @@ public enum AgentProgramRule {
                 if argument.hasPrefix("-") { return .asksEveryTime("env \(argument) is not read by PasswordPie.") }
                 if let equals = argument.firstIndex(of: "="), equals != argument.startIndex {
                     let name = String(argument[..<equals])
-                    if name == "PATH" || isCodeLoading(name) {
-                        return .asksEveryTime("env sets \(name), which changes what runs.")
-                    }
+                    if name == "PATH" || isCodeLoading(name) { return .asksEveryTime("env sets \(name), which changes what runs.") }
                     index += 1
                     continue
                 }
                 break
             }
-            return next(binding, launcher: "env", rest: Array(arguments.dropFirst(index)), depth: depth)
+            // The variables env sets are part of the command.
+            var bound = binding
+            bound.targets.append("env:" + arguments.prefix(index).joined(separator: "\u{0}"))
+            return next(bound, launcher: "env", rest: Array(arguments.dropFirst(index)), depth: depth)
         }
 
         private func xcrun(_ binding: AgentProgramBinding, _ arguments: [String], depth: Int) -> AgentProgramVerdict {
             var index = 0
+            var sdk: String?
             while index < arguments.count {
                 let argument = arguments[index]
-                if ["--sdk", "-sdk", "--toolchain", "-toolchain"].contains(argument) { index += 2; continue }
+                if ["--sdk", "-sdk"].contains(argument), index + 1 < arguments.count {
+                    // An SDK by name is Apple's; one by path can be anyone's.
+                    guard !arguments[index + 1].contains("/") else { return .asksEveryTime("xcrun --sdk with a path asks every time.") }
+                    sdk = arguments[index + 1]
+                    index += 2
+                    continue
+                }
                 if ["-l", "--log", "-v", "--verbose", "-n", "--no-cache", "-r", "--run"].contains(argument) { index += 1; continue }
                 if argument.hasPrefix("-") { return .asksEveryTime("xcrun \(argument) is not read by PasswordPie.") }
                 break
@@ -309,16 +371,18 @@ public enum AgentProgramRule {
             guard index < arguments.count else { return .asksEveryTime("There is no command to bind it to.") }
             let tool = arguments[index]
             guard !tool.contains("/") else { return next(binding, launcher: "xcrun", rest: Array(arguments.dropFirst(index)), depth: depth) }
-            // A developer tool found by xcrun: bound by its name. One that launches code is read like any other.
             let family = AgentProgramRule.family(tool)
             if shells.contains(family) || interpreters.contains(family) || unknownLaunchers.contains(family) {
-                return next(binding, launcher: "xcrun", rest: Array(arguments.dropFirst(index)), depth: depth)
+                return .asksEveryTime("xcrun \(tool) runs other code in ways PasswordPie does not read.")
             }
-            return .bound(adding(binding, target: tool, display: "xcrun \(tool)"))
+            var bound = adding(binding, target: "tool:\(tool) sdk:\(sdk ?? "")", display: "xcrun \(tool)")
+            // Apple's release tools take a different file each time; any other tool is bound with its arguments.
+            if !xcrunTools.contains(tool) { bound = withArguments(bound, Array(arguments.dropFirst(index + 1))) }
+            return .bound(bound)
         }
 
         private func make(_ binding: AgentProgramBinding, _ arguments: [String]) -> AgentProgramVerdict {
-            var makefile: String?
+            var makefiles: [String] = []
             var targets: [String] = []
             var index = 0
             let harmless: Set<String> = ["-s", "--silent", "-k", "--keep-going", "-B", "--always-make", "-n", "--dry-run", "--no-print-directory", "-w", "-q"]
@@ -326,7 +390,7 @@ public enum AgentProgramRule {
                 let argument = arguments[index]
                 if argument == "-f" || argument == "--file" || argument == "--makefile" {
                     guard index + 1 < arguments.count else { return .asksEveryTime("make -f names no file.") }
-                    makefile = arguments[index + 1]
+                    makefiles.append(arguments[index + 1])
                     index += 2
                     continue
                 }
@@ -341,16 +405,45 @@ public enum AgentProgramRule {
                 targets.append(argument)
                 index += 1
             }
-            let candidates = makefile.map { [$0] } ?? ["GNUmakefile", "makefile", "Makefile"]
-            guard let file = candidates.lazy.compactMap({ self.script($0) }).first else { return .asksEveryTime("There is no Makefile to bind it to.") }
-            let shownTargets = targets.isEmpty ? "" : " " + targets.joined(separator: " ")
-            var bound = adding(binding, target: file.path, display: "make\(shownTargets)", file: file)
+            var files: [(path: String, hash: String)] = []
+            if makefiles.isEmpty {
+                guard let file = ["GNUmakefile", "makefile", "Makefile"].lazy.compactMap({ self.script($0) }).first else {
+                    return .asksEveryTime("There is no Makefile to bind it to.")
+                }
+                files = [file]
+            } else {
+                // Every file given with -f is read.
+                for name in makefiles {
+                    guard let file = script(name) else { return .asksEveryTime("The makefile \(name) could not be read.") }
+                    files.append(file)
+                }
+            }
+            var bound = binding
+            for file in files {
+                bound.targets.append(file.path)
+                bound.contents[file.path] = file.hash
+            }
             bound.targets.append("targets:" + targets.joined(separator: " "))
+            bound.display = "make" + (targets.isEmpty ? "" : " " + targets.joined(separator: " "))
             return .bound(bound)
         }
 
-        /// `npm run deploy`, `pnpm run deploy`, `yarn run deploy`, `bun run deploy`: bound to the package's `package.json`.
-        /// `bun run file.ts` and `bun file.ts` are a script. Other forms ask.
+        /// The package manager's settings files in the working folder and the project, bound present or absent: creating
+        /// one later changes the binding.
+        private func settings(_ binding: AgentProgramBinding) -> AgentProgramBinding {
+            var bound = binding
+            for folder in Set([cwd, project]) {
+                for name in packageManagerSettings {
+                    let path = folder + "/" + name
+                    bound.contents[path] = script(path)?.hash ?? "absent"
+                }
+            }
+            return bound
+        }
+
+        /// `npm run deploy`, `pnpm run deploy`, `yarn run deploy`, `bun run deploy`: bound to the package's `package.json`
+        /// and the package manager's settings, with the arguments after the script's name. `bun run file.ts` and
+        /// `bun file.ts` are a script. Other forms ask.
         private func packageScript(_ manager: String, _ binding: AgentProgramBinding, _ arguments: [String]) -> AgentProgramVerdict {
             if manager == "bun", let first = arguments.first, !first.hasPrefix("-"), first != "run", let file = script(first) {
                 return .bound(adding(binding, target: file.path, display: "bun \(shown(file.path))", file: file))
@@ -364,9 +457,11 @@ public enum AgentProgramRule {
                 return .bound(adding(binding, target: file.path, display: "bun run \(shown(file.path))", file: file))
             }
             guard let package = script("package.json") else { return .asksEveryTime("There is no package.json in the working folder.") }
-            return .bound(adding(binding, target: "run \(name)", display: "\(manager) run \(name)", file: package))
+            let bound = settings(adding(binding, target: "run \(name)", display: "\(manager) run \(name)", file: package))
+            return .bound(withArguments(bound, Array(arguments.dropFirst(2))))
         }
 
+        /// `npx wrangler deploy`: bound to the package's name and the arguments, as typed.
         private func npx(_ binding: AgentProgramBinding, _ arguments: [String]) -> AgentProgramVerdict {
             let launcher = (binding.program as NSString).lastPathComponent
             var index = 0
@@ -376,7 +471,8 @@ public enum AgentProgramRule {
             if package.hasPrefix("-") {
                 return ["-c", "--call"].contains(package) ? .asksEveryTime(Self.inline) : .asksEveryTime("\(launcher) \(package) is not read by PasswordPie.")
             }
-            return .bound(adding(binding, target: package, display: "\(launcher) \(package)"))
+            let bound = settings(adding(binding, target: package, display: "\(launcher) \(package)"))
+            return .bound(withArguments(bound, Array(arguments.dropFirst(index + 1))))
         }
 
         private func uv(_ binding: AgentProgramBinding, _ arguments: [String], depth: Int) -> AgentProgramVerdict {

@@ -81,7 +81,7 @@ final class AgentApprovalModel: ObservableObject {
         self.lasting = lasting
         self.finish = finish
         ticked = Set(prompt.rows.indices)
-        length = lasting.lastLength()
+        length = prompt.lasting == .sessionOnly ? .session : lasting.lastLength()
     }
 
     var answered: Bool { finish == nil }
@@ -107,6 +107,9 @@ final class AgentApprovalModel: ObservableObject {
     }
 
     var isPremium: Bool { lasting.hasPremium() }
+
+    /// The lengths the menu offers: only "this agent session" when no agent was found.
+    var lengths: [AgentGrantLength] { prompt.lasting == .sessionOnly ? [.session] : AgentGrantLength.allCases }
 
     /// "Allow for 7 days", "Allow for This Agent Session"; without Premium, with "· Premium".
     var lastingTitle: String {
@@ -162,13 +165,14 @@ final class AgentApprovalModel: ObservableObject {
     /// "Allow for 7 days" or one of its menu's lengths. Without Premium this opens the Premium window and approves
     /// nothing: the window stays for Allow Once or Deny. With Premium, Touch ID as for Allow Once.
     func allow(for choice: AgentGrantLength) {
-        guard canAllowLasting else { return }
+        guard canAllowLasting, lengths.contains(choice) else { return }
         guard lasting.hasPremium() else {
             lasting.showPremium()
             return
         }
         length = choice
-        lasting.rememberLength(choice)
+        // Only a choice among several is remembered: "this agent session" alone says nothing about the owner's habit.
+        if lengths.count > 1 { lasting.rememberLength(choice) }
         let rows = ticked
         let count = rows.count == 1 ? "1 secret" : "\(rows.count) secrets"
         let span = choice == .session ? "until it quits" : "for \(choice.label)"
@@ -329,7 +333,7 @@ struct AgentApprovalView: View {
     /// "Allow for 7 days ▾": the button allows for the length it names, the arrow offers the others.
     private var lastingButton: some View {
         Menu {
-            ForEach(AgentGrantLength.allCases, id: \.self) { choice in
+            ForEach(model.lengths, id: \.self) { choice in
                 Button(model.lengthTitle(choice)) { model.allow(for: choice) }
             }
         } label: {

@@ -100,24 +100,46 @@ A grant covers a request only when every binding matches:
 A request is covered when one grant names every secret it asks for (a subset of the grant's), with the same delivery
 and name each.
 
-**The program rule** (`AgentProgramRule`, a list kept in code with tests):
+**The program rule** (`AgentProgramRule`, lists kept in code with tests):
 
 - The program is the resolved path of the first word (symbolic links followed), as the tool found it; the app reads it
-  again and checks it is the first word's program.
+  again and checks it is the first word's program. The path as typed is bound too, so one virtual environment's
+  `python` link is not another's.
+- **Arguments are bound unless the code that runs is a script whose content is bound.** The project's own scripts
+  (outside `node_modules`, `.venv`, `vendor` and the like) and the script a shell or interpreter runs may be given other
+  arguments; everything else is granted for that exact command (`curl -d @- https://x`, `git push`, `npx wrangler
+  deploy`). So a program the rule does not know (`tsx -e …`, `git -c alias.x=!sh …`) can never be steered by its
+  arguments.
+- A script is bound by its SHA-256. Every other program file outside the protected system folders (`/bin`, `/usr/bin`,
+  `/usr/libexec`, `/System`…) is bound by its identity on disk: device, inode, size and change time. Editing or
+  replacing either asks once.
 - A launcher is read for what it runs: a shell (`sh`, `bash`, `zsh`, `fish`…) and its script; an interpreter (`python3`,
-  `node`, `ruby`, `perl`, `php`, `lua`, `osascript`…) and its script, or `python3 -m module`; `env` and what it starts;
-  `xcrun` and its tool (`xcrun notarytool`); `npm`, `pnpm`, `yarn` or `bun run <script>` with that `package.json`;
-  `npx`, `bunx` or `uvx` and the package; `uv run` and what it runs; `make` with its Makefile and targets. A link named
+  `node`, `tsx`, `ruby`, `perl`, `php`, `lua`, `osascript`…) and its script, or `python3 -m module` when the module is a
+  file in the working folder; `env` and the path it starts (with the variables it sets); `xcrun` and its tool, with the
+  SDK by name (`notarytool`, `stapler` and `altool` take another file each time, so their arguments are not bound);
+  `npm`, `pnpm`, `yarn` or `bun run <script>` with that `package.json`, the package manager's settings files (`.npmrc`,
+  `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs`, bound present or absent) and the arguments; `npx`, `bunx` or `uvx` and the
+  package; `uv run` and the script or path it runs; `make` with every makefile it reads and its targets. A link named
   `deploy` to `/bin/sh` is read as `sh`.
-- A file inside the project, and every script a launcher runs wherever it is, is bound by its SHA-256. An edit asks once.
-- Inline code (`sh -c`, `bash -ec`, `sh -s`, a shell reading standard input, `python3 -c`, `node -e`, `perl -e`,
-  `osascript -e`, `npx -c`) never gets a grant. Neither does a launcher the rule does not read (`xargs`, `sudo`,
-  `swift run`, `go run`, `awk`, `docker`…), an option it does not know (`node -r x.js`, `bash --rcfile`), `env` setting
-  `PATH` or one of the variables below, nor `make` with a variable on its command line.
-- The app also reads the names (never the values) of the variables in the tool's environment from the kernel
-  (`KERN_PROCARGS2`). A command started with one that makes programs load other code (`BASH_ENV`, `ENV`, `NODE_OPTIONS`,
-  `PYTHONPATH`, `PERL5OPT`, `RUBYOPT`, `DYLD_*`, `LD_*`, `DEVELOPER_DIR`, `MAKEFLAGS` and the like) gets no grant: the
-  command inherits them, so a granted script would run whatever they point at.
+- Never a grant for: inline code (`sh -c`, `bash -ec`, `sh -s`, a shell reading standard input, `python3 -c`,
+  `node -e`, `tsx -e`, `perl -e`, `osascript -e`, `npx -c`); a login or interactive shell (`-l`, `--login`, `-i`), whose
+  profile files are not bound; a launcher the rule does not read (`xargs`, `sudo`, `swift run`, `go run`, `awk`,
+  `brew`, `docker`…); an option it does not know (`node -r x.js`, `bash --rcfile`); a bare name that `env` or `uv run`
+  would find later on a `PATH` the app does not see; `python3 -m` a module from the interpreter's packages; `xcrun
+  --toolchain`, or `--sdk` with a path; `env` setting `PATH` or a variable below; `make` with a variable on its command
+  line.
+- The variables: the app reads the names (never the values) of the variables in the tool's environment from the kernel
+  (`KERN_PROCARGS2`, to the end of the block: an empty entry hides nothing), and the tool sends the names it adds from
+  an `.env.pp` (`environment` in the request). A command started with one that makes programs load other code
+  (`BASH_ENV`, `ENV`, `NODE_OPTIONS`, `PYTHONPATH`, `PERL5OPT`, `RUBYOPT`, `DYLD_*`, `LD_*`, `BASH_FUNC_*`,
+  `npm_config_*`, `YARN_*`, `DEVELOPER_DIR`, `TOOLCHAINS`, `SDKROOT`, `MAKEFLAGS` and the like), or whose `.env.pp` sets
+  `PATH`, gets no grant: the command inherits them. An environment that could not be read, or a request that does not
+  say what it adds, counts the same.
+- **No agent in the chain** (a command in Terminal, or one an agent started outside its own process tree): only "this
+  agent session" is offered, bound to the tool's POSIX session. A longer grant bound to "no agent" would cover whatever
+  else ends up with no agent.
+- What a grant records is what the window showed: the binding is worked out when the window opens, and a lasting
+  choice makes a grant only if the files are still the same when the owner answers (the use itself goes ahead).
 - When the window cannot offer a grant, its button is grey and a line under it says why.
 
 **Premium.** The window shows the lasting choices to everyone. Without Premium (`appHasPremium()`) they say "Premium",
@@ -211,7 +233,7 @@ credential: the tool holds no token.
 | Type | Request | Answer |
 |---|---|---|
 | `hello` | `version`, `client`, `cliVersion` | `version`, `locked`, `access` |
-| `use` | `secrets` (`name`, `ref`, `as`: `env`, `file`, `stdin`), `program`, `argv`, `reason`, `masking`, `wait` | `secrets` (`value` for UTF-8 text, `base64` otherwise, or `declined: true`), `by` (`once`, or a standing permission) |
+| `use` | `secrets` (`name`, `ref`, `as`: `env`, `file`, `stdin`), `program`, `argv`, `reason`, `masking`, `wait`, `environment` (the names the tool sets besides the secrets; without it no standing permission is used) | `secrets` (`value` for UTF-8 text, `base64` otherwise, or `declined: true`), `by` (`once`, or a standing permission) |
 | `read` | one secret with `as: "shown"`, `reason`, `wait` | `secrets` with the one value |
 | `list` | `query`, `wait` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Never a value |
 | `status` | none | `status`: `locked`, `access`, `agent`, `project`, `grants` |
@@ -337,7 +359,7 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Leaks into logs | No value in any log or the activity file; tests plant values and grep | The command's own logs |
 | Leaks into the transcript | Output masking of exact values; files removed at exit | Transformed values; a command that writes the value to a project file |
 | Clicking the prompt | Touch ID (or the login password) on every Allow, lasting or not | none known |
-| Prompt injection uses a granted secret | Grants are bound to the program: `curl` is not the granted script; inline code always asks; scripts are bound by content; code-loading variables in the tool's environment ask | A granted program that can itself be steered (a script that takes a URL argument, or calls a program by name found through `PATH`); files a granted script loads that are not bound (a Makefile's includes, `package.json`'s scripts' own files, `node_modules`) |
+| Prompt injection uses a granted secret | Grants are bound to the program and, unless it is a content-bound script, its arguments: `curl` is not the granted script; inline code always asks; scripts by content, other programs by their identity on disk; code-loading variables in the tool's environment or its `.env.pp` ask | A granted script that can itself be steered (one that takes a URL argument, or calls a program by name found through `PATH`); files a granted command loads that are not bound (a Makefile's includes, the files `package.json`'s scripts run, `node_modules`, the owner's own startup files such as `~/.zshenv`, which same-user code can edit); an older copy of the database file put back by same-user code brings back the grants it held |
 | The agent widens its own grant | No message creates or widens a grant; they live in the database, not the preferences; only the window's button with Touch ID makes one; raw reads and `--no-masking` never get one | An owner who picks long grants by habit |
 | A script changes between the check and the run | The app hashes the script when the request comes | The file can be swapped before it runs (a time-of-check to time-of-use race); the same-user attacker who wins it can also read the temporary file |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |

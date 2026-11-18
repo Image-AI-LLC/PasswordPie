@@ -55,6 +55,23 @@ public struct AgentGrantQuery: Sendable {
     public var program: String?
     public var argv: [String]
     public var secrets: [AgentResolvedSecret]
+    /// The names the tool sets in the command's environment besides the secrets (`AgentRequest.environment`).
+    public var added: [String]?
+    /// Names this request, so what the grant store worked out when the window opened is what a lasting choice records.
+    public var id = UUID()
+
+    public init(
+        caller: AgentCaller, kind: AgentRequestKind, raw: Bool, program: String?, argv: [String], secrets: [AgentResolvedSecret],
+        added: [String]? = []
+    ) {
+        self.caller = caller
+        self.kind = kind
+        self.raw = raw
+        self.program = program
+        self.argv = argv
+        self.secrets = secrets
+        self.added = added
+    }
 }
 
 /// Standing permissions. `NoAgentGrants` never grants; the app's store keeps real ones in the database (docs/AGENTS.md,
@@ -304,13 +321,15 @@ public final class VaultBroker {
         }
         // The answer must fit one frame, encoded as it would be sent with everything allowed. Said before anyone is asked,
         // not after the owner approved. The values stay in this process.
-        if AgentCoding.encode(answer(request, resolved: resolved, selected: Set(resolved.indices), by: "once")).count + 4 > BridgeFrame.maxLength {
+        if AgentCoding.encode(answer(request, resolved: resolved, selected: Set(resolved.indices), by: Self.longestBy)).count + 4 > BridgeFrame.maxLength {
             log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
             var refusal = AgentResponse.error(.usage, id: request.id, ref: resolved.first?.ref)
             refusal.detail = "The values asked for are too large to hand over (an answer is at most 1 MiB)."
             return refusal
         }
-        let query = AgentGrantQuery(caller: caller, kind: request.type, raw: raw, program: request.program, argv: request.argv ?? [], secrets: resolved)
+        let query = AgentGrantQuery(
+            caller: caller, kind: request.type, raw: raw, program: request.program, argv: request.argv ?? [], secrets: resolved, added: request.environment
+        )
         if !raw, let grant = grants.grant(covering: query) {
             return deliver(request, caller: caller, resolved: resolved, selected: Set(resolved.indices), outcome: .allowedByGrant, grant: grant)
         }
@@ -361,7 +380,7 @@ public final class VaultBroker {
             log(request, caller: caller, outcome: .notAvailable, items: [resolved[gone].ref], delivery: [])
             return .error(.notAvailable, id: request.id, ref: resolved[gone].ref)
         }
-        if AgentCoding.encode(answer(request, resolved: resolved, selected: selected, by: "once")).count + 4 > BridgeFrame.maxLength {
+        if AgentCoding.encode(answer(request, resolved: resolved, selected: selected, by: Self.longestBy)).count + 4 > BridgeFrame.maxLength {
             log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
             return .error(.usage, id: request.id, ref: resolved.first?.ref)
         }
@@ -445,6 +464,10 @@ public final class VaultBroker {
             rows: rows
         )
     }
+
+    /// Stands in for the answer's `by` when its size is checked: a standing permission's description is longer than
+    /// "once".
+    static let longestBy = String(repeating: "x", count: 64)
 
     /// The command as typed, each argument that needs it in single quotes. Nil for a raw read.
     public static func commandText(_ argv: [String]?) -> String? {

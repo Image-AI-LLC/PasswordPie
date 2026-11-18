@@ -1776,12 +1776,18 @@ The program, in detail:
 - It is the program the command starts. For a launcher it is the launcher and what it runs: `sh Scripts/a.sh`,
   `python3 tools/upload.py`, `xcrun notarytool`, `npm run deploy` (with that `package.json`), `make release` (with that
   `Makefile`).
-- A script, and any program inside the project, is bound by its content. When it changes, the next use asks once.
-- Inline code (`sh -c '…'`, `python3 -c`, `node -e`) never gets a standing permission, nor does a launcher PasswordPie
-  does not know how to read (`xargs`, `sudo`, `swift run`, …), nor a command started with a variable that makes programs
-  load other code (`DYLD_INSERT_LIBRARIES`, `BASH_ENV`, `NODE_OPTIONS`, `PYTHONPATH`, …). For these the button is grey and a
+- A script, and any program inside the project, is bound by its content. When it changes, the next use asks once. Other
+  programs are bound by their file: an upgrade asks once.
+- A script's arguments may change. Anything else is granted for that exact command: `curl -d @- https://a` is not
+  `curl -d @- https://b`.
+- Inline code (`sh -c '…'`, `python3 -c`, `node -e`) never gets a standing permission, nor does a login shell, a
+  launcher PasswordPie does not know how to read (`xargs`, `sudo`, `swift run`, …), nor a command started with a
+  variable that makes programs load other code (`DYLD_INSERT_LIBRARIES`, `BASH_ENV`, `NODE_OPTIONS`, `PYTHONPATH`, …),
+  whether the agent's shell set it or the project's `.env.pp`. For these the button is grey and a
   line under it says why; Allow Once still works.
 - A raw read and `run --no-masking` never get one: the agent would see the value.
+- With no agent found (a command typed in Terminal), the menu offers only **This Agent Session**, which then means this
+  Terminal session.
 
 **Without Premium** the button reads **Allow for 7 days · Premium**, and each length in its menu says Premium. Choosing
 one opens the Premium window; nothing is approved, and the approval window stays open for Allow Once or Deny. Allow Once
@@ -1852,11 +1858,12 @@ a terminal.
    window appears.
 6. Untick **Agents**, run step 2 again: the same answer as for an item that does not exist.
 7. Without Premium: tick **Agents** again, put `echo "$T" | wc -c` in `demo.sh` and run
-   `passwordpie run --env T=pp://Agents/Token -- sh demo.sh`. The window's third button reads **Allow for 7 days ·
-   Premium**; choose it: the Premium window opens and the approval window stays. Choose Allow Once.
-8. With Premium: run it again and choose **Allow for 7 days**, Touch ID. Run it a third time: no window, the menu-bar pie
-   shows its dot, and Activity says "allowed by 7 days, this project". Preferences > Agents > Standing permissions lists
-   it.
+   `passwordpie run --env T=pp://Agents/Token -- sh demo.sh`. The window's third button reads **Allow for This Agent
+   Session · Premium**; choose it: the Premium window opens and the approval window stays. Choose Allow Once.
+8. With Premium: run it again and choose **Allow for This Agent Session** (from Terminal there is no agent, so it is
+   the only length), Touch ID. Run it a third time: no window, the menu-bar pie
+   shows its dot, and Activity says "allowed by this agent session, this project". Preferences > Agents > Standing
+   permissions lists it. From an agent (Claude Code), **Allow for 7 days** works the same way.
 9. Add a line to `demo.sh` and run it again: the window comes back. Run `passwordpie run --env T=pp://Agents/Token -- sh -c
    'echo "$T"'`: the third button is grey.
 10. Gear menu > **Revoke Agent Permissions**, run step 8's command: the window comes back.

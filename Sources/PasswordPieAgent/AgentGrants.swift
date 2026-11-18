@@ -48,6 +48,9 @@ public enum AgentLastingChoice: Equatable, Sendable {
     /// Shown greyed, with why (inline code, an unknown launcher…).
     case unavailable(String)
     case offered
+    /// Only "this agent session": no agent was found in the processes that started the tool, so a longer one could
+    /// not be bound to one (it would cover whatever else ends up with no agent in its chain).
+    case sessionOnly
 }
 
 /// One secret a grant covers: which item and field, and how it is handed over.

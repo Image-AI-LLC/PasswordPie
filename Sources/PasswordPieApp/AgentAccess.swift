@@ -128,7 +128,7 @@ final class AgentAccess: ObservableObject {
 
     /// The vault locked or unlocked. Locking withdraws every prompt: nothing is handed out while locked.
     func vaultStateChanged(locked: Bool) {
-        if locked { approver.withdrawAll() }
+        if locked { approver.withdrawAll() } else { grants.unlocked() }
         broker.vaultStateChanged()
         refreshStanding()
     }

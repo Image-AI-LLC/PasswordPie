@@ -121,6 +121,7 @@ extension AgentRequest {
         request.masking = masking
         request.wait = wait
         request.reason = reason
+        request.environment = []
         return request
     }
 

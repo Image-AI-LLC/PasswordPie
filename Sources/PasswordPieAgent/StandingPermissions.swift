@@ -29,6 +29,11 @@ public final class StandingPermissions: AgentGrantStore {
     /// Revoked in this run of the app: never used again, whether or not the file was written.
     private var revoked: Set<UUID> = []
     private var revokedAllAt: Date?
+    /// What each request's command was bound to when its window opened, by `AgentGrantQuery.id`: a lasting choice
+    /// records that, and only if the files are still the same.
+    private var offered: [UUID: AgentProgramBinding] = [:]
+    /// Agent access was turned off while locked: the session grants are removed from the file at the next unlock.
+    private var endSessionsAtUnlock = false
 
     public init(
         mac: String = AgentMacIdentity.current, hasPremium: @escaping () -> Bool, read: @escaping () -> AgentGrants?,
@@ -57,7 +62,7 @@ public final class StandingPermissions: AgentGrantStore {
     public func program(for query: AgentGrantQuery) -> AgentProgramVerdict {
         AgentProgramRule.bind(
             program: query.program, argv: query.argv, cwd: query.caller.cwd, project: query.caller.project,
-            environment: query.caller.codeLoadingVariables
+            environment: query.caller.codeLoadingVariables, added: query.added
         )
     }
 
@@ -82,14 +87,23 @@ public final class StandingPermissions: AgentGrantStore {
 
     public func lastingChoice(for query: AgentGrantQuery) -> AgentLastingChoice {
         guard !query.raw, query.kind == .use else { return .notOffered }
-        if case .asksEveryTime(let why) = program(for: query) { return .unavailable(why) }
-        return .offered
+        switch program(for: query) {
+        case .asksEveryTime(let why):
+            return .unavailable(why)
+        case .bound(let binding):
+            if offered.count > 64 { offered.removeAll() }
+            offered[query.id] = binding
+            return query.caller.agent == nil ? .sessionOnly : .offered
+        }
     }
 
     @discardableResult
     public func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) -> String? {
+        let shown = offered.removeValue(forKey: query.id)
         guard case .allowLasting(let selected, let length) = decision, !query.raw, query.kind == .use, hasPremium(),
-              case .bound(let binding) = program(for: query) else { return nil }
+              length == .session || query.caller.agent != nil,
+              // What the owner saw when the window opened, and the files are still the same now.
+              let shown, case .bound(let binding) = program(for: query), binding.key == shown.key else { return nil }
         let chosen = query.secrets.enumerated().filter { selected.contains($0.offset) }.map(\.element)
         guard !chosen.isEmpty else { return nil }
         let grant = AgentGrant(
@@ -122,7 +136,17 @@ public final class StandingPermissions: AgentGrantStore {
     public func endSessions() {
         sessionsEndedAt = clock()
         pending.removeAll { $0.session != nil }
-        guard read() != nil else { return }
+        guard read() != nil else {
+            endSessionsAtUnlock = true
+            return
+        }
+        change { $0.removeAll { $0.session != nil } }
+    }
+
+    /// The vault was unlocked: what had to wait for it is written now.
+    public func unlocked() {
+        guard endSessionsAtUnlock, read() != nil else { return }
+        endSessionsAtUnlock = false
         change { $0.removeAll { $0.session != nil } }
     }
 
