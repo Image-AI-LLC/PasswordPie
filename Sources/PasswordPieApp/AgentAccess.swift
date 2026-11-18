@@ -14,10 +14,15 @@ final class AgentAccess: ObservableObject {
     @Published private(set) var activity: [AgentActivityRecord] = []
     /// What the command-line link button last did.
     @Published private(set) var linkStatus: String?
+    /// The standing permissions in force on this Mac, for the Agents pane. Empty while locked.
+    @Published private(set) var standing: [AgentGrant] = []
 
     let session: VaultSession
     let broker: VaultBroker
     let approver: AgentApprovalController
+    let grants: StandingPermissions
+    /// A request was let through by a standing permission: the menu-bar pie shows its dot.
+    var onSilentUse: (() -> Void)?
     private let log: AgentActivityLog
     private let server: AgentServer
     private let defaults: UserDefaults
@@ -31,13 +36,16 @@ final class AgentAccess: ObservableObject {
         set { broker.onNeedsUnlock = newValue }
     }
 
-    /// Tests pass a socket under /tmp, a log in a temporary folder, their own defaults, approver and server peer check.
+    /// Tests pass a socket under /tmp, a log in a temporary folder, their own defaults, approver, Premium check and server
+    /// peer check.
     init(
         session: VaultSession,
         defaults: UserDefaults = .standard,
         socketPath: String? = nil,
         logURL: URL = AgentActivityLog.defaultURL,
         approver: AgentApprovalController? = nil,
+        hasPremium: @escaping @MainActor () -> Bool = appHasPremium,
+        mac: String = AgentMacIdentity.current,
         peerCheck: (@Sendable (Int32) -> Bool)? = nil,
         linkFolder: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local/bin", isDirectory: true)
     ) {
@@ -51,8 +59,18 @@ final class AgentAccess: ObservableObject {
         let approver = approver ?? Self.debugApprover() ?? AgentApprovalController()
         self.approver = approver
         let relay = ActivityRelay(log: log)
-        // Item B replaces `NoAgentGrants` with the standing permissions.
-        let broker = VaultBroker(vault: session, approver: approver, grants: NoAgentGrants(), activity: relay) { false }
+        // Kept in the database's custom data; Premium is this app's own check, never anything in a request.
+        let grants = StandingPermissions(
+            mac: mac,
+            hasPremium: { hasPremium() },
+            read: { [weak session] in session?.agentGrants },
+            write: { [weak session] edit, done in
+                guard let session else { return done(false) }
+                session.changeAgentGrants(edit, then: done)
+            }
+        )
+        self.grants = grants
+        let broker = VaultBroker(vault: session, approver: approver, grants: grants, activity: relay) { false }
         self.broker = broker
         server = AgentServer(
             handler: { request, caller in await broker.handle(request, from: caller) },
@@ -60,9 +78,14 @@ final class AgentAccess: ObservableObject {
         )
         broker.isEnabled = { [weak self] in self?.enabled ?? false }
         broker.onWaitingChanged = { [weak session] waiting in session?.agentWaitingLine = AgentWaiting.lockScreenLine(waiting) }
-        relay.appended = { [weak self] record in self?.activity.insert(record, at: 0) }
+        relay.appended = { [weak self] record in
+            self?.activity.insert(record, at: 0)
+            if record.outcome == .allowedByGrant { self?.onSilentUse?() }
+        }
+        grants.onChange = { [weak self] in self?.refreshStanding() }
         activity = log.records().reversed()
         session.agentAccessOn = enabled
+        refreshStanding()
     }
 
     /// Debug builds only: `PASSWORDPIE_AGENT_APPROVE=allow|deny` shows the window, then answers it after 2 seconds without
@@ -96,6 +119,8 @@ final class AgentAccess: ObservableObject {
             server.stop()
             approver.withdrawAll()
             problem = nil
+            // "This agent session" permissions end; the others stay and do nothing until it is on again.
+            grants.endSessions()
         }
     }
 
@@ -105,6 +130,34 @@ final class AgentAccess: ObservableObject {
     func vaultStateChanged(locked: Bool) {
         if locked { approver.withdrawAll() }
         broker.vaultStateChanged()
+        refreshStanding()
+    }
+
+    // MARK: Standing permissions
+
+    /// Reads the standing permissions in force again, for the pane.
+    func refreshStanding() {
+        standing = grants.inForce.sorted { $0.created > $1.created }
+    }
+
+    /// Premium is here, so the standing permissions count.
+    var premiumForStanding: Bool { grants.hasPremium() }
+
+    func revoke(_ grant: AgentGrant) {
+        grants.revoke(grant.id)
+    }
+
+    /// Preferences > Agents > Revoke All, and the gear menu's Revoke Agent Permissions.
+    func revokeAll() {
+        grants.revokeAll()
+    }
+
+    /// "until 26 Nov, 16:02", or "until Claude Code quits" for a session permission.
+    static func endText(_ grant: AgentGrant) -> String {
+        if grant.session != nil { return "until \(grant.agentName) quits (at most 12 hours)" }
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("d MMM, HH:mm")
+        return "until \(formatter.string(from: grant.ends))"
     }
 
     func stop() {

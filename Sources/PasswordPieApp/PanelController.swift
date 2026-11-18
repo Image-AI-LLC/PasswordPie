@@ -1052,6 +1052,13 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         gear.addItem(.separator())
         add(to: gear, "New Item…", #selector(newItem), key: "n")
         add(to: gear, "Lock", #selector(lockNow), key: "l")
+        #if PP_DIRECT
+        // Beside Lock while this database has standing permissions in force on this Mac.
+        if let agents = AppDelegate.shared?.agentAccess {
+            agents.refreshStanding()
+            if !agents.standing.isEmpty { add(to: gear, "Revoke Agent Permissions", #selector(revokeAgentPermissions)) }
+        }
+        #endif
         gear.addItem(.separator())
         add(to: gear, "Preferences…", #selector(openPreferences), key: ",")
         add(to: gear, browserExtensionsMenuTitle, #selector(openBrowserExtensions))
@@ -1074,6 +1081,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     @objc private func searchAll() { session.searchAll = true }
     @objc private func newItem() { hide(refocusPrevious: false); session.newEntry() }
     @objc private func lockNow() { session.lock() }
+    #if PP_DIRECT
+    @objc private func revokeAgentPermissions() { AppDelegate.shared?.agentAccess?.revokeAll() }
+    #endif
     @objc private func openPreferences() { hide(refocusPrevious: false); AppDelegate.shared?.showPreferences() }
     @objc private func openBrowserExtensions() { showPreferences(at: .browserExtensions) }
     @objc private func openImport() { showPreferences(at: .importPasswords) }

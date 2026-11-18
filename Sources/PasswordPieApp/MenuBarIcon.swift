@@ -4,11 +4,26 @@ import AppKit
 enum MenuBarIcon {
     static let size = NSSize(width: 18, height: 18)
 
-    /// The keyhole stays transparent; macOS supplies light/dark/highlighted tinting.
-    static func image() -> NSImage {
+    /// How long the dot stays after an agent's request was let through by a standing permission.
+    static let silentUseSeconds: TimeInterval = 5
+
+    /// Where the dot sits (flipped, y down): the lower right, in a cut-out ring so it reads apart from the pie.
+    static let dotCenter = NSPoint(x: 14.6, y: 14.6)
+    static let dotRadius: CGFloat = 2.6
+
+    /// The keyhole stays transparent; macOS supplies light/dark/highlighted tinting. `dot`: a small neutral dot (never
+    /// orange: it is not a warning) after a silent use by an agent.
+    static func image(dot: Bool = false) -> NSImage {
         let image = NSImage(size: size, flipped: true) { _ in
             NSColor.black.setFill()
             path().fill()
+            if dot {
+                let ring = dotRadius + 1.4
+                NSGraphicsContext.current?.compositingOperation = .clear
+                NSBezierPath(ovalIn: NSRect(x: dotCenter.x - ring, y: dotCenter.y - ring, width: ring * 2, height: ring * 2)).fill()
+                NSGraphicsContext.current?.compositingOperation = .sourceOver
+                NSBezierPath(ovalIn: NSRect(x: dotCenter.x - dotRadius, y: dotCenter.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2)).fill()
+            }
             return true
         }
         image.isTemplate = true

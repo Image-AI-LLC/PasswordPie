@@ -4,7 +4,8 @@ import PasswordPieAgent
 import PasswordPieCore
 import SwiftUI
 
-/// Preferences > Agents: the switch, the command-line tool, what is shared, and Activity. See "Agents" in docs/UX.md.
+/// Preferences > Agents: the switch, the command-line tool, what is shared, standing permissions, and Activity. See
+/// "Agents use a secret without seeing it" in docs/UX.md.
 struct AgentsPane: View {
     @ObservedObject var access: AgentAccess
     @ObservedObject var session: VaultSession
@@ -15,8 +16,10 @@ struct AgentsPane: View {
             group("Agent access") { accessSection }
             group("Command-line tool") { toolSection }
             group("Shared with agents") { sharingSection }
+            group("Standing permissions") { standingSection }
             group("Activity") { activitySection }
         }
+        .onAppear { access.refreshStanding() }
     }
 
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -115,6 +118,36 @@ struct AgentsPane: View {
         }
     }
 
+    // MARK: Standing permissions
+
+    @ViewBuilder
+    private var standingSection: some View {
+        if session.agentVaultLocked {
+            Text("Unlock PasswordPie to see standing permissions. They are kept in the database.").font(note).foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Choose Allow for 7 days ▾ in an agent's approval window to stop it asking every time, for the same items, agent, project and program. Premium.")
+                    .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if !access.enabled, !access.standing.isEmpty {
+                    Text("Agent access is off: these do nothing until it is on again.").font(note).foregroundStyle(.secondary)
+                }
+                if !access.standing.isEmpty, !access.premiumForStanding {
+                    Text("Premium has ended on this Mac: these do nothing until it is back.").font(note).foregroundStyle(.secondary)
+                }
+                if access.standing.isEmpty {
+                    Text("None. Every use asks.").font(note).foregroundStyle(.secondary)
+                } else {
+                    ForEach(access.standing) { grant in
+                        StandingRow(grant: grant) { access.revoke(grant) }
+                        PaneRule()
+                    }
+                    Button("Revoke All") { access.revokeAll() }
+                        .accessibilityIdentifier("agents.revokeAll")
+                }
+            }
+        }
+    }
+
     // MARK: Activity
 
     private var activitySection: some View {
@@ -135,6 +168,30 @@ struct AgentsPane: View {
             Text("Kept for 90 days in ~/Library/Application Support/PasswordPie/agent-activity.jsonl. It never holds a value.")
                 .font(note).foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct StandingRow: View {
+    let grant: AgentGrant
+    let revoke: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(grant.agentName).font(.system(size: 12, weight: .medium))
+                    Text(AgentAccess.endText(grant)).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Text(grant.labels.joined(separator: ", ")).font(.system(size: 12)).lineLimit(2)
+                if let program = grant.program {
+                    Text(program.display).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                Text(AgentAccess.tilde(grant.project)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer()
+            Button("Revoke", action: revoke).controlSize(.small)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

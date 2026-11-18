@@ -24,7 +24,7 @@ Check the store binary has none of it:
 
 Check the store app has no agent access:
 
-    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e agent.sock -e com.passwordpie.cli -e agentAccessEnabled -e PasswordPie.AgentSharing   # expect 0
+    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e agent.sock -e com.passwordpie.cli -e agentAccessEnabled -e PasswordPie.AgentSharing -e PasswordPie.AgentGrants -e agentGrantLength   # expect 0
     test ! -e build/mas/PasswordPie.app/Contents/Helpers && echo ok                                  # expect ok
 
 Check no debug preview or mock site can reach a release store build, and that the direct binary does not link StoreKit:

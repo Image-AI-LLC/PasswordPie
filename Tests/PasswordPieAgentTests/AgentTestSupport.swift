@@ -78,7 +78,7 @@ final class GrantEverything: AgentGrantStore {
     }
     func grants(for caller: AgentCaller) -> [String] { ["test grant"] }
     func covers(_ item: AgentItem, for caller: AgentCaller) -> Bool { true }
-    func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) {}
+    func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) -> String? { nil }
 }
 
 final class MemoryActivity: AgentActivityLogging, @unchecked Sendable {

@@ -49,7 +49,7 @@ struct DirectPremiumCopy: Equatable {
             let detail: (String, String)
             switch lapse {
             case nil:
-                detail = ("Free", "Two-step codes need Premium. Everything else in PasswordPie is free.")
+                detail = ("Free", "Two-step codes, and agents' standing permissions, need Premium. Everything else in PasswordPie is free.")
             case .activationRanOut(let ended):
                 detail = (off, "The activation from passwordpie.com ended on \(dateText(ended)). Press Activate in your account settings to renew it.")
             }
