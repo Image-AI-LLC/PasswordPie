@@ -50,8 +50,19 @@ final class ArgumentWatchTests: XCTestCase {
         XCTAssertTrue(ArgumentWatch(root: 10, watched: [short], facts: facts([:]), report: found.add).isEmpty)
     }
 
-    /// The kernel's record of a process holds its environment after its arguments; only the arguments are read.
-    func testTheLiveReaderReadsArgumentsNotTheEnvironment() throws {
+    /// The kernel's record of a process holds its environment after its arguments (when it shows it at all); only the
+    /// arguments are read.
+    func testTheRecordIsReadUpToItsArgumentsNotTheEnvironment() {
+        var record: [UInt8] = []
+        withUnsafeBytes(of: Int32(2).littleEndian) { record += $0 }
+        record += Array("/usr/bin/notarytool".utf8) + [0, 0, 0]
+        record += Array("notarytool".utf8) + [0] + Array("submit".utf8) + [0]
+        record += Array("APPLE_PASSWORD=abcdef-secret".utf8) + [0]
+        let arguments = ArgumentWatch.arguments(fromRecord: record).map { String(decoding: $0, as: UTF8.self) }
+        XCTAssertEqual(arguments, ["notarytool", "submit"])
+    }
+
+    func testTheLiveReaderReadsARealProcess() throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sleep")
         process.arguments = ["5"]

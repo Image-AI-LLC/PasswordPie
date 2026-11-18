@@ -152,8 +152,16 @@ public final class ArgumentWatch: @unchecked Sendable {
         var size = 0
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
         var buffer = [UInt8](repeating: 0, count: size)
-        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return [] }
-        let count = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return [] }
+        return arguments(fromRecord: Array(buffer.prefix(size)))
+    }
+
+    /// The `argc` arguments of a `KERN_PROCARGS2` record: `argc` (32 bits), the executable path, padding NULs, the
+    /// arguments, then the environment, which is left alone.
+    static func arguments(fromRecord buffer: [UInt8]) -> [Data] {
+        let size = buffer.count
+        guard size > MemoryLayout<Int32>.size else { return [] }
+        let count = buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
         var index = MemoryLayout<Int32>.size
         while index < size, buffer[index] != 0 { index += 1 }
         while index < size, buffer[index] == 0 { index += 1 }
