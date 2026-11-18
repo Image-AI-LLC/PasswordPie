@@ -35,7 +35,13 @@ public enum AgentErrorCode: String, Codable, Sendable, CaseIterable {
 /// one that does not exist read the same, byte for byte.
 public enum AgentRefusal {
     public static func line(_ code: AgentErrorCode, ref: String? = nil, refs: [String] = [], detail: String? = nil) -> String {
-        "PasswordPie: " + oneLine(sentence(code, ref: ref, refs: refs, detail: detail)) + " " + AgentConstants.pasteWarning
+        "PasswordPie: " + oneLine(sentence(code, ref: ref, refs: refs, detail: detail, mcp: false)) + " " + AgentConstants.pasteWarning
+    }
+
+    /// The text of an MCP tool error: it starts with the code's name, as the command-line tool's exit codes are named, then
+    /// says what to do in the MCP tools' terms, and ends with `AgentConstants.mcpGuidance`.
+    public static func mcp(_ code: AgentErrorCode, ref: String? = nil, refs: [String] = [], detail: String? = nil) -> String {
+        "\(code.rawValue): PasswordPie: " + oneLine(sentence(code, ref: ref, refs: refs, detail: detail, mcp: true)) + " " + AgentConstants.mcpGuidance
     }
 
     /// What the agent typed can hold line breaks and other control characters: percent-encoded, so the line stays one.
@@ -51,13 +57,14 @@ public enum AgentRefusal {
         return out
     }
 
-    private static func sentence(_ code: AgentErrorCode, ref: String?, refs: [String], detail: String?) -> String {
+    private static func sentence(_ code: AgentErrorCode, ref: String?, refs: [String], detail: String?, mcp: Bool) -> String {
         switch code {
         case .usage:
-            return (detail ?? "The command was not understood.") + " Run `passwordpie help` for the syntax."
+            return (detail ?? "The command was not understood.") + (mcp ? " Check the tool's input schema." : " Run `passwordpie help` for the syntax.")
         case .notAvailable:
             let what = ref.map { "Nothing shared with agents matches \($0)." } ?? "Nothing shared with agents matches that reference."
-            return what + " Check the name with `passwordpie list`; if the item exists, ask the owner to choose Share with Agents on it (or its folder) in PasswordPie."
+            let check = mcp ? "Check the name with passwordpie_list" : "Check the name with `passwordpie list`"
+            return what + " \(check); if the item exists, ask the owner to choose Share with Agents on it (or its folder) in PasswordPie."
         case .ambiguous:
             let list = refs.isEmpty ? "" : " Matching items: " + refs.joined(separator: ", ") + "."
             return "More than one shared item matches \(ref ?? "that reference")." + list + " Use one of the pp://id/ references instead."
@@ -66,7 +73,9 @@ public enum AgentRefusal {
         case .timeout:
             return "Nobody answered the approval prompt in 2 minutes. Tell the owner a PasswordPie approval is waiting, then try again."
         case .locked:
-            return "PasswordPie is locked. Tell the owner to unlock it, then try again (or use --wait SECONDS, up to 600)."
+            return mcp
+                ? "PasswordPie is locked. Tell the owner to unlock it, then try again."
+                : "PasswordPie is locked. Tell the owner to unlock it, then try again (or use --wait SECONDS, up to 600)."
         case .appUnavailable:
             return (detail ?? "PasswordPie did not answer.") + " Make sure PasswordPie (the direct download from passwordpie.com) is installed and running."
         case .accessOff:

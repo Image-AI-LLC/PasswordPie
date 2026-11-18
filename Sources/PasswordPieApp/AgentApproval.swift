@@ -292,6 +292,14 @@ struct AgentApprovalView: View {
                 }
                 detail("Project", abbreviated(model.prompt.project), full: model.prompt.project)
                 detail("Agent", model.agentLine, full: model.agentLine)
+                // How the request came, and what the MCP client says it is: its claim, under the agent the app found.
+                if let via = model.prompt.via {
+                    GridRow {
+                        Text("")
+                        Text(via).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             if let reason = model.prompt.reason {
                 VStack(alignment: .leading, spacing: 2) {

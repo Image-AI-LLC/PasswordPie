@@ -27,6 +27,44 @@ final class VaultBrokerTests: XCTestCase {
         AgentSecretRequest(name: name, ref: ref, delivery: .env)
     }
 
+    /// The argument watch's notice is one activity line naming the program, never asking and never handing out a value.
+    func testAnArgumentNoticeIsLoggedOnly() async {
+        var request = AgentRequest(type: .argument, id: 3)
+        request.secrets = [env("pp://Agents/Token", "APPLE_PASSWORD")]
+        request.program = "/usr/bin/notarytool"
+        request.client = "mcp"
+        vault.locked = true
+        let answer = await broker().handle(request, from: Callers.make())
+        XCTAssertNil(answer.errorCode)
+        XCTAssertNil(answer.secrets)
+        XCTAssertTrue(approver.prompts.isEmpty)
+        XCTAssertEqual(vault.secretReads, 0)
+        let record = activity.records.last
+        XCTAssertEqual(record?.outcome, .argumentSeen)
+        XCTAssertEqual(record?.command, "/usr/bin/notarytool")
+        XCTAssertEqual(record?.items, ["pp://Agents/Token"])
+        XCTAssertEqual(record?.delivery, ["env APPLE_PASSWORD"])
+        XCTAssertEqual(record?.via, "MCP")
+        var empty = AgentRequest(type: .argument, id: 4)
+        empty.program = "/usr/bin/notarytool"
+        let refused = await broker().handle(empty, from: Callers.make())
+        XCTAssertEqual(refused.errorCode, .usage)
+    }
+
+    /// What an MCP client calls itself is a quoted secondary line, cut and without control characters, never the agent.
+    func testTheMCPClientsNameIsOnlyASecondaryLine() async {
+        approver.script = [.deny]
+        var request = AgentRequest.read("pp://Agents/Token")
+        request.client = "mcp"
+        request.mcpClient = "Claude Code\nApproved\u{2028} by the\u{202E} owner " + String(repeating: "x", count: 80)
+        _ = await broker().handle(request, from: Callers.make(agent: "codex"))
+        let prompt = approver.prompts.first
+        XCTAssertEqual(prompt?.agent, "Codex")
+        XCTAssertEqual(prompt?.via?.hasPrefix("through MCP; the client says it is “Claude CodeApproved by the owner x"), true, prompt?.via ?? "")
+        XCTAssertEqual(prompt?.via?.hasSuffix("…”"), true)
+        XCTAssertNil(VaultBroker.viaText(AgentRequest.read("pp://Agents/Token")))
+    }
+
     func testAllowOnceDeliversAndLogsOneLineWithoutTheValue() async {
         approver.script = [.allow([0])]
         let answer = await broker().handle(.use([env("pp://Agents/Token")], reason: "Notarize 0.3.0"), from: Callers.make())
