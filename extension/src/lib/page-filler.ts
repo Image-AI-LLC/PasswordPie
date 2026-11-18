@@ -1,6 +1,6 @@
 import { ChangeWatch } from './change-watch';
 import { findChangeFields, findLoginFields } from './fields';
-import { submitForm } from './form-submit';
+import { pressNext, submitForm } from './form-submit';
 import type { FillMessage, FillResult } from './protocol';
 
 export const WAIT_FOR_FIELDS_MS = 30_000;
@@ -39,9 +39,8 @@ export function fillInput(el: HTMLInputElement, value: string): void {
 class Session {
   private usernameEl: HTMLInputElement | null = null;
   private passwordFilled = false;
-  /** An agent's login: the form was sent after the password, or the username-only step was. Each at most once. */
+  /** An agent's login: the form was sent after the password, by this fill. */
   private submitted = false;
-  private usernameSubmitted = false;
   private usernameTimer: ReturnType<typeof setTimeout> | undefined;
   /** Change mode: the boxes already filled, so a later look does not write over what the person typed since. */
   private readonly filled = new Set<HTMLInputElement>();
@@ -58,6 +57,8 @@ class Session {
     private readonly now: () => number,
     /** A box took the new password. */
     private readonly newPasswordFilled: (el: HTMLInputElement) => void,
+    /** Per document, shared by every fill of it: a form is sent at most once, and Next pressed at most once. */
+    private readonly sent: { password: boolean; username: boolean },
   ) {
     this.deadline = now() + Math.min(msg.waitMs ?? WAIT_FOR_FIELDS_MS, WAIT_FOR_FIELDS_MS);
   }
@@ -75,13 +76,13 @@ class Session {
 
   /** An agent's login on a username-only page: press Next if no password field shows up in a moment. Once. */
   private planUsernameSubmit(): void {
-    if (this.msg.submit !== true || this.usernameEl === null || this.usernameSubmitted) return;
+    if (this.msg.submit !== true || this.usernameEl === null || this.sent.username) return;
     this.usernameTimer = setTimeout(() => {
       this.usernameTimer = undefined;
       const username = this.usernameEl;
-      if (this.passwordFilled || this.usernameSubmitted || !username?.isConnected || this.now() > this.deadline) return;
-      this.usernameSubmitted = true;
-      submitForm(username);
+      if (this.passwordFilled || this.sent.username || !username?.isConnected || this.now() > this.deadline) return;
+      // Only a sign-in step's own Next or Sign in button: a lone email field can also be a reset or newsletter form.
+      if (pressNext(username)) this.sent.username = true;
     }, USERNAME_SUBMIT_DELAY_MS);
   }
 
@@ -110,7 +111,10 @@ class Session {
       fillInput(password, this.msg.password);
       this.passwordFilled = true;
       // An agent's login asked for the form to be sent: its own button, once, right after the password went in.
-      if (this.msg.submit === true && !this.submitted) this.submitted = submitForm(password);
+      if (this.msg.submit === true && !this.submitted && !this.sent.password) {
+        this.submitted = submitForm(password);
+        if (this.submitted) this.sent.password = true;
+      }
     }
   }
 
@@ -192,6 +196,8 @@ class Session {
 export class PageFiller {
   private session: Session | undefined;
   private changeWatch: ChangeWatch | undefined;
+  /** This document's agent submits: the background may deliver one fill twice (the page's ready and its load). */
+  private readonly sent = { password: false, username: false };
 
   constructor(private readonly env: PageEnv) {}
 
@@ -203,7 +209,7 @@ export class PageFiller {
     const changeWatch =
       msg.newPassword !== undefined && notifyChanged ? new ChangeWatch(this.env.document, msg.newPassword, notifyChanged) : undefined;
     this.changeWatch = changeWatch;
-    this.session = new Session(this.env, msg, this.env.now ?? Date.now, (el) => changeWatch?.add(el));
+    this.session = new Session(this.env, msg, this.env.now ?? Date.now, (el) => changeWatch?.add(el), this.sent);
     return this.session.begin();
   }
 

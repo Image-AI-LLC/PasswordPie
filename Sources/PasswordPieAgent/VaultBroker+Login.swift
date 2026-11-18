@@ -59,12 +59,14 @@ extension VaultBroker {
         let labels = candidates.map { Self.loginLabel($0) }
 
         // Where it would go. Nothing is asked when no extension can fill there, or when the site or the tab in front is
-        // already known not to match.
+        // already known not to match. Such an answer carries no overview (the username and websites come only with an
+        // approval) and never names the site of the owner's tab: without a prompt it must not become a way to watch
+        // what the owner browses. `site` is only ever the one the agent itself asked for.
         func early(_ outcome: AgentLoginOutcome, site: String?, browser: String?, detail: String? = nil) -> AgentResponse {
             log(request, caller: caller, outcome: outcome.activityOutcome, items: labels, delivery: [])
             return loginAnswer(request, AgentLoginAnswer(
                 outcome: outcome,
-                item: candidates.count == 1 ? logins.loginOverview(candidates[0]) : nil,
+                item: nil,
                 site: site,
                 browser: browser,
                 code: nil,
@@ -78,7 +80,7 @@ extension VaultBroker {
         }
         guard !vault.agentVaultLocked else { return refuse(.locked, outcome: .locked, items: labels) }
         let pageNotAWebsite = "The tab in front is not a website."
-        func pageText(_ page: String) -> String { "The tab in front is on \(logins.loginSite(page) ?? page)." }
+        let pageElsewhere = "The tab in front is on another site."
         var websites: [String] = []
         if let url {
             for candidate in candidates {
@@ -93,8 +95,8 @@ extension VaultBroker {
             case .notAWebsite:
                 return early(.noMatchingTab, site: logins.loginSite(url), browser: target.browser.displayName, detail: pageNotAWebsite)
             case .url(let page):
-                if !logins.loginAllows(website: websites[0], on: page) {
-                    return early(.noMatchingTab, site: logins.loginSite(url), browser: target.browser.displayName, detail: pageText(page))
+                if !websites.contains(where: { logins.loginAllows(website: $0, on: page) }) {
+                    return early(.noMatchingTab, site: logins.loginSite(url), browser: target.browser.displayName, detail: pageElsewhere)
                 }
             }
         } else {
@@ -106,11 +108,10 @@ extension VaultBroker {
                 }
                 websites = [website]
             case .notAWebsite:
-                let main = logins.loginWebsite(of: item, for: nil).flatMap(logins.loginSite)
-                return early(.noMatchingTab, site: main, browser: target.browser.displayName, detail: pageNotAWebsite)
+                return early(.noMatchingTab, site: nil, browser: target.browser.displayName, detail: pageNotAWebsite)
             case .url(let page):
                 guard let website = logins.loginWebsite(of: item, for: page) else {
-                    return early(.siteMismatch, site: logins.loginSite(page), browser: target.browser.displayName)
+                    return early(.siteMismatch, site: nil, browser: target.browser.displayName, detail: pageElsewhere)
                 }
                 websites = [website]
             }

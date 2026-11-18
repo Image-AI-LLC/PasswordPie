@@ -123,7 +123,7 @@ final class AgentLoginBridgeTests: XCTestCase {
         approver.onPresent = { [unowned self] in self.frontTab = "https://gitlab.com/" }
         let answer = await broker.handle(login("pp://Web/GitHub"), from: caller)
         XCTAssertEqual(answer.login?.outcome, .noMatchingTab)
-        XCTAssertEqual(answer.login?.detail, "The tab in front is on gitlab.com.")
+        XCTAssertEqual(answer.login?.detail, "The tab in front is on another site.")
         XCTAssertFalse(tabAnswers.contains { $0.contains(planted) }, "no fill went to the other site")
         XCTAssertNil(bridge.state.pending.pending)
     }
@@ -168,6 +168,41 @@ final class AgentLoginBridgeTests: XCTestCase {
         let answer = await task.value
         XCTAssertEqual(answer.errorCode, .locked)
         XCTAssertNil(bridge.state.pending.pending)
+    }
+
+    /// Turning agent access off withdraws a login that was approved and is waiting for its tab.
+    func testTurningAccessOffWithdrawsAWaitingLogin() async throws {
+        try add("GitHub", url: "https://github.com/login")
+        let defaults = UserDefaults(suiteName: "agent-login-\(UUID().uuidString)")!
+        let access = AgentAccess(session: session, defaults: defaults, logURL: directory.appendingPathComponent("activity.jsonl"), approver: AgentApprovalController(show: { _ in {} }))
+        access.attachBrowser(bridge)
+        approver.onPresent = { [unowned self] in self.frontTab = nil }
+        let task = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: self.caller) }
+        let waiting = await eventually { self.bridge.agentLogin != nil }
+        XCTAssertTrue(waiting)
+        access.setEnabled(false)
+        XCTAssertNil(bridge.state.pending.pending)
+        let answer = await task.value
+        XCTAssertEqual(answer.login?.outcome, .timedOut)
+        XCTAssertEqual(answer.login?.detail, "Agent access was turned off.")
+    }
+
+    /// A newer login does not tell an older one that a tab already took "no tab took it".
+    func testANewerLoginEndsATakenOneWithWhatIsKnown() async throws {
+        try add("GitHub", url: "https://github.com/login", code: true)
+        premium = true
+        reply = "submitted"
+        bridge.agentCodeLifetime = 0.5
+        let first = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: self.caller) }
+        let taken = await eventually { self.bridge.agentLogin?.result == .submitted }
+        XCTAssertTrue(taken)
+        let other = AgentProcess(pid: 300, startTime: 3, path: "/usr/local/bin/codex", name: "Codex")
+        let second = AgentCaller(cli: caller.cli, chain: [other], agent: other, sessionKey: "agent:300:3", cwd: "/tmp", project: "/tmp")
+        let later = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: second) }
+        let answer = await first.value
+        XCTAssertEqual(answer.login?.outcome, .submitted)
+        XCTAssertEqual(answer.login?.code, .notFilled)
+        _ = await later.value
     }
 
     /// The agent hung up: the fill is withdrawn, so nobody's tab takes it afterwards.

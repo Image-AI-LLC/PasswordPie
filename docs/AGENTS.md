@@ -275,7 +275,8 @@ How the broker answers one (`VaultBroker+Login.swift`), in order:
    rule: registrable domain, no step down from https. With `--url`: the item's website for that page, else
    `site-mismatch`. Without: the website for the reported tab, else `site-mismatch`; with no report, the item's main
    website. A tab known to be elsewhere (another site, or not a website) is `no-matching-tab`. All of these are answered
-   before any prompt.
+   before any prompt, and carry no overview and never the site of the owner's tab (only the site the agent asked for):
+   without an approval, `login` tells the agent nothing it did not already know.
 5. **The prompt**: the site, the account (title, folder, username), the browser and profile, whether the form is sent,
    the two-step code line, the agent and its reason. Allow Once, with Touch ID. Rate limit, one prompt per session and the
    2-minute timeout are as for `use`.
@@ -295,7 +296,8 @@ The browser side (`BrowserBridge+AgentLogin.swift`) ends the wait:
 | A tab took it and said nothing within 35 seconds (an extension from before `login-result`) | `filled`, with a word that the extension did not say |
 | The vault locks | `locked` |
 | The tool hangs up | the fill is withdrawn |
-| A newer agent login | the older one answers `timed-out` |
+| A newer agent login | the older one answers `timed-out` if no tab took it, else what is known (`submitted` with the code `not-filled`, or `filled`) |
+| Agent access is turned off | the fill is withdrawn; `timed-out` |
 
 **Two-step code.** The fill carries `otp: true` when the item has a code, as for people, and the page's `code` request is
 answered under the same rule: this Mac's Premium (`browserCodeAllowed`), nothing in a request. The answer's `code`:
@@ -339,6 +341,8 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Clicking the prompt | Touch ID (or the login password) on every Allow | none known |
 | A login for one site lands on another | The fill is bound to one of the item's websites before the prompt; the extension takes it only on that site (same registrable domain, no downgrade) and only in the connection it is for; a report of another site drops it | The owner approves a login for an item whose website was set wrong |
 | The agent sees the password through a login | The answer is the outcome and the item's overview; the fill goes to the page, not to the tool | A page the agent controls on the item's own site could read its own form |
+| An agent watches what the owner browses through `login` | Answers given before an approval carry no overview and never name the site of the owner's tab | none known |
+| A login sends a form that is not a sign-in (a password reset on the same site) | The username-only step presses only a Next, Continue, Sign in or Log in button; a page sends at most once | The owner approves a login on a page that is not a sign-in page |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |
 

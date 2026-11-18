@@ -124,7 +124,7 @@ extension BrowserBridge {
         let asked = now()
         poke(browser, link: link)
         let deadline = Date().addingTimeInterval(agentPokeWait)
-        while state.report(of: peer, since: asked) == nil, Date() < deadline {
+        while state.report(of: peer, since: asked) == nil, Date() < deadline, !Task.isCancelled {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
         let page: AgentLoginTarget.Page
@@ -146,8 +146,9 @@ extension BrowserBridge {
             return .finished(.siteMismatch, code: nil, detail: nil)
         }
         fill.agent = AgentFillTicket(token: token, submit: plan.submit)
-        // A newer login replaces one still waiting, as a new pick replaces the old.
-        agentLogin?.finish(.finished(.timedOut, code: nil, detail: "A newer fill replaced it."))
+        // A newer login replaces one still waiting, as a new pick replaces the old. One a tab already took ends with
+        // what is known of it, not as if no tab had answered.
+        if let older = agentLogin { endEarly(older, untaken: "A newer fill replaced it.") }
         let wait = AgentLoginWait(token: token, code: plan.code, submit: plan.submit)
         wait.onEnd = { [weak self, weak wait] in
             guard let self, let wait, self.agentLogin === wait else { return }
@@ -169,6 +170,26 @@ extension BrowserBridge {
         guard let wait = agentLogin, wait.token == token else { return }
         state.pending.withdrawAgentFill(token)
         wait.finish(.finished(.timedOut, code: nil, detail: "The request was withdrawn."))
+    }
+
+    /// Agent access was turned off: a login still waiting is withdrawn, so no tab takes it afterwards.
+    func withdrawAgentLoginForAccessOff() {
+        guard let wait = agentLogin else { return }
+        state.pending.withdrawAgentFill(wait.token)
+        wait.finish(.finished(.timedOut, code: nil, detail: "Agent access was turned off."))
+    }
+
+    /// Ends `wait` now, with what is known of it: no tab took it (`untaken` says why), or it was taken.
+    private func endEarly(_ wait: AgentLoginWait, untaken: String?) {
+        state.pending.withdrawAgentFill(wait.token)
+        if !wait.taken {
+            wait.finish(.finished(.timedOut, code: nil, detail: untaken))
+        } else if let result = wait.result {
+            wait.finish(.finished(AgentLoginWait.outcome(result), code: .notFilled, detail: nil))
+        } else {
+            let code: AgentLoginCode? = wait.code == .needsPremium ? .premiumRequired : wait.code == .none ? AgentLoginCode.none : nil
+            wait.finish(.finished(.filled, code: code, detail: "A newer fill replaced it before the extension said how it went."))
+        }
     }
 
     private func agentLoginExpired(_ token: UUID) {
@@ -197,7 +218,8 @@ extension BrowserBridge {
             wait.schedule(after: agentResultLifetime) { [weak self] in self?.agentLoginExpired(token) }
         case .otherSite(let token, let site):
             guard token == wait.token else { return }
-            wait.finish(.finished(.noMatchingTab, code: nil, detail: site.map { "The tab in front is on \($0)." } ?? "The tab in front is not a website."))
+            // The site of the owner's tab is not named: the agent learns only that it is not the one asked for.
+            wait.finish(.finished(.noMatchingTab, code: nil, detail: site == nil ? "The tab in front is not a website." : "The tab in front is on another site."))
         case .result(let token, let raw):
             guard token == wait.token, let result = AgentFillResult(rawValue: raw) else { return }
             if let end = wait.received(result) {

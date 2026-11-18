@@ -188,8 +188,9 @@ Compatibility, both ways harmless:
 
 Direct app only. How an agent's login went on the page, sent once after a fill marked `report`: `submitted` (the password
 went in and the form's button was pressed), `filled` (it went in, the form was not sent), or `no-fields` (no password field
-appeared while the fill lasted). `url` is the tab's origin, as in `tab`. The app counts it only from the connection that
-took the fill, from a page of that site, within 35 seconds of the fill, while unlocked, once. The answer is the same
+appeared while the fill lasted, or the fill ended first: the tab closed, or another fill replaced it). `url` is the
+fill's `origin` as the app gave it, written as in `tab`. The app counts it only from the connection that took the fill,
+for a page of that site, within 35 seconds of the fill, while unlocked, once. The answer is the same
 whatever was waiting, and carries nothing. The App Store app answers `bad-request`, which the extension ignores.
 
 ### `focus`
@@ -432,13 +433,17 @@ the owner allows it with Touch ID, the app makes an ordinary pending fill, with 
   site B.
 - The `tab` answer that carries it has `report: true`, and `submit: true` when the agent asked to send the form.
 - The extension answers with `login-result` once: when the password went in (with or without the form sent), or when
-  the fill ran out without a password field (`no-fields`).
+  the fill ended without a password field (`no-fields`: it ran out, the tab closed, or another fill replaced it). A
+  `filled` word from a frame of another origin is ignored.
 
 In the page, `submit` presses the form's own button once, right after the password went in: the form's submit button
-(a `<button>` with no type counts), else `requestSubmit()` on the form, else, with no form around the fields, a button
-next to them that says Sign in, Log in, Next or Continue. It never types Return. On a page that shows only the username
-(a two-step sign-in), it presses Next once if no password field appears within 0.8 seconds; the password then goes in on
-the next page of the same origin (or when the same page shows its field) and that form is sent. A change-password fill
+(a `<button>` with no type counts, and a submit button outside the form that names it with `form=`), else
+`requestSubmit()` on the form, else, with no form around the fields, a button within four levels of them that says Sign
+in, Log in, Next, Continue, Submit or Go. It never types Return. A page sends at most once, however many times the same
+fill reaches it. On a page that shows only the username (a two-step sign-in), it presses that step's own Next,
+Continue, Sign in or Log in button once if no password field appears within 0.8 seconds, and nothing else (a lone email
+field may be a reset or newsletter form); the password then goes in on the next page of the same origin (or when the
+same page shows its field) and that form is sent. A change-password fill
 (`newPassword`) is never sent for anyone. The two-step code is filled as after any fill and is not sent.
 
 An extension from before this (0.6.0 and earlier) ignores `submit` and `report`: it fills, never sends the form, and says

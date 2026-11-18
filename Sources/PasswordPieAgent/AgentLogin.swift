@@ -96,7 +96,7 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
     /// "Google Chrome", "Safari".
     public var browser: String?
     public var code: AgentLoginCode?
-    /// More about a failure, from the app ("The tab in front is on gitlab.com.").
+    /// More about a failure, from the app ("The tab in front is on another site.").
     public var detail: String?
 
     public init(outcome: AgentLoginOutcome, item: AgentLoginOverview?, site: String?, browser: String?, code: AgentLoginCode?, detail: String? = nil) {
@@ -115,12 +115,12 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
         let place = [site.map { " on \($0)" }, browser.map { " in \($0)" }].compactMap { $0 }.joined()
         var text: String
         switch outcome {
-        case .submitted: text = "PasswordPie: signed in with \(account)\(place): the form was filled and sent."
+        case .submitted: text = "PasswordPie: filled \(account)\(place) and pressed the form's sign-in button. Check the page to see whether the site accepted it."
         case .filled: text = "PasswordPie: filled \(account)\(place). The form was not sent; press the site's sign-in button."
         case .noMatchingTab:
             text = "PasswordPie: the tab in front\(browser.map { " in \($0)" } ?? "") is not on \(site ?? "the site"); nothing was filled. Bring the sign-in page's tab to the front (PasswordPie does not switch tabs), then try again."
         case .siteMismatch:
-            text = "PasswordPie: \(account) is not for \(site ?? "this site"); nothing was filled. Use an item whose website is this site (`passwordpie list`), or `passwordpie login --url URL` to be offered one."
+            text = "PasswordPie: \(account) is not for \(site ?? "the site of the tab in front"); nothing was filled. Use an item whose website is this site (`passwordpie list`), or `passwordpie login --url URL` to be offered one."
         case .timedOut:
             text = "PasswordPie: no tab\(browser.map { " of \($0)" } ?? "") took the fill within 30 seconds. Check that PasswordPie's extension is on in that browser and profile, then try again."
         case .noFields:

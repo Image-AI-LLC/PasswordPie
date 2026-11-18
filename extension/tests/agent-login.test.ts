@@ -92,12 +92,20 @@ describe('agent login: the background', () => {
     const tab = { id: 1, url: 'https://example.com/login', active: true };
     controller.runtimeMessage({ type: 'filled', password: true, submitted: true }, { tab, frameId: 3, url: 'https://evil.example/' });
     expect(results()).toEqual([]);
-    expect(controller.hasEntry(1)).toBe(false);
-    answer({ ...FILL, submit: true, report: true });
-    controller.report('poke');
-    await vi.advanceTimersByTimeAsync(100);
+    expect(controller.hasEntry(1)).toBe(true); // word from another origin ends nothing
     controller.runtimeMessage({ type: 'filled', password: true, submitted: true }, { tab, frameId: 0, url: 'https://example.com/login' });
     expect(results()).toEqual([{ type: 'login-result', url: 'https://example.com/', result: 'submitted' }]);
+  });
+
+  it('reports `no-fields` when the tab closes or another fill replaces it before the password went in', async () => {
+    answer({ ...FILL, report: true });
+    tabs.frameAnswer = () => ({ username: true, password: false });
+    controller.report('poke');
+    await vi.advanceTimersByTimeAsync(100);
+    controller.tabRemoved(1);
+    expect(results()).toEqual([{ type: 'login-result', url: 'https://example.com/', result: 'no-fields' }]);
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(results()).toHaveLength(1);
   });
 
   it('says nothing for an ordinary fill', async () => {
@@ -170,6 +178,33 @@ describe('agent login: the page', () => {
     for (const id of ['cancel', 'go']) document.getElementById(id)?.addEventListener('click', () => clicked.push(id));
     expect(makeFiller().handle(agentFill).submitted).toBe(true);
     expect(clicked).toEqual(['go']);
+  });
+
+  it('sends the form once when the same fill is delivered twice to one page', () => {
+    document.body.innerHTML = `<form><input id="user" autocomplete="username"><input id="pass" type="password">
+      <button id="go" type="submit">Sign in</button></form>`;
+    const sent = submits();
+    const page = makeFiller();
+    expect(page.handle(agentFill).submitted).toBe(true);
+    expect(page.handle(agentFill).submitted).toBeUndefined();
+    expect(sent).toEqual(['go']);
+  });
+
+  it('never clicks a control outside the form that is not a submit button', () => {
+    document.body.innerHTML = `<form id="login"><input id="user" autocomplete="username"><input id="pass" type="password"></form>
+      <input type="checkbox" id="remember" form="login"><button id="go" type="submit" form="login">Sign in</button>`;
+    const sent = submits();
+    makeFiller().handle(agentFill);
+    expect((document.getElementById('remember') as HTMLInputElement).checked).toBe(false);
+    expect(sent).toEqual(['go']);
+  });
+
+  it('never presses a lone email field\'s other buttons: a reset or newsletter form is not a sign-in step', async () => {
+    document.body.innerHTML = `<form><input id="user" type="email" autocomplete="email"><button id="reset">Send password reset email</button></form>`;
+    const sent = submits();
+    makeFiller().handle(agentFill);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(sent).toEqual([]);
   });
 
   it('never sends the form without `submit`', () => {

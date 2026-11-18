@@ -714,11 +714,6 @@ public struct BridgeState: Sendable {
         links.forget(browser)
     }
 
-    /// When `peer` last sent a tab report, for waiting on the answer to a poke.
-    public func lastReport(of peer: BridgePeer) -> Date? {
-        links.reportedAt(peer)
-    }
-
     /// The page `peer` last reported, and whether it was a web page at all, if it reported since `since`.
     public func report(of peer: BridgePeer, since: Date) -> (url: String?, at: Date)? {
         guard let at = links.reportedAt(peer), at >= since else { return nil }

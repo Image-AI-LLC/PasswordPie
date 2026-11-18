@@ -1816,8 +1816,8 @@ to the model.
    what it says.
 3. **Allow Once**, Touch ID. The extension fills the username and password into the tab in front, in the browser and
    Chrome profile the agent is working in, and with `--submit` presses the form's own button.
-4. The agent hears `submitted` (or `filled`) with the item's title, username and websites. The password never leaves
-   PasswordPie and the browser.
+4. The agent hears `submitted` (or `filled`) with the item's title, username and websites, and checks the page for
+   whether the site accepted it. The password never leaves PasswordPie and the browser.
 
 Two-step code: if the account has one and this Mac has Premium, the code goes into the code field when the site shows it,
 exactly as when you fill it yourself. Without Premium the code is not filled; the page shows the usual note with Upgrade,
@@ -1849,14 +1849,16 @@ and the agent hears "two-step code not filled: needs PasswordPie Premium".
 
 | Answer | Meaning | Exit code |
 |---|---|---|
-| `submitted` | Filled, and the form's button was pressed | 0 |
+| `submitted` | Filled, and the form's own button was pressed. Whether the site accepted it shows on the page | 0 |
 | `filled` | Filled; the form was not sent (no `--submit`, or no button was found) | 0 |
 | `no-matching-tab` | The tab in front is not on the site: the agent's tab is in the background, or another page is open. PasswordPie never switches tabs | 74 |
 | `site-mismatch` | The site asked for is not one of the item's websites. Nothing was filled, and nobody was asked | 75 |
 | `timed-out` | No tab of that browser answered within 30 seconds: the extension is off or not installed in that profile | 76 |
 | `no-fields` | The tab is on the site, but no password field appeared within 30 seconds | 77 |
 
-Every answer carries the item's title, username and websites. Never the password, never the code.
+Once you allowed it, every answer carries the item's title, username and websites. Never the password, never the code.
+An answer given without asking you (the site or the tab did not match) carries neither the username nor the site your
+tab is on: an agent cannot use `login` to watch what you browse.
 
 ### When it does not apply
 

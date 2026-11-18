@@ -193,11 +193,11 @@ export class FillController {
     } else if (msg.type === 'changed') {
       this.changed(tabId, sender);
     } else {
-      // The password went in after the answer was sent (a field that appeared late, the next page of a sign-in).
+      // The password went in after the answer was sent (a field that appeared late, the next page of a sign-in). Only
+      // frames of the fill's origin are ever filled, so word from any other frame is not about this fill.
       const entry = this.entries.get(tabId);
-      if (entry && sender.url !== undefined && originOf(sender.url) === entry.origin) {
-        this.passwordIn(entry, msg.submitted === true);
-      }
+      if (!entry || (sender.url !== undefined && originOf(sender.url) !== entry.origin)) return;
+      this.passwordIn(entry, msg.submitted === true);
       this.drop(tabId);
     }
   }
@@ -369,10 +369,8 @@ export class FillController {
     }
   }
 
-  /** The fill ran out. An agent's login that never got its password in says so. */
+  /** The fill ran out. */
   private expire(tabId: number): void {
-    const entry = this.entries.get(tabId);
-    if (entry?.report) this.sendResult(entry, 'no-fields');
     this.drop(tabId);
   }
 
@@ -391,6 +389,9 @@ export class FillController {
   private drop(tabId: number): void {
     const entry = this.entries.get(tabId);
     if (!entry) return;
+    // An agent's login dropped before its password went in (it ran out, the tab closed, another fill replaced it) says
+    // so, rather than leave the app to guess. After the password went in, `report` is already off.
+    if (entry.report) this.sendResult(entry, 'no-fields');
     this.timers.clearTimeout(entry.expiry);
     this.entries.delete(tabId);
   }

@@ -80,8 +80,12 @@ final class AgentAccess: ObservableObject {
         #endif
     }
 
+    /// The browser bridge an approved login waits in; turning access off withdraws it there.
+    private weak var bridge: BrowserBridge?
+
     /// `passwordpie login`: fills through the browser extension (docs/AGENTS.md, "Website login").
     func attachBrowser(_ bridge: BrowserBridge) {
+        self.bridge = bridge
         broker.logins = AgentLoginBridge(session: session, bridge: bridge)
     }
 
@@ -100,6 +104,7 @@ final class AgentAccess: ObservableObject {
         } else {
             server.stop()
             approver.withdrawAll()
+            bridge?.withdrawAgentLoginForAccessOff()
             problem = nil
         }
     }

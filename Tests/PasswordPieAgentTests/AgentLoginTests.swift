@@ -81,8 +81,8 @@ final class AgentLoginTests: XCTestCase {
         let answer = await broker().handle(.login("pp://Web/GitHub", url: "https://gitlab.com/users/sign_in"), from: Callers.make())
         XCTAssertNil(answer.errorCode)
         XCTAssertEqual(answer.login?.outcome, .siteMismatch)
-        XCTAssertEqual(answer.login?.site, "gitlab.com")
-        XCTAssertEqual(answer.login?.item?.title, "GitHub")
+        XCTAssertEqual(answer.login?.site, "gitlab.com", "the site the agent asked for")
+        XCTAssertNil(answer.login?.item, "no username or websites without an approval")
         XCTAssertTrue(approver.prompts.isEmpty)
         XCTAssertTrue(logins.plans.isEmpty)
         XCTAssertEqual(activity.records.map(\.outcome), [.siteMismatch])
@@ -93,7 +93,10 @@ final class AgentLoginTests: XCTestCase {
         logins.target?.page = .url("https://gitlab.com/")
         let answer = await broker().handle(.login("pp://Web/GitHub"), from: Callers.make())
         XCTAssertEqual(answer.login?.outcome, .siteMismatch)
-        XCTAssertEqual(answer.login?.site, "gitlab.com")
+        // Without a prompt, the answer never says which site the owner has open.
+        XCTAssertNil(answer.login?.site)
+        XCTAssertNil(answer.login?.item)
+        XCTAssertFalse(encoded(answer).contains("gitlab"))
         XCTAssertTrue(approver.prompts.isEmpty)
         XCTAssertTrue(logins.plans.isEmpty)
     }
@@ -104,12 +107,25 @@ final class AgentLoginTests: XCTestCase {
         let answer = await broker().handle(.login("pp://Web/GitHub", url: "https://github.com/login"), from: Callers.make())
         XCTAssertEqual(answer.login?.outcome, .noMatchingTab)
         XCTAssertEqual(answer.login?.site, "github.com")
-        XCTAssertEqual(answer.login?.detail, "The tab in front is on gitlab.com.")
+        XCTAssertEqual(answer.login?.detail, "The tab in front is on another site.")
+        XCTAssertFalse(encoded(answer).contains("gitlab"))
         logins.target?.page = .notAWebsite
         let blank = await broker().handle(.login("pp://Web/GitHub"), from: Callers.make())
         XCTAssertEqual(blank.login?.outcome, .noMatchingTab)
         XCTAssertTrue(approver.prompts.isEmpty)
         XCTAssertTrue(logins.plans.isEmpty)
+    }
+
+    /// With several items for a site, any of their websites may match the tab in front.
+    func testAnyOfTheOfferedWebsitesMayMatchTheTab() async {
+        logins.websites[work.id] = ["http://github.com/"]
+        logins.target?.page = .url("http://github.com/")
+        approver.script = [.allow([1])]
+        // The https item cannot fill the http tab; the http one can, so the window is shown.
+        let answer = await broker().handle(.login(nil, url: "https://github.com/"), from: Callers.make())
+        XCTAssertEqual(approver.prompts.first?.rows.count, 2)
+        XCTAssertNil(answer.errorCode)
+        XCTAssertEqual(answer.login?.outcome, .submitted)
     }
 
     func testNoExtensionIsNoMatchingTabWithoutAPrompt() async {

@@ -412,7 +412,7 @@ final class CommandLineToolTests: XCTestCase {
         allowEverything()
         let ran = try await run(["login", "pp://Agents/Token", "--submit", "--reason", "Open billing"])
         XCTAssertEqual(ran.code, 0, ran.err)
-        XCTAssertEqual(ran.out, "PasswordPie: signed in with Token (octocat) on github.com in Google Chrome: the form was filled and sent.\n")
+        XCTAssertEqual(ran.out, "PasswordPie: filled Token (octocat) on github.com in Google Chrome and pressed the form's sign-in button. Check the page to see whether the site accepted it.\n")
         XCTAssertEqual(ran.err, "")
         XCTAssertEqual(logins.plans.first?.submit, true)
         XCTAssertEqual(approver.prompts.first?.reason, "Open billing")
