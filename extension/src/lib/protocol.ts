@@ -40,6 +40,8 @@ export interface FillMessage extends Credentials {
   waitMs?: number;
   /** An agent's login that asked for it: press the form's own button once the password is in. */
   submit?: boolean;
+  /** An agent's login: which one. A page sends at most once per login, however many times its fill arrives. */
+  loginId?: string;
 }
 
 /** content script → background, the answer to a FillMessage */
@@ -105,6 +107,8 @@ export interface TabFill extends Credentials {
   submit?: true;
   /** An agent's login: tell the app how it went (`login-result`). Left out of every other fill. */
   report?: true;
+  /** An agent's login: its id, echoed in `login-result`. */
+  loginId?: string;
 }
 
 /** The credentials in a `tab` answer, if it carries a well-formed fill. */
@@ -112,7 +116,7 @@ export function fillOfTabAnswer(value: unknown): TabFill | undefined {
   if (!isRecord(value) || value.type !== 'tab') return undefined;
   const fill = value.fill;
   if (!isRecord(fill)) return undefined;
-  const { origin, username, password, expiresIn, otp, submit, report } = fill;
+  const { origin, username, password, expiresIn, otp, submit, report, loginId } = fill;
   if (typeof origin !== 'string' || typeof username !== 'string' || typeof password !== 'string') return undefined;
   const newPassword = newPasswordOf(fill);
   const lifetimeMs =
@@ -129,6 +133,7 @@ export function fillOfTabAnswer(value: unknown): TabFill | undefined {
     // A change-password fill is the person's own: it is never sent for them.
     ...(submit === true && newPassword === undefined ? { submit: true as const } : {}),
     ...(report === true ? { report: true as const } : {}),
+    ...(report === true && typeof loginId === 'string' && loginId !== '' ? { loginId } : {}),
   };
 }
 
@@ -186,6 +191,7 @@ export function parseFillMessage(value: unknown): FillMessage | undefined {
   if (newPassword !== undefined) msg.newPassword = newPassword;
   if (typeof waitMs === 'number' && Number.isFinite(waitMs) && waitMs >= 0) msg.waitMs = waitMs;
   if (value.submit === true && newPassword === undefined) msg.submit = true;
+  if (typeof value.loginId === 'string' && value.loginId !== '') msg.loginId = value.loginId;
   return msg;
 }
 

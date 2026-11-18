@@ -34,8 +34,8 @@ final class BridgeAgentLoginTests: XCTestCase {
         return request(#"{"type":"tab","id":7,"url":"\#(url)","reason":"poke"\#(focus)}"#)
     }
 
-    private func result(_ result: String, url: String = "https://github.com/") -> BridgeRequest {
-        request(#"{"type":"login-result","id":8,"url":"\#(url)","result":"\#(result)"}"#)
+    private func result(_ result: String, url: String = "https://github.com/", loginId: UUID? = nil) -> BridgeRequest {
+        request(#"{"type":"login-result","id":8,"url":"\#(url)","result":"\#(result)","loginId":"\#((loginId ?? token).uuidString)"}"#)
     }
 
     private func armed(_ entry: VaultEntry, submit: Bool = true, link: Int? = 2, browser: BridgeBrowser = .chrome) -> BridgeState {
@@ -63,7 +63,7 @@ final class BridgeAgentLoginTests: XCTestCase {
         let answer = handle(&state, tab("https://github.com/"), entry, events: &events)
         XCTAssertEqual(
             json(answer),
-            #"{"fill":{"expiresIn":29,"origin":"https://github.com","password":"planted-agent-pass-55","report":true,"submit":true,"username":"octocat"},"id":7,"type":"tab"}"#
+            #"{"fill":{"expiresIn":29,"loginId":"\#(token.uuidString)","origin":"https://github.com","password":"planted-agent-pass-55","report":true,"submit":true,"username":"octocat"},"id":7,"type":"tab"}"#
         )
         XCTAssertEqual(events, [.taken(token)])
         XCTAssertNil(state.pending.pending)
@@ -150,6 +150,8 @@ final class BridgeAgentLoginTests: XCTestCase {
         let fromElsewhere = handle(&state, result("submitted"), entry, link: 9, at: 2, events: &events)
         _ = handle(&state, result("submitted", url: "https://gitlab.com/"), entry, at: 2, events: &events)
         _ = handle(&state, result("made-up"), entry, at: 2, events: &events)
+        // Word about an older fill on the same site and connection is not this one's.
+        _ = handle(&state, result("no-fields", loginId: UUID()), entry, at: 2, events: &events)
         XCTAssertTrue(events.isEmpty)
         let counted = handle(&state, result("submitted"), entry, at: 3, events: &events)
         XCTAssertEqual(events, [.result(token, "submitted")])

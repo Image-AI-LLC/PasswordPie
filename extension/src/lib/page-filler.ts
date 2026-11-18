@@ -196,8 +196,12 @@ class Session {
 export class PageFiller {
   private session: Session | undefined;
   private changeWatch: ChangeWatch | undefined;
-  /** This document's agent submits: the background may deliver one fill twice (the page's ready and its load). */
-  private readonly sent = { password: false, username: false };
+  /**
+   * What this page sent for the agent login it is filling: the background may deliver one login's fill twice (the
+   * page's ready and its load), and it is sent once. Another login (a retry) starts afresh.
+   */
+  private sent = { password: false, username: false };
+  private sentFor: string | undefined;
 
   constructor(private readonly env: PageEnv) {}
 
@@ -209,6 +213,10 @@ export class PageFiller {
     const changeWatch =
       msg.newPassword !== undefined && notifyChanged ? new ChangeWatch(this.env.document, msg.newPassword, notifyChanged) : undefined;
     this.changeWatch = changeWatch;
+    if (msg.loginId !== this.sentFor) {
+      this.sent = { password: false, username: false };
+      this.sentFor = msg.loginId;
+    }
     this.session = new Session(this.env, msg, this.env.now ?? Date.now, (el) => changeWatch?.add(el), this.sent);
     return this.session.begin();
   }

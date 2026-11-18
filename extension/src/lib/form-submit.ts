@@ -45,11 +45,13 @@ function formButton(form: HTMLFormElement): HTMLElement | undefined {
 /** No form around the field (a page built from divs): a button near it that says sign in, next or the like. */
 function nearbyButton(field: HTMLInputElement, words = BUTTON_WORDS): HTMLElement | undefined {
   let scope: Element | null = field.parentElement;
-  for (let level = 0; scope && scope !== field.ownerDocument.body && level < NEARBY_LEVELS; level += 1) {
+  for (let level = 0; scope && level < NEARBY_LEVELS; level += 1) {
     const found = [...scope.querySelectorAll<HTMLElement>('button, [role="button"], input[type="button"], input[type="submit"]')].find(
       (el) => words.test(label(el)) && isShown(el) && enabled(el),
     );
     if (found) return found;
+    // The body is the last place looked: never the whole document's `<html>`.
+    if (scope === field.ownerDocument.body) break;
     scope = scope.parentElement;
   }
   return undefined;
@@ -63,11 +65,10 @@ function nearbyButton(field: HTMLInputElement, words = BUTTON_WORDS): HTMLElemen
 export function pressNext(field: HTMLInputElement): boolean {
   const form = field.form ?? field.closest('form');
   const scope: ParentNode = form ?? field;
-  const inForm = form
-    ? [...form.querySelectorAll<HTMLElement>('button, input[type="submit"], [role="button"]')].find(
-        (el) => NEXT_WORDS.test(label(el)) && isShown(el) && enabled(el),
-      )
-    : undefined;
+  const candidates = form ? [...form.querySelectorAll<HTMLElement>('button, input[type="submit"], input[type="image"], [role="button"]')] : [];
+  // Buttons outside the form that name it with `form="…"` belong to it too.
+  if (form?.id) candidates.push(...form.ownerDocument.querySelectorAll<HTMLElement>(`button[form="${CSS.escape(form.id)}"], input[form="${CSS.escape(form.id)}"]`));
+  const inForm = candidates.find((el) => NEXT_WORDS.test(label(el)) && isShown(el) && enabled(el));
   const button = inForm ?? (scope === field ? nearbyButton(field, NEXT_WORDS) : undefined);
   if (!button) return false;
   button.click();

@@ -164,8 +164,12 @@ extension VaultBroker {
             guard vault.agentSharedItems().contains(where: { $0.id == item.id }), logins.loginWebsite(of: item, for: websites[index]) != nil else {
                 return refuse(.notAvailable, outcome: .notAvailable, items: [labels[index]])
             }
+            // Agent access turned off while the window was up: nothing is filled.
+            guard isEnabled() else { return refuse(.accessOff, outcome: .accessOff, items: [labels[index]]) }
             let plan = AgentLoginPlan(item: item, website: websites[index], target: target, submit: request.submit == true, code: codes[index])
-            switch await logins.login(plan) {
+            let end = await logins.login(plan)
+            guard isEnabled() else { return refuse(.accessOff, outcome: .accessOff, items: [labels[index]]) }
+            switch end {
             case .locked:
                 return refuse(.locked, outcome: .locked, items: [labels[index]])
             case .finished(let outcome, let code, let detail):

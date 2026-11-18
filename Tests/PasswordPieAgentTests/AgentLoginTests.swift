@@ -221,6 +221,17 @@ final class AgentLoginTests: XCTestCase {
         XCTAssertEqual(activity.records.map(\.outcome), [.locked])
     }
 
+    func testAccessTurnedOffWhileThePromptWasUpFillsNothing() async {
+        var on = true
+        let broker = VaultBroker(vault: vault, approver: approver, grants: NoAgentGrants(), activity: activity) { on }
+        broker.logins = logins
+        approver.onPresent = { _ in on = false }
+        approver.script = [.allow([0])]
+        let answer = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make())
+        XCTAssertEqual(answer.errorCode, .accessOff)
+        XCTAssertTrue(logins.plans.isEmpty)
+    }
+
     func testAnItemUnsharedWhileThePromptWasUpIsNotFilled() async {
         approver.onPresent = { [unowned self] _ in self.vault.shared.remove(self.github.id) }
         approver.script = [.allow([0])]

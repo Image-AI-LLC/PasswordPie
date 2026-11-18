@@ -448,8 +448,8 @@ public struct PendingFillStore: Sendable {
 
     /// The agent login waiting for its result, if `browser`'s connection `link` reports from a page of its site in time.
     /// Taking it deletes it.
-    mutating func takeAgentResult(browser: BridgeBrowser, link: Int, page: BrowserSite, now: Date) -> PendingAgentResult? {
-        guard let waiting = agentResult else { return nil }
+    mutating func takeAgentResult(browser: BridgeBrowser, link: Int, page: BrowserSite, loginId: String?, now: Date) -> PendingAgentResult? {
+        guard let waiting = agentResult, loginId == waiting.token.uuidString else { return nil }
         let age = now.timeIntervalSince(waiting.created)
         guard age <= Self.agentResultLifetime, age >= -1 else {
             agentResult = nil
@@ -558,6 +558,8 @@ public struct BridgeRequest: Decodable, Sendable {
     #if PP_DIRECT
     /// `login-result` only: `filled`, `submitted` or `no-fields`.
     public var result: String?
+    /// `login-result` only: the `loginId` of the fill it is about.
+    public var loginId: String?
     #endif
 }
 
@@ -578,6 +580,9 @@ public struct BridgeFill: Codable, Equatable, Sendable {
     public var submit: Bool?
     /// An agent's login only: say how it went with a `login-result` request.
     public var report: Bool?
+    /// An agent's login only: which one, echoed in its `login-result`, so word about an older fill is never taken for a
+    /// newer one on the same site. A random id: it says nothing about the account.
+    public var loginId: String?
     #endif
 }
 
@@ -810,6 +815,7 @@ public struct BridgeState: Sendable {
             if let ticket = fill.agent {
                 credentials.submit = ticket.submit ? true : nil
                 credentials.report = true
+                credentials.loginId = ticket.token.uuidString
                 pending.expectAgentResult(PendingAgentResult(token: ticket.token, browser: browser, link: link, site: page, created: now))
                 agent?(.taken(ticket.token))
             }
@@ -871,7 +877,7 @@ public struct BridgeState: Sendable {
             // lasts; the answer is the same whatever was waiting, locked or not, and carries nothing.
             if !locked, let result = request.result.flatMap(AgentFillResult.init(rawValue:)),
                let page = BrowserSite(url: request.url ?? ""),
-               let waiting = pending.takeAgentResult(browser: browser, link: link, page: page, now: now) {
+               let waiting = pending.takeAgentResult(browser: browser, link: link, page: page, loginId: request.loginId, now: now) {
                 agent?(.result(waiting.token, result.rawValue))
             }
             return BridgeResponse(type: "login-result", id: request.id)

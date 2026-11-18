@@ -14,6 +14,8 @@ public enum AgentOutcome: String, Codable, Sendable {
     case ambiguous = "ambiguous"
     case tooManyRequests = "too many requests"
     case usage = "not understood"
+    /// Agent access was turned off while the request waited.
+    case accessOff = "agent access turned off"
     // `login`, each after the owner allowed it once (or before the prompt, for a site or tab that does not match).
     case filled = "filled"
     case submitted = "filled and sent"

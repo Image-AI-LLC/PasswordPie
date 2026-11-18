@@ -187,8 +187,8 @@ extension BrowserBridge {
         } else if let result = wait.result {
             wait.finish(.finished(AgentLoginWait.outcome(result), code: .notFilled, detail: nil))
         } else {
-            let code: AgentLoginCode? = wait.code == .needsPremium ? .premiumRequired : wait.code == .none ? AgentLoginCode.none : nil
-            wait.finish(.finished(.filled, code: code, detail: "A newer fill replaced it before the extension said how it went."))
+            // Taken, and no password field yet: the extension says so the moment the password goes in.
+            wait.finish(.finished(.noFields, code: nil, detail: "A newer fill replaced it before a password field appeared."))
         }
     }
 

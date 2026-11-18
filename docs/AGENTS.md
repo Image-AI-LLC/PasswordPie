@@ -296,8 +296,8 @@ The browser side (`BrowserBridge+AgentLogin.swift`) ends the wait:
 | A tab took it and said nothing within 35 seconds (an extension from before `login-result`) | `filled`, with a word that the extension did not say |
 | The vault locks | `locked` |
 | The tool hangs up | the fill is withdrawn |
-| A newer agent login | the older one answers `timed-out` if no tab took it, else what is known (`submitted` with the code `not-filled`, or `filled`) |
-| Agent access is turned off | the fill is withdrawn; `timed-out` |
+| A newer agent login | the older one answers `timed-out` if no tab took it, `no-fields` if a tab took it and no password field had appeared, else what it reported (the code then `not-filled`) |
+| Agent access is turned off | a fill no tab has taken is withdrawn, and the agent hears `access-off`; a tab that already took it finishes its page. Turning it off while the window is up fills nothing |
 
 **Two-step code.** The fill carries `otp: true` when the item has a code, as for people, and the page's `code` request is
 answered under the same rule: this Mac's Premium (`browserCodeAllowed`), nothing in a request. The answer's `code`:
@@ -341,7 +341,7 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Clicking the prompt | Touch ID (or the login password) on every Allow | none known |
 | A login for one site lands on another | The fill is bound to one of the item's websites before the prompt; the extension takes it only on that site (same registrable domain, no downgrade) and only in the connection it is for; a report of another site drops it | The owner approves a login for an item whose website was set wrong |
 | The agent sees the password through a login | The answer is the outcome and the item's overview; the fill goes to the page, not to the tool | A page the agent controls on the item's own site could read its own form |
-| An agent watches what the owner browses through `login` | Answers given before an approval carry no overview and never name the site of the owner's tab | none known |
+| An agent watches what the owner browses through `login` | Answers given before an approval carry no overview and never name the site of the owner's tab | Whether the tab in front is on one site the agent names (one `no-matching-tab` per guess, logged in Activity) |
 | A login sends a form that is not a sign-in (a password reset on the same site) | The username-only step presses only a Next, Continue, Sign in or Log in button; a page sends at most once | The owner approves a login on a page that is not a sign-in page |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |

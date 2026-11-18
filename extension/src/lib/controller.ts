@@ -84,6 +84,8 @@ interface Entry extends Credentials {
   submit: boolean;
   /** An agent's login: tell the app how it went, once. */
   report: boolean;
+  /** An agent's login: its id from the app. */
+  loginId?: string;
 }
 
 /**
@@ -356,7 +358,9 @@ export class FillController {
       expiresAt: this.timers.now() + fill.lifetimeMs,
       expiry,
       submit: fill.submit === true,
-      report: fill.report === true,
+      // Without an id the app could not tell which login a result is about: such a fill reports nothing.
+      report: fill.report === true && fill.loginId !== undefined,
+      ...(fill.loginId === undefined ? {} : { loginId: fill.loginId }),
     });
     // The newest fill decides: a plain one after it ends the wait for a submit.
     this.dropChange(tabId);
@@ -381,9 +385,9 @@ export class FillController {
 
   /** Only the origin goes, as in a tab report. The answer says nothing. */
   private sendResult(entry: Entry, result: LoginResult): void {
-    if (!entry.report) return;
+    if (!entry.report || entry.loginId === undefined) return;
     entry.report = false;
-    void this.channel.request({ type: 'login-result', url: `${entry.origin}/`, result }).catch(() => undefined);
+    void this.channel.request({ type: 'login-result', url: `${entry.origin}/`, result, loginId: entry.loginId }).catch(() => undefined);
   }
 
   private drop(tabId: number): void {
@@ -431,6 +435,7 @@ export class FillController {
       ...(entry.newPassword === undefined ? {} : { newPassword: entry.newPassword }),
       waitMs: Math.max(0, entry.expiresAt - this.timers.now()),
       ...(entry.submit ? { submit: true } : {}),
+      ...(entry.loginId === undefined ? {} : { loginId: entry.loginId }),
     };
     const targets = frames.filter(
       (frame) => originOf(frame.url) === entry.origin && (onlyFrameId === undefined || frame.frameId === onlyFrameId),

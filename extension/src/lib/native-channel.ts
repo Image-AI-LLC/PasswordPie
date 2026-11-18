@@ -32,7 +32,7 @@ export type Request =
    * How an agent's login went on this page (docs/BROWSER_EXTENSION.md, "`login-result`"). Sent once, only after a fill the
    * app marked `report`. Carries no credential. An app from before it answers with an error.
    */
-  | { type: 'login-result'; url: string; result: LoginResult };
+  | { type: 'login-result'; url: string; result: LoginResult; loginId: string };
 
 export interface ChannelEvents {
   /** The channel can carry requests now (Chrome: the port (re)connected; Safari: start). */

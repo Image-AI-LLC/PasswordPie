@@ -125,8 +125,8 @@ password for you"): the page is a change-password form. `password` is still the 
 current password; `newPassword` goes in the new and the confirm box. The key is left out of every other fill. The
 extension never submits the form and never presses the site's button. See `changed` below.
 
-`submit: true` and `report: true` are there only for an agent's login (see "Agent logins" below). Every other fill
-leaves them out.
+`submit: true`, `report: true` and `loginId` are there only for an agent's login (see "Agent logins" below). Every
+other fill leaves them out.
 
 ### `code`
 
@@ -183,14 +183,15 @@ Compatibility, both ways harmless:
 
 ### `login-result`
 
-    → {"type":"login-result","id":7,"url":"https://github.com/","result":"submitted"}
+    → {"type":"login-result","id":7,"url":"https://github.com/","result":"submitted","loginId":"6F2C…"}
     ← {"type":"login-result","id":7}
 
 Direct app only. How an agent's login went on the page, sent once after a fill marked `report`: `submitted` (the password
 went in and the form's button was pressed), `filled` (it went in, the form was not sent), or `no-fields` (no password field
 appeared while the fill lasted, or the fill ended first: the tab closed, or another fill replaced it). `url` is the
-fill's `origin` as the app gave it, written as in `tab`. The app counts it only from the connection that took the fill,
-for a page of that site, within 35 seconds of the fill, while unlocked, once. The answer is the same
+fill's `origin` as the app gave it, written as in `tab`. `loginId` is the fill's, so word about an older login on the same
+site (dropped when a newer one replaced it) is never taken for the newer one. The app counts it only with that id, from
+the connection that took the fill, for a page of that site, within 35 seconds of the fill, while unlocked, once. The answer is the same
 whatever was waiting, and carries nothing. The App Store app answers `bad-request`, which the extension ignores.
 
 ### `focus`
@@ -431,7 +432,8 @@ the owner allows it with Touch ID, the app makes an ordinary pending fill, with 
   apply as to any fill. A report of another site, or of a page that is not a website, from that connection drops it at
   once, and the agent hears `no-matching-tab`: PasswordPie never switches tabs, and a fill for site A is never answered on
   site B.
-- The `tab` answer that carries it has `report: true`, and `submit: true` when the agent asked to send the form.
+- The `tab` answer that carries it has `report: true` and a random `loginId`, and `submit: true` when the agent asked
+  to send the form.
 - The extension answers with `login-result` once: when the password went in (with or without the form sent), or when
   the fill ended without a password field (`no-fields`: it ran out, the tab closed, or another fill replaced it). A
   `filled` word from a frame of another origin is ignored.
@@ -439,9 +441,10 @@ the owner allows it with Touch ID, the app makes an ordinary pending fill, with 
 In the page, `submit` presses the form's own button once, right after the password went in: the form's submit button
 (a `<button>` with no type counts, and a submit button outside the form that names it with `form=`), else
 `requestSubmit()` on the form, else, with no form around the fields, a button within four levels of them that says Sign
-in, Log in, Next, Continue, Submit or Go. It never types Return. A page sends at most once, however many times the same
-fill reaches it. On a page that shows only the username (a two-step sign-in), it presses that step's own Next,
-Continue, Sign in or Log in button once if no password field appears within 0.8 seconds, and nothing else (a lone email
+in, Log in, Next, Continue, Submit or Go. It never types Return. A page sends at most once per login (`loginId`), however
+many times its fill reaches it; a retry is another login. On a page that shows only the username (a two-step sign-in),
+it presses that step's own Next, Continue, Sign in or Log in button (in its form, naming it with `form=`, or next to the
+field) once if no password field appears within 0.8 seconds, and nothing else (a lone email
 field may be a reset or newsletter form); the password then goes in on the next page of the same origin (or when the
 same page shows its field) and that form is sent. A change-password fill
 (`newPassword`) is never sent for anyone. The two-step code is filled as after any fill and is not sent.

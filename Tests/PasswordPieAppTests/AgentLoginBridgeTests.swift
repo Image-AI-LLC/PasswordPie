@@ -73,10 +73,11 @@ final class AgentLoginBridgeTests: XCTestCase {
         guard let data = bridge.answer(frame, from: .chrome, link: link) else { return }
         let answer = String(decoding: data, as: UTF8.self)
         tabAnswers.append(answer)
-        guard answer.contains(#""fill""#), let reply else { return }
+        guard answer.contains(#""fill""#), let reply,
+              let loginId = answer.range(of: #""loginId":"[^"]+""#, options: .regularExpression).map({ String(answer[$0].dropFirst(11).dropLast()) }) else { return }
         DispatchQueue.main.async {
             MainActor.assumeIsolated {
-                _ = self.bridge.answer(Data(#"{"type":"login-result","id":2,"url":"\#(self.frontTab ?? "")","result":"\#(reply)"}"#.utf8), from: .chrome, link: link)
+                _ = self.bridge.answer(Data(#"{"type":"login-result","id":2,"url":"\#(self.frontTab ?? "")","result":"\#(reply)","loginId":"\#(loginId)"}"#.utf8), from: .chrome, link: link)
             }
         }
     }
@@ -180,11 +181,11 @@ final class AgentLoginBridgeTests: XCTestCase {
         let task = Task { await self.broker.handle(self.login("pp://Web/GitHub"), from: self.caller) }
         let waiting = await eventually { self.bridge.agentLogin != nil }
         XCTAssertTrue(waiting)
+        broker.isEnabled = { false }
         access.setEnabled(false)
         XCTAssertNil(bridge.state.pending.pending)
         let answer = await task.value
-        XCTAssertEqual(answer.login?.outcome, .timedOut)
-        XCTAssertEqual(answer.login?.detail, "Agent access was turned off.")
+        XCTAssertEqual(answer.errorCode, .accessOff)
     }
 
     /// A newer login does not tell an older one that a tab already took "no tab took it".
