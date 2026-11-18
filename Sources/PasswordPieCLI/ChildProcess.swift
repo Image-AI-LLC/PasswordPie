@@ -14,6 +14,9 @@ enum ChildProcess {
         var stdin: Data?
         /// Values to replace in the output. Nil: output is not masked and goes straight through.
         var mask: [Data]?
+        /// The argument watch: values to look for on the command lines under the command, and what to do on a find.
+        var watched: [ArgumentWatch.Watched] = []
+        var report: (@Sendable (ArgumentWatch.Finding) -> Void)?
     }
 
     /// The command's exit code: its own, or 128 + the signal that ended it.
@@ -104,7 +107,10 @@ enum ChildProcess {
             }
         }
         let signals = forwardSignals(to: child, terminal: sources.first { isatty($0.fd) == 1 }?.fd)
+        let watch = plan.report.map { ArgumentWatch(root: child, watched: plan.watched, report: $0) }
+        watch?.start()
         let status = relay(sources, child: child)
+        watch?.stop()
         signals.forEach { $0.cancel() }
         return exitCode(status)
     }

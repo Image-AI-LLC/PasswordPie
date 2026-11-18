@@ -109,6 +109,9 @@ public struct AgentApprovalPrompt: Equatable, Sendable {
     /// The agent's `--reason`: its claim, shown in quotes and never reworded.
     public var reason: String?
     public var rows: [AgentApprovalRow]
+    /// A secondary detail on how the request came: "through MCP; the client says it is “claude-code 2.1”". The agent's
+    /// name above is always the process tree's, never the MCP client's own word.
+    public var via: String? = nil
 }
 
 public enum AgentApprovalDecision: Equatable, Sendable {
@@ -238,7 +241,30 @@ public final class VaultBroker {
             return await use(request, caller: caller)
         case .login:
             return .error(.usage, id: request.id)
+        case .argument:
+            return argument(request, caller: caller)
         }
+    }
+
+    // MARK: Argument watch
+
+    /// A value a run handed out appeared on a command line under it. One activity line; nothing is answered or looked up,
+    /// and the vault may be locked by now. The notice only adds a line, so a forged one can do no more than that.
+    private func argument(_ request: AgentRequest, caller: AgentCaller) -> AgentResponse {
+        let secrets = request.secrets ?? []
+        guard !secrets.isEmpty, let program = request.program, !program.isEmpty else {
+            log(request, caller: caller, outcome: .usage, items: [], delivery: [])
+            return .error(.usage, id: request.id)
+        }
+        log(request, caller: caller, outcome: .argumentSeen, items: secrets.map(\.ref), delivery: secrets.map { secret in
+            switch secret.delivery {
+            case .env: return "env \(secret.name ?? "")"
+            case .file: return "file \(secret.name ?? "")"
+            case .stdin: return "stdin"
+            case .shown: return "shown"
+            }
+        })
+        return AgentResponse(type: request.type.rawValue, id: request.id)
     }
 
     // MARK: list
@@ -419,8 +445,19 @@ public final class VaultBroker {
             program: request.program,
             project: caller.project,
             reason: request.reason.flatMap { $0.isEmpty ? nil : $0 },
-            rows: rows
+            rows: rows,
+            via: Self.viaText(request)
         )
+    }
+
+    /// "through MCP; the client says it is “claude-code 2.1”" for a request from the MCP server, else nil. The client's
+    /// name is its own claim: quoted, cut to 60 characters, never put where the agent's name goes.
+    public static func viaText(_ request: AgentRequest) -> String? {
+        guard request.client == "mcp" else { return nil }
+        let said = (request.mcpClient ?? "").unicodeScalars.filter { $0.properties.generalCategory != .control }
+        let name = String(String.UnicodeScalarView(said)).trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return "through MCP" }
+        return "through MCP; the client says it is “\(name.count > 60 ? String(name.prefix(59)) + "…" : name)”"
     }
 
     /// The command as typed, each argument that needs it in single quotes. Nil for a raw read.
@@ -519,7 +556,7 @@ public final class VaultBroker {
     ) {
         let kind: String
         switch request.type {
-        case .use: kind = "run"
+        case .use, .argument: kind = "run"
         case .read: kind = "read"
         default: kind = request.type.rawValue
         }
@@ -529,10 +566,12 @@ public final class VaultBroker {
             outcome: outcome,
             grant: grant,
             caller: caller,
-            command: Self.commandText(request.argv),
+            // The argument watch names the program the value was seen in, never that program's command line.
+            command: request.type == .argument ? request.program : Self.commandText(request.argv),
             items: items,
             delivery: delivery,
-            reason: request.reason
+            reason: request.reason,
+            via: request.client == "mcp" ? "MCP" : nil
         ))
     }
 }
