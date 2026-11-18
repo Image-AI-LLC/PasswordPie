@@ -1793,3 +1793,85 @@ a terminal.
 5. Lock with ⌘L, run step 2 again: the lock screen says "A command in Terminal is waiting for 1 secret". Unlock: the
    window appears.
 6. Untick **Agents**, run step 2 again: the same answer as for an item that does not exist.
+
+## Agents log in on a website
+
+**In one line:** an agent that drives your browser (Claude in Chrome, a computer-use agent) says "log in to this site with
+PasswordPie", you approve with Touch ID, and PasswordPie's extension fills the sign-in form in that browser, and sends it
+if asked. The agent hears whether it worked and which account it was, never the password. Direct download only. The
+reference is "Website login" in [AGENTS.md](AGENTS.md).
+
+### The problem
+
+An agent working in your browser reaches a sign-in page. Today it stops and asks you to type the password, or asks you to
+paste it into the chat, where it stays. Neither is what you want: the first breaks the run, the second hands the password
+to the model.
+
+### What happens now
+
+1. The agent opens the site's sign-in page in your browser, then runs
+   `passwordpie login pp://Web/GitHub --submit --reason "Open the billing page"`. Without a reference,
+   `passwordpie login --url https://github.com/login` offers every shared item for that site.
+2. PasswordPie shows the approval window over whatever is in front: the site, the account, the browser, the agent and
+   what it says.
+3. **Allow Once**, Touch ID. The extension fills the username and password into the tab in front, in the browser and
+   Chrome profile the agent is working in, and with `--submit` presses the form's own button.
+4. The agent hears `submitted` (or `filled`) with the item's title, username and websites. The password never leaves
+   PasswordPie and the browser.
+
+Two-step code: if the account has one and this Mac has Premium, the code goes into the code field when the site shows it,
+exactly as when you fill it yourself. Without Premium the code is not filled; the page shows the usual note with Upgrade,
+and the agent hears "two-step code not filled: needs PasswordPie Premium".
+
+### The approval window
+
+    Claude Code wants to log in to github.com
+
+    ◉ GitHub  (Web)
+      octocat · username and password, then sends the form
+    Site      github.com
+    Browser   Google Chrome, the profile in use
+    Agent     Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)
+    The agent says:
+    “Open the billing page”
+
+    [ Deny ]                                   [ Allow Once ]
+
+- One row per account. With `--url` and several shared accounts on that site, pick one; Allow Once stays off until you
+  do.
+- The window never shows the password, and nothing in it is the agent's but the quoted line.
+- Every Allow asks for Touch ID, so an agent that can click cannot approve its own login.
+- Lasting permissions for logins come with Premium, as for secrets; until then every login asks.
+
+### What the agent hears
+
+| Answer | Meaning | Exit code |
+|---|---|---|
+| `submitted` | Filled, and the form's button was pressed | 0 |
+| `filled` | Filled; the form was not sent (no `--submit`, or no button was found) | 0 |
+| `no-matching-tab` | The tab in front is not on the site: the agent's tab is in the background, or another page is open. PasswordPie never switches tabs | 74 |
+| `site-mismatch` | The site asked for is not one of the item's websites. Nothing was filled, and nobody was asked | 75 |
+| `timed-out` | No tab of that browser answered within 30 seconds: the extension is off or not installed in that profile | 76 |
+| `no-fields` | The tab is on the site, but no password field appeared within 30 seconds | 77 |
+
+Every answer carries the item's title, username and websites. Never the password, never the code.
+
+### When it does not apply
+
+- A site the item does not list. A request for github.com is never filled into another site, whatever the agent says.
+- A headless browser, or a browser on another Mac: they have no PasswordPie extension. Agents there use `passwordpie run`.
+- Safari fills, but only on sites where you allowed the extension.
+- While locked: the request waits for you to unlock, as for a secret.
+
+### Demo script
+
+Use the direct download with the Chrome extension, an item **Demo Login** in **Agents** with website
+`https://the-internet.herokuapp.com/login`, username `tomsmith` and password `SuperSecretPassword!`, and a terminal.
+
+1. In Chrome open `https://the-internet.herokuapp.com/login`.
+2. `passwordpie login 'pp://Agents/Demo Login' --submit`. The window says "wants to log in to
+   the-internet.herokuapp.com"; Allow Once, Touch ID. The page shows "You logged into a secure area!"; the terminal prints `submitted` with the title, username and
+   website, and no password.
+3. Open another site in that tab and run step 2 again: `no-matching-tab`, nothing filled.
+4. `passwordpie login 'pp://Agents/Demo Login' --url https://example.com/`: `site-mismatch` at once, no window.
+5. Preferences > Agents > Activity shows each line with its outcome.
