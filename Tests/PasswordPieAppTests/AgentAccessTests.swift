@@ -319,6 +319,304 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertGreaterThan(host.fittingSize.height, 200)
     }
 
+    // MARK: Standing permissions
+
+    /// What the window's lasting choice sees: Premium or not, the Premium window, and the last length.
+    private final class LastingProbe {
+        var premium: Bool
+        var premiumShown = 0
+        var last: AgentGrantLength = .days7
+        init(premium: Bool) { self.premium = premium }
+        @MainActor var options: AgentLastingOptions {
+            AgentLastingOptions(
+                hasPremium: { self.premium }, showPremium: { self.premiumShown += 1 },
+                lastLength: { self.last }, rememberLength: { self.last = $0 }
+            )
+        }
+    }
+
+    private static func lastingPrompt(_ lasting: AgentLastingChoice = .offered, raw: Bool = false) -> AgentApprovalPrompt {
+        var prompt = prompt(raw: raw, rows: 1)
+        prompt.lasting = lasting
+        return prompt
+    }
+
+    /// Without Premium the lasting choices say Premium; choosing one opens the Premium window, asks for no Touch ID and
+    /// approves nothing. Allow Once still works from the same window.
+    func testWithoutPremiumALastingChoiceOpensThePremiumWindowAndApprovesNothing() async {
+        let probe = LastingProbe(premium: false)
+        let touch = CountingConfirmation()
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: touch, lasting: probe.options) { decisions.append($0) }
+        XCTAssertTrue(model.offersLasting)
+        XCTAssertEqual(model.lastingTitle, "Allow for 7 days · Premium")
+        XCTAssertEqual(AgentGrantLength.allCases.map(model.lengthTitle), [
+            "This agent session — Premium", "8 hours — Premium", "7 days — Premium", "30 days — Premium",
+        ])
+        for length in AgentGrantLength.allCases { model.allow(for: length) }
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(probe.premiumShown, 4)
+        XCTAssertEqual(touch.asked, 0)
+        XCTAssertTrue(decisions.isEmpty, "nothing approved; the window stays")
+        model.allow()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(decisions, [.allow([0])])
+    }
+
+    /// With Premium: Touch ID, then the lasting decision with the chosen length, which is preselected next time.
+    func testWithPremiumALastingChoiceAsksForTouchIDAndIsRemembered() async {
+        let probe = LastingProbe(premium: true)
+        let touch = CountingConfirmation()
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: touch, lasting: probe.options) { decisions.append($0) }
+        XCTAssertEqual(model.lastingTitle, "Allow for 7 days")
+        model.allow(for: .days30)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(touch.asked, 1)
+        XCTAssertEqual(touch.reasons, ["let Claude Code use 1 secret for 30 days in this project"])
+        XCTAssertEqual(decisions, [.allowLasting([0], .days30)])
+        XCTAssertEqual(probe.last, .days30)
+        let next = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: touch, lasting: probe.options) { _ in }
+        XCTAssertEqual(next.lastingTitle, "Allow for 30 days")
+        let refused = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: Confirms(false), lasting: probe.options) { decisions.append($0) }
+        refused.allow(for: .hours8)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(decisions.count, 1, "no Touch ID, nothing allowed")
+    }
+
+    /// No agent in the chain: only "this agent session", and the length chosen last for agents is left as it was.
+    func testWithNoAgentOnlyTheSessionIsOffered() async {
+        let probe = LastingProbe(premium: true)
+        probe.last = .days30
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.lastingPrompt(.sessionOnly), confirmation: Confirms(true), lasting: probe.options) { decisions.append($0) }
+        XCTAssertEqual(model.lengths, [.session])
+        XCTAssertEqual(model.lastingTitle, "Allow for This Agent Session")
+        model.allow(for: .days30)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(decisions.isEmpty)
+        model.allow(for: .session)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(decisions, [.allowLasting([0], .session)])
+        XCTAssertEqual(probe.last, .days30)
+    }
+
+    func testNoLastingChoiceForRawReadsOrInlineCode() async {
+        let probe = LastingProbe(premium: true)
+        let raw = AgentApprovalModel(prompt: Self.lastingPrompt(.notOffered, raw: true), confirmation: Confirms(true), lasting: probe.options) { _ in }
+        XCTAssertFalse(raw.offersLasting)
+        var decisions: [AgentApprovalDecision] = []
+        let inline = AgentApprovalModel(prompt: Self.lastingPrompt(.unavailable("Inline code asks every time.")), confirmation: Confirms(true), lasting: probe.options) {
+            decisions.append($0)
+        }
+        XCTAssertTrue(inline.offersLasting)
+        XCTAssertFalse(inline.canAllowLasting)
+        XCTAssertEqual(inline.lastingUnavailable, "Inline code asks every time.")
+        inline.allow(for: .days7)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(decisions.isEmpty)
+        let host = NSHostingView(rootView: AgentApprovalView(model: inline))
+        host.frame = NSRect(x: 0, y: 0, width: 520, height: 460)
+        XCTAssertNotNil(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    }
+
+    /// A project with a script, for requests that can have a standing permission.
+    private func project() throws -> URL {
+        let project = directory.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: project.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: project.appendingPathComponent("Scripts"), withIntermediateDirectories: true)
+        try "#!/bin/sh\necho deploy\n".write(to: project.appendingPathComponent("Scripts/deploy.sh"), atomically: true, encoding: .utf8)
+        return project
+    }
+
+    private func deploy(_ project: URL) -> AgentRequest {
+        var request = AgentRequest(type: .use, id: 1)
+        request.secrets = [AgentSecretRequest(name: "T", ref: "pp://Developer/Token", delivery: .env)]
+        request.program = project.appendingPathComponent("Scripts/deploy.sh").path
+        request.argv = ["Scripts/deploy.sh"]
+        request.masking = true
+        request.wait = 0
+        request.environment = []
+        return request
+    }
+
+    private func caller(in project: URL) -> AgentCaller {
+        var caller = caller
+        caller.cwd = project.path
+        caller.project = project.path
+        return caller
+    }
+
+    /// Agent access over the real session, with a window that answers by itself: `choose` runs on each model shown.
+    private func grantingAccess(
+        _ session: VaultSession, premium: Bool, choose: @escaping (AgentApprovalModel) -> Void
+    ) throws -> (AgentAccess, LastingProbe, () -> Int) {
+        let suite = "agents-test-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let probe = LastingProbe(premium: premium)
+        var shown = 0
+        let approver = AgentApprovalController(confirmation: Confirms(true), lasting: probe.options, show: { model in
+            shown += 1
+            DispatchQueue.main.async { choose(model) }
+            return {}
+        })
+        let access = AgentAccess(
+            session: session, defaults: defaults, socketPath: socketFolder.appendingPathComponent("g.sock").path,
+            logURL: directory.appendingPathComponent("activity.jsonl"), approver: approver, hasPremium: { probe.premium },
+            mac: "test-mac", linkFolder: directory.appendingPathComponent("bin")
+        )
+        access.setEnabled(true)
+        access.grants.sessionAlive = { _ in true }
+        addTeardownBlock { @MainActor in access.stop() }
+        return (access, probe, { shown })
+    }
+
+    /// The owner's acceptance, in the app: with Premium, "7 days, this project" lets the next identical request through
+    /// with no window, says so in Activity, shows in the pane, and lights the menu-bar dot.
+    func testSevenDaysThisProjectThroughTheApp() async throws {
+        let session = populated()
+        session.setFolderSharedWithAgents(["Developer"], true)
+        let project = try project()
+        let (access, _, shown) = try grantingAccess(session, premium: true) { $0.allow(for: .days7) }
+        var dots = 0
+        access.onSilentUse = { dots += 1 }
+        let first = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(first.secrets?.first?.value, planted)
+        XCTAssertEqual(shown(), 1)
+        let second = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(second.secrets?.first?.value, planted)
+        XCTAssertEqual(second.by, "7 days, this project")
+        XCTAssertEqual(shown(), 1, "no window the second time")
+        XCTAssertEqual(access.activity.first?.outcomeText, "allowed by 7 days, this project")
+        XCTAssertEqual(dots, 1)
+        XCTAssertEqual(access.standing.count, 1)
+        XCTAssertEqual(access.standing.first?.program?.display, "Scripts/deploy.sh")
+        // Kept in the database file, with this Mac's identifier.
+        let loaded = try KDBX.load(data: Data(contentsOf: session.databaseURL), password: "pw", keyFile: nil)
+        XCTAssertEqual(AgentGrants(customData: loaded.customData).all.map(\.mac), ["test-mac"])
+        XCTAssertFalse(loaded.customData.values.joined().contains(planted))
+        // Revoke All, from the gear menu or the pane: the next request asks.
+        access.revokeAll()
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(shown(), 2)
+    }
+
+    /// The acceptance's other half: a free user's lasting choice never produces a grant.
+    func testAFreeUsersLastingChoiceNeverProducesAGrant() async throws {
+        let session = populated()
+        session.setFolderSharedWithAgents(["Developer"], true)
+        let project = try project()
+        let (access, probe, shown) = try grantingAccess(session, premium: false) { model in
+            model.allow(for: .days30)
+            model.allow()
+        }
+        let first = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(first.secrets?.first?.value, planted, "Allow Once is free")
+        XCTAssertEqual(probe.premiumShown, 1)
+        XCTAssertNil(session.agentGrants?.all.first)
+        XCTAssertEqual(access.activity.first?.outcome, .allowedOnce)
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(shown(), 2, "it asks again")
+        // Even a lasting decision that reached the store without Premium makes none.
+        let token = try XCTUnwrap(session.agentSharedItems().first)
+        let secret = AgentResolvedSecret(item: token, field: .password, delivery: .env, name: "T", ref: "pp://Developer/Token")
+        let query = AgentGrantQuery(caller: caller(in: project), kind: .use, raw: false, program: deploy(project).program, argv: ["Scripts/deploy.sh"], secrets: [secret])
+        XCTAssertEqual(access.grants.lastingChoice(for: query), .offered)
+        XCTAssertNil(access.grants.approved(query, decision: .allowLasting([0], .days7)))
+        XCTAssertNil(session.agentGrants?.all.first)
+        probe.premium = true
+        XCTAssertEqual(access.grants.lastingChoice(for: query), .offered)
+        XCTAssertNotNil(access.grants.approved(query, decision: .allowLasting([0], .days7)), "the same call with Premium does make one")
+    }
+
+    /// PRD check 9: writing PasswordPie's preferences cannot add a standing permission, and one made on another Mac does
+    /// not count here.
+    func testForgedPreferencesOrAnotherMacsGrantAddNothing() async throws {
+        let session = populated()
+        session.setFolderSharedWithAgents(["Developer"], true)
+        let project = try project()
+        let (access, _, shown) = try grantingAccess(session, premium: true) { $0.deny() }
+        let token = try XCTUnwrap(session.agentSharedItems().first)
+        func forged(mac: String) -> AgentGrants {
+            AgentGrants([AgentGrant(
+                mac: mac, created: Date(), length: .days30, session: nil, kind: .use, agent: caller.grantIdentity, agentName: "Claude Code",
+                project: project.path, program: nil, secrets: [AgentGrantSecret(item: token.id, field: ["password"], delivery: .env, name: "T")],
+                labels: ["Developer/Token › password"]
+            )])
+        }
+        var preferences: [String: String] = [:]
+        forged(mac: "test-mac").write(into: &preferences)
+        UserDefaults.standard.set(preferences[AgentGrants.customDataKey], forKey: AgentGrants.customDataKey)
+        defer { UserDefaults.standard.removeObject(forKey: AgentGrants.customDataKey) }
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(shown(), 1, "the forged preference granted nothing")
+        // In the database itself, but from another Mac (and bound to the right program, so only the Mac differs).
+        guard case .bound(let program) = AgentProgramRule.bind(program: deploy(project).program, argv: ["Scripts/deploy.sh"], cwd: project.path, project: project.path) else {
+            return XCTFail("the script binds")
+        }
+        var other = forged(mac: "another-mac").all[0]
+        other.program = program
+        session.changeAgentGrants { $0.add(other) }
+        XCTAssertEqual(session.agentGrants?.all.count, 1)
+        access.refreshStanding()
+        XCTAssertEqual(access.standing, [], "another Mac's grant is not listed")
+        XCTAssertTrue(access.anyGrants, "but Revoke All still has something to remove")
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(shown(), 2, "another Mac's grant does not count here")
+        // The same grant with this Mac's identifier does: so only the Mac stopped it.
+        var mine = other
+        mine.id = UUID()
+        mine.mac = "test-mac"
+        session.changeAgentGrants { $0.add(mine) }
+        let allowed = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(allowed.by, "30 days, this project")
+    }
+
+    /// Unsharing ends the standing permissions that name what is no longer shared; turning access off ends session ones.
+    func testUnsharingAndTurningOffEndGrants() async throws {
+        let session = populated()
+        session.setFolderSharedWithAgents(["Developer"], true)
+        let project = try project()
+        var length = AgentGrantLength.days7
+        let (access, _, _) = try grantingAccess(session, premium: true) { $0.allow(for: length) }
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(session.agentGrants?.all.count, 1)
+        session.setFolderSharedWithAgents(["Developer"], false)
+        XCTAssertEqual(session.agentGrants?.all.count, 0)
+        session.setFolderSharedWithAgents(["Developer"], true)
+        length = .session
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(session.agentGrants?.all.first?.session, caller.sessionKey)
+        access.setEnabled(false)
+        XCTAssertEqual(session.agentGrants?.all.count, 0)
+        XCTAssertEqual(access.standing, [])
+    }
+
+    func testStandingPermissionsAreReadOnlyWhileUnlocked() async throws {
+        let session = populated()
+        session.setFolderSharedWithAgents(["Developer"], true)
+        let project = try project()
+        let (access, _, _) = try grantingAccess(session, premium: true) { $0.allow(for: .hours8) }
+        _ = await access.broker.handle(deploy(project), from: caller(in: project))
+        XCTAssertEqual(access.standing.count, 1)
+        XCTAssertTrue(AgentAccess.endText(access.standing[0]).hasPrefix("until "))
+        session.lock()
+        access.vaultStateChanged(locked: true)
+        XCTAssertNil(session.agentGrants)
+        XCTAssertEqual(access.standing, [])
+    }
+
+    func testTheMenuBarDotChangesTheIcon() throws {
+        func pixels(_ image: NSImage) throws -> Data {
+            let rep = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(image.tiffRepresentation)))
+            return try XCTUnwrap(rep.representation(using: .png, properties: [:]))
+        }
+        XCTAssertNotEqual(try pixels(MenuBarIcon.image()), try pixels(MenuBarIcon.image(dot: true)))
+        XCTAssertTrue(MenuBarIcon.image(dot: true).isTemplate, "neutral: tinted by macOS like the pie, never orange")
+        XCTAssertEqual(MenuBarIcon.silentUseSeconds, 5)
+    }
+
     private var caller: AgentCaller {
         let agent = AgentProcess(pid: 10, startTime: 1, path: "/usr/local/bin/claude", name: "Claude Code")
         return AgentCaller(cli: AgentProcess(pid: 11, startTime: 2, path: "/x/passwordpie", name: "passwordpie"), chain: [agent],
@@ -331,6 +629,18 @@ private final class Confirms: OwnerConfirmation {
     let answer: Bool
     init(_ answer: Bool) { self.answer = answer }
     func confirm(reason: String) async -> Bool { answer }
+    func cancel() {}
+}
+
+@MainActor
+private final class CountingConfirmation: OwnerConfirmation {
+    var asked = 0
+    var reasons: [String] = []
+    func confirm(reason: String) async -> Bool {
+        asked += 1
+        reasons.append(reason)
+        return true
+    }
     func cancel() {}
 }
 

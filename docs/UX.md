@@ -66,7 +66,8 @@ Use a database with two accounts on one site, so the video shows that the right 
 
 ## Premium: two-step codes
 
-**In one line:** PasswordPie is free to install and free to use. Only two-step codes need Premium. You get it where you
+**In one line:** PasswordPie is free to install and free to use. Only two-step codes need Premium (and, in the
+downloaded app, agents' standing permissions: see "Do not ask me every time"). You get it where you
 got the app, in the App Store or on passwordpie.com, and nothing ever asks you to sign in: not the app, and not the
 browser extension.
 
@@ -1772,7 +1773,7 @@ It warns; it cannot stop it, and a process that starts and ends within a quarter
     The agent says:
     “Notarize the 0.3.0 DMG”
 
-    [ Deny ]                                   [ Allow Once ]
+    [ Deny ]        [ Allow Once ]        [ Allow for 7 days ▾ ]
 
 - One row per secret, each with a checkbox: untick what the agent should not get. The command then runs without it.
 - **The agent says** is the agent's own `--reason`, in quotes, in the secondary colour. It may have been written by a
@@ -1790,6 +1791,67 @@ It warns; it cannot stop it, and a process that starts and ends within a quarter
 - The window waits 2 minutes, then the agent hears `timeout`. One window at a time per agent session; three denials in 10
   minutes and that session gets `too-many-requests` without a window for 10 minutes.
 
+### Do not ask me every time (Premium)
+
+**Allow for 7 days ▾** approves this request and lets the same request through without a window until the time is up.
+That is a **standing permission**. Its arrow offers how long: **This agent session** (until that agent quits, at most 12
+hours), **8 hours**, **7 days**, **30 days**. The button names the length you chose last time.
+
+A standing permission covers a later request only when all of these are the same:
+
+| Same | Example | A different one asks again |
+|---|---|---|
+| Items and fields | Token › password | Another item, or another field of it |
+| How it is handed over | environment variable `T` | `$TOKEN` instead of `$T`, a file, standard input, or a raw read |
+| Agent | Claude Code, signed by Anthropic PBC | Codex, or an unsigned program |
+| Project | ~/projects/PasswordPie/swift | The same agent in another project |
+| Program | `Scripts/release-direct.sh`, as it is now | `Scripts/other.sh`, `curl`, or the same script after an edit |
+| Time | until 26 Nov, 16:02 | after that |
+| Mac | this Mac | the same database opened on another Mac |
+
+The program, in detail:
+
+- It is the program the command starts. For a launcher it is the launcher and what it runs: `sh Scripts/a.sh`,
+  `python3 tools/upload.py`, `xcrun notarytool`, `npm run deploy` (with that `package.json`), `make release` (with that
+  `Makefile`).
+- A script, and any program inside the project, is bound by its content. When it changes, the next use asks once. Other
+  programs are bound by their file: an upgrade asks once.
+- A script's arguments may change. Anything else is granted for that exact command: `curl -d @- https://a` is not
+  `curl -d @- https://b`.
+- Inline code (`sh -c '…'`, `python3 -c`, `node -e`) never gets a standing permission, nor does a login shell, a
+  launcher PasswordPie does not know how to read (`xargs`, `sudo`, `swift run`, …), nor a command started with a
+  variable that makes programs load other code (`DYLD_INSERT_LIBRARIES`, `BASH_ENV`, `NODE_OPTIONS`, `PYTHONPATH`, …),
+  whether the agent's shell set it or the project's `.env.pp`. For these the button is grey and a
+  line under it says why; Allow Once still works.
+- A raw read and `run --no-masking` never get one: the agent would see the value.
+- With no agent found (a command typed in Terminal), the menu offers only **This Agent Session**, which then means this
+  Terminal session.
+
+**Without Premium** the button reads **Allow for 7 days · Premium**, and each length in its menu says Premium. Choosing
+one opens the Premium window; nothing is approved, and the approval window stays open for Allow Once or Deny. Allow Once
+and Show to Agent are free.
+
+**With Premium**, choosing a length asks for Touch ID like Allow Once, then saves the permission. It is kept in the
+database file itself (with the shared items), so it is under the master key, and a program that writes PasswordPie's
+preferences cannot add one. It names this Mac: the same file opened on another Mac does not use it. If Premium ends,
+standing permissions stay listed and do nothing until it is back.
+
+A request let through by a standing permission shows no window. The menu-bar pie shows a small dot for 5 seconds, and
+Activity says **allowed by 7 days, this project**.
+
+### Standing permissions and revoking
+
+Preferences > Agents > **Standing permissions** lists each one that is still in force for this Mac: the agent, the
+items, the program and project, and when it ends ("until 26 Nov, 16:02", or "until Claude Code quits"). Each has
+**Revoke**; **Revoke All** ends every one in this database, on every Mac. While there are any, the panel's gear menu has
+**Revoke Agent Permissions** next to Lock, which does the same as Revoke All.
+
+- Locked: the list says to unlock first (it is kept in the database). Nothing is used while locked.
+- Unsharing an item or a folder ends every standing permission that names an item no longer shared.
+- Turning agent access off ends every "this agent session" permission; the others stay listed and do nothing until it
+  is on again.
+- A revoke counts from the next request. A command already running keeps what it was given.
+
 ### Locked
 
 A request while PasswordPie is locked does not fail at once. The lock screen opens with a line under the database name,
@@ -1800,8 +1862,8 @@ unlocks; agent use never counts as activity for auto-lock. After 60 seconds (`--
 ### Activity
 
 Preferences > Agents > Activity lists every request, allowed or not, newest first: time, agent, outcome (allowed once,
-shown to the agent, denied, timed out, locked, not available, and in orange, value seen on a command line), "via MCP" for
-a request through the MCP server, items and fields, command and project. Hover a line for
+allowed by a standing permission, shown to the agent, denied, timed out, locked, not available, and in orange, value seen
+on a command line), "via MCP" for a request through the MCP server, items and fields, command and project. Hover a line for
 the processes that started the tool. The filter matches agent, project, command or item. The file keeps 90 days and
 never holds a value.
 
@@ -1811,7 +1873,8 @@ never holds a value.
   not exist, so an agent cannot probe for titles.
 - Offer to share something from the approval window: sharing happens only in PasswordPie's own settings, on your
   initiative.
-- Remember an approval. Every use asks (lasting permissions come later, with Premium).
+- Remember an approval without Premium, or remember a raw read or inline code at all.
+- Let an agent create or widen a standing permission: only the window's button, with Touch ID, makes one.
 - Hand anything out while locked, or unlock.
 - Put a value on a command line, or in a log.
 - Hide a value the command transforms (base64, part of it), or stop a command from sending what it was given elsewhere.
@@ -1838,6 +1901,16 @@ a terminal.
 8. `passwordpie run --env T=pp://Agents/Token -- sh -c 'sh -c "sleep 2; true" x --password "$T"'`: after Touch ID, a
    warning on standard error that the value of T appeared on the command line of sh (or bash), and an orange line in
    Activity.
+9. Without Premium: put `echo "$T" | wc -c` in `demo.sh` and run
+   `passwordpie run --env T=pp://Agents/Token -- sh demo.sh`. The window's third button reads **Allow for This Agent
+   Session · Premium**; choose it: the Premium window opens and the approval window stays. Choose Allow Once.
+10. With Premium: run it again and choose **Allow for This Agent Session** (from Terminal there is no agent, so it is
+   the only length), Touch ID. Run it a third time: no window, the menu-bar pie
+   shows its dot, and Activity says "allowed by this agent session, this project". Preferences > Agents > Standing
+   permissions lists it. From an agent (Claude Code), **Allow for 7 days** works the same way.
+11. Add a line to `demo.sh` and run it again: the window comes back. Run `passwordpie run --env T=pp://Agents/Token -- sh -c
+   'echo "$T"'`: the third button is grey.
+12. Gear menu > **Revoke Agent Permissions**, run step 10's command: the window comes back.
 
 ## Agents log in on a website
 
@@ -1889,7 +1962,11 @@ and the agent hears "two-step code not filled: needs PasswordPie Premium".
   last" when Chrome is not the app in front (the agent's terminal often is).
 - The window never shows the password, and nothing in it is the agent's but the quoted line.
 - Every Allow asks for Touch ID, so an agent that can click cannot approve its own login.
-- Lasting permissions for logins come with Premium, as for secrets; until then every login asks.
+- **Allow for 7 days ▾** (Premium, as for secrets) lets that agent log in with that account on that site again without
+  asking, from any project, until the time runs out. Preferences > Agents > Standing permissions lists it as "Log in on
+  github.com, any project", with Revoke. Without Premium the button says so and opens the Premium window; Allow Once
+  still works. With several accounts offered, the lasting choice is for the one you picked; a login with several
+  accounts to pick from always asks.
 
 ### What the agent hears
 

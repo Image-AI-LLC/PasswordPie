@@ -280,6 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startAgentAccess() {
         agentAccess = AgentAccess(session: session)
         agentAccess.attachBrowser(bridge)
+        agentAccess.onSilentUse = { [weak self] in self?.showSilentUseDot() }
         agentAccess.onNeedsUnlock = { [weak self] in
             guard let self, self.session.locked else { return }
             if self.panelController.isVisible { self.panelController.bringForward() } else { self.panelController.show(.hotkey) }
@@ -566,7 +567,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DispatchQueue.main.async { [weak self] in self?.showPaywall() }
     }
 
-    func showPaywall() {
+    /// `overApproval`: opened from an agent's approval window (a lasting choice without Premium), so it shows above that
+    /// window, which stays open.
+    func showPaywall(overApproval: Bool = false) {
         if paywallWindow == nil {
             let host = NSHostingController(rootView: PaywallView(store: session.premium))
             host.sizingOptions = [.preferredContentSize]
@@ -580,6 +583,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             paywallWindow = window
         }
         panelController.hide(refocusPrevious: false)
+        paywallWindow?.level = overApproval ? .modalPanel : .normal
         NSApp.activate(ignoringOtherApps: true)
         paywallWindow?.makeKeyAndOrderFront(nil)
     }
@@ -749,6 +753,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: Menu bar
+
+    #if PP_DIRECT
+    private var silentUseDotEnds: Date?
+
+    /// A request let through by a standing permission: the pie shows a small neutral dot for 5 seconds, so silent uses are
+    /// not invisible (docs/UX.md, "Do not ask me every time").
+    private func showSilentUseDot() {
+        let ends = Date().addingTimeInterval(MenuBarIcon.silentUseSeconds)
+        silentUseDotEnds = ends
+        statusItem?.button?.image = MenuBarIcon.image(dot: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + MenuBarIcon.silentUseSeconds) { [weak self] in
+            guard let self, self.silentUseDotEnds == ends else { return }
+            self.silentUseDotEnds = nil
+            self.statusItem?.button?.image = MenuBarIcon.image()
+        }
+    }
+    #endif
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)

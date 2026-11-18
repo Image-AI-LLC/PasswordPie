@@ -365,6 +365,8 @@ final class MCPServer: @unchecked Sendable {
         request.argv = command
         request.reason = reason
         request.masking = true
+        // The names the run adds from its .env.pp: a standing permission is not used when one makes programs load code.
+        request.environment = literals.map { $0.0 }
         let answer = try ask(request, in: cwd, cancellation: cancellation)
 
         for (name, value) in literals { environment[name] = value }

@@ -262,6 +262,78 @@ final class AgentLoginTests: XCTestCase {
         XCTAssertTrue(approver.prompts.isEmpty)
     }
 
+    // MARK: Lasting login permissions (Premium)
+
+    private func grantStore(premium: Bool) -> (StandingPermissions, FakeGrantDatabase) {
+        let database = FakeGrantDatabase()
+        let store = StandingPermissions(
+            mac: "mac-1", hasPremium: { premium }, read: { database.read() }, write: { edit, done in database.write(edit, done) }
+        )
+        store.sessionAlive = { _ in true }
+        return (store, database)
+    }
+
+    private func broker(grants: AgentGrantStore) -> VaultBroker {
+        let broker = VaultBroker(vault: vault, approver: approver, grants: grants, activity: activity) { true }
+        broker.logins = logins
+        return broker
+    }
+
+    /// "Allow for 7 days" on a login: the next login with that item, on that site, by that agent, asks nothing, in any
+    /// project. Another item, another site or another agent asks again.
+    func testALoginGrantCoversTheItemSiteAndAgentOnly() async {
+        let (store, database) = grantStore(premium: true)
+        let broker = broker(grants: store)
+        logins.target?.page = .url("https://github.com/")
+        approver.script = [.allowLasting([0], .days7)]
+        let first = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make())
+        XCTAssertEqual(first.login?.outcome, .submitted)
+        XCTAssertEqual(approver.prompts.first?.lasting, .offered)
+        XCTAssertEqual(AgentGrants(customData: database.customData).all.map(\.site), ["github.com"])
+        XCTAssertEqual(activity.records.last?.outcomeText, "filled and sent, by 7 days, github.com")
+
+        let again = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make(project: "/tmp/elsewhere"))
+        XCTAssertEqual(again.login?.outcome, .submitted)
+        XCTAssertEqual(again.by, "7 days, github.com")
+        XCTAssertEqual(approver.prompts.count, 1, "no window under the grant, in another project too")
+        XCTAssertEqual(logins.plans.count, 2)
+
+        approver.script = [.deny, .deny, .deny]
+        _ = await broker.handle(.login("pp://Web/GitHub Work"), from: Callers.make())
+        _ = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make(session: "agent:300:3", agent: "codex"))
+        logins.websites[github.id] = ["https://github.com/login", "https://gist.github.io/"]
+        logins.target?.page = .url("https://gist.github.io/")
+        _ = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make())
+        XCTAssertEqual(approver.prompts.count, 4, "another item, another agent and another site each ask")
+    }
+
+    /// Without Premium the lasting choice makes nothing, and a grant already in the file is not used.
+    func testWithoutPremiumNoLoginGrantIsMadeOrUsed() async {
+        let (store, database) = grantStore(premium: false)
+        let broker = broker(grants: store)
+        approver.script = [.allowLasting([0], .days7), .allowLasting([0], .days7), .allow([0])]
+        _ = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make())
+        XCTAssertTrue(AgentGrants(customData: database.customData).isEmpty)
+        let (premiumStore, premiumDatabase) = grantStore(premium: true)
+        _ = await self.broker(grants: premiumStore).handle(.login("pp://Web/GitHub"), from: Callers.make())
+        database.customData = premiumDatabase.customData
+        _ = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make())
+        XCTAssertEqual(approver.prompts.count, 3, "the grant is not used without Premium")
+        XCTAssertTrue(approver.script.isEmpty)
+    }
+
+    /// A login grant never makes `run` (or `list`'s "covered") skip the window for the same item.
+    func testALoginGrantDoesNotCoverRunningWithTheItem() async {
+        let (store, _) = grantStore(premium: true)
+        let broker = broker(grants: store)
+        approver.script = [.allowLasting([0], .days7), .allow([0])]
+        _ = await broker.handle(.login("pp://Web/GitHub"), from: Callers.make())
+        let run = await broker.handle(.use([AgentSecretRequest(name: "T", ref: "pp://Web/GitHub", delivery: .env)]), from: Callers.make())
+        XCTAssertEqual(run.by, "once")
+        XCTAssertEqual(approver.prompts.count, 2)
+        XCTAssertFalse(store.covers(github, for: Callers.make()))
+    }
+
     func testOutcomeLinesNeverCarryTheValueAndEndWithThePasteWarningOnFailure() {
         let item = AgentLoginOverview(title: "GitHub", username: "octocat", websites: ["https://github.com/"])
         for outcome in AgentLoginOutcome.allCases {

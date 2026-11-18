@@ -119,6 +119,58 @@ extension VaultBroker {
         let site = logins.loginSite(websites[0]) ?? websites[0]
         let codes = candidates.map { logins.loginCodePlan($0) }
 
+        let delivery = ["fill \(target.browser.displayName) \(site)"]
+        // What a standing permission is matched against: the items, the site and the agent (not the project or a program:
+        // a login runs no command). Raw never applies.
+        var query = AgentGrantQuery(
+            caller: caller, kind: .login, raw: false, program: nil, argv: [],
+            secrets: candidates.map { AgentResolvedSecret(item: $0, field: .password, delivery: .fill, name: nil, ref: asked.first?.ref ?? request.url ?? "") }
+        )
+        query.site = site
+
+        /// Fills `candidates[index]`, after the owner allowed it (`record` makes the lasting choice, if one was made) or
+        /// under a standing permission (`grant`).
+        func fill(_ index: Int, grant: String? = nil, record: () -> String? = { nil }) async -> AgentResponse {
+            let item = candidates[index]
+            guard !vault.agentVaultLocked else { return refuse(.locked, outcome: .locked, items: [labels[index]]) }
+            // Still shared, and still listing that website, after the wait.
+            guard vault.agentSharedItems().contains(where: { $0.id == item.id }), logins.loginWebsite(of: item, for: websites[index]) != nil else {
+                return refuse(.notAvailable, outcome: .notAvailable, items: [labels[index]])
+            }
+            // Agent access turned off while the window was up: nothing is filled.
+            guard isEnabled() else { return refuse(.accessOff, outcome: .accessOff, items: [labels[index]]) }
+            let started = grant == nil ? record() : nil
+            let plan = AgentLoginPlan(item: item, website: websites[index], target: target, submit: request.submit == true, code: codes[index])
+            let end = await logins.login(plan)
+            // Withdrawn because access was turned off before any tab took it. A fill a tab took keeps its outcome.
+            if case .finished(.timedOut, _, _) = end, !isEnabled() {
+                return refuse(.accessOff, outcome: .accessOff, items: [labels[index]])
+            }
+            switch end {
+            case .locked:
+                return refuse(.locked, outcome: .locked, items: [labels[index]])
+            case .finished(let outcome, let code, let detail):
+                log(request, caller: caller, outcome: outcome.activityOutcome, grant: grant ?? started, items: [labels[index]], delivery: delivery)
+                var answer = loginAnswer(request, AgentLoginAnswer(
+                    outcome: outcome,
+                    item: logins.loginOverview(item),
+                    site: site,
+                    browser: target.browser.displayName,
+                    code: code,
+                    detail: detail
+                ))
+                answer.by = grant ?? "once"
+                return answer
+            }
+        }
+
+        // A standing permission for this item, site and agent: no window. Only for one item; a choice among several is
+        // always the owner's.
+        if candidates.count == 1, let grant = grants.grant(covering: query) {
+            if limiter.isBlocked(caller.sessionKey, now: clock()) { return refuse(.tooManyRequests, outcome: .tooManyRequests, items: labels) }
+            return await fill(0, grant: grant)
+        }
+
         // One prompt at a time per agent session; a second request waits behind it.
         await acquire(caller.sessionKey)
         defer { release(caller.sessionKey) }
@@ -137,7 +189,7 @@ extension VaultBroker {
                 note: Self.codeNote(codes[index])
             )
         }
-        let prompt = AgentApprovalPrompt(
+        var prompt = AgentApprovalPrompt(
             id: UUID(),
             kind: .login,
             raw: false,
@@ -155,41 +207,14 @@ extension VaultBroker {
             submit: request.submit == true,
             via: Self.viaText(request)
         )
-        let delivery = ["fill \(target.browser.displayName) \(site)"]
-        switch await ask(prompt) {
-        case .allow(let selected) where selected.count == 1 && candidates.indices.contains(selected.first ?? -1):
-            let index = selected.first ?? 0
-            let item = candidates[index]
-            guard !vault.agentVaultLocked else { return refuse(.locked, outcome: .locked, items: [labels[index]]) }
-            // Still shared, and still listing that website, after the wait.
-            guard vault.agentSharedItems().contains(where: { $0.id == item.id }), logins.loginWebsite(of: item, for: websites[index]) != nil else {
-                return refuse(.notAvailable, outcome: .notAvailable, items: [labels[index]])
-            }
-            // Agent access turned off while the window was up: nothing is filled.
-            guard isEnabled() else { return refuse(.accessOff, outcome: .accessOff, items: [labels[index]]) }
-            let plan = AgentLoginPlan(item: item, website: websites[index], target: target, submit: request.submit == true, code: codes[index])
-            let end = await logins.login(plan)
-            // Withdrawn because access was turned off before any tab took it. A fill a tab took keeps its outcome.
-            if case .finished(.timedOut, _, _) = end, !isEnabled() {
-                return refuse(.accessOff, outcome: .accessOff, items: [labels[index]])
-            }
-            switch end {
-            case .locked:
-                return refuse(.locked, outcome: .locked, items: [labels[index]])
-            case .finished(let outcome, let code, let detail):
-                log(request, caller: caller, outcome: outcome.activityOutcome, items: [labels[index]], delivery: delivery)
-                var answer = loginAnswer(request, AgentLoginAnswer(
-                    outcome: outcome,
-                    item: logins.loginOverview(item),
-                    site: site,
-                    browser: target.browser.displayName,
-                    code: code,
-                    detail: detail
-                ))
-                answer.by = "once"
-                return answer
-            }
-        case .allow, .deny:
+        prompt.lasting = grants.lastingChoice(for: query)
+        let decision = await ask(prompt)
+        let chosen: Int
+        switch decision {
+        case .allow(let selected) where selected.count == 1 && candidates.indices.contains(selected.first ?? -1),
+             .allowLasting(let selected, _) where selected.count == 1 && candidates.indices.contains(selected.first ?? -1):
+            chosen = selected.first ?? 0
+        case .allow, .allowLasting, .deny:
             limiter.recordDenial(caller.sessionKey, now: clock())
             log(request, caller: caller, outcome: .denied, items: labels, delivery: delivery)
             return .error(.denied, id: request.id)
@@ -198,6 +223,8 @@ extension VaultBroker {
             log(request, caller: caller, outcome: locked ? .locked : .timedOut, items: labels, delivery: delivery)
             return .error(locked ? .locked : .timeout, id: request.id)
         }
+        // A lasting choice is recorded only once what it covers is known to still be there.
+        return await fill(chosen) { self.grants.approved(query, decision: decision) }
     }
 
     private func loginAnswer(_ request: AgentRequest, _ login: AgentLoginAnswer) -> AgentResponse {
