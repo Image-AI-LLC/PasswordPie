@@ -231,6 +231,16 @@ describe('agent login: the page', () => {
     expect(sent).toEqual(['next']);
   });
 
+  it('on a username step, never clicks a text box that names the form, and finds an image button by its alt', async () => {
+    document.body.innerHTML = `<form id="step"><input id="user" autocomplete="username"></form>
+      <input type="text" id="decoy" form="step" value="Next"><input type="image" id="go" form="step" alt="Next" src="data:,">`;
+    const clicked: string[] = [];
+    for (const id of ['decoy', 'go']) document.getElementById(id)?.addEventListener('click', () => clicked.push(id));
+    makeFiller().handle(agentFill);
+    await vi.advanceTimersByTimeAsync(USERNAME_SUBMIT_DELAY_MS + 100);
+    expect(clicked).toEqual(['go']);
+  });
+
   it('never clicks a control outside the form that is not a submit button', () => {
     document.body.innerHTML = `<form id="login"><input id="user" autocomplete="username"><input id="pass" type="password"></form>
       <input type="checkbox" id="remember" form="login"><button id="go" type="submit" form="login">Sign in</button>`;

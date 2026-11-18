@@ -187,8 +187,9 @@ extension BrowserBridge {
         } else if let result = wait.result {
             wait.finish(.finished(AgentLoginWait.outcome(result), code: .notFilled, detail: nil))
         } else {
-            // Taken, and no password field yet: the extension says so the moment the password goes in.
-            wait.finish(.finished(.noFields, code: nil, detail: "A newer fill replaced it before a password field appeared."))
+            // Taken, and no word yet: the extension says so the moment the password goes in, so most likely it was not.
+            // An extension from before `login-result` never says, so this stays a guess and the detail says so.
+            wait.finish(.finished(.noFields, code: nil, detail: "A newer fill replaced it before the extension said the password went in."))
         }
     }
 

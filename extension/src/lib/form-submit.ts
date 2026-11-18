@@ -26,7 +26,8 @@ function enabled(el: HTMLElement): boolean {
 }
 
 function label(el: HTMLElement): string {
-  const text = el instanceof HTMLInputElement ? el.value : (el.textContent ?? '');
+  const text =
+    el instanceof HTMLInputElement ? (el.type === 'image' ? (el.alt || el.value) : el.value) : (el.textContent ?? '');
   return (text || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
 }
 
@@ -65,9 +66,13 @@ function nearbyButton(field: HTMLInputElement, words = BUTTON_WORDS): HTMLElemen
 export function pressNext(field: HTMLInputElement): boolean {
   const form = field.form ?? field.closest('form');
   const scope: ParentNode = form ?? field;
-  const candidates = form ? [...form.querySelectorAll<HTMLElement>('button, input[type="submit"], input[type="image"], [role="button"]')] : [];
-  // Buttons outside the form that name it with `form="…"` belong to it too.
-  if (form?.id) candidates.push(...form.ownerDocument.querySelectorAll<HTMLElement>(`button[form="${CSS.escape(form.id)}"], input[form="${CSS.escape(form.id)}"]`));
+  const controls = 'button, input[type="submit"], input[type="image"], input[type="button"], [role="button"]';
+  const candidates = form ? [...form.querySelectorAll<HTMLElement>(controls)] : [];
+  // Buttons outside the form that name it with `form="…"` belong to it too. Only buttons: never a text box or a checkbox.
+  if (form?.id) {
+    const named = `[form="${CSS.escape(form.id)}"]`;
+    candidates.push(...form.ownerDocument.querySelectorAll<HTMLElement>(controls.split(', ').map((c) => c + named).join(', ')));
+  }
   const inForm = candidates.find((el) => NEXT_WORDS.test(label(el)) && isShown(el) && enabled(el));
   const button = inForm ?? (scope === field ? nearbyButton(field, NEXT_WORDS) : undefined);
   if (!button) return false;
