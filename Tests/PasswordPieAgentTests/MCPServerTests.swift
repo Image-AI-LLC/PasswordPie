@@ -63,7 +63,8 @@ final class MCPServerTests: XCTestCase {
     /// Starts `passwordpie mcp` in `folder` and initializes it, saying it is `clientName`.
     @discardableResult
     private func connect(clientName: String = "test-client") async throws -> MCPTestClient {
-        var environment = ProcessInfo.processInfo.environment
+        // The test runner's own loader variables (DYLD_…) would keep every run from a standing permission, as they should.
+        var environment = ProcessInfo.processInfo.environment.filter { !AgentProgramRule.isCodeLoading($0.key) }
         environment["PASSWORDPIE_AGENT_SOCKET"] = socketPath
         environment["TMPDIR"] = folder.appendingPathComponent("tmp").path + "/"
         let client = try MCPTestClient(tool: tool, environment: environment, cwd: folder)
@@ -287,6 +288,36 @@ final class MCPServerTests: XCTestCase {
     }
 
     /// Phase 2: read asks every time, even with a standing permission in place, and says the agent will see it.
+    /// A standing permission covers a repeated `passwordpie_run`; an `envFile` that sets a variable that makes programs load
+    /// other code asks again, as it does through the command-line tool.
+    @MainActor
+    func testAStandingPermissionCoversARepeatRunAndAnEnvFileVariableAsks() async throws {
+        let database = FakeGrantDatabase()
+        let store = StandingPermissions(mac: "test-mac", hasPremium: { true }, read: { database.read() }, write: { database.write($0, $1) })
+        store.sessionAlive = { _ in true }
+        try startServer(grants: store)
+        try "echo \"$T\" | wc -c\n".write(to: inside.appendingPathComponent("deploy.sh"), atomically: true, encoding: .utf8)
+        approver.onPresent = { [unowned self] prompt in
+            let decision: AgentApprovalDecision = prompt.lasting == .offered ? .allowLasting([0], .days7) : .allow([0])
+            DispatchQueue.main.async { self.approver.answer(decision) }
+        }
+        try await connect()
+        let arguments: [String: Any] = ["command": ["sh", "deploy.sh"], "cwd": inside.path, "env": ["T": "pp://Agents/Token"]]
+        let first = try await call("passwordpie_run", arguments)
+        XCTAssertFalse(first.isError, first.text)
+        XCTAssertEqual(approver.prompts.last?.lasting, .offered)
+        XCTAssertEqual(store.inForce.count, 1)
+        let second = try await call("passwordpie_run", arguments)
+        XCTAssertFalse(second.isError, second.text)
+        XCTAssertEqual(approver.prompts.count, 1, "no window the second time")
+        try "BASH_ENV=\(folder.path)/evil.sh\n".write(to: inside.appendingPathComponent("x.env.pp"), atomically: true, encoding: .utf8)
+        var withEnvFile = arguments
+        withEnvFile["envFile"] = "x.env.pp"
+        _ = try await call("passwordpie_run", withEnvFile)
+        XCTAssertEqual(approver.prompts.count, 2, "BASH_ENV from the envFile asks")
+        XCTAssertEqual(approver.prompts.last?.lasting, .unavailable("Started with BASH_ENV set, which makes programs load other code."))
+    }
+
     func testReadAsksEveryTimeEvenWithAStandingPermission() async throws {
         let grants = GrantEverything()
         try startServer(grants: grants)

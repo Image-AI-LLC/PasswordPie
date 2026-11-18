@@ -64,8 +64,15 @@ public struct AgentCaller: Equatable, Sendable {
 
     /// The terminal app the chain passes through, if any.
     public var terminal: AgentProcess?
+    /// The variables set in the tool's environment (read from the kernel) that make programs load other code
+    /// (`BASH_ENV`, `NODE_OPTIONS`, `DYLD_INSERT_LIBRARIES`…). Names only. A command started with one gets no standing
+    /// permission: the command inherits them. Nil when the environment could not be read, which counts the same.
+    public var codeLoadingVariables: [String]?
 
-    public init(cli: AgentProcess, chain: [AgentProcess], agent: AgentProcess?, terminal: AgentProcess? = nil, sessionKey: String, cwd: String, project: String) {
+    public init(
+        cli: AgentProcess, chain: [AgentProcess], agent: AgentProcess?, terminal: AgentProcess? = nil, sessionKey: String, cwd: String,
+        project: String, codeLoadingVariables: [String]? = []
+    ) {
         self.cli = cli
         self.chain = chain
         self.agent = agent
@@ -73,6 +80,7 @@ public struct AgentCaller: Equatable, Sendable {
         self.sessionKey = sessionKey
         self.cwd = cwd
         self.project = project
+        self.codeLoadingVariables = codeLoadingVariables
     }
 
     /// The agent's name; with no agent in the chain, "A command in Terminal" (or "A program").
@@ -172,6 +180,14 @@ public protocol ProcessFacts: Sendable {
     func arguments(_ pid: Int32) -> [String]
     func sessionID(_ pid: Int32) -> Int32?
     func signature(_ pid: Int32) -> (team: String?, identifier: String?, signer: String?)
+    /// The names of the variables in the process's environment as it started. Names only, never values. Nil when they
+    /// could not be read.
+    func environmentNames(_ pid: Int32) -> [String]?
+}
+
+public extension ProcessFacts {
+    /// Not read: no standing permission is used (fail closed).
+    func environmentNames(_ pid: Int32) -> [String]? { nil }
 }
 
 public struct ProcessRecord: Equatable, Sendable {
@@ -227,7 +243,10 @@ public enum CallerInspector {
         // No agent in between: said as such. The terminal is not taken for the agent, nor its signature lent to the
         // request, since an agent can start a command in a terminal window (`open -a Terminal x.command`).
         let terminal = chain.first { $0.identifier.map(AgentHosts.terminals.contains) ?? false }
-        return AgentCaller(cli: cli, chain: chain, agent: agent ?? firstOther, terminal: terminal, sessionKey: sessionKey, cwd: cwd, project: project(for: cwd))
+        return AgentCaller(
+            cli: cli, chain: chain, agent: agent ?? firstOther, terminal: terminal, sessionKey: sessionKey, cwd: cwd, project: project(for: cwd),
+            codeLoadingVariables: facts.environmentNames(pid)?.filter(AgentProgramRule.isCodeLoading)
+        )
     }
 
     /// The nearest folder at or above `cwd` that holds `.git` (a folder, or a worktree's file), else `cwd`.
@@ -315,6 +334,46 @@ public final class LiveProcessFacts: ProcessFacts, @unchecked Sendable {
             index += 1
         }
         return arguments
+    }
+
+    /// The names in the process's environment (`KERN_PROCARGS2`, after the arguments), to the end of the buffer: an
+    /// empty entry does not end it, so nothing can be hidden behind one. Each value is dropped as read. Nil when the
+    /// kernel does not answer.
+    public func environmentNames(_ pid: Int32) -> [String]? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        defer { buffer.withUnsafeMutableBytes { _ = memset_s($0.baseAddress, $0.count, 0, $0.count) } }
+        return Self.environmentNames(procargs: buffer, size: size)
+    }
+
+    /// The names after the executable path and the arguments in a `KERN_PROCARGS2` buffer. What follows the
+    /// environment (the loader's own `key=value` strings) is read too: the names are only compared with a list.
+    static func environmentNames(procargs buffer: [UInt8], size: Int) -> [String] {
+        let count = buffer.withUnsafeBytes { $0.load(as: Int32.self) }
+        var index = MemoryLayout<Int32>.size
+        while index < size, buffer[index] != 0 { index += 1 }
+        while index < size, buffer[index] == 0 { index += 1 }
+        var skipped = 0
+        while index < size, skipped < Int(count) {
+            while index < size, buffer[index] != 0 { index += 1 }
+            index += 1
+            skipped += 1
+        }
+        var names: [String] = []
+        while index < size {
+            if buffer[index] == 0 {
+                index += 1
+                continue
+            }
+            let start = index
+            while index < size, buffer[index] != 0, buffer[index] != UInt8(ascii: "=") { index += 1 }
+            names.append(String(decoding: buffer[start..<index], as: UTF8.self))
+            while index < size, buffer[index] != 0 { index += 1 }
+        }
+        return names
     }
 
     public func sessionID(_ pid: Int32) -> Int32? {

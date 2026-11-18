@@ -55,9 +55,27 @@ public struct AgentGrantQuery: Sendable {
     public var program: String?
     public var argv: [String]
     public var secrets: [AgentResolvedSecret]
+    /// The names the tool sets in the command's environment besides the secrets (`AgentRequest.environment`).
+    public var added: [String]?
+    /// Names this request, so what the grant store worked out when the window opened is what a lasting choice records.
+    public var id = UUID()
+
+    public init(
+        caller: AgentCaller, kind: AgentRequestKind, raw: Bool, program: String?, argv: [String], secrets: [AgentResolvedSecret],
+        added: [String]? = []
+    ) {
+        self.caller = caller
+        self.kind = kind
+        self.raw = raw
+        self.program = program
+        self.argv = argv
+        self.secrets = secrets
+        self.added = added
+    }
 }
 
-/// Standing permissions. Item A ships `NoAgentGrants`, which never grants; item B stores real ones.
+/// Standing permissions. `NoAgentGrants` never grants; the app's store keeps real ones in the database (docs/AGENTS.md,
+/// "Standing permissions").
 @MainActor
 public protocol AgentGrantStore: AnyObject {
     /// The description of the standing permission that covers every secret of `query` ("7 days, this project"), or nil
@@ -67,8 +85,16 @@ public protocol AgentGrantStore: AnyObject {
     func grants(for caller: AgentCaller) -> [String]
     /// True when a standing permission covers `item` for this agent and project, for `list`.
     func covers(_ item: AgentItem, for caller: AgentCaller) -> Bool
-    /// The owner allowed `query` in the approval window with `decision`. Where a lasting choice is recorded.
-    func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision)
+    /// The owner allowed `query` in the approval window with `decision`. Where a lasting choice is recorded: returns the
+    /// new standing permission's description, or nil when none was made. Never called for a raw request.
+    @discardableResult
+    func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) -> String?
+    /// Whether the window may offer a lasting choice for `query`, and if not, why. Never called for a raw request.
+    func lastingChoice(for query: AgentGrantQuery) -> AgentLastingChoice
+}
+
+public extension AgentGrantStore {
+    func lastingChoice(for query: AgentGrantQuery) -> AgentLastingChoice { .notOffered }
 }
 
 @MainActor
@@ -77,7 +103,7 @@ public final class NoAgentGrants: AgentGrantStore {
     public func grant(covering query: AgentGrantQuery) -> String? { nil }
     public func grants(for caller: AgentCaller) -> [String] { [] }
     public func covers(_ item: AgentItem, for caller: AgentCaller) -> Bool { false }
-    public func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) {}
+    public func approved(_ query: AgentGrantQuery, decision: AgentApprovalDecision) -> String? { nil }
 }
 
 /// One row of the approval window: a secret, never its value.
@@ -109,6 +135,9 @@ public struct AgentApprovalPrompt: Equatable, Sendable {
     /// The agent's `--reason`: its claim, shown in quotes and never reworded.
     public var reason: String?
     public var rows: [AgentApprovalRow]
+    /// Whether "Allow for 7 days ▾" is offered beside Allow Once. Whether Premium is here is the app's own check, not
+    /// the prompt's.
+    public var lasting: AgentLastingChoice = .notOffered
     /// A secondary detail on how the request came: "through MCP; the client says it is “claude-code 2.1”". The agent's
     /// name above is always the process tree's, never the MCP client's own word.
     public var via: String? = nil
@@ -118,6 +147,8 @@ public enum AgentApprovalDecision: Equatable, Sendable {
     case deny
     /// The rows the owner left ticked, by index. Confirmed with Touch ID or the login password.
     case allow(Set<Int>)
+    /// Allowed, and the same request needs no window for `length` (a standing permission, Premium). Confirmed the same.
+    case allowLasting(Set<Int>, AgentGrantLength)
     /// The window went away without an answer: the broker withdrew it, or the vault locked.
     case dismissed
 }
@@ -316,13 +347,15 @@ public final class VaultBroker {
         }
         // The answer must fit one frame, encoded as it would be sent with everything allowed. Said before anyone is asked,
         // not after the owner approved. The values stay in this process.
-        if AgentCoding.encode(answer(request, resolved: resolved, selected: Set(resolved.indices), by: "once")).count + 4 > BridgeFrame.maxLength {
+        if AgentCoding.encode(answer(request, resolved: resolved, selected: Set(resolved.indices), by: Self.longestBy)).count + 4 > BridgeFrame.maxLength {
             log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
             var refusal = AgentResponse.error(.usage, id: request.id, ref: resolved.first?.ref)
             refusal.detail = "The values asked for are too large to hand over (an answer is at most 1 MiB)."
             return refusal
         }
-        let query = AgentGrantQuery(caller: caller, kind: request.type, raw: raw, program: request.program, argv: request.argv ?? [], secrets: resolved)
+        let query = AgentGrantQuery(
+            caller: caller, kind: request.type, raw: raw, program: request.program, argv: request.argv ?? [], secrets: resolved, added: request.environment
+        )
         if !raw, let grant = grants.grant(covering: query) {
             return deliver(request, caller: caller, resolved: resolved, selected: Set(resolved.indices), outcome: .allowedByGrant, grant: grant)
         }
@@ -343,36 +376,44 @@ public final class VaultBroker {
             log(request, caller: caller, outcome: .locked, items: resolved.map(\.logLabel), delivery: [])
             return .error(.locked, id: request.id)
         }
-        let prompt = makePrompt(request, caller: caller, resolved: resolved, raw: raw)
+        var prompt = makePrompt(request, caller: caller, resolved: resolved, raw: raw)
+        if !raw { prompt.lasting = grants.lastingChoice(for: query) }
         let decision = await ask(prompt)
+        // Unticking everything and allowing is a denial.
+        let allowed: Set<Int>
         switch decision {
-        case .allow(let selected) where !selected.isEmpty:
-            guard !vault.agentVaultLocked else {
-                log(request, caller: caller, outcome: .locked, items: resolved.map(\.logLabel), delivery: [])
-                return .error(.locked, id: request.id)
-            }
-            // What was approved must still be there, and still fit, after the wait.
-            let approved = resolved.indices.filter { selected.contains($0) }
-            if let gone = approved.first(where: { vault.agentSecret(resolved[$0].item, field: resolved[$0].field) == nil }) {
-                log(request, caller: caller, outcome: .notAvailable, items: [resolved[gone].ref], delivery: [])
-                return .error(.notAvailable, id: request.id, ref: resolved[gone].ref)
-            }
-            if AgentCoding.encode(answer(request, resolved: resolved, selected: selected, by: "once")).count + 4 > BridgeFrame.maxLength {
-                log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
-                return .error(.usage, id: request.id, ref: resolved.first?.ref)
-            }
-            // A raw approval is never a standing permission's start.
-            if !raw { grants.approved(query, decision: decision) }
-            return deliver(request, caller: caller, resolved: resolved, selected: selected, outcome: raw ? .shown : .allowedOnce, grant: nil)
-        case .allow, .deny:
-            limiter.recordDenial(caller.sessionKey, now: clock())
-            log(request, caller: caller, outcome: .denied, items: resolved.map(\.logLabel), delivery: resolved.map(\.deliveryLabel))
-            return .error(.denied, id: request.id)
-        case .dismissed:
+        case .allow(let selected), .allowLasting(let selected, _): allowed = selected
+        case .deny, .dismissed: allowed = []
+        }
+        if case .dismissed = decision {
             let locked = vault.agentVaultLocked
             log(request, caller: caller, outcome: locked ? .locked : .timedOut, items: resolved.map(\.logLabel), delivery: resolved.map(\.deliveryLabel))
             return .error(locked ? .locked : .timeout, id: request.id)
         }
+        if allowed.isEmpty {
+            limiter.recordDenial(caller.sessionKey, now: clock())
+            log(request, caller: caller, outcome: .denied, items: resolved.map(\.logLabel), delivery: resolved.map(\.deliveryLabel))
+            return .error(.denied, id: request.id)
+        }
+        let selected = allowed
+        guard !vault.agentVaultLocked else {
+            log(request, caller: caller, outcome: .locked, items: resolved.map(\.logLabel), delivery: [])
+            return .error(.locked, id: request.id)
+        }
+        // What was approved must still be there, and still fit, after the wait.
+        let approved = resolved.indices.filter { selected.contains($0) }
+        if let gone = approved.first(where: { vault.agentSecret(resolved[$0].item, field: resolved[$0].field) == nil }) {
+            log(request, caller: caller, outcome: .notAvailable, items: [resolved[gone].ref], delivery: [])
+            return .error(.notAvailable, id: request.id, ref: resolved[gone].ref)
+        }
+        if AgentCoding.encode(answer(request, resolved: resolved, selected: selected, by: Self.longestBy)).count + 4 > BridgeFrame.maxLength {
+            log(request, caller: caller, outcome: .usage, items: resolved.map(\.logLabel), delivery: [])
+            return .error(.usage, id: request.id, ref: resolved.first?.ref)
+        }
+        // A raw approval is never a standing permission's start.
+        let started = raw ? nil : grants.approved(query, decision: decision)
+        let outcome: AgentOutcome = raw ? .shown : (started == nil ? .allowedOnce : .allowedAndGranted)
+        return deliver(request, caller: caller, resolved: resolved, selected: selected, outcome: outcome, grant: started, by: "once")
     }
 
     private struct Failure: Error {
@@ -400,9 +441,10 @@ public final class VaultBroker {
     }
 
     private func deliver(
-        _ request: AgentRequest, caller: AgentCaller, resolved: [AgentResolvedSecret], selected: Set<Int>, outcome: AgentOutcome, grant: String?
+        _ request: AgentRequest, caller: AgentCaller, resolved: [AgentResolvedSecret], selected: Set<Int>, outcome: AgentOutcome, grant: String?,
+        by: String? = nil
     ) -> AgentResponse {
-        let answer = answer(request, resolved: resolved, selected: selected, by: grant ?? "once")
+        let answer = answer(request, resolved: resolved, selected: selected, by: by ?? grant ?? "once")
         let given = resolved.enumerated().filter { selected.contains($0.offset) }.map(\.element)
         log(request, caller: caller, outcome: outcome, grant: grant, items: given.map(\.logLabel), delivery: given.map(\.deliveryLabel))
         return answer
@@ -450,6 +492,9 @@ public final class VaultBroker {
         )
     }
 
+    /// Stands in for the answer's `by` when its size is checked: a standing permission's description is longer than
+    /// "once".
+    static let longestBy = String(repeating: "x", count: 64)
     /// "through MCP; the client says it is “claude-code 2.1”" for a request from the MCP server, else nil. The client's
     /// name is its own claim: quoted, cut to 60 characters, never put where the agent's name goes.
     public static func viaText(_ request: AgentRequest) -> String? {

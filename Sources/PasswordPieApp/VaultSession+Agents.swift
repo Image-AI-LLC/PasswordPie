@@ -114,6 +114,8 @@ extension VaultSession: AgentVault {
         }.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
+    /// Unsharing an item or a folder also ends every standing permission that names an item no longer shared, in the
+    /// same write.
     private func changeAgentSharing(_ change: @escaping (inout AgentSharing) -> Void, then done: @escaping (Bool) -> Void) {
         changeDatabase(at: databaseURL.path, { vault in
             var sharing = AgentSharing(customData: vault.customData)
@@ -121,6 +123,31 @@ extension VaultSession: AgentVault {
             change(&sharing)
             guard sharing != before else { return false }
             sharing.write(into: &vault.customData)
+            let shared = Set(vault.entries.filter(sharing.covers).map(\.id))
+            var grants = AgentGrants(customData: vault.customData)
+            grants.removeAll { grant in grant.secrets.contains { !shared.contains($0.item) } }
+            grants.write(into: &vault.customData)
+            return true
+        }, then: done)
+    }
+
+    // MARK: Standing permissions
+
+    /// The standing permissions kept in the database PasswordPie unlocked, or nil while locked. See "Standing
+    /// permissions" in docs/AGENTS.md: kept in its custom data, so writing the app's preferences cannot add one.
+    var agentGrants: AgentGrants? {
+        guard !agentVaultLocked, let file = agentFile else { return nil }
+        return AgentGrants(customData: file.vault.customData)
+    }
+
+    /// Changes the standing permissions in the database PasswordPie unlocked and writes the file.
+    func changeAgentGrants(_ edit: @escaping (inout AgentGrants) -> Void, then done: @escaping (Bool) -> Void = { _ in }) {
+        changeDatabase(at: databaseURL.path, { vault in
+            let before = AgentGrants(customData: vault.customData)
+            var grants = before
+            edit(&grants)
+            guard grants != before else { return false }
+            grants.write(into: &vault.customData)
             return true
         }, then: done)
     }

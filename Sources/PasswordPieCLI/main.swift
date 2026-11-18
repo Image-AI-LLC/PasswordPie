@@ -40,6 +40,7 @@ func runCommand(_ options: RunOptions) -> Never {
     request.reason = options.reason
     request.masking = options.masking
     request.wait = options.wait
+    request.environment = options.literals.map(\.name)
     let answer = ask(request)
 
     var childEnvironment = environment

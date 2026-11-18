@@ -99,6 +99,9 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     public var reason: String?
     /// False for `run --no-masking`, which is then a raw read.
     public var masking: Bool?
+    /// The names of the variables the tool sets in the command's environment besides the secrets (an `.env.pp`'s plain
+    /// lines). Names only. A standing permission is not used when one of them makes programs load other code.
+    public var environment: [String]?
     /// Seconds to wait for an unlock.
     public var wait: Int?
     public var query: String?

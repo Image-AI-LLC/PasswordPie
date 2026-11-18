@@ -10,12 +10,12 @@ Direct download only (`#if PP_DIRECT`, and the App Store app links none of it): 
 `notarytool`, `psql` or `npm` inside PasswordPie's sandbox, unable to read the project.
 
 **Status.** The app serves `agent.sock` while Preferences > Agents is on, bundles the tool in `Contents/Helpers`, and
-asks the owner for every use (Allow Once, Show to Agent). `passwordpie mcp` serves the same requests as MCP tools, and
-every run watches the command lines under it for the values it handed out. What the owner sees is in "Agents use a secret
-without seeing it" in [UX.md](UX.md). Standing permissions ("do not ask me every time", Premium) and website login for
-agents come next.
+asks the owner for every use (Allow Once, Show to Agent) unless a standing permission covers it ("Allow for 7 days ▾",
+Premium). `passwordpie mcp` serves the same requests as MCP tools, and every run watches the command lines under it for
+the values it handed out. What the owner sees is in "Agents use a secret without seeing it" in [UX.md](UX.md). Website
+login for agents comes next.
 
-Free or Premium: using a secret with an approval each time is free, and so is a raw read. Standing permissions will be
+Free or Premium: using a secret with an approval each time is free, and so is a raw read. Standing permissions are
 Premium, checked by the app's own `appHasPremium()`; nothing in a request carries Premium state.
 
 ## Pieces
@@ -32,6 +32,7 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 | Activity log | `PasswordPieAgent/AgentActivity.swift`, file `~/Library/Application Support/PasswordPie/agent-activity.jsonl` | One line per request, no values |
 | The app's side | `AgentAccess.swift` (switch, socket, link), `AgentApproval.swift` (the window, Touch ID), `AgentsPane.swift`, `VaultSession+Agents.swift` (what agents see, sharing) | Direct download only |
 | Sharing | `PasswordPieCore/AgentSharing.swift`, in the database's custom data (`Meta/CustomData`, key `PasswordPie.AgentSharing`) | Items by UUID, folders by path |
+| Standing permissions | `PasswordPieAgent/StandingPermissions.swift` (the store), `AgentGrants.swift` (what a grant is, matching), `AgentProgramRule.swift` (the program rule); in the database's custom data, key `PasswordPie.AgentGrants` | Grants made in the approval window with Premium, revoked in the Agents pane or the gear menu |
 
 ## Sharing
 
@@ -59,8 +60,8 @@ the MCP server and the browser login, are thin relays. For each request it:
 2. **Waits for an unlock** when the vault is locked, up to `--wait` (default 60 s, at most 600). The app shows its lock
    screen with "Claude Code is waiting for 2 secrets." Unlocking is only ever done by the owner.
 3. **Resolves references against shared items only.** Unshared and nonexistent give the same answer.
-4. **Decides**: a standing permission (`AgentGrantStore`; this version's store never grants), else the approval window
-   (`AgentApprover`). A raw request never consults standing permissions.
+4. **Decides**: a standing permission (`AgentGrantStore`, below), else the approval window (`AgentApprover`). A raw
+   request never consults standing permissions, and an approval of one never starts one.
 5. **Writes one activity line**, whatever the outcome.
 
 Rules it keeps:
@@ -75,9 +76,100 @@ Rules it keeps:
 | Raw | `read`, and `run --no-masking`, show "The agent will see the value" and ask every time |
 | Two-step codes | `…/otp` answers `not-available` in this version; the fields that hold a two-step secret (`otp`, `TimeOtp-*`, `TOTP Seed`, `TOTP Settings`) are not offered as custom fields |
 
-The seams for later work: `AgentGrantStore` (standing permissions fill `grant(covering:)`, `grants(for:)`, `covers` and
-record a lasting choice in `approved(_:decision:)`); `AgentApprovalDecision` (an "Allow ▾" length can be added beside
-`allow`); `AgentRequestKind.login` (reserved for website login, answered `usage` for now).
+The seams for later work: `AgentGrantStore` (`lastingChoice(for:)` says whether the window offers a lasting choice;
+`approved(_:decision:)` records one); `AgentRequestKind.login` (reserved for website login, answered `usage` for now; a
+grant carries its `kind`, so login grants can be added beside `use` ones).
+
+## Standing permissions
+
+"Allow for 7 days ▾" in the approval window approves the request and records a **grant**: the same request is then let
+through without a window until the grant ends. Lengths: **this agent session** (until that agent process exits, at most
+12 hours), **8 hours**, **7 days**, **30 days**. The button names the length chosen last time (preference
+`agentGrantLength`; forging it only changes the button's words).
+
+A grant covers a request only when every binding matches:
+
+| Bound to | Kept as | Why |
+|---|---|---|
+| Items and fields | Item UUID and the field as a reference spells it; only the rows left ticked | The prompt was about these, not their folder |
+| Delivery | `env`, `file` or `stdin`, and the variable's name | A grant to set `$TOKEN` for a command is not a grant to show it to the agent |
+| Agent | `AgentProcess.identity`: signing team and identifier, or the executable path when unsigned; "none" with no agent in the chain | Another agent program asks again |
+| Project | The project root the app worked out | The same agent in another project asks again |
+| Program | `AgentProgramBinding` (below) | A grant for the release script is not a grant for `curl` |
+| Time | `ends`; for a session grant also the agent session (`sessionKey`: pid and start time) | Nothing is forever |
+| Mac | `AgentMacIdentity`: SHA-256 of PasswordPie's label and the hardware UUID, 16 bytes in hex | The same file opened on another Mac does not use it |
+| Kind | `use` | A run grant is not a website login grant |
+
+A request is covered when one grant names every secret it asks for (a subset of the grant's), with the same delivery
+and name each.
+
+**The program rule** (`AgentProgramRule`, lists kept in code with tests):
+
+- The program is the resolved path of the first word (symbolic links followed), as the tool found it; the app reads it
+  again and checks it is the first word's program. The path as typed is bound too, so one virtual environment's
+  `python` link is not another's.
+- **Arguments are bound unless the code that runs is a script whose content is bound.** The project's own scripts
+  (files that start with `#!`, outside `node_modules`, `.venv`, `vendor` and the like) and the script a shell or interpreter runs may be given other
+  arguments; everything else is granted for that exact command (`curl -d @- https://x`, `git push`, `npx wrangler
+  deploy`). So a program the rule does not know (`tsx -e …`, `git -c alias.x=!sh …`) can never be steered by its
+  arguments.
+- A script is bound by its SHA-256. Every other program file outside the protected system folders (`/bin`, `/usr/bin`,
+  `/usr/libexec`, `/System`…) is bound by its identity on disk: device, inode, size and change time. Editing or
+  replacing either asks once.
+- A launcher is read for what it runs: a shell (`sh`, `bash`, `zsh`, `fish`…) and its script; an interpreter (`python3`,
+  `node`, `tsx`, `ruby`, `perl`, `php`, `lua`, `osascript`…) and its script, or `python3 -m module` when the module is a
+  file in the working folder; `env` and the path it starts (with the variables it sets); `xcrun` and its tool, with the
+  SDK by name (`notarytool`, `stapler` and `altool` take another file each time, so their arguments are not bound);
+  `npm`, `pnpm`, `yarn` or `bun run <script>` with that `package.json`, the package manager's settings files (`.npmrc`,
+  `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs`, `bunfig.toml` in the working folder, the project and the home folder, bound present or
+  absent) and the arguments; `npx`, `bunx` or `uvx` and the
+  package; `uv run` and the script or path it runs; `make` with every makefile named (one that `include`s another asks) and its targets. A link named
+  `deploy` to `/bin/sh` is read as `sh`.
+- Never a grant for: inline code (`sh -c`, `bash -ec`, `sh -s`, a shell reading standard input, `python3 -c`,
+  `node -e`, `tsx -e`, `perl -e`, `osascript -e`, `npx -c`); a login or interactive shell (`-l`, `--login`, `-i`), whose
+  profile files are not bound; a launcher the rule does not read (`xargs`, `sudo`, `swift run`, `go run`, `awk`,
+  `brew`, `docker`…); an option it does not know (`node -r x.js`, `bash --rcfile`); a bare name that `env` or `uv run`
+  would find later on a `PATH` the app does not see; `python3 -m` a module from the interpreter's packages; `xcrun
+  --toolchain`, or `--sdk` with a path; `env` setting `PATH` or a variable below; `make` with a variable on its command
+  line.
+- The variables: the app reads the names (never the values) of the variables in the tool's environment from the kernel
+  (`KERN_PROCARGS2`, to the end of the block: an empty entry hides nothing), and the tool sends the names it adds from
+  an `.env.pp` (`environment` in the request). A command started with one that makes programs load other code
+  (`BASH_ENV`, `ENV`, `NODE_OPTIONS`, `PYTHONPATH`, `PERL5OPT`, `RUBYOPT`, `DYLD_*`, `LD_*`, `BASH_FUNC_*`,
+  `npm_config_*`, `YARN_*`, `LUA_INIT*`, `PHPRC`, `PHP_INI_SCAN_DIR`, `DEVELOPER_DIR`, `TOOLCHAINS`, `SDKROOT`, `MAKEFLAGS`,
+  `MFLAGS` and the like), or whose `.env.pp` sets
+  `PATH`, gets no grant: the command inherits them. An environment that could not be read, or a request that does not
+  say what it adds, counts the same.
+- **No agent in the chain** (a command in Terminal, or one an agent started outside its own process tree): only "this
+  agent session" is offered, bound to the tool's POSIX session. A longer grant bound to "no agent" would cover whatever
+  else ends up with no agent.
+- What a grant records is what the window showed: the binding is worked out when the window opens, and a lasting
+  choice makes a grant only if the files are still the same when the owner answers (the use itself goes ahead).
+- When the window cannot offer a grant, its button is grey and a line under it says why.
+
+**Premium.** The window shows the lasting choices to everyone. Without Premium (`appHasPremium()`) they say "Premium",
+and choosing one opens the Premium window over the approval window and approves nothing. The store checks again before
+it records a grant and before it uses one: without Premium no grant is made, and none counts (they stay listed).
+
+**Where they live.** In the database's custom data, key `PasswordPie.AgentGrants`, JSON (`version`, `grants`): under the
+master key, moving with the file, written on every change. Names of items and fields are kept for the pane; never a
+value. Not in the app's preferences: a forged `defaults write` adds nothing (PRD check 9). The app's writes are staged
+(memory keeps what the file holds until the new file replaced it), so the store keeps its own changes in memory until
+the write lands: a new grant counts at once, and a revoke counts at once and for the rest of the app's run even if the
+write fails.
+
+**Ending.** A grant ends at its time; a session grant also when its agent process exits. Revoke (one) and Revoke All
+(every grant in the file, on every Mac; shown while the file holds any) in Preferences > Agents; the gear menu's Revoke Agent Permissions is Revoke All.
+Unsharing an item or folder removes every grant naming an item no longer shared, in the same write. Turning agent
+access off removes the session grants; the others stay and do nothing while it is off. Locked, nothing is read. Ended
+grants are dropped from the file on its next grant change.
+
+A request let through by a grant shows no window. The menu-bar pie shows a neutral dot for 5 seconds, and the activity
+line says "allowed by 7 days, this project"; the request that made the grant says "allowed, and for 7 days, this
+project". The answer's `by` is the grant's description.
+
+Decision: Revoke All removes the grants of every Mac, not only this one's: it is the owner's way to stop everything, and
+a grant on another Mac is one more that could be used. The pane lists this Mac's.
 
 ## Who is asking
 
@@ -86,7 +178,9 @@ can start it, so the app looks further, itself, for every request (not once per 
 
 1. **The working folder** of the tool's process, read by the app (`proc_pidinfo`, `PROC_PIDVNODEPATHINFO`). The project
    is the nearest folder at or above it holding `.git` (a folder, or a worktree's file), else that folder.
-2. **The parent chain**, from the tool's parent up to launchd (`sysctl` `KERN_PROC_PID`, which also reads processes of
+2. **The tool's environment**: the names of its variables (`KERN_PROCARGS2`), never their values, for the program rule
+   of standing permissions.
+3. **The parent chain**, from the tool's parent up to launchd (`sysctl` `KERN_PROC_PID`, which also reads processes of
    other users such as the root `login` between a terminal and its shell). For each: pid, start time, executable path,
    and code signature (team, identifier, the certificate's organisation) when it is valid and anchored to Apple
    (Developer ID, App Store, or Apple's own; a self-signed certificate can name any team, so it counts as not signed).
@@ -94,18 +188,18 @@ can start it, so the app looks further, itself, for every request (not once per 
    while that process runs, its pid cannot belong to another. Each request also checks the tool's start time against
    the one seen when it connected. A parent that started after
    its child is a later process that got an exited parent's pid: the walk stops there.
-3. **The agent** is the nearest ancestor on the list of known agent hosts (`AgentHosts`: by signing identifier, by
+4. **The agent** is the nearest ancestor on the list of known agent hosts (`AgentHosts`: by signing identifier, by
    executable name, or for an interpreter such as `node` by its script's name), else the first that is not a shell,
    terminal or launcher. A shell or launcher counts as one only when it is Apple's or in a protected system folder
    (`/bin`, `/usr/bin`…): any program can be named `zsh`. With nothing else in the chain the request is "A command in
    Terminal, no agent found"; the terminal's signature is never lent to it, since an agent can open a Terminal window
    too.
-4. **The agent session** is that process, by pid **and** start time. With no known agent in the chain, it is the tool's
+5. **The agent session** is that process, by pid **and** start time. With no known agent in the chain, it is the tool's
    POSIX session (`getsid`), by the session leader's pid and start time.
 
 What this cannot tell apart: anything the agent itself starts. A test suite or a package's install script running under
 the agent is a descendant of the agent, in the same project, and looks exactly like it. That is why standing
-permissions will be bound to the program, and project scripts by their content.
+permissions are bound to the program, and project scripts by their content.
 
 An agent on an unsigned interpreter is shown as "not signed: /opt/homebrew/bin/node", and its identity is that path.
 
@@ -144,7 +238,7 @@ credential: the tool holds no token.
 | Type | Request | Answer |
 |---|---|---|
 | `hello` | `version`, `client`, `cliVersion` | `version`, `locked`, `access` |
-| `use` | `secrets` (`name`, `ref`, `as`: `env`, `file`, `stdin`), `program`, `argv`, `reason`, `masking`, `wait` | `secrets` (`value` for UTF-8 text, `base64` otherwise, or `declined: true`), `by` (`once`, or a standing permission) |
+| `use` | `secrets` (`name`, `ref`, `as`: `env`, `file`, `stdin`), `program`, `argv`, `reason`, `masking`, `wait`, `environment` (the names the tool sets besides the secrets; without it no standing permission is used) | `secrets` (`value` for UTF-8 text, `base64` otherwise, or `declined: true`), `by` (`once`, or a standing permission) |
 | `read` | one secret with `as: "shown"`, `reason`, `wait` | `secrets` with the one value |
 | `list` | `query`, `wait` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Never a value |
 | `status` | none | `status`: `locked`, `access`, `agent`, `project`, `grants` |
@@ -215,7 +309,7 @@ literally. `#` starts a comment, `export ` is allowed. No shell expansion; one p
 - `--no-masking` makes the request a raw read: it asks every time, with the raw wording.
 - The shell expands `$NAME` in the typed command **before** `passwordpie` runs, so
   `passwordpie run --env T=… -- curl -H "Authorization: $T"` sends an empty header. Put such commands in a script, or in
-  `sh -c '…'` (which will always ask once standing permissions exist).
+  `sh -c '…'` (which always asks: inline code gets no standing permission).
 
 **`read`** prints one value on standard output, after a "Show to Agent" approval each time; `-n` leaves out the newline.
 An attachment's bytes are written as they are. **`list`** prints the shared items matching `QUERY`. **`status`** prints
@@ -313,9 +407,9 @@ agent itself sent, so `not-available` never says which of its two cases it is:
 ## Activity
 
 Every `run`, `read` and `list` request is one JSON line in `~/Library/Application Support/PasswordPie/agent-activity.jsonl`,
-mode 0600, whether it was allowed or not: time, kind, outcome (allowed once, allowed by a standing permission, shown to
-the agent, denied, timed out, locked, not available, ambiguous, too many requests, not understood, and from the argument
-watch, value seen on a command line), `via` (`MCP` through the MCP server), agent and signature,
+mode 0600, whether it was allowed or not: time, kind, outcome (allowed once, allowed and granted, allowed by a standing
+permission and which, shown to the agent, denied, timed out, locked, not available, ambiguous, too many requests, not
+understood, and from the argument watch, value seen on a command line), `via` (`MCP` through the MCP server), agent and signature,
 the agent's pid, project, command, items and fields (or the reference as typed when it found nothing), deliveries, the
 agent's reason, and the walked chain (pid, path and signature of each ancestor). Never a value. Lines older than 90 days
 are dropped. It is not tamper-proof: same-user code can edit or delete it.
@@ -336,7 +430,10 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Replay | The tool holds no token; an approval answers one request on one connection | none known |
 | Leaks into logs | No value in any log or the activity file; tests plant values and grep | The command's own logs |
 | Leaks into the transcript | Output masking of exact values; files removed at exit | Transformed values; a command that writes the value to a project file |
-| Clicking the prompt | Touch ID (or the login password) on every Allow | none known |
+| Clicking the prompt | Touch ID (or the login password) on every Allow, lasting or not | none known |
+| Prompt injection uses a granted secret | Grants are bound to the program and, unless it is a content-bound script, its arguments: `curl` is not the granted script; inline code always asks; scripts by content, other programs by their identity on disk; code-loading variables in the tool's environment or its `.env.pp` ask | A granted script that can itself be steered (one that takes a URL argument, or calls a program by name found through `PATH`); files a granted command loads that are not bound (files named in its arguments, the files `package.json`'s scripts run, workspace packages, `node_modules`, the owner's own startup files such as `~/.zshenv`, which same-user code can edit); an older copy of the database file put back by same-user code brings back the grants it held |
+| The agent widens its own grant | No message creates or widens a grant; they live in the database, not the preferences; only the window's button with Touch ID makes one; raw reads and `--no-masking` never get one | An owner who picks long grants by habit |
+| A script changes between the check and the run | The app hashes the script when the request comes | The file can be swapped before it runs (a time-of-check to time-of-use race); the same-user attacker who wins it can also read the temporary file |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |
 
@@ -359,3 +456,8 @@ project), the 64 KiB cut, the timeout, files and standard input, read asking eve
 place, the agent from the process tree rather than `clientInfo`, error texts, the argument watch catching a planted
 `--password` that lives one second, and cancelling or leaving ending the command. `ArgumentWatchTests` covers the watch
 against a scripted process table and reads a real process's arguments without its environment.
+
+`StandingPermissionsTests` and `AgentProgramRuleTests` cover grants through the broker with a scripted window and database
+(PRD check 7, Premium, lengths, sessions, revoking before the write lands); `AgentAccessTests` covers the window's
+Premium gate, grants in a real database file, a forged preference and another Mac's grant (PRD check 9), and unsharing;
+`CommandLineToolTests.testAStandingPermissionAndCodeLoadingVariables` runs a grant through the real tool.

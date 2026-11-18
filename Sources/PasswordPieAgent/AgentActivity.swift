@@ -5,6 +5,8 @@ import Foundation
 public enum AgentOutcome: String, Codable, Sendable {
     case allowedOnce = "allowed once"
     case allowedByGrant = "allowed by grant"
+    /// Allowed in the window with a lasting choice: a standing permission starts with it.
+    case allowedAndGranted = "allowed and granted"
     case shown = "shown to the agent"
     case listed = "listed"
     case denied = "denied"
@@ -79,6 +81,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     /// "allowed once", "allowed by 7 days, this project", "denied".
     public var outcomeText: String {
         if outcome == .allowedByGrant, let grant { return "allowed by \(grant)" }
+        if outcome == .allowedAndGranted, let grant { return "allowed, and for \(grant)" }
         return outcome.rawValue
     }
 }
