@@ -9,6 +9,8 @@ let storeBuild = ProcessInfo.processInfo.environment["PP_MAS"] == "1"
 let channelSettings: [SwiftSetting] = storeBuild ? [] : [.define("PP_DIRECT")]
 /// The App Store app links nothing of the updater: the App Store updates it.
 let updateLibrary: [Target.Dependency] = storeBuild ? [] : ["PasswordPieUpdate"]
+/// Agent access (docs/AGENTS.md) is direct channel only: the App Store app links none of it.
+let agentLibrary: [Target.Dependency] = storeBuild ? [] : ["PasswordPieAgent"]
 
 let package = Package(
     name: "PasswordPie",
@@ -18,7 +20,8 @@ let package = Package(
         .executable(name: "PasswordPieAutoFill", targets: ["PasswordPieAutoFill"]),
         .executable(name: "PasswordPieSafari", targets: ["PasswordPieSafari"]),
         .executable(name: "PasswordPieBrowserHost", targets: ["PasswordPieBrowserHost"]),
-        .executable(name: "PasswordPieUpdater", targets: ["PasswordPieUpdater"])
+        .executable(name: "PasswordPieUpdater", targets: ["PasswordPieUpdater"]),
+        .executable(name: "PasswordPieCLI", targets: ["PasswordPieCLI"])
     ],
     targets: [
         .target(
@@ -66,9 +69,26 @@ let package = Package(
             path: "Sources/PasswordPieUpdater",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // Agent access: the messages on agent.sock, references and .env.pp, the caller walk, the broker, the activity log
+        // and output masking. Shared by the app (direct channel only) and the command-line tool. Foundation, Darwin and
+        // Security; no networking API.
+        .target(
+            name: "PasswordPieAgent",
+            dependencies: ["PasswordPieBridge"],
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            linkerSettings: [.linkedFramework("Security")]
+        ),
+        // The `passwordpie` command-line tool (Contents/Helpers/passwordpie). Direct channel only: `make mas-dev` does not
+        // put it in the bundle. It links none of the database code and holds no vault.
+        .executableTarget(
+            name: "PasswordPieCLI",
+            dependencies: ["PasswordPieAgent", "PasswordPieBridge"],
+            path: "Sources/PasswordPieCLI",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "PasswordPie",
-            dependencies: ["PasswordPieCore", "PasswordPieBridge"] + updateLibrary,
+            dependencies: ["PasswordPieCore", "PasswordPieBridge"] + updateLibrary + agentLibrary,
             path: "Sources/PasswordPieApp",
             exclude: ["Info.plist"],
             swiftSettings: [.swiftLanguageMode(.v5)] + channelSettings,
@@ -133,6 +153,11 @@ let package = Package(
         .testTarget(
             name: "PasswordPieBridgeTests",
             dependencies: ["PasswordPieBridge"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .testTarget(
+            name: "PasswordPieAgentTests",
+            dependencies: ["PasswordPieAgent", "PasswordPieBridge", "PasswordPieCLI"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
