@@ -157,12 +157,21 @@ final class KDBXPreserve: @unchecked Sendable {
 
     // MARK: Attachments
 
-    /// The attachments' names of every live entry, in one walk. Only attachments with bytes the file holds.
-    func attachmentNames() -> [UUID: [String]] {
-        let payloads = binaryPayloads
+    /// The attachments' names of the live entries in `ids` (all when nil), in one walk, without decoding any. Only
+    /// attachments that point at bytes the file holds.
+    func attachmentNames(of ids: Set<UUID>?) -> [UUID: [String]] {
+        let count = binaryPayloads.count
         var names: [UUID: [String]] = [:]
-        for live in walkDatabase().entries where !live.location.trashed {
-            let keys = readAttachments(live.element, payloads: payloads).map(\.name)
+        for live in walkDatabase().entries where !live.location.trashed && ids?.contains(live.id) != false {
+            let keys = direct(live.element, "Binary").compactMap { binary -> String? in
+                guard let key = direct(binary, "Key").first?.stringValue, !key.isEmpty,
+                      let value = direct(binary, "Value").first else { return nil }
+                if let ref = value.attribute(forName: "Ref")?.stringValue {
+                    return Int(ref).map { (0..<count).contains($0) } == true ? key : nil
+                }
+                let text = (value.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.isEmpty || isInnerProtected(value) ? nil : key
+            }
             if !keys.isEmpty { names[live.id] = keys }
         }
         return names
@@ -189,7 +198,9 @@ final class KDBXPreserve: @unchecked Sendable {
                 let text = (value.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !text.isEmpty, let data = Data(base64Encoded: text, options: .ignoreUnknownCharacters) else { continue }
                 let compressed = value.attribute(forName: "Compressed")?.stringValue?.lowercased() == "true"
-                found.append((key, compressed ? ((try? gzipDecompress(data)) ?? data) : data))
+                // Compressed bytes that do not decompress are no attachment: never the encoded bytes in its place.
+                guard let bytes = compressed ? try? gzipDecompress(data) : data else { continue }
+                found.append((key, bytes))
             }
         }
         return found

@@ -18,8 +18,9 @@ extension VaultSession: AgentVault {
         guard !agentVaultLocked, let file = agentFile else { return [] }
         let sharing = AgentSharing(customData: file.vault.customData)
         guard !sharing.isEmpty else { return [] }
-        let attachments = file.vault.attachmentNames()
-        return file.vault.entries.filter(sharing.covers).map { entry in
+        let shared = file.vault.entries.filter(sharing.covers)
+        let attachments = file.vault.attachmentNames(of: Set(shared.map(\.id)))
+        return shared.map { entry in
             AgentItem(
                 id: entry.id,
                 database: file.url.path,

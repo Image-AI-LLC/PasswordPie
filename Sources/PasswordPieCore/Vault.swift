@@ -148,9 +148,9 @@ public struct Vault: Equatable, Sendable {
         preserve?.attachments(of: id).map(\.name) ?? []
     }
 
-    /// Every live entry's attachment names, read in one pass.
-    public func attachmentNames() -> [UUID: [String]] {
-        preserve?.attachmentNames() ?? [:]
+    /// The attachment names of the live entries in `ids` (every entry when nil), read in one pass without decoding.
+    public func attachmentNames(of ids: Set<UUID>? = nil) -> [UUID: [String]] {
+        preserve?.attachmentNames(of: ids) ?? [:]
     }
 
     /// One attachment's bytes.
