@@ -138,7 +138,12 @@ enum ChildProcess {
             return nil
         }
         var settings = termios()
-        if tcgetattr(STDOUT_FILENO, &settings) == 0 { tcsetattr(slave, TCSANOW, &settings) }
+        if tcgetattr(STDOUT_FILENO, &settings) == 0 {
+            // No output processing (`\n` to `\r\n`): a value with line breaks (a key file) must reach the masker as it
+            // was given. This tool's own terminal does the translation when the masked output is written to it.
+            settings.c_oflag &= ~tcflag_t(OPOST)
+            tcsetattr(slave, TCSANOW, &settings)
+        }
         copySize(to: master)
         _ = fcntl(master, F_SETFD, FD_CLOEXEC)
         return (master, slave)
@@ -214,7 +219,8 @@ enum ChildProcess {
                 let count = read(source.fd, &chunk, chunk.count)
                 if count > 0 {
                     let masked = sources[index].masker.feed(Data(chunk[0..<count]))
-                    try? BridgeSocket.writeAll(source.output, masked)
+                    // The reader went away (`| head -1`): stop reading too, so the command gets SIGPIPE as in a pipeline.
+                    if (try? BridgeSocket.writeAll(source.output, masked)) == nil { closed.append(source.fd) }
                 } else if count == 0 || (errno != EINTR && errno != EAGAIN) {
                     closed.append(source.fd)
                 }

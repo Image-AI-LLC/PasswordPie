@@ -27,7 +27,10 @@ final class CommandLineToolTests: XCTestCase {
         vault = FakeVault()
         approver = FakeApprover()
         activity = MemoryActivity()
-        vault.add("Token", password: planted, fields: ["Key ID": plantedID], attachments: ["AuthKey.p8": Data("-----BEGIN PRIVATE KEY-----planted".utf8)])
+        vault.add("Token", password: planted, fields: ["Key ID": plantedID], attachments: [
+            "AuthKey.p8": Data("-----BEGIN PRIVATE KEY-----planted".utf8),
+            "multi.pem": Data("-----BEGIN KEY-----\nline-two-planted\n-----END KEY-----\n".utf8),
+        ])
         vault.add("Hidden", password: "hidden-password-2", shared: false)
         try startServer(grants: NoAgentGrants())
     }
@@ -55,8 +58,11 @@ final class CommandLineToolTests: XCTestCase {
         var err: String
     }
 
+    /// Variables the tool itself was started with, as an agent's shell may have them.
+    private var inherited: [String: String] = [:]
+
     private func environment() -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+        var environment = ProcessInfo.processInfo.environment.merging(inherited) { _, new in new }
         environment["PASSWORDPIE_AGENT_SOCKET"] = socketPath
         environment["TMPDIR"] = temporary.path + "/"
         return environment
@@ -316,8 +322,33 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertFalse(ran.out.contains(planted))
     }
 
+    /// A key file with line breaks is still masked through a pseudo-terminal, which would otherwise turn `\n` into `\r\n`.
+    func testAMultiLineValueIsMaskedThroughAPseudoTerminal() async throws {
+        allowEverything()
+        let ran = try await run(["-q", "/dev/null", tool.path, "run", "--file", "K=pp://Agents/Token/attachment/multi.pem", "--", "sh", "-c", "cat \"$K\""],
+                                executable: URL(fileURLWithPath: "/usr/bin/script"))
+        XCTAssertTrue(ran.out.contains(AgentConstants.concealed), ran.out)
+        XCTAssertFalse(ran.out.contains("line-two-planted"), ran.out)
+    }
+
+    /// A reader that stops early ends the command, as in any pipeline, instead of the tool draining it forever.
+    func testAReaderThatStopsEndsTheCommand() async throws {
+        allowEverything()
+        let started = Date()
+        let ran = try await run(["-c", "'\(tool.path)' run --env T=pp://Agents/Token -- yes | head -1"], executable: URL(fileURLWithPath: "/bin/sh"))
+        XCTAssertEqual(ran.out, "y\n")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+    }
+
+    func testReadWritesAnAttachmentWithoutANewline() async throws {
+        allowEverything()
+        let ran = try await run(["read", "pp://Agents/Token/attachment/AuthKey.p8"])
+        XCTAssertEqual(ran.out, "-----BEGIN PRIVATE KEY-----planted")
+    }
+
     func testDeclinedSecretsAreLeftOutAndSaidSo() async throws {
         approver.script = [.allow([1])]
+        inherited = ["T": "inherited-from-the-agent"]
         let ran = try await run(["run", "--env", "T=pp://Agents/Token", "--env", "K=pp://Agents/Token/Key ID", "--", "sh", "-c", "echo \"[${T:-unset}]\""])
         XCTAssertEqual(ran.out, "[unset]\n")
         XCTAssertTrue(ran.err.contains("did not allow T"), ran.err)

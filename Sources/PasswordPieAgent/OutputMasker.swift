@@ -35,7 +35,18 @@ public struct OutputMasker {
     /// The masked bytes that can be passed on now.
     public mutating func feed(_ chunk: Data) -> Data {
         guard !values.isEmpty else { return chunk }
-        let buffer = held + Array(chunk)
+        return scan(held + Array(chunk), final: false)
+    }
+
+    /// What is still held, at the end of the stream, with any whole value in it masked: a held tail can start a longer
+    /// value that never came and still hold a shorter one.
+    public mutating func finish() -> Data {
+        guard !held.isEmpty else { return Data() }
+        return scan(held, final: true)
+    }
+
+    /// Masks `buffer`. Unless `final`, a tail that could still become a value is kept in `held` for the next piece.
+    private mutating func scan(_ buffer: [UInt8], final: Bool) -> Data {
         held = []
         var out: [UInt8] = []
         out.reserveCapacity(buffer.count)
@@ -49,7 +60,7 @@ public struct OutputMasker {
             }
             let remaining = buffer.count - index
             // A longer value may still be arriving: wait for it before taking a shorter one that matches now.
-            for value in values where value.count > remaining && starts(buffer, at: index, with: value, length: remaining) {
+            for value in values where !final && value.count > remaining && starts(buffer, at: index, with: value, length: remaining) {
                 held = Array(buffer[index...])
                 break scanning
             }
@@ -63,12 +74,6 @@ public struct OutputMasker {
             index += 1
         }
         return Data(out)
-    }
-
-    /// What is still held, at the end of the stream. It was not a whole value.
-    public mutating func finish() -> Data {
-        defer { held = [] }
-        return Data(held)
     }
 
     private func starts(_ buffer: [UInt8], at index: Int, with value: [UInt8], length: Int) -> Bool {

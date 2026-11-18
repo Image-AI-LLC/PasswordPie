@@ -53,6 +53,8 @@ func runCommand(_ options: RunOptions) -> Never {
     let given = answer.secrets ?? []
     for (secret, value) in zip(options.secrets, given) {
         guard let bytes = value.bytes else {
+            // Not an inherited variable of the same name either: the command runs without it.
+            if let name = secret.name { childEnvironment[name] = nil }
             printError("PasswordPie: the owner did not allow \(secret.name ?? "the standard input") (\(secret.ref)); the command runs without it.")
             continue
         }
@@ -104,7 +106,7 @@ func readCommand(_ options: ReadOptions) -> Never {
     guard let value = answer.secrets?.first, let bytes = value.bytes else { refuse(.denied) }
     var output = bytes
     // Text ends with a newline unless -n; an attachment's bytes are written as they are.
-    if options.newline, value.value != nil { output.append(0x0A) }
+    if options.newline, !RunFolder.namesAttachment(options.ref) { output.append(0x0A) }
     FileHandle.standardOutput.write(output)
     exit(0)
 }

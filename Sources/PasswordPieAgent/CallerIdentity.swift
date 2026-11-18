@@ -328,8 +328,12 @@ public enum CodeSignature {
     public static func read(pid: Int32) -> (team: String?, identifier: String?, signer: String?) {
         var code: SecCode?
         let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
-        guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code,
-              SecCodeCheckValidity(code, [], nil) == errSecSuccess else { return (nil, nil, nil) }
+        // Anchored to Apple: Developer ID, App Store or Apple's own. A self-signed certificate can name any team and
+        // organisation, so it counts as not signed.
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString("anchor apple or anchor apple generic" as CFString, [], &requirement) == errSecSuccess,
+              SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code,
+              SecCodeCheckValidity(code, [], requirement) == errSecSuccess else { return (nil, nil, nil) }
         var staticCode: SecStaticCode?
         guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return (nil, nil, nil) }
         var info: CFDictionary?

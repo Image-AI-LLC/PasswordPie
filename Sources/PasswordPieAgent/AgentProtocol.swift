@@ -120,7 +120,7 @@ public struct AgentSecretValue: Codable, Equatable, Sendable {
         self.name = name
         self.ref = ref
         if let bytes {
-            if let text = String(data: bytes, encoding: .utf8) {
+            if let text = String(data: bytes, encoding: .utf8), Data(text.utf8) == bytes {
                 value = text
             } else {
                 base64 = bytes.base64EncodedString()

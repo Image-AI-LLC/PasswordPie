@@ -54,15 +54,15 @@ public final class AgentServer: @unchecked Sendable {
         lock.lock()
         let fd = listener
         let socketPath = path
-        let open = connections
         listener = -1
         path = nil
+        // Under the lock: a connection's own thread removes itself under it before closing, so no number is reused.
+        for connection in connections { shutdown(connection, SHUT_RDWR) }
         lock.unlock()
         guard fd >= 0 else { return }
         if let socketPath { unlink(socketPath) }
         shutdown(fd, SHUT_RDWR)
         close(fd)
-        for connection in open { shutdown(connection, SHUT_RDWR) }
     }
 
     private func acceptLoop(_ fd: Int32) {
@@ -70,8 +70,14 @@ public final class AgentServer: @unchecked Sendable {
             let client = accept(fd, nil, nil)
             if client < 0 {
                 switch errno {
-                case EINTR, ECONNABORTED: continue
                 case EBADF, EINVAL, ENOTSOCK: return
+                case EINTR, ECONNABORTED:
+                    // A listener closed by `stop()` first answers ECONNABORTED; its number may be reused already.
+                    lock.lock()
+                    let stopped = listener != fd
+                    lock.unlock()
+                    if stopped { return }
+                    continue
                 default:
                     lock.lock()
                     let stopped = listener != fd
@@ -97,21 +103,24 @@ public final class AgentServer: @unchecked Sendable {
         defer {
             lock.lock()
             connections.remove(fd)
-            lock.unlock()
             close(fd)
+            lock.unlock()
         }
         var on: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
         var timeout = timeval(tv_sec: 5, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
         guard peerCheck(fd), let pid = Self.peerPID(fd) else { return }
+        // The process behind the connection, by pid and start time. Every request checks the walk found that same
+        // process, not a later one that got the pid after the tool exited.
+        let started = identify(pid)?.cli.startTime
         var reader = BridgeFrame.Reader()
         var pending: [Data] = []
         while let frame = try? BridgeSocket.readFrame(fd, reader: &reader, pending: &pending) {
             let answer: AgentResponse
             if let request = AgentCoding.decode(AgentRequest.self, from: frame) {
                 // Every request, not once per connection: the agent that started the tool may have gone meanwhile.
-                if let caller = identify(pid) {
+                if let caller = identify(pid), caller.cli.startTime == started {
                     answer = Self.wait(handler, request, caller, fd: fd)
                 } else {
                     answer = .error(.appUnavailable, id: request.id)

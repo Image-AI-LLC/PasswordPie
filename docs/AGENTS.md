@@ -52,7 +52,7 @@ Rules it keeps:
 | One prompt per agent session | A second request from the same session waits behind the first |
 | Rate limit | 3 denials in 10 minutes from one session: `too-many-requests` without a prompt for 10 minutes |
 | Timeout | The window waits 2 minutes, then answers `timeout` and closes |
-| Hang-up | When the tool's connection closes (the agent killed it), its prompt is withdrawn and its wait ends |
+| Hang-up | When the tool's connection closes (the agent killed it), its prompt is withdrawn and its wait for an unlock ends. A request queued behind another prompt notices when its turn comes |
 | Partial approval | The owner can untick secrets in the window; unticked ones come back `declined` and the tool runs without them, saying so on standard error |
 | Raw | `read`, and `run --no-masking`, show "The agent will see the value" and ask every time |
 | Two-step codes | `…/otp` answers `not-available` in this version |
@@ -70,7 +70,10 @@ can start it, so the app looks further, itself, for every request (not once per 
    is the nearest folder at or above it holding `.git` (a folder, or a worktree's file), else that folder.
 2. **The parent chain**, from the tool's parent up to launchd (`sysctl` `KERN_PROC_PID`, which also reads processes of
    other users such as the root `login` between a terminal and its shell). For each: pid, start time, executable path,
-   and code signature (team, identifier, the certificate's organisation) when it is valid. A parent that started after
+   and code signature (team, identifier, the certificate's organisation) when it is valid and anchored to Apple
+   (Developer ID, App Store, or Apple's own; a self-signed certificate can name any team, so it counts as not signed).
+   The tool's own pid is checked against the start time seen when it connected, so a later process that got the pid is
+   not taken for it. A parent that started after
    its child is a later process that got an exited parent's pid: the walk stops there.
 3. **The agent** is the nearest ancestor on the list of known agent hosts (`AgentHosts`: by signing identifier, by
    executable name, or for an interpreter such as `node` by its script's name), else the first that is not a shell,
@@ -155,7 +158,7 @@ literally. `#` starts a comment, `export ` is allowed. No shell expansion; one p
     passwordpie run [--env NAME=REF]... [--file NAME=REF]... [--stdin REF] [--env-file PATH]
                     [--reason TEXT] [--wait SECONDS] [--no-masking] -- COMMAND [ARG]...
     passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
-    passwordpie list [QUERY] [--json]
+    passwordpie list [QUERY] [--json] [--wait SECONDS]
     passwordpie status [--json]
 
 **`run`** asks the app for the values, starts `COMMAND` as its child with them, and waits.
@@ -169,8 +172,13 @@ literally. `#` starts a comment, `export ` is allowed. No shell expansion; one p
   and the tool says so. Transformed values (base64, a substring, URL-encoded) are not caught.
 - When the tool's standard output is a terminal, the child's output goes to a pseudo-terminal with the same settings
   and size, so progress bars and colours work. Its standard input stays the tool's own.
-- `SIGTERM` and `SIGHUP` to the tool are passed on to the child, and `SIGINT` too when standard input is not a terminal
-  (at a terminal, Ctrl-C reaches the child directly). The tool waits for the child, removes the files, then exits.
+- `SIGTERM` and `SIGHUP` to the tool are passed on to the child, and `SIGINT` and `SIGQUIT` too when standard input is
+  not a terminal (at a terminal, Ctrl-C reaches the child directly). The tool waits for the child, removes the files,
+  then exits. When the tool's own output is closed (`| head -1`), it stops reading the child's, so the child gets
+  `SIGPIPE` as in any pipeline.
+- The pseudo-terminal does no output processing (no `\n` to `\r\n`), so a value with line breaks is masked too.
+- Output that stops on what could be the start of a value (an interactive prompt that begins like a password) is held
+  back until more output comes or the command ends.
 - The tool never puts a value on a command line and never logs one. The command's program must exist before anyone is
   asked.
 - `--no-masking` makes the request a raw read: it asks every time, with the raw wording.
@@ -182,7 +190,8 @@ literally. `#` starts a comment, `export ` is allowed. No shell expansion; one p
 An attachment's bytes are written as they are. **`list`** prints the shared items matching `QUERY`. **`status`** prints
 whether the app runs, is locked, whether agent access is on, who the agent is and the project; it never starts the app.
 
-When PasswordPie is not running, `run`, `read` and `list` start it (`AppLaunch`) and wait up to 10 seconds for the
+The tool waits up to `--wait` plus 30 minutes for an answer (a request can queue behind other prompts of the same agent
+session); the app enforces the real limits. When PasswordPie is not running, `run`, `read` and `list` start it (`AppLaunch`) and wait up to 10 seconds for the
 socket. Running without a socket means agent access is off.
 
 ## Exit codes

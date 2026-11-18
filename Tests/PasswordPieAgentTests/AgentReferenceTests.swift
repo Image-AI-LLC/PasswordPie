@@ -141,6 +141,26 @@ final class OutputMaskerTests: XCTestCase {
         XCTAssertEqual(String(decoding: out, as: UTF8.self), "<\(AgentConstants.concealed)>")
     }
 
+    /// The end of the stream held the start of a longer value that never came; a shorter whole value inside it is still
+    /// masked.
+    func testTheHeldTailIsMaskedAtTheEnd() {
+        var masker = OutputMasker(values: [Data("abcdefghij".utf8), Data("abcdef".utf8)])
+        var out = masker.feed(Data("out: abcdef".utf8))
+        out += masker.finish()
+        XCTAssertEqual(String(decoding: out, as: UTF8.self), "out: \(AgentConstants.concealed)")
+        var inner = OutputMasker(values: [Data("abcdefghij".utf8), Data("cdefgh".utf8)])
+        var second = inner.feed(Data("out: abcdefgh".utf8))
+        second += inner.finish()
+        XCTAssertEqual(String(decoding: second, as: UTF8.self), "out: ab\(AgentConstants.concealed)")
+    }
+
+    func testAValueWithAByteOrderMarkTravelsAsBytes() {
+        let bytes = Data([0xEF, 0xBB, 0xBF, 0x61, 0x62])
+        let value = AgentSecretValue(name: "T", ref: "pp://a/b", bytes: bytes)
+        XCTAssertNil(value.value)
+        XCTAssertEqual(value.bytes, bytes)
+    }
+
     func testShortValuesAreNotMaskedAndCounted() {
         var masker = OutputMasker(values: [Data("12345".utf8), Data("123456".utf8)])
         XCTAssertEqual(masker.skipped, 1)

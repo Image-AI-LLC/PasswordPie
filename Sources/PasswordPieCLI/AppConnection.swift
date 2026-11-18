@@ -36,7 +36,11 @@ enum AppConnection {
         #endif
     }
 
-    /// Sends `request` and waits for the answer: up to the unlock wait plus the approval window.
+    /// How long the tool waits for an answer beyond the unlock wait: a request can queue behind other prompts of the
+    /// same agent session, each up to the 2-minute approval window. The app enforces the real limits.
+    static let answerSeconds = 30 * 60
+
+    /// Sends `request` and waits for the answer.
     static func send(_ request: AgentRequest) -> Result<AgentResponse, Failure> {
         let fd: Int32
         switch connect(startingApp: request.type != .status) {
@@ -44,7 +48,7 @@ enum AppConnection {
         case .failure(let failure): return .failure(failure)
         }
         defer { close(fd) }
-        let seconds = (request.wait ?? AgentConstants.defaultWaitSeconds) + Int(AgentConstants.approvalSeconds) + 30
+        let seconds = (request.wait ?? AgentConstants.defaultWaitSeconds) + answerSeconds
         BridgeSocket.setTimeout(fd, seconds: seconds)
         guard (try? BridgeSocket.writeAll(fd, BridgeFrame.encode(AgentCoding.encode(request)))) != nil else {
             return .failure(Failure(code: .appUnavailable, detail: "PasswordPie closed the connection."))

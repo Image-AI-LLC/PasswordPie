@@ -35,18 +35,27 @@ enum RunFolder {
         return url
     }
 
-    /// The file's name: the variable's, with the attachment's extension so tools that look at it (`.p8`, `.p12`) are happy.
-    static func fileName(variable: String, ref: String) -> String {
-        guard let reference = try? AgentReference(ref) else { return variable }
-        var attachment: String?
+    /// True when `ref` names an attachment rather than a text field.
+    static func namesAttachment(_ ref: String) -> Bool {
+        attachmentName(ref) != nil
+    }
+
+    private static func attachmentName(_ ref: String) -> String? {
+        guard let reference = try? AgentReference(ref) else { return nil }
         switch reference.target {
-        case .id(_, .attachment(let name)): attachment = name
+        case .id(_, .attachment(let name)): return name
         case .path(let readings):
             for reading in readings {
-                if case .attachment(let name) = reading.field { attachment = name }
+                if case .attachment(let name) = reading.field { return name }
             }
-        default: break
+            return nil
+        default: return nil
         }
+    }
+
+    /// The file's name: the variable's, with the attachment's extension so tools that look at it (`.p8`, `.p12`) are happy.
+    static func fileName(variable: String, ref: String) -> String {
+        let attachment = attachmentName(ref)
         let ext = attachment.map { ($0 as NSString).pathExtension } ?? ""
         let safe = ext.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) } ? ext : ""
         return safe.isEmpty ? variable : "\(variable).\(safe)"

@@ -428,7 +428,8 @@ public final class VaultBroker {
             let key = UUID()
             _ = await firstOf(seconds: remaining) { [weak self] in
                 await withCheckedContinuation { continuation in
-                    guard let self else { return continuation.resume() }
+                    // Unlocked between the loop's check and this task starting: no change would wake it.
+                    guard let self, self.vault.agentVaultLocked else { return continuation.resume() }
                     self.stateWaiters[key] = continuation
                 }
             }
