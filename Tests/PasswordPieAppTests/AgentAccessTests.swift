@@ -559,6 +559,9 @@ final class AgentAccessTests: XCTestCase {
         other.program = program
         session.changeAgentGrants { $0.add(other) }
         XCTAssertEqual(session.agentGrants?.all.count, 1)
+        access.refreshStanding()
+        XCTAssertEqual(access.standing, [], "another Mac's grant is not listed")
+        XCTAssertTrue(access.anyGrants, "but Revoke All still has something to remove")
         _ = await access.broker.handle(deploy(project), from: caller(in: project))
         XCTAssertEqual(shown(), 2, "another Mac's grant does not count here")
         // The same grant with this Mac's identifier does: so only the Mac stopped it.

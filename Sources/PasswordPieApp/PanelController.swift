@@ -1056,7 +1056,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         // Beside Lock while this database has standing permissions in force on this Mac.
         if let agents = AppDelegate.shared?.agentAccess {
             agents.refreshStanding()
-            if !agents.standing.isEmpty { add(to: gear, "Revoke Agent Permissions", #selector(revokeAgentPermissions)) }
+            if agents.anyGrants { add(to: gear, "Revoke Agent Permissions", #selector(revokeAgentPermissions)) }
         }
         #endif
         gear.addItem(.separator())

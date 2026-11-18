@@ -16,6 +16,8 @@ final class AgentAccess: ObservableObject {
     @Published private(set) var linkStatus: String?
     /// The standing permissions in force on this Mac, for the Agents pane. Empty while locked.
     @Published private(set) var standing: [AgentGrant] = []
+    /// The database holds standing permissions of any Mac: Revoke All has something to remove.
+    @Published private(set) var anyGrants = false
 
     let session: VaultSession
     let broker: VaultBroker
@@ -138,6 +140,7 @@ final class AgentAccess: ObservableObject {
     /// Reads the standing permissions in force again, for the pane.
     func refreshStanding() {
         standing = grants.inForce.sorted { $0.created > $1.created }
+        anyGrants = !(session.agentGrants?.isEmpty ?? true)
     }
 
     /// Premium is here, so the standing permissions count.

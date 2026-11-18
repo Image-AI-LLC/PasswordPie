@@ -70,7 +70,8 @@ public enum AgentProgramRule {
         "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONINSPECT", "PYTHONUSERBASE", "PYTHONEXECUTABLE",
         "PERL5OPT", "PERL5LIB", "PERLLIB", "PERL5DB", "RUBYOPT", "RUBYLIB",
         "JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS",
-        "DEVELOPER_DIR", "TOOLCHAINS", "SDKROOT", "MAKEFLAGS", "MAKEFILES", "GNUMAKEFLAGS",
+        "DEVELOPER_DIR", "TOOLCHAINS", "SDKROOT", "MAKEFLAGS", "MFLAGS", "MAKEFILES", "GNUMAKEFLAGS",
+        "PHPRC", "PHP_INI_SCAN_DIR",
     ]
     /// Folders macOS protects (System Integrity Protection): a program there is not bound by its identity on disk.
     static let systemFolders = ["/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/", "/usr/libexec/", "/System/"]
@@ -86,7 +87,7 @@ public enum AgentProgramRule {
         if codeLoadingVariables.contains(name) { return true }
         let lower = name.lowercased()
         return name.hasPrefix("DYLD_") || name.hasPrefix("LD_") || name.hasPrefix("BASH_FUNC_") || lower.hasPrefix("npm_config_")
-            || name.hasPrefix("YARN_")
+            || name.hasPrefix("YARN_") || name.hasPrefix("LUA_INIT")
     }
 
     /// The binding for a `use` request, or why it asks every time.
@@ -177,10 +178,16 @@ public enum AgentProgramRule {
 
         func inProject(_ path: String) -> Bool { path.hasPrefix(project == "/" ? "/" : project + "/") }
 
-        /// The project's own file, not one in a folder of other people's code.
+        /// The project's own script (`#!` first), not one in a folder of other people's code. A compiled program in the
+        /// project is not one: its arguments are bound.
         func isProjectScript(_ path: String) -> Bool {
             guard inProject(path) else { return false }
-            return !path.dropFirst(project.count + 1).split(separator: "/").dropLast().contains { dependencyFolders.contains(String($0)) }
+            guard !path.dropFirst(project.count + 1).split(separator: "/").dropLast().contains(where: { dependencyFolders.contains(String($0)) }) else {
+                return false
+            }
+            guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+            defer { try? handle.close() }
+            return (try? handle.read(upToCount: 2)) == Data("#!".utf8)
         }
 
         /// "Scripts/a.sh" inside the project, "~/bin/x" in the home folder, else the path.
@@ -428,11 +435,11 @@ public enum AgentProgramRule {
             return .bound(bound)
         }
 
-        /// The package manager's settings files in the working folder and the project, bound present or absent: creating
-        /// one later changes the binding.
+        /// The package manager's settings files in the working folder, the project and the home folder, bound present or
+        /// absent: creating one later changes the binding.
         private func settings(_ binding: AgentProgramBinding) -> AgentProgramBinding {
             var bound = binding
-            for folder in Set([cwd, project]) {
+            for folder in Set([cwd, project, FileManager.default.homeDirectoryForCurrentUser.path]) {
                 for name in packageManagerSettings {
                     let path = folder + "/" + name
                     bound.contents[path] = script(path)?.hash ?? "absent"

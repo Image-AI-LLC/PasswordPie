@@ -106,7 +106,7 @@ and name each.
   again and checks it is the first word's program. The path as typed is bound too, so one virtual environment's
   `python` link is not another's.
 - **Arguments are bound unless the code that runs is a script whose content is bound.** The project's own scripts
-  (outside `node_modules`, `.venv`, `vendor` and the like) and the script a shell or interpreter runs may be given other
+  (files that start with `#!`, outside `node_modules`, `.venv`, `vendor` and the like) and the script a shell or interpreter runs may be given other
   arguments; everything else is granted for that exact command (`curl -d @- https://x`, `git push`, `npx wrangler
   deploy`). So a program the rule does not know (`tsx -e …`, `git -c alias.x=!sh …`) can never be steered by its
   arguments.
@@ -118,7 +118,8 @@ and name each.
   file in the working folder; `env` and the path it starts (with the variables it sets); `xcrun` and its tool, with the
   SDK by name (`notarytool`, `stapler` and `altool` take another file each time, so their arguments are not bound);
   `npm`, `pnpm`, `yarn` or `bun run <script>` with that `package.json`, the package manager's settings files (`.npmrc`,
-  `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs`, bound present or absent) and the arguments; `npx`, `bunx` or `uvx` and the
+  `.yarnrc`, `.yarnrc.yml`, `.pnpmfile.cjs` in the working folder, the project and the home folder, bound present or
+  absent) and the arguments; `npx`, `bunx` or `uvx` and the
   package; `uv run` and the script or path it runs; `make` with every makefile it reads and its targets. A link named
   `deploy` to `/bin/sh` is read as `sh`.
 - Never a grant for: inline code (`sh -c`, `bash -ec`, `sh -s`, a shell reading standard input, `python3 -c`,
@@ -132,7 +133,8 @@ and name each.
   (`KERN_PROCARGS2`, to the end of the block: an empty entry hides nothing), and the tool sends the names it adds from
   an `.env.pp` (`environment` in the request). A command started with one that makes programs load other code
   (`BASH_ENV`, `ENV`, `NODE_OPTIONS`, `PYTHONPATH`, `PERL5OPT`, `RUBYOPT`, `DYLD_*`, `LD_*`, `BASH_FUNC_*`,
-  `npm_config_*`, `YARN_*`, `DEVELOPER_DIR`, `TOOLCHAINS`, `SDKROOT`, `MAKEFLAGS` and the like), or whose `.env.pp` sets
+  `npm_config_*`, `YARN_*`, `LUA_INIT*`, `PHPRC`, `PHP_INI_SCAN_DIR`, `DEVELOPER_DIR`, `TOOLCHAINS`, `SDKROOT`, `MAKEFLAGS`,
+  `MFLAGS` and the like), or whose `.env.pp` sets
   `PATH`, gets no grant: the command inherits them. An environment that could not be read, or a request that does not
   say what it adds, counts the same.
 - **No agent in the chain** (a command in Terminal, or one an agent started outside its own process tree): only "this
@@ -154,7 +156,7 @@ the write lands: a new grant counts at once, and a revoke counts at once and for
 write fails.
 
 **Ending.** A grant ends at its time; a session grant also when its agent process exits. Revoke (one) and Revoke All
-(every grant in the file, on every Mac) in Preferences > Agents; the gear menu's Revoke Agent Permissions is Revoke All.
+(every grant in the file, on every Mac; shown while the file holds any) in Preferences > Agents; the gear menu's Revoke Agent Permissions is Revoke All.
 Unsharing an item or folder removes every grant naming an item no longer shared, in the same write. Turning agent
 access off removes the session grants; the others stay and do nothing while it is off. Locked, nothing is read. Ended
 grants are dropped from the file on its next grant change.

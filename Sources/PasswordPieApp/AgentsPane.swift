@@ -135,12 +135,14 @@ struct AgentsPane: View {
                     Text("Premium has ended on this Mac: these do nothing until it is back.").font(note).foregroundStyle(.secondary)
                 }
                 if access.standing.isEmpty {
-                    Text("None. Every use asks.").font(note).foregroundStyle(.secondary)
-                } else {
-                    ForEach(access.standing) { grant in
-                        StandingRow(grant: grant) { access.revoke(grant) }
-                        PaneRule()
-                    }
+                    Text(access.anyGrants ? "None on this Mac. The database holds some made on another Mac." : "None. Every use asks.")
+                        .font(note).foregroundStyle(.secondary)
+                }
+                ForEach(access.standing) { grant in
+                    StandingRow(grant: grant) { access.revoke(grant) }
+                    PaneRule()
+                }
+                if access.anyGrants {
                     Button("Revoke All") { access.revokeAll() }
                         .accessibilityIdentifier("agents.revokeAll")
                 }

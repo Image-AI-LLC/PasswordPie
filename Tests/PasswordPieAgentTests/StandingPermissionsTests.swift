@@ -367,7 +367,7 @@ final class AgentProgramRuleTests: XCTestCase {
         project = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("rule-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: project.appendingPathComponent("Scripts"), withIntermediateDirectories: true)
         for name in ["Scripts/a.sh", "Scripts/b.sh", "tool.py", "Makefile", "package.json", "upload.js"] {
-            try "content of \(name)\n".write(to: project.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            try "#!/bin/sh\n# content of \(name)\n".write(to: project.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
         chmod(project.appendingPathComponent("Scripts/a.sh").path, 0o755)
         // Stand-ins for tools a test Mac may not have, outside the project.
@@ -411,7 +411,7 @@ final class AgentProgramRuleTests: XCTestCase {
         XCTAssertEqual(a.display, "Scripts/a.sh")
         XCTAssertEqual(a.contents.count, 1)
         XCTAssertEqual(a.key, binding(["Scripts/a.sh", "other", "arguments"])?.key, "arguments are not part of the program")
-        try "changed\n".write(to: project.appendingPathComponent("Scripts/a.sh"), atomically: true, encoding: .utf8)
+        try "#!/bin/sh\nchanged\n".write(to: project.appendingPathComponent("Scripts/a.sh"), atomically: true, encoding: .utf8)
         XCTAssertNotEqual(a.key, binding(["Scripts/a.sh"])?.key)
     }
 
@@ -426,6 +426,16 @@ final class AgentProgramRuleTests: XCTestCase {
         // A program this file does not know runs exactly what was granted: `git -c alias.x=!sh …` is another command.
         let git = try XCTUnwrap(binding(["git", "push"], program: tool("git")))
         XCTAssertNotEqual(git.key, binding(["git", "-c", "alias.x=!sh -c id", "x"], program: tool("git"))?.key)
+    }
+
+    /// A compiled program in the project is not a script: its arguments are bound.
+    func testAProjectProgramThatIsNotAScriptIsBoundWithItsArguments() throws {
+        let tool = project.appendingPathComponent("tool")
+        FileManager.default.createFile(atPath: tool.path, contents: Data([0xCF, 0xFA, 0xED, 0xFE]), attributes: [.posixPermissions: 0o755])
+        let safe = try XCTUnwrap(binding(["./tool", "--safe"], program: tool.path))
+        XCTAssertNotEqual(safe.key, binding(["./tool", "--upload", "evil"], program: tool.path)?.key)
+        let script = try XCTUnwrap(binding(["Scripts/a.sh", "one"]))
+        XCTAssertEqual(script.key, binding(["Scripts/a.sh", "two"])?.key, "a script's arguments may change")
     }
 
     /// A program outside the protected system folders is bound by its identity on disk: replacing it asks again.
@@ -503,6 +513,9 @@ final class AgentProgramRuleTests: XCTestCase {
         asks(["Scripts/a.sh"], environment: ["NPM_CONFIG_Script_Shell"])
         asks(["Scripts/a.sh"], environment: ["YARN_YARN_PATH"])
         asks(["Scripts/a.sh"], environment: ["BASH_FUNC_curl%%"])
+        for variable in ["LUA_INIT", "LUA_INIT_5_4", "PHPRC", "PHP_INI_SCAN_DIR", "MFLAGS"] { asks(["Scripts/a.sh"], environment: [variable]) }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertTrue(deploy.contents.keys.contains(home + "/.npmrc"), "the owner's own .npmrc is bound too")
     }
 
     func testEveryMakefileIsBound() throws {
