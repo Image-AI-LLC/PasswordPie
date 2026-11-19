@@ -352,17 +352,20 @@ final class AgentAccessTests: XCTestCase {
         model.toggle(7)
         XCTAssertEqual(model.tick(of: twelve), .some)
         XCTAssertEqual(model.groupLine(twelve), "12 secrets · 11 environment variables, 1 file for the command · 2 left out")
-        // The item's checkbox on a part-ticked item ticks the rest; again, it unticks them all.
+        // The item's checkbox on a part-ticked item ticks the rest; again, it unticks them all. Another item's rows
+        // stay as they are, also the one that was unticked.
+        model.toggle(13)
         model.toggle(group: twelve)
         XCTAssertEqual(model.tick(of: twelve), .all)
+        XCTAssertFalse(model.ticked.contains(13), "another item's unticked row is not ticked with it")
         model.toggle(group: twelve)
         XCTAssertEqual(model.tick(of: twelve), .none)
         XCTAssertEqual(model.groupLine(twelve), "12 secrets · 11 environment variables, 1 file for the command · all left out")
-        XCTAssertEqual(model.tick(of: model.groups[2]), .all, "another item's rows are not touched")
+        XCTAssertEqual(model.tick(of: model.groups[2]), .some, "another item's rows are not touched")
         model.toggle(5)
         model.allow()
         for _ in 0..<20 { await Task.yield() }
-        XCTAssertEqual(decisions, [.allow([5, 12, 13, 14, 15])], "the answer is still row by row")
+        XCTAssertEqual(decisions, [.allow([5, 12, 14, 15])], "the answer is still row by row")
     }
 
     func testAFewSecretsAreAllInViewAndRowsOfOneItemStayTogether() {
