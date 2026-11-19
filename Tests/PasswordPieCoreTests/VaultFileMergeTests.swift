@@ -159,6 +159,39 @@ final class VaultFileMergeTests: XCTestCase {
         XCTAssertEqual(backups, [])
     }
 
+    /// Two databases with one master password: the other one landing at this one's path is not a newer version of it.
+    func testAReplacedFileThatIsAnotherDatabaseIsLeftAloneAndNotMergedIn() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        var another = MergeCopy(items: [MergeItem(0xB1, "From another database")])
+        another.root.id = 0x99
+        let theirs = try arrive(another)
+        mine.entries[0].password = "new"
+
+        for onlyIfNeeded in [true, false] {
+            XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil, onlyIfNeeded: onlyIfNeeded)) { error in
+                XCTAssertTrue((error as? VaultWriteError)?.description.contains("replaced on disk by another database") == true, "\(error)")
+            }
+            XCTAssertEqual(try Data(contentsOf: url), theirs)
+        }
+        XCTAssertEqual(backups, [])
+        // A copy the caller chose to merge in may be any database.
+        try arrive(MergeCopy(items: [bank]))
+        let chosen = try VaultFile.save(try VaultFile.openRecovering(url: url, password: "secret"), to: url, password: "secret", keyFile: nil, merging: try another.vault(), onlyIfNeeded: true)
+        XCTAssertNotNil(chosen.vault.item(0xB1))
+    }
+
+    /// A vault that cannot be merged never writes over a file it was not read from.
+    func testAVaultThatCannotBeMergedDoesNotWriteOverAReplacedFile() throws {
+        try MergeCopy(items: [bank]).data().write(to: url)
+        var unmergeable = Vault(entries: [VaultEntry(fields: [VaultField(key: "Title", value: "New")])], kdf: .fastTest)
+        unmergeable.noteFileContents(Data("what it was read from".utf8))
+        let before = try Data(contentsOf: url)
+        XCTAssertThrowsError(try VaultFile.save(unmergeable, to: url, password: "secret", keyFile: nil)) { error in
+            XCTAssertTrue((error as? VaultWriteError)?.description.contains("cannot be merged") == true, "\(error)")
+        }
+        XCTAssertEqual(try Data(contentsOf: url), before)
+    }
+
     func testAReplacedFileThatIsNotADatabaseIsLeftAlone() throws {
         let mine = try open(MergeCopy(items: [bank]))
         try Data("half a file".utf8).write(to: url)

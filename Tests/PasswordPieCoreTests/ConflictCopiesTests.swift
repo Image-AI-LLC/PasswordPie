@@ -33,6 +33,7 @@ final class ConflictCopiesTests: XCTestCase {
     func testANameAPersonCouldHaveGivenIsOfferedNeverCertain() {
         XCTAssertEqual(kind("Passwords 2.kdbx"), " offered")
         XCTAssertEqual(kind("Passwords 13.kdbx"), " offered")
+        XCTAssertNil(kind("Passwords ².kdbx"), "only the digits a file number is written with")
         XCTAssertEqual(kind("Passwords (old).kdbx"), " offered")
         XCTAssertEqual(kind("Passwords (Adas in Konflikt stehende Kopie 2026-11-20).kdbx"), " offered")
     }

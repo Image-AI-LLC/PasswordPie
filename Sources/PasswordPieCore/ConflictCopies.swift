@@ -63,7 +63,7 @@ public enum ConflictCopies {
         if middle.hasPrefix(" ("), middle.hasSuffix(")") {
             return middle.contains("conflicted copy") ? (.dropbox, true) : (.unknown, false)
         }
-        if middle.hasPrefix(" "), middle.dropFirst().allSatisfy(\.isNumber), middle.count > 1 { return (.unknown, false) }
+        if middle.hasPrefix(" "), middle.count > 1, middle.dropFirst().allSatisfy({ $0.isASCII && $0.isNumber }) { return (.unknown, false) }
         return nil
     }
 

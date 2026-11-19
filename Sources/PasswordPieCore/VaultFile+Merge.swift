@@ -41,7 +41,8 @@ extension VaultFile {
     ///   database. The file being replaced becomes the `.snapshot`, as on every save.
     /// - The new file replaces the old one in one step, and only while the old one is still what was read here. If it
     ///   changed again meanwhile, the whole thing is done again, a few times at most.
-    /// - A file that changed and cannot be opened with these keys is left alone, and nothing is written.
+    /// - A file that changed and cannot be opened with these keys, or is another database, is left alone, and nothing
+    ///   is written. `merging:` is the caller's choice and may be any database.
     public static func save(
         _ vault: Vault,
         to url: URL,
@@ -94,12 +95,20 @@ extension VaultFile {
         var needsWrite = !onlyIfNeeded
         var merged = false
 
-        if let onDisk, let known = vault.fileBaseline, onDisk != known, vault.preserve != nil {
+        if let onDisk, let known = vault.fileBaseline, onDisk != known {
+            // Nothing below may write over a file this vault was not read from.
+            guard vault.preserve != nil else {
+                throw VaultWriteError("\(url.lastPathComponent) changed on disk and this database cannot be merged with it, so nothing was changed.")
+            }
             var theirs: Vault
             do {
                 theirs = try KDBX.load(data: onDisk, password: password, keyFile: keyFile)
             } catch {
                 throw unreadable(url, error)
+            }
+            // Another database that happens to open with the same keys is not a newer version of this one.
+            guard theirs.rootGroupID == vault.rootGroupID else {
+                throw VaultWriteError("\(url.lastPathComponent) was replaced on disk by another database, so nothing was changed. Lock PasswordPie and unlock to open the file that is there now.")
             }
             theirs.noteFileContents(onDisk)
             let outcome = try VaultMerge.merge(vault, into: theirs)
@@ -198,7 +207,15 @@ extension VaultFile {
             backup = folder.appendingPathComponent("\(prefix)\(stamp)-\(number)")
             number += 1
         }
-        try bytes.write(to: backup, options: .withoutOverwriting)
+        // Private from the first byte: the folder is often one a sync tool reads.
+        let descriptor = open(backup.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard descriptor >= 0 else {
+            throw VaultWriteError("The copy could not be created (\(errno)).")
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try handle.write(contentsOf: bytes)
+        try handle.synchronize()
+        try handle.close()
         try restrict(backup)
         guard try Data(contentsOf: backup) == bytes else {
             throw VaultWriteError("The copy did not match the database.")

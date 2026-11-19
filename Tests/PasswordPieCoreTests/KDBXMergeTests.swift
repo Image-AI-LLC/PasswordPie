@@ -682,6 +682,14 @@ final class KDBXMergeTests: XCTestCase {
         XCTAssertEqual(AgentGrantsRecord.merged("{future", there), "{future")
     }
 
+    func testOneRevokedRecordHeldDifferentlyByTwoCopiesIsSettledTheSameBothWays() throws {
+        let id = "11111111-1111-1111-1111-111111111111"
+        let long = #"{"grants":[],"revoked":[{"ends":2000,"id":"\#(id)"}],"version":1}"#
+        let short = #"{"grants":[],"revoked":[{"ends":1000,"id":"\#(id)"}],"version":1}"#
+        XCTAssertEqual(AgentGrantsRecord.merged(long, short), long)
+        XCTAssertEqual(AgentGrantsRecord.merged(short, long), long)
+    }
+
     func testOneGrantHeldDifferentlyByTwoCopiesKeepsTheOneThatEndsSooner() throws {
         let id = "11111111-1111-1111-1111-111111111111"
         let long = #"{"grants":[{"ends":2000,"id":"\#(id)"}],"version":1}"#

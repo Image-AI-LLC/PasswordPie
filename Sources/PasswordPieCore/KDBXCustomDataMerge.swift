@@ -178,7 +178,12 @@ enum AgentGrantsRecord {
     static func merged(_ ours: String?, _ theirs: String?) -> String? {
         guard let other = parse(theirs) else { return ours }
         guard let mine = parse(ours) else { return ours ?? theirs }
-        let revoked = mine.revoked.merging(other.revoked) { own, _ in own }
+        // One revoked record held differently: the one that lasts longer, so both copies keep the same.
+        let revoked = mine.revoked.merging(other.revoked) { own, their in
+            let (a, b) = (canonical(own), canonical(their))
+            let (ownEnds, theirEnds) = ((own["ends"] as? NSNumber)?.doubleValue ?? 0, (their["ends"] as? NSNumber)?.doubleValue ?? 0)
+            return theirEnds > ownEnds || (theirEnds == ownEnds && b < a) ? their : own
+        }
         var grants = mine.grants
         for (id, record) in other.grants {
             guard let own = grants[id] else {
