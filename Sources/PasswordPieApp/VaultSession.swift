@@ -206,6 +206,8 @@ final class VaultSession: ObservableObject {
         #if DEBUG
         // A fixture run must never reach the real Chrome folder, not even to compare file sizes.
         if let fixture = ChromeFixture.source() { return fixture }
+        // Nor may a test: a session made in a test process reads Chrome only through a source the test hands it.
+        if ChromeSnapshotSource.inTestProcess { return .refusedInTests }
         #endif
         return .live
     }()

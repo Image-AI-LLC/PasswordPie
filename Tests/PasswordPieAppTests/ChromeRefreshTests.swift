@@ -8,22 +8,18 @@ import XCTest
 @MainActor
 final class ChromeRefreshTests: XCTestCase {
     private var directory: URL!
-    private var chromeSyncDefault: Any?
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("chrome-refresh-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         setenv("PASSWORDPIE_DB", directory.appendingPathComponent("test.kdbx").path, 1)
         setenv("PASSWORDPIE_USAGE", directory.appendingPathComponent("usage.json").path, 1)
-        chromeSyncDefault = UserDefaults.standard.object(forKey: "chromeSyncEnabled")
     }
 
     override func tearDownWithError() throws {
-        if let chromeSyncDefault {
-            UserDefaults.standard.set(chromeSyncDefault, forKey: "chromeSyncEnabled")
-        } else {
-            UserDefaults.standard.removeObject(forKey: "chromeSyncEnabled")
-        }
+        // Removed, not put back to what it was: every test process on a Mac shares this preference, so "what it was"
+        // can be another run's `true`, which would then stay on for every run after it.
+        UserDefaults.standard.removeObject(forKey: "chromeSyncEnabled")
         unsetenv("PASSWORDPIE_DB")
         unsetenv("PASSWORDPIE_USAGE")
         try? FileManager.default.removeItem(at: directory)
@@ -36,6 +32,33 @@ final class ChromeRefreshTests: XCTestCase {
         session.confirmDraft = "pw"
         session.unlock()
         return session
+    }
+
+    /// A session made in a test never reaches the real Chrome folder or the "Chrome Safe Storage" key, even with the
+    /// switch on and the panel shown: another test process can turn the shared switch on at any moment.
+    func testASessionInATestProcessNeverReadsTheRealChrome() async {
+        UserDefaults.standard.set(true, forKey: "chromeSyncEnabled")
+        XCTAssertTrue(ChromeSnapshotSource.inTestProcess)
+        XCTAssertTrue(ChromeSnapshotSource.live.readsRealChrome)
+        let session = unlockedSession()
+        XCTAssertTrue(session.chromeSyncEnabled)
+        // Checked before anything is read: were this the real source, the lines below would ask the keychain.
+        guard !session.chromeSource.readsRealChrome else { return XCTFail("a session in a test process has the real Chrome source") }
+        XCTAssertEqual(session.chromeSource.signature(), ChromeStoreSignature(), "the Chrome folder is not looked at")
+        XCTAssertThrowsError(try session.chromeSource.load(nil)) { error in
+            XCTAssertEqual(error as? ChromeLoginsError, .keychain(errSecInteractionNotAllowed))
+        }
+        session.noteChromePanelShown()
+        session.refreshChrome()
+        await waitUntil { !session.chromeBusy }
+        XCTAssertTrue(session.liveEntries.isEmpty)
+    }
+
+    func testTheSwitchIsNotLeftOnForTheNextRun() throws {
+        UserDefaults.standard.set(true, forKey: "chromeSyncEnabled")
+        try tearDownWithError()
+        XCTAssertNil(UserDefaults.standard.object(forKey: "chromeSyncEnabled"))
+        try setUpWithError()
     }
 
     func testUnlockPublishesTheChromeSwitchBeforeThePanelReacts() {

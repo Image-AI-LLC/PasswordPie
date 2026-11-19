@@ -61,6 +61,8 @@ struct AgentLastingOptions {
 final class AgentApprovalModel: ObservableObject {
     let prompt: AgentApprovalPrompt
     @Published var ticked: Set<Int>
+    /// The items whose rows are shown one by one (`Group.id`). An item with several secrets is one row that opens.
+    @Published private(set) var opened: Set<Int> = []
     @Published private(set) var confirming = false
     @Published private(set) var notConfirmed = false
     /// The length "Allow for … ▾" names: the last one chosen.
@@ -83,6 +85,88 @@ final class AgentApprovalModel: ObservableObject {
         // A login fills one account: with several to choose from, the owner picks one; nothing is picked for them.
         ticked = prompt.kind == .login && prompt.rows.count > 1 ? [] : Set(prompt.rows.indices)
         length = prompt.lasting == .sessionOnly ? .session : lasting.lastLength()
+        // A few secrets are all in view. Many are a list of items, each closed until the owner opens it.
+        if prompt.rows.count <= Self.rowsShownOpen { opened = Set(groups.map(\.id)) }
+    }
+
+    // MARK: Rows by item
+
+    /// The rows of one item, in the order asked. `id` is its first row's index.
+    struct Group: Identifiable, Equatable {
+        let id: Int
+        let title: String
+        let folder: String
+        let rows: [Int]
+    }
+
+    enum Tick: Equatable {
+        case all, some, none
+    }
+
+    /// Up to this many secrets, every row is shown. Above it, an item with several secrets starts closed.
+    static let rowsShownOpen = 6
+
+    /// The request's rows, those of one item together where the item was first asked for. A login's rows are accounts
+    /// to choose from, never grouped; a row that names no item stands alone.
+    var groups: [Group] {
+        var groups: [Group] = []
+        var place: [UUID: Int] = [:]
+        for (index, row) in prompt.rows.enumerated() {
+            if !isLogin, let item = row.item, let at = place[item] {
+                groups[at] = Group(id: groups[at].id, title: groups[at].title, folder: groups[at].folder, rows: groups[at].rows + [index])
+            } else {
+                if !isLogin, let item = row.item { place[item] = groups.count }
+                groups.append(Group(id: index, title: row.title, folder: row.folder, rows: [index]))
+            }
+        }
+        return groups
+    }
+
+    func isOpen(_ group: Group) -> Bool { group.rows.count == 1 || opened.contains(group.id) }
+
+    func toggleOpen(_ group: Group) {
+        if opened.contains(group.id) { opened.remove(group.id) } else { opened.insert(group.id) }
+    }
+
+    func tick(of group: Group) -> Tick {
+        let on = group.rows.filter(ticked.contains).count
+        return on == 0 ? .none : on == group.rows.count ? .all : .some
+    }
+
+    /// The item's checkbox: everything of it, or nothing. Ticking a part-ticked item ticks the rest.
+    func toggle(group: Group) {
+        guard !confirming, !isLogin else { return }
+        if tick(of: group) == .all {
+            ticked.subtract(group.rows)
+        } else {
+            ticked.formUnion(group.rows)
+        }
+    }
+
+    /// The closed row's second line: "12 secrets · 11 environment variables, 1 file for the command", then how many are
+    /// left out when some are unticked.
+    func groupLine(_ group: Group) -> String {
+        let rows = group.rows.map { prompt.rows[$0] }
+        func count(_ delivery: AgentDelivery, _ one: String, _ many: String) -> String? {
+            let found = rows.filter { $0.delivery == delivery }.count
+            return found == 0 ? nil : found == 1 ? "1 \(one)" : "\(found) \(many)"
+        }
+        let ways = [
+            count(.env, "environment variable", "environment variables"),
+            count(.file, "file for the command", "files for the command"),
+            count(.stdin, "on the command's standard input", "on the command's standard input"),
+            count(.shown, "shown to the agent", "shown to the agent"),
+        ].compactMap { $0 }
+        var line = "\(rows.count) secrets · " + ways.joined(separator: ", ")
+        let off = group.rows.filter { !ticked.contains($0) }.count
+        if off > 0, off < rows.count { line += " · \(off) left out" }
+        if off == rows.count { line += " · all left out" }
+        return line
+    }
+
+    /// How many of the item's secrets are too short to hide in the command's output: said on the closed row too.
+    func tooShortCount(_ group: Group) -> Int {
+        group.rows.filter { prompt.rows[$0].tooShortToMask }.count
     }
 
     var isLogin: Bool { prompt.kind == .login }
@@ -304,6 +388,40 @@ final class AgentApprovalController: AgentApprover {
     }
 }
 
+/// A checkbox that can also say "some": AppKit's, since SwiftUI's has no mixed state.
+private struct MixedCheckbox: NSViewRepresentable {
+    let state: AgentApprovalModel.Tick
+    let action: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
+
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(checkboxWithTitle: "", target: context.coordinator, action: #selector(Coordinator.pressed))
+        button.allowsMixedState = true
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        return button
+    }
+
+    func updateNSView(_ button: NSButton, context: Context) {
+        context.coordinator.action = action
+        context.coordinator.shown = state == .all ? .on : state == .none ? .off : .mixed
+        button.state = context.coordinator.shown
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        var shown: NSControl.StateValue = .off
+        init(action: @escaping () -> Void) { self.action = action }
+
+        /// A click moves the button to its own next state. The model decides instead: the button goes back to what
+        /// the model said, and the model's answer is drawn when it changes.
+        @objc func pressed(_ sender: NSButton) {
+            sender.state = shown
+            action()
+        }
+    }
+}
+
 struct AgentApprovalView: View {
     @ObservedObject var model: AgentApprovalModel
     @Environment(\.colorScheme) private var colorScheme
@@ -316,11 +434,23 @@ struct AgentApprovalView: View {
                 PasswordPieMark(size: 30)
                 Text(model.title).font(.system(size: 15, weight: .semibold))
             }
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(model.prompt.rows.enumerated()), id: \.offset) { index, row in
-                    secretRow(index, row)
+            // Many secrets are a list of items, so the list scrolls instead of pushing the buttons off the screen.
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(model.groups) { group in
+                        if group.rows.count == 1 {
+                            secretRow(group.rows[0], model.prompt.rows[group.rows[0]])
+                        } else {
+                            groupRow(group)
+                        }
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // The bar stays in view, so a list that goes on below is seen to go on.
+            .scrollIndicators(.visible)
+            .frame(maxHeight: 320)
+            .fixedSize(horizontal: false, vertical: true)
             if model.prompt.raw {
                 Text(AgentApprovalModel.rawWarning)
                     .font(.system(size: 12, weight: .medium))
@@ -400,6 +530,73 @@ struct AgentApprovalView: View {
             ? "Allow, and do not ask again for the same request until the time is up. Confirm with Touch ID."
             : "Standing permissions need Premium. Allow Once is free."))
         .accessibilityIdentifier("agents.allowLasting")
+    }
+
+    /// An item with several secrets: one row with the item's checkbox, opening to a checkbox for each secret.
+    private func groupRow(_ group: AgentApprovalModel.Group) -> some View {
+        let open = model.isOpen(group)
+        let short = model.tooShortCount(group)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                // AppKit's checkbox has no text baseline to line up with: a fixed box, at the height of the title's line.
+                MixedCheckbox(state: model.tick(of: group)) { model.toggle(group: group) }
+                    .frame(width: 16, height: 16)
+                    .accessibilityLabel("All secrets of \(group.title)")
+                Button {
+                    model.toggleOpen(group)
+                } label: {
+                    HStack(alignment: .top, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(group.title).font(.system(size: 13, weight: .medium))
+                                if !group.folder.isEmpty { Text("(\(group.folder))").font(.system(size: 12)).foregroundStyle(.secondary) }
+                            }
+                            // Closed, the row says what is in it. Open, the rows under it do.
+                            if !open {
+                                Text(model.groupLine(group)).font(.system(size: 11)).foregroundStyle(.secondary)
+                                if short > 0 {
+                                    Text("\(short == 1 ? "1 is" : "\(short) are") shorter than 6 characters: not hidden in the command's output.")
+                                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 6)
+                        Image(systemName: open ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(open ? "Hides its secrets" : "Shows its secrets, each with a checkbox")
+            }
+            if open {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(group.rows, id: \.self) { index in
+                        fieldRow(index, model.prompt.rows[index])
+                    }
+                }
+                .padding(.leading, 24)
+            }
+        }
+    }
+
+    /// One secret of an opened item: its checkbox and what happens to it. The item is named on the row above.
+    private func fieldRow(_ index: Int, _ row: AgentApprovalRow) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Toggle("", isOn: Binding(get: { model.ticked.contains(index) }, set: { _ in model.toggle(index) }))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.rowLine(row)).font(.system(size: 12))
+                if row.tooShortToMask {
+                    Text("Shorter than 6 characters: not hidden in the command's output.").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private func secretRow(_ index: Int, _ row: AgentApprovalRow) -> some View {

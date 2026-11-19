@@ -104,6 +104,16 @@ public enum EntryMerge {
                     #if PP_DIRECT
                     if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
                     #endif
+                    // Files an import brought with a copy go to the survivor with its fields. The copy in the Recycle
+                    // Bin keeps its own. A file the survivor already carries (same name, same bytes) is not added again,
+                    // and none takes the place of a file the survivor holds: it is added beside it.
+                    let brought = other.attachments.filter { file in
+                        !entry.attachments.contains { $0.name == file.name && $0.data == file.data }
+                    }
+                    if !brought.isEmpty {
+                        entry.attachments.append(contentsOf: brought.map { VaultAttachment(name: $0.name, data: $0.data, keepsHeld: true) })
+                        changed = true
+                    }
                 }
             }
             if changed {

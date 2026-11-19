@@ -123,6 +123,9 @@ public struct AgentApprovalRow: Equatable, Sendable {
     public var username: String? = nil
     /// `login`: what happens with the two-step code, when the item has one.
     public var note: String? = nil
+    /// The item the secret is a field of. The window draws the rows of one item together: a request for many secrets is
+    /// a short list of items, each opening to its fields.
+    public var item: UUID? = nil
 }
 
 public struct AgentApprovalPrompt: Equatable, Sendable {
@@ -484,7 +487,8 @@ public final class VaultBroker {
                 field: secret.field.label,
                 delivery: raw ? .shown : secret.delivery,
                 name: secret.name,
-                tooShortToMask: !raw && length < AgentConstants.minimumMaskedLength
+                tooShortToMask: !raw && length < AgentConstants.minimumMaskedLength,
+                item: secret.item.id
             )
         }
         return AgentApprovalPrompt(

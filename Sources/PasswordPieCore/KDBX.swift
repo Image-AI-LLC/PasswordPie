@@ -209,9 +209,24 @@ private func saveGenerated(vault: inout Vault, composite: Data) throws -> Data {
     ]
     let parts = sha512SplitKey(protectedStreamKey: protectedKey)
     var stream = ChaCha20(key: parts.key, nonce: parts.nonce, counter: 0)
-    let xml = escapingCarriageReturns(xmlDocument(vault, stream: &stream))
+    var xml = escapingCarriageReturns(xmlDocument(vault, stream: &stream))
     // Same parser the next unlock uses. A document that fails here is not packed or written.
     let document = try parseKDBXDocument(xml)
+    try decryptProtectedValues(in: document, streamKey: protectedKey)
+    let preserve = KDBXPreserve(
+        document: document,
+        pieces: [],
+        version: 0x00040000,
+        headerFields: fields,
+        compressed: true,
+        kdfSaltRange: saltRange
+    )
+    // What an import brought as attachments (1Password, KeePass 1, key files) goes into the file with its entry.
+    if vault.entries.contains(where: { !$0.attachments.isEmpty }) {
+        preserve.addAttachments(of: vault.entries)
+        xml = try preserve.encryptedXML(streamKey: protectedKey)
+        _ = try parseKDBXDocument(xml)
+    }
     let output = try packFile(
         version: 0x00040000,
         fields: fields,
@@ -221,16 +236,7 @@ private func saveGenerated(vault: inout Vault, composite: Data) throws -> Data {
         compressed: true,
         xml: xml,
         streamKey: protectedKey,
-        pieces: []
-    )
-    try decryptProtectedValues(in: document, streamKey: protectedKey)
-    let preserve = KDBXPreserve(
-        document: document,
-        pieces: [],
-        version: 0x00040000,
-        headerFields: fields,
-        compressed: true,
-        kdfSaltRange: saltRange
+        pieces: preserve.pieces
     )
     let aligned = preserve.makeVault(kdf: kdfParameters)
     vault = aligned
@@ -285,6 +291,10 @@ private func savePreserved(vault: inout Vault, composite: Data) throws -> Data {
     )
     preserve.headerFields = fields
     vault.preserve = preserve
+    // The attachments an import handed over are in the document now, and are read from it from here on.
+    for index in vault.entries.indices where !vault.entries[index].attachments.isEmpty {
+        vault.entries[index].attachments = []
+    }
     return output
 }
 
