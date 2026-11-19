@@ -27,6 +27,8 @@ public enum AgentOutcome: String, Codable, Sendable {
     case siteMismatch = "site mismatch"
     case fillTimedOut = "no tab took the fill"
     case noFields = "no sign-in fields"
+    /// `check-import`: the folder's values were compared with the vault inside PasswordPie. Nothing was handed out.
+    case compared = "compared"
 }
 
 /// One line of the activity log. It holds no value, ever: names of items and fields, the command, the agent and its

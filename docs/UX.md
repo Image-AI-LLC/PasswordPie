@@ -1774,6 +1774,28 @@ anywhere else. It works with names only; no value is read or printed, so it need
 second file that is not committed: `passwordpie run --env-file .env.pp --env-file .env.local -- …`. A later file's line
 replaces an earlier file's line of the same name.
 
+### Checking a folder before deleting it
+
+After importing a folder of `.env` files ("A folder of .env files becomes items"), the files are still on disk in
+plain text. Before deleting them, `passwordpie check-import ~/keys` tells you whether PasswordPie holds everything
+they hold:
+
+    stripe/work.env
+      STRIPE_SECRET_KEY      same
+      STRIPE_WEBHOOK_SECRET  differs
+    2 same, 1 differs.
+
+- PasswordPie reads the folder itself and compares in its own memory. The tool, and an agent that runs it, get one
+  word per name: **same**, **differs** or **missing**. Never a value.
+- It asks first, every time, with Touch ID: "Claude Code wants to compare 74 secrets with files", the secrets listed by
+  item, the folder, and one line on what the agent learns: whether each file value is the same. There is no "Allow for
+  7 days" for a check.
+- Only what you shared with agents is compared. Anything else is **missing**, exactly like a name that is not in the
+  database at all, so share the imported folders (Preferences > Agents) before you check.
+- The command ends with an error unless every name is the same, so a script can stop there. **differs** means the file
+  or the item changed since the import: importing the folder again updates the item.
+- `--inside Agents` when you imported with **Put them inside** set to Agents.
+
 ### A value on a command line
 
 While a command runs, PasswordPie looks at the command lines of the processes under it, four times a second. When a value
@@ -2070,7 +2092,10 @@ subfolders, and changes nothing in it: not now, and not after the import.
 **3. Import.** The button says how many: **Import 12 Items**. The page then says what happened: "9 added, 3 updated."
 
 **4. The files are still there.** PasswordPie does not delete them: they are yours, and other programs may still read
-them. The page says so, and that they still hold every value in plain text.
+them. The page says so, and that they still hold every value in plain text. In the downloaded app it names the check
+to run before you delete them: `passwordpie check-import <folder>` compares every name and value in the files with the
+database, inside PasswordPie, and prints **same**, **differs** or **missing** for each name, never a value ("Checking
+a folder before deleting it", under "Agents use a secret without seeing it").
 
 What becomes what:
 

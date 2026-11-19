@@ -350,6 +350,88 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertEqual(approver.prompts.first?.rows.map(\.field), ["password", "field Key ID"])
     }
 
+    /// `check-import` through the real tool: names and a word each, exit 78 when one differs, and no value in what it
+    /// prints. The app's reader is scripted here; the real one is run in PasswordPieAppTests.
+    func testCheckImportPrintsNamesAndWordsAndExitsBySameness() async throws {
+        final class Folders: AgentFolderReader, @unchecked Sendable {
+            var value = "planted-stripe-work-8842"
+            var asked: [String] = []
+            func subjects(folder: String, inside: [String]) throws -> [AgentCheckSubject] {
+                asked.append(folder)
+                guard folder.hasSuffix("/keys") else { throw AgentFolderProblem("\(folder) is not a folder.") }
+                return [
+                    AgentCheckSubject(file: "stripe/work.env", name: "STRIPE_SECRET_KEY", folder: inside + ["stripe"], title: "work", field: .custom("STRIPE_SECRET_KEY"), expected: Data(value.utf8)),
+                    AgentCheckSubject(file: "stripe/work.env", name: "NOT_IMPORTED", folder: inside + ["stripe"], title: "work", field: .custom("NOT_IMPORTED"), expected: Data("planted-not-imported".utf8)),
+                    AgentCheckSubject(file: "stripe/work.pem", name: "work.pem", folder: inside + ["stripe"], title: "work", field: .attachment("work.pem"), expected: Data("planted-pem".utf8)),
+                ]
+            }
+        }
+        let folders = Folders()
+        broker.folders = folders
+        allowEverything()
+        vault.add("work", folder: ["stripe"], password: "", fields: ["STRIPE_SECRET_KEY": "planted-stripe-work-8842"], attachments: ["work.pem": Data("planted-pem".utf8)])
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("keys"), withIntermediateDirectories: true)
+
+        // A relative folder: the tool sends the whole path, since the app reads the folder itself.
+        let differs = try await run(["check-import", "keys", "--reason", "Before deleting"])
+        XCTAssertEqual(differs.code, AgentConstants.checkFailedExitCode, differs.err)
+        XCTAssertEqual(differs.out, """
+        stripe/work.env
+          STRIPE_SECRET_KEY  same
+          NOT_IMPORTED       missing
+        stripe/work.pem
+          work.pem           same
+        2 same, 1 missing.
+
+        """)
+        XCTAssertTrue(differs.err.contains("Do not delete the files yet."), differs.err)
+        XCTAssertTrue(differs.err.contains("not imported, or not shared with agents"), differs.err)
+        let keys = folder.appendingPathComponent("keys").resolvingSymlinksInPath().path
+        XCTAssertEqual(folders.asked, [keys, keys], "read for the window, and again once the owner allowed")
+        XCTAssertEqual(approver.prompts.last?.kind, .check)
+        XCTAssertEqual(approver.prompts.last?.rows.count, 2, "what is missing is not in the window")
+        XCTAssertEqual(approver.prompts.last?.reason, "Before deleting")
+
+        vault.add("work", folder: ["Agents", "stripe"], password: "", fields: ["STRIPE_SECRET_KEY": "planted-stripe-work-8842", "NOT_IMPORTED": "planted-not-imported"], attachments: ["work.pem": Data("planted-pem".utf8)])
+        let same = try await run(["check-import", folder.appendingPathComponent("keys").path, "--inside", "Agents", "--json"])
+        XCTAssertEqual(same.code, 0, same.err)
+        XCTAssertEqual(same.err, "")
+        let lines = try JSONDecoder().decode([AgentCheckLine].self, from: Data(same.out.utf8))
+        XCTAssertEqual(lines.map(\.status), [.same, .same, .same])
+
+        folders.value = "planted-changed-in-the-file"
+        let changed = try await run(["check-import", folder.appendingPathComponent("keys").path, "--inside", "Agents"])
+        XCTAssertEqual(changed.code, AgentConstants.checkFailedExitCode)
+        XCTAssertTrue(changed.out.contains("STRIPE_SECRET_KEY  differs"), changed.out)
+        XCTAssertTrue(changed.out.hasSuffix("2 same, 1 differs.\n"), changed.out)
+
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.deny) } }
+        let denied = try await run(["check-import", folder.appendingPathComponent("keys").path, "--inside", "Agents"])
+        XCTAssertEqual(denied.code, AgentErrorCode.denied.exitCode)
+        XCTAssertEqual(denied.out, "")
+        let notAFolder = try await run(["check-import", folder.appendingPathComponent("nothing").path])
+        XCTAssertEqual(notAFolder.code, AgentErrorCode.usage.exitCode)
+        XCTAssertTrue(notAFolder.err.contains("nothing is not a folder."), notAFolder.err)
+
+        let everything = [differs, same, changed, denied, notAFolder].map { $0.out + $0.err }.joined()
+            + String(decoding: try JSONEncoder().encode(activity.records), as: UTF8.self)
+        XCTAssertFalse(everything.contains("planted"), "names and words, never a value")
+    }
+
+    /// An answer that compared nothing is not "everything is the same": no lines is a failure, with nothing printed.
+    func testCheckImportWithoutLinesFailsAndPrintsNothing() async throws {
+        server.stop()
+        let broker = self.broker!
+        server = AgentServer(handler: { request, caller in
+            request.type == .check ? AgentResponse(type: request.type.rawValue, id: request.id) : await broker.handle(request, from: caller)
+        }, peerCheck: { _ in true })
+        try server.start(path: socketPath)
+        let ran = try await run(["check-import", folder.path])
+        XCTAssertEqual(ran.code, AgentErrorCode.appUnavailable.exitCode, ran.err)
+        XCTAssertEqual(ran.out, "")
+        XCTAssertTrue(ran.err.contains("PasswordPie gave no answer about the check."), ran.err)
+    }
+
     /// `write-env` through the real tool: it shows the project's `.env.pp` and writes nothing, writes with `--write`,
     /// keeps a file that is there, and what it wrote runs the project. No prompt, and no value anywhere in its output.
     func testWriteEnvShowsThenWritesAndWhatItWroteRuns() async throws {

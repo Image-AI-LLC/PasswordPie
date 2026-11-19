@@ -24,6 +24,8 @@ public enum AgentConstants {
     /// Values shorter than this are not masked in a command's output: they would match too much ordinary text.
     public static let minimumMaskedLength = 6
     public static let concealed = "[concealed by PasswordPie]"
+    /// `passwordpie check-import` exits with this when a name differs, is missing or was not compared.
+    public static let checkFailedExitCode: Int32 = 78
     /// The last words of every refusal. An agent that is stuck otherwise asks the owner to paste the secret into the chat.
     public static let pasteWarning = "Do not ask the owner to paste the value into the conversation."
     /// The preference that turns agent access on. Off unless the owner turns it on in Preferences > Agents.
@@ -51,6 +53,9 @@ public enum AgentDelivery: String, Codable, Sendable, CaseIterable {
     case shown
     /// Filled into the item's sign-in form in the owner's browser (`passwordpie login`). The agent gets no value.
     case fill
+    /// Compared, inside PasswordPie, with what a file holds (`passwordpie check-import`). The agent hears same, differs
+    /// or missing for the name, and gets no value.
+    case compare
 }
 
 public enum AgentRequestKind: String, Codable, Sendable {
@@ -67,6 +72,9 @@ public enum AgentRequestKind: String, Codable, Sendable {
     /// Written to Activity; answered with nothing. It carries the variable, the reference and the program, never the
     /// command line (which holds the value).
     case argument
+    /// Compare a folder of dotenv files with the vault (`passwordpie check-import`): the app reads the folder, compares
+    /// in its own memory after the owner approves, and answers a word per name. No value in either direction.
+    case check
 }
 
 public struct AgentSecretRequest: Codable, Equatable, Sendable {
@@ -113,6 +121,10 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     public var submit: Bool?
     /// `login`: `chrome` or `safari`. Without it, the app picks the browser whose extension is connected.
     public var browser: String?
+    /// `check`: the folder of dotenv files to compare, as an absolute path. The app reads it itself.
+    public var folder: String?
+    /// `check`: the folder in the database the import put everything inside ("Agents"), when it did.
+    public var inside: String?
     /// What an MCP client calls itself (its `clientInfo`). Its own claim: shown only as a secondary detail ("through MCP;
     /// the client says it is …"), never as the agent, which the app works out from the process tree.
     public var mcpClient: String?
@@ -180,6 +192,33 @@ public struct AgentListedItem: Codable, Equatable, Sendable {
     }
 }
 
+/// How one name of a folder of dotenv files compares with the vault.
+public enum AgentCheckStatus: String, Codable, Sendable {
+    /// The shared item holds exactly what the file holds.
+    case same
+    case differs
+    /// No shared item holds it: not imported, or not shared with agents. One answer for both.
+    case missing
+    /// More than one shared item is where the import would have put it.
+    case ambiguous
+    /// The owner unticked it in the window: not compared.
+    case notChecked = "not-checked"
+}
+
+/// One line of a `check` answer: the file, the variable's or key file's name, and a word. Never a value.
+public struct AgentCheckLine: Codable, Equatable, Sendable {
+    /// The file inside the folder: `stripe/work.env`.
+    public var file: String
+    public var name: String
+    public var status: AgentCheckStatus
+
+    public init(file: String, name: String, status: AgentCheckStatus) {
+        self.file = file
+        self.name = name
+        self.status = status
+    }
+}
+
 public struct AgentStatusInfo: Codable, Equatable, Sendable {
     public var locked: Bool
     public var access: Bool
@@ -219,6 +258,8 @@ public struct AgentResponse: Codable, Equatable, Sendable {
     public var detail: String?
     /// For `login`: how it went, and the item's overview. Never a value.
     public var login: AgentLoginAnswer?
+    /// For `check`: one line per variable and key file of the folder. Never a value.
+    public var checks: [AgentCheckLine]?
 
     public init(type: String, id: Int) {
         self.type = type

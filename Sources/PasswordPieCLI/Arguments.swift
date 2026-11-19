@@ -8,6 +8,7 @@ enum Command: Equatable {
     case login(LoginOptions)
     case list(query: String?, json: Bool, wait: Int?)
     case writeEnv(WriteEnvOptions)
+    case checkImport(CheckImportOptions)
     case status(json: Bool)
     /// `passwordpie mcp`: the MCP server on standard input and output.
     case mcp
@@ -62,6 +63,16 @@ struct WriteEnvOptions: Equatable {
     var wait: Int?
 }
 
+/// `passwordpie check-import`: a folder of dotenv files against the vault.
+struct CheckImportOptions: Equatable {
+    var folder: String
+    /// The folder in the database the import put everything inside.
+    var inside: String?
+    var reason: String?
+    var wait: Int?
+    var json = false
+}
+
 struct UsageError: Error, Equatable {
     var message: String
     init(_ message: String) { self.message = message }
@@ -113,6 +124,25 @@ enum Arguments {
             }
             guard !options.force || options.write else { throw UsageError("--force goes with --write.") }
             return .writeEnv(options)
+        case "check-import":
+            var folder: String?
+            var options = CheckImportOptions(folder: "")
+            while let next = rest.first {
+                rest.removeFirst()
+                let (flag, inline) = split(next)
+                switch flag {
+                case "--inside": options.inside = try inline ?? take(&rest, after: flag)
+                case "--reason": options.reason = try inline ?? take(&rest, after: flag)
+                case "--wait": options.wait = try waitValue(try inline ?? take(&rest, after: flag))
+                case "--json": options.json = true
+                default:
+                    guard !next.hasPrefix("-"), folder == nil else { throw UsageError("Unknown option \(next) for check-import.") }
+                    folder = next
+                }
+            }
+            guard let folder, !folder.isEmpty else { throw UsageError("check-import needs the folder of .env files: passwordpie check-import FOLDER.") }
+            options.folder = folder
+            return .checkImport(options)
         case "status":
             for next in rest where next != "--json" { throw UsageError("Unknown option \(next) for status.") }
             return .status(json: rest.contains("--json"))
@@ -251,6 +281,7 @@ enum Arguments {
       passwordpie list [QUERY] [--json] [--wait SECONDS]
       passwordpie status [--json]
       passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
+      passwordpie check-import FOLDER [--inside FOLDER] [--reason TEXT] [--wait SECONDS] [--json]
       passwordpie mcp
 
     REF is pp://<folder>/<item>[/<field>] or pp://id/<UUID>[/<field>]; the field is password (the default), username,
@@ -283,12 +314,18 @@ enum Arguments {
     accounts. --also adds a name a library reads without the code spelling it out. Nothing is written without --write,
     and a file that is already there is kept unless you add --force. It reads names, never a value.
 
+    check-import compares a folder of .env files with what PasswordPie holds, after the owner approves: for every
+    variable and key file it prints same, differs or missing, never a value, and exits 78 unless all are the same.
+    PasswordPie reads the folder and compares inside the app. Run it before the files are deleted. --inside names the
+    folder the import put everything in, when it did. missing also means not shared with agents.
+
     mcp is an MCP server on standard input and output, for agents that use MCP tools: passwordpie_status,
     passwordpie_list, passwordpie_run, passwordpie_read and passwordpie_login. Add it to the agent's MCP
     configuration (Preferences > Agents shows the lines for Claude Code, Codex and Cursor).
 
     Exit codes: the command's own, or 64 usage, 65 not-available, 66 ambiguous, 67 denied, 68 timeout, 69 locked,
     70 app-unavailable, 71 access-off, 72 too-many-requests, 73 premium-required; for login, 74 no-matching-tab,
-    75 site-mismatch, 76 timed-out, 77 no-fields. See docs/AGENTS.md.
+    75 site-mismatch, 76 timed-out, 77 no-fields; for check-import, 78 when a name differs or is missing. See
+    docs/AGENTS.md.
     """
 }

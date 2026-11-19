@@ -293,6 +293,16 @@ final class DotenvImportFlow: ObservableObject {
         "The files in “\(outcome.folderName)” are as they were. They still hold every value in plain text."
     }
 
+    /// Downloaded app only: the check to run before the files are deleted (docs/AGENTS.md, "Checking a folder against the
+    /// vault"). The App Store app has no `passwordpie` tool.
+    static var checkText: String? {
+        #if PP_DIRECT
+        return "Before you delete them, share the imported folders with agents (Preferences > Agents) and run “passwordpie check-import” with the folder in Terminal: it compares every name and value with the database and prints same, differs or missing, never a value."
+        #else
+        return nil
+        #endif
+    }
+
     #if DEBUG
     /// The page's words, for the debug status file. Names and counts only.
     var debugSummary: [String: Any] {

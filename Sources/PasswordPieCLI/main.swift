@@ -192,6 +192,82 @@ func writeEnvCommand(_ options: WriteEnvOptions) -> Never {
     exit(0)
 }
 
+/// `passwordpie check-import`: asks the app to compare a folder of dotenv files with the vault. The app reads the
+/// folder and compares; the tool gets a word per name and prints it. No value passes through the tool.
+func checkImportCommand(_ options: CheckImportOptions) -> Never {
+    // The app reads the folder itself, so it needs the whole path: links resolved, as the app would see it.
+    let folder = URL(fileURLWithPath: options.folder).standardizedFileURL.resolvingSymlinksInPath().path
+    var request = AgentRequest(type: .check, id: 1)
+    request.version = AgentConstants.protocolVersion
+    request.client = "cli"
+    request.folder = folder
+    request.inside = options.inside
+    request.reason = options.reason
+    request.wait = options.wait
+    // An answer that compared nothing is not "everything is the same".
+    guard let lines = ask(request).checks, !lines.isEmpty else { refuse(.appUnavailable, detail: "PasswordPie gave no answer about the check.") }
+    let failed = lines.contains { $0.status != .same }
+    if options.json {
+        FileHandle.standardOutput.write(AgentCoding.encode(lines) + Data("\n".utf8))
+    } else {
+        print(CheckImport.report(lines), terminator: "")
+    }
+    if failed { printError(CheckImport.failureLine(lines)) }
+    exit(failed ? AgentConstants.checkFailedExitCode : 0)
+}
+
+enum CheckImport {
+    static func word(_ status: AgentCheckStatus) -> String {
+        switch status {
+        case .same: return "same"
+        case .differs: return "differs"
+        case .missing: return "missing"
+        case .ambiguous: return "ambiguous"
+        case .notChecked: return "not checked"
+        }
+    }
+
+    /// The names under their file, each with its word, then the counts. Names and words only.
+    static func report(_ lines: [AgentCheckLine]) -> String {
+        var text = ""
+        var file: String?
+        let width = min(lines.map(\.name.count).max() ?? 0, 48)
+        for line in lines {
+            if line.file != file {
+                file = line.file
+                text += line.file + "\n"
+            }
+            text += "  " + line.name.padding(toLength: max(width, line.name.count), withPad: " ", startingAt: 0) + "  " + word(line.status) + "\n"
+        }
+        return text + summary(lines) + "\n"
+    }
+
+    /// "12 same, 1 differs, 2 missing."
+    static func summary(_ lines: [AgentCheckLine]) -> String {
+        let order: [AgentCheckStatus] = [.same, .differs, .missing, .ambiguous, .notChecked]
+        let parts = order.compactMap { status -> String? in
+            let count = lines.filter { $0.status == status }.count
+            return count == 0 ? nil : "\(count) \(word(status))"
+        }
+        return parts.joined(separator: ", ") + "."
+    }
+
+    /// One line for the agent to relay when the folder and the vault are not the same.
+    static func failureLine(_ lines: [AgentCheckLine]) -> String {
+        var line = "PasswordPie: the folder and PasswordPie do not hold the same. Do not delete the files yet."
+        if lines.contains(where: { $0.status == .missing }) {
+            line += " Missing means not imported, or not shared with agents: ask the owner to import the folder and to share the items or their folder (Preferences > Agents)."
+        }
+        if lines.contains(where: { $0.status == .differs }) {
+            line += " Where a name differs, the file or the item was changed after the import: importing the folder again updates the item."
+        }
+        if lines.contains(where: { $0.status == .ambiguous }) {
+            line += " Ambiguous means more than one shared item has that folder and name."
+        }
+        return line + " " + AgentConstants.pasteWarning
+    }
+}
+
 enum WriteEnv {
     /// What the person should know beside the files: names only.
     static func notes(_ plan: EnvFilePlan, scan: RepositoryScan) -> [String] {
@@ -281,6 +357,8 @@ case .run(let options):
     runCommand(options)
 case .writeEnv(let options):
     writeEnvCommand(options)
+case .checkImport(let options):
+    checkImportCommand(options)
 case .mcp:
     MCPServer().serve()
 }
