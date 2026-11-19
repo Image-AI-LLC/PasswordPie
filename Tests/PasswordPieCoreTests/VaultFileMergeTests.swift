@@ -186,6 +186,26 @@ final class VaultFileMergeTests: XCTestCase {
         XCTAssertNotNil(file.item(0xA3), "the version that landed during the save was not written over")
     }
 
+    /// The narrowest window: the other Mac's version lands after this save read the file and before it starts to
+    /// replace it. The file is replaced only while it is still what was read.
+    func testAFileReplacedRightAfterItWasReadIsNotWrittenOver() throws {
+        var mine = try open(MergeCopy(items: [bank, mail]))
+        mine.entries[0].password = "new-bank"
+        var arrivals = 0
+
+        let saved = try VaultFile.save(mine, to: url, password: "secret", keyFile: nil, now: Date(), afterRead: {
+            guard arrivals == 0 else { return }
+            arrivals += 1
+            try self.arrive(MergeCopy(items: [self.bank, self.mail, MergeItem(0xA3, "Arrived meanwhile", modified: 5)]))
+        }, beforeReplace: {})
+
+        XCTAssertTrue(saved.wrote)
+        let file = try onDisk()
+        XCTAssertEqual(file.item(0xA1)?.password, "new-bank")
+        XCTAssertNotNil(file.item(0xA3))
+        XCTAssertNotNil(saved.vault.item(0xA3))
+    }
+
     // MARK: Merging a copy in
 
     func testMergingACopyInWritesTheFileAndKeepsTheFileFromBefore() throws {
@@ -239,6 +259,24 @@ final class VaultFileMergeTests: XCTestCase {
         let two = try VaultFile.keepMergeBackup(Data("b".utf8), of: url, now: start.addingTimeInterval(20_000))
         XCTAssertNotEqual(one, two)
         XCTAssertEqual(try Data(contentsOf: one), Data("a".utf8))
+    }
+
+    /// A copy from before a merge opens with the keys the database had then. After a key change that would be a way
+    /// round the new keys, lying beside the database in a folder that may be shared.
+    func testAKeyChangeRemovesTheCopiesFromBeforeAMerge() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let baseline = try XCTUnwrap(mine.fileBaseline)
+        _ = try VaultFile.keepMergeBackup(Data("an earlier version".utf8), of: url, now: Date(timeIntervalSince1970: 1_780_272_000))
+        _ = try VaultFile.keepMergeBackup(baseline, of: url, now: Date(timeIntervalSince1970: 1_780_272_060))
+        try Data("not ours".utf8).write(to: directory.appendingPathComponent("Passwords.kdbx.before-something-else"))
+        XCTAssertEqual(backups.count, 2)
+
+        let result = try VaultFile.rekey(url, vault: &mine, password: "a new password", keyFile: nil, baseline: baseline)
+
+        XCTAssertEqual(backups, [])
+        XCTAssertEqual(result.staleCopies, [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Passwords.kdbx.before-something-else").path))
+        XCTAssertNoThrow(try KDBX.load(data: Data(contentsOf: url), password: "a new password"))
     }
 
     func testAMergeThatCannotKeepACopyFromBeforeChangesNothing() throws {

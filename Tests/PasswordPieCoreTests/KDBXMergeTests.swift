@@ -316,6 +316,10 @@ final class KDBXMergeTests: XCTestCase {
             XCTAssertEqual(deleted, ["deleted \(mergeID(0xA1).uuidString) at 15"], "the item that stays is no longer listed as deleted")
         }
         XCTAssertEqual(try merged(try there.vault(), into: here).report.removed, 1)
+        // The other way round nothing is removed, and the deleted item is not counted as added and removed again.
+        let back = try merged(here, into: try there.vault()).report
+        XCTAssertEqual(back.added, 1)
+        XCTAssertEqual(back.removed, 0)
     }
 
     func testAnItemChangedInTheSameSecondAsItsDeletionIsRemoved() throws {

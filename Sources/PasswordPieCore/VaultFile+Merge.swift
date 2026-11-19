@@ -50,7 +50,7 @@ extension VaultFile {
         merging other: Vault? = nil,
         onlyIfNeeded: Bool = false
     ) throws -> VaultFileSave {
-        try save(vault, to: url, password: password, keyFile: keyFile, merging: other, onlyIfNeeded: onlyIfNeeded, now: Date(), beforeReplace: {})
+        try save(vault, to: url, password: password, keyFile: keyFile, merging: other, onlyIfNeeded: onlyIfNeeded, now: Date(), afterRead: {}, beforeReplace: {})
     }
 
     static func save(
@@ -61,13 +61,14 @@ extension VaultFile {
         merging other: Vault? = nil,
         onlyIfNeeded: Bool = false,
         now: Date,
+        afterRead: () throws -> Void = {},
         beforeReplace: () throws -> Void
     ) throws -> VaultFileSave {
         var attempt = 0
         while true {
             attempt += 1
             do {
-                return try saveOnce(vault, to: url, password: password, keyFile: keyFile, merging: other, onlyIfNeeded: onlyIfNeeded, now: now, beforeReplace: beforeReplace)
+                return try saveOnce(vault, to: url, password: password, keyFile: keyFile, merging: other, onlyIfNeeded: onlyIfNeeded, now: now, afterRead: afterRead, beforeReplace: beforeReplace)
             } catch let error as VaultWriteError where error == changedOnDisk && attempt < 3 {
                 // Replaced again between reading it and writing: read it again.
                 continue
@@ -83,9 +84,11 @@ extension VaultFile {
         merging other: Vault?,
         onlyIfNeeded: Bool,
         now: Date,
+        afterRead: () throws -> Void,
         beforeReplace: () throws -> Void
     ) throws -> VaultFileSave {
         let onDisk = FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
+        try afterRead()
         var current = vault
         var report: VaultMergeReport?
         var needsWrite = !onlyIfNeeded
@@ -154,6 +157,23 @@ extension VaultFile {
         }
         let reason = (error as? KDBXError)?.description ?? (error as? KeyFileError)?.description ?? error.localizedDescription
         return VaultWriteError("\(name) changed on disk and could not be read, so nothing was changed. \(reason)")
+    }
+
+    /// Removes the copies kept from before a merge, after a key change: each holds the database under the old keys.
+    /// Returns the names of those that could not be removed.
+    static func removeMergeBackups(of url: URL) -> [String] {
+        let manager = FileManager.default
+        let folder = url.deletingLastPathComponent()
+        let prefix = mergeBackupPrefix(for: url)
+        let names = ((try? manager.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasPrefix(prefix) }.sorted()
+        return names.filter { name in
+            do {
+                try manager.removeItem(at: folder.appendingPathComponent(name))
+                return false
+            } catch {
+                return true
+            }
+        }
     }
 
     /// This Mac's file as it was before a merge, written from the bytes that were read, 0600. A copy that already holds

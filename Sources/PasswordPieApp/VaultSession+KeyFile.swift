@@ -361,6 +361,9 @@ extension VaultSession {
             let snapshot = VaultFile.snapshotURL(for: openedFiles[index].url).lastPathComponent
             notes.append("The copy beside it, \(snapshot), could not be updated and still opens with the old keys. Delete it.")
         }
+        if !result.staleCopies.isEmpty {
+            notes.append("These copies from before a merge could not be removed and still open with the old keys: \(result.staleCopies.joined(separator: ", ")). Delete them.")
+        }
         keyFileStatus = notes.joined(separator: " ")
         keyFileStatusIsError = false
         publishCatalog()
