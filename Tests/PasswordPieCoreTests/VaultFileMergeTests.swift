@@ -247,6 +247,25 @@ final class VaultFileMergeTests: XCTestCase {
         }
     }
 
+    /// A header too long to read in its first `KDBX.headerLimit` bytes says nothing about what it asks for, so the file
+    /// is not opened, though it is a valid database under this password.
+    func testAReplacedFileWhoseHeaderCannotBeReadIsNotOpened() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let padded = try KDBX.testingDatabase(
+            xml: MergeCopy(items: [bank, mail]).xml, password: "secret",
+            extraHeader: [HeaderField(type: 12, payload: Data(count: KDBX.headerLimit))]
+        )
+        XCTAssertNoThrow(try KDBX.load(data: padded, password: "secret"))
+        XCTAssertNil(KDBX.kdf(ofHeader: padded))
+        try padded.write(to: url, options: .atomic)
+        mine.entries[0].password = "new"
+
+        XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil)) { error in
+            XCTAssertTrue((error as? VaultWriteError)?.description.contains("could not be read") == true, "\(error)")
+        }
+        XCTAssertEqual(try Data(contentsOf: url), padded)
+    }
+
     func testTheKeySettingsAFileAsksForAreReadFromItsStartWithoutDerivingAnything() throws {
         let data = try MergeCopy(items: [bank]).data()
         XCTAssertEqual(KDBX.kdf(ofHeader: data), .aes(rounds: 100))
