@@ -96,12 +96,15 @@ public enum DotenvFolder {
     public static let maximumFileBytes = 1 << 20
     /// A file left alone is looked into for imported values only up to this size.
     static let maximumScannedBytes = 4 << 20
+    /// All the files left alone are looked into only up to this many bytes together.
+    static let scanBudgetBytes = 256 << 20
     /// The shortest value looked for in the files left alone. A shorter one is in too many files by chance.
     static let minimumScannedValue = 8
     static let keyFilesTitle = "Key files"
 
-    /// Reads `folder` and its subfolders. Nothing in it is changed.
-    public static func read(_ folder: URL) throws -> DotenvPlan {
+    /// Reads `folder` and its subfolders. Nothing in it is changed. `findingCopies`: also say which files left alone
+    /// hold a value being imported, which reads every one of them; a check of the folder does not need it.
+    public static func read(_ folder: URL, findingCopies: Bool = true) throws -> DotenvPlan {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue else {
             throw DotenvFolderError(description: "Choose a folder: the one that holds the .env files.")
@@ -112,7 +115,7 @@ public enum DotenvFolder {
         plan.items = walk.items
         plan.skipped = walk.skipped
         plan.remarks = walk.remarks
-        try markCopies(in: &plan, root: walk.root, budget: maximumFiles - walk.seen)
+        if findingCopies { markCopies(in: &plan, root: walk.root, budget: maximumFiles - walk.seen) }
         return plan
     }
 
@@ -189,7 +192,7 @@ public enum DotenvFolder {
 
     /// Says which files left alone hold a value that is being imported: generated copies, backups, a script with a token
     /// pasted in. Those are the files to delete with the dotenv files once the values are in the database.
-    private static func markCopies(in plan: inout DotenvPlan, root: URL, budget: Int) throws {
+    private static func markCopies(in plan: inout DotenvPlan, root: URL, budget: Int) {
         var needles: [(name: String, bytes: Data)] = []
         var seen = Set<Data>()
         for item in plan.items {
@@ -200,9 +203,11 @@ public enum DotenvFolder {
         }
         guard !needles.isEmpty else { return }
         var remaining = budget
+        var bytesLeft = scanBudgetBytes
         func held(in url: URL) -> [String] {
-            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= maximumScannedBytes,
+            guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= maximumScannedBytes, size <= bytesLeft,
                   let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return [] }
+            bytesLeft -= size
             return needles.filter { data.range(of: $0.bytes) != nil }.map(\.name)
         }
         for index in plan.skipped.indices {
@@ -273,7 +278,9 @@ private struct Walk {
                 continue
             }
             if isFolder {
-                if name.hasPrefix(".") { skip(.hidden) }
+                // A KeePass database keeps its Recycle Bin under that name: a folder called so cannot be an item's folder.
+                if name.caseInsensitiveCompare("Recycle Bin") == .orderedSame || storedXMLText(name) != name { skip(.other) }
+                else if name.hasPrefix(".") { skip(.hidden) }
                 else if name.hasPrefix("_") { skip(.underscore) }
                 else if DotenvFolder.dependencyFolders.contains(name) { skip(.dependencies) }
                 else { folders.append((child, name)) }
@@ -288,6 +295,8 @@ private struct Walk {
             if name.hasPrefix("_") { skip(.underscore); continue }
             let size = values?.fileSize ?? 0
             if let identity = DotenvFolder.identity(ofFileNamed: name) {
+                // A name the database cannot keep as it is would be another item on the next import.
+                guard storedXMLText(identity) == identity else { skip(.other); continue }
                 guard size <= DotenvFolder.maximumFileBytes else { skip(.tooLarge); continue }
                 guard let data = try? Data(contentsOf: child), String(data: data, encoding: .utf8) != nil else { skip(.notText); continue }
                 if dotenvs.contains(where: { $0.identity == identity }) { skip(.duplicate); continue }
@@ -301,7 +310,7 @@ private struct Walk {
                 skip(["pem", "key", "p8", "p12", "pfx"].contains(ext) ? .tooLarge : .other)
                 continue
             }
-            guard let data = try? Data(contentsOf: child), DotenvFolder.isKeyFile(named: name, data: data) else { skip(.other); continue }
+            guard storedXMLText(name) == name, let data = try? Data(contentsOf: child), DotenvFolder.isKeyFile(named: name, data: data) else { skip(.other); continue }
             keyFiles.append(DotenvPlan.KeyFile(path: path, name: name, data: data))
         }
 
@@ -321,7 +330,8 @@ private struct Walk {
             if !sensitive.isEmpty { remarks.append(.shellSensitive(file: path, names: sensitive)) }
             found.append(DotenvPlan.Item(
                 folder: components, title: dotenv.identity, file: path, fields: fields,
-                notes: parsed.comments.joined(separator: "\n"), keyFiles: []
+                // As the database keeps them, so the notes of a second import are the notes of the first.
+                notes: storedXMLText(parsed.comments.joined(separator: "\n")), keyFiles: []
             ))
         }
         // A key file goes to the item its name names, else to the folder's only item, else to "Key files".

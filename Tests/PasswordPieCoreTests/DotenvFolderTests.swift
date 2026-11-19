@@ -213,6 +213,32 @@ final class DotenvFolderTests: XCTestCase {
         XCTAssertFalse(said.contains("PLANTED"), said)
     }
 
+    /// Names the database cannot keep as they are would make another item on every import: left alone instead.
+    func testAFolderNamedRecycleBinAndNamesTheDatabaseCannotKeepAreLeftAlone() throws {
+        let root = directory.appendingPathComponent("odd-names", isDirectory: true)
+        func write(_ path: String, _ text: String) throws {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(text.utf8).write(to: url)
+        }
+        try write("Recycle Bin/work.env", "A=PLANTED-in-the-bin\n")
+        try write("ok/work.env", "# a\u{1}note\nA=1\n")
+        try write("ok/bad\u{1}name.env", "A=2\n")
+        try write("ok/bad\u{2}key.pem", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n")
+        let plan = try DotenvFolder.read(root)
+        XCTAssertEqual(plan.items.map { ($0.folder + [$0.title]).joined(separator: "/") }, ["ok/work"])
+        XCTAssertEqual(plan.items[0].notes, "anote", "as the database will keep it")
+        XCTAssertEqual(Set(plan.skipped.map(\.path)), ["Recycle Bin", "ok/bad\u{1}name.env", "ok/bad\u{2}key.pem"])
+    }
+
+    func testACheckDoesNotReadTheFilesLeftAlone() throws {
+        let root = try DotenvFixture.make(in: directory)
+        let plan = try DotenvFolder.read(root, findingCopies: false)
+        XCTAssertEqual(plan.items.count, 5)
+        XCTAssertTrue(plan.skipped.allSatisfy(\.holds.isEmpty))
+        XCTAssertEqual(plan.skipped.count, 8, "they are still listed")
+    }
+
     func testReadingChangesNothingInTheFolder() throws {
         let root = try DotenvFixture.make(in: directory)
         let before = try DotenvFixture.contents(of: root)
