@@ -7,6 +7,7 @@ enum Command: Equatable {
     case read(ReadOptions)
     case login(LoginOptions)
     case list(query: String?, json: Bool, wait: Int?)
+    case writeEnv(WriteEnvOptions)
     case status(json: Bool)
     /// `passwordpie mcp`: the MCP server on standard input and output.
     case mcp
@@ -48,6 +49,19 @@ struct LoginOptions: Equatable {
     var json = false
 }
 
+/// `passwordpie write-env`: a project's `.env.pp`, from the variables it reads.
+struct WriteEnvOptions: Equatable {
+    /// The project's folder. Nil: the folder the tool was started in.
+    var folder: String?
+    var identities: [String] = []
+    var also: [String] = []
+    /// Write the files. Without it they are only shown.
+    var write = false
+    /// Replace a file that is already there.
+    var force = false
+    var wait: Int?
+}
+
 struct UsageError: Error, Equatable {
     var message: String
     init(_ message: String) { self.message = message }
@@ -78,6 +92,27 @@ enum Arguments {
                 }
             }
             return .list(query: query.isEmpty ? nil : query.joined(separator: " "), json: json, wait: wait)
+        case "write-env":
+            var options = WriteEnvOptions()
+            while let next = rest.first {
+                rest.removeFirst()
+                let (flag, inline) = split(next)
+                switch flag {
+                case "--identity": options.identities.append(try inline ?? take(&rest, after: flag))
+                case "--also":
+                    let name = try inline ?? take(&rest, after: flag)
+                    guard AgentEnvFile.isVariableName(name) else { throw UsageError("\"\(name)\" is not a variable name.") }
+                    options.also.append(name)
+                case "--write": options.write = true
+                case "--force": options.force = true
+                case "--wait": options.wait = try waitValue(try inline ?? take(&rest, after: flag))
+                default:
+                    guard !next.hasPrefix("-"), options.folder == nil else { throw UsageError("Unknown option \(next) for write-env.") }
+                    options.folder = next
+                }
+            }
+            guard !options.force || options.write else { throw UsageError("--force goes with --write.") }
+            return .writeEnv(options)
         case "status":
             for next in rest where next != "--json" { throw UsageError("Unknown option \(next) for status.") }
             return .status(json: rest.contains("--json"))
@@ -215,6 +250,7 @@ enum Arguments {
       passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
       passwordpie list [QUERY] [--json] [--wait SECONDS]
       passwordpie status [--json]
+      passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
       passwordpie mcp
 
     REF is pp://<folder>/<item>[/<field>] or pp://id/<UUID>[/<field>]; the field is password (the default), username,
@@ -240,6 +276,12 @@ enum Arguments {
     PasswordPie's extension, after the owner approves; --submit also presses the form's button. Open the sign-in page
     first. Without REF, --url offers the owner the shared items for that site. You get the outcome and the item's
     title, username and websites, never the password.
+
+    write-env reads a project (FOLDER, or the folder you are in) for the variables it reads (process.env.X,
+    os.environ["X"], os.getenv, $X in shell scripts, and the names in its .env) and shows the .env.pp that names only
+    those, as references to the items shared with agents: one file per --identity when the project works with two
+    accounts. --also adds a name a library reads without the code spelling it out. Nothing is written without --write,
+    and a file that is already there is kept unless you add --force. It reads names, never a value.
 
     mcp is an MCP server on standard input and output, for agents that use MCP tools: passwordpie_status,
     passwordpie_list, passwordpie_run, passwordpie_read and passwordpie_login. Add it to the agent's MCP
