@@ -43,6 +43,9 @@ extension VaultFile {
     ///   changed again meanwhile, the whole thing is done again, a few times at most.
     /// - A file that changed and cannot be opened with these keys, or is another database, is left alone, and nothing
     ///   is written. `merging:` is the caller's choice and may be any database.
+    /// - A vault that was never read from or written to the file at `url` does not write over it either: a file that is
+    ///   there is merged into as the same database or refused, and one that arrives while the keys are being derived
+    ///   makes the save read again.
     public static func save(
         _ vault: Vault,
         to url: URL,
@@ -95,9 +98,12 @@ extension VaultFile {
         var needsWrite = !onlyIfNeeded
         var merged = false
 
-        if let onDisk, let known = vault.fileBaseline, onDisk != known {
+        if let onDisk, onDisk != vault.fileBaseline {
             // Nothing below may write over a file this vault was not read from.
             guard vault.preserve != nil else {
+                if vault.fileBaseline == nil {
+                    throw VaultWriteError("\(url.lastPathComponent) is already there and this database was not read from it, so nothing was changed.")
+                }
                 throw VaultWriteError("\(url.lastPathComponent) changed on disk and this database cannot be merged with it, so nothing was changed.")
             }
             var theirs: Vault
@@ -153,6 +159,8 @@ extension VaultFile {
             try replace(url, with: data, password: password, keyFile: keyFile, expecting: written, baseline: onDisk,
                         keepingSnapshot: true, beforeReplace: beforeReplace)
         } else {
+            // A file that arrived since it was read is not written over: the next round reads it.
+            guard !FileManager.default.fileExists(atPath: url.path) else { throw changedOnDisk }
             try replace(url, with: data, password: password, keyFile: keyFile, expecting: written, beforeReplace: beforeReplace)
         }
         written.noteFileContents(data)
@@ -169,12 +177,14 @@ extension VaultFile {
     }
 
     /// Removes the copies kept from before a merge, after a key change: each holds the database under the old keys.
-    /// Returns the names of those that could not be removed.
+    /// Returns the names of those that could not be removed. A folder that cannot be listed returns `"<prefix>*"`, so
+    /// the copies that may be left are reported too.
     static func removeMergeBackups(of url: URL) -> [String] {
         let manager = FileManager.default
         let folder = url.deletingLastPathComponent()
         let prefix = mergeBackupPrefix(for: url)
-        let names = ((try? manager.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasPrefix(prefix) }.sorted()
+        guard let listed = try? manager.contentsOfDirectory(atPath: folder.path) else { return ["\(prefix)*"] }
+        let names = listed.filter { $0.hasPrefix(prefix) }.sorted()
         return names.filter { name in
             do {
                 try manager.removeItem(at: folder.appendingPathComponent(name))
@@ -220,9 +230,10 @@ extension VaultFile {
         guard try Data(contentsOf: backup) == bytes else {
             throw VaultWriteError("The copy did not match the database.")
         }
-        // The names sort by time. A copy that cannot be removed is one too many, not a failed merge.
+        // The names sort by time. A copy that cannot be removed is one too many, not a failed merge. The copy just made is
+        // never the one removed, also when a copy synced from a Mac with a faster clock sorts after it.
         let all = (existing + [backup.lastPathComponent]).sorted()
-        for name in all.dropLast(mergeBackupsKept) {
+        for name in all.dropLast(mergeBackupsKept) where name != backup.lastPathComponent {
             try? manager.removeItem(at: folder.appendingPathComponent(name))
         }
         return backup

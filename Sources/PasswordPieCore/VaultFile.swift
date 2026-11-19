@@ -75,7 +75,8 @@ public enum VaultFile {
     public struct Rekeyed: Equatable, Sendable {
         public let data: Data
         public let snapshotRefreshed: Bool
-        /// The copies from before a merge that could not be removed, by name: they still open with the old keys.
+        /// The copies from before a merge that could not be removed, by name: they still open with the old keys. When the
+        /// folder could not be listed, the one name is the prefix of those copies followed by `*`.
         public let staleCopies: [String]
     }
 

@@ -192,6 +192,29 @@ final class VaultFileMergeTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), before)
     }
 
+    /// A vault that was never read from the file is not written over a file that is there, merged or not.
+    func testAVaultWithNoBaselineDoesNotWriteOverAFileThatIsThere() throws {
+        let theirs = try arrive(MergeCopy(items: [bank]))
+        let fresh = Vault(entries: [VaultEntry(fields: [VaultField(key: "Title", value: "New")])], kdf: .fastTest)
+        for onlyIfNeeded in [true, false] {
+            XCTAssertThrowsError(try VaultFile.save(fresh, to: url, password: "secret", keyFile: nil, onlyIfNeeded: onlyIfNeeded)) { error in
+                XCTAssertTrue((error as? VaultWriteError)?.description.contains("this database was not read from it") == true, "\(error)")
+            }
+            XCTAssertEqual(try Data(contentsOf: url), theirs)
+        }
+    }
+
+    func testAFileThatArrivesWhileASaveOfANewDatabaseIsPreparedIsNotWrittenOver() throws {
+        let fresh = Vault(entries: [VaultEntry(fields: [VaultField(key: "Title", value: "New")])], kdf: .fastTest)
+        var theirs: Data?
+        XCTAssertThrowsError(try VaultFile.save(fresh, to: url, password: "secret", keyFile: nil, now: Date(), afterRead: {
+            guard theirs == nil else { return }
+            theirs = try self.arrive(MergeCopy(items: [self.bank]))
+        }, beforeReplace: {}))
+        XCTAssertNotNil(theirs)
+        XCTAssertEqual(try Data(contentsOf: url), theirs)
+    }
+
     func testAReplacedFileThatIsNotADatabaseIsLeftAlone() throws {
         let mine = try open(MergeCopy(items: [bank]))
         try Data("half a file".utf8).write(to: url)
@@ -310,6 +333,15 @@ final class VaultFileMergeTests: XCTestCase {
         XCTAssertEqual(result.staleCopies, [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent("Passwords.kdbx.before-something-else").path))
         XCTAssertNoThrow(try KDBX.load(data: Data(contentsOf: url), password: "a new password"))
+    }
+
+    /// A folder that cannot be listed is not a folder with nothing to remove.
+    func testAKeyChangeReportsTheCopiesWhenTheFolderCannotBeListed() throws {
+        _ = try VaultFile.keepMergeBackup(Data("an earlier version".utf8), of: url, now: Date(timeIntervalSince1970: 1_780_272_000))
+        try FileManager.default.setAttributes([.posixPermissions: 0o300], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+
+        XCTAssertFalse(VaultFile.removeMergeBackups(of: url).isEmpty)
     }
 
     func testAMergeThatCannotKeepACopyFromBeforeChangesNothing() throws {
