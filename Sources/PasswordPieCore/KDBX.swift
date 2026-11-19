@@ -15,7 +15,12 @@ public enum KDBX {
     /// not a readable KDBX 4 header. Only the first `headerLimit` bytes are looked at, whatever the file's size: a header
     /// is a few hundred bytes, and nothing in it is trusted before a key has opened the file.
     public static func kdf(ofHeader data: Data) -> KDFKind? {
-        try? parseOuter(Data(data.prefix(headerLimit))).kdf
+        try? kdfOfHeader(data)
+    }
+
+    /// `kdf(ofHeader:)` with the reason a header could not be read.
+    static func kdfOfHeader(_ data: Data) throws -> KDFKind {
+        try parseOuter(Data(data.prefix(headerLimit))).kdf
     }
 
     /// How much of a file `kdf(ofHeader:)` reads.

@@ -125,15 +125,24 @@ protocol MergePrompting: AnyObject {
 
 /// A file a sync folder holds under a copy's name is read unasked only when it is a regular file of a size a database
 /// can be, and asks for this database's own key derivation: a named pipe, a device, a huge file or a header asking for
-/// any amount of time or memory must not stall or exhaust the app. Only the start of the file is read to find that out.
+/// any amount of time or memory must not stall or exhaust the app. The file is opened once, without following a link or
+/// waiting, and everything is checked and read through that one descriptor.
 private func readableCopyData(at url: URL, deriving kdf: KDFKind) -> Data? {
     let limit = 512 * 1024 * 1024
-    guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
-          values.isRegularFile == true, let size = values.fileSize, size <= limit,
-          let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    // Opened without waiting (a named pipe would block) and without following a link, and checked through the
+    // descriptor that is read, so the file cannot be swapped between the check and the read.
+    let descriptor = open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW)
+    guard descriptor >= 0 else { return nil }
+    let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     defer { try? handle.close() }
-    guard let start = try? handle.read(upToCount: KDBX.headerLimit), KDBX.kdf(ofHeader: start) == kdf else { return nil }
-    return try? Data(contentsOf: url)
+    var info = stat()
+    // The header first, from the same descriptor: a file that asks for other key settings costs one small read.
+    guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_size <= limit,
+          var data = try? handle.read(upToCount: KDBX.headerLimit), KDBX.kdf(ofHeader: data) == kdf else { return nil }
+    guard data.count == KDBX.headerLimit else { return data }
+    guard let rest = try? handle.read(upToCount: limit + 1 - data.count) else { return nil }
+    data.append(rest)
+    return data.count <= limit ? data : nil
 }
 
 extension VaultSession {
@@ -400,9 +409,10 @@ extension VaultSession {
         UserDefaults.standard.dictionary(forKey: Self.handledCopiesKey(path)) as? [String: String] ?? [:]
     }
 
-    private func rememberHandled(_ copy: ConflictCopy, of path: String) {
+    /// `signature` is the copy's as of the moment its bytes were read; nil takes the file's as it is now.
+    private func rememberHandled(_ copy: ConflictCopy, of path: String, signature: String? = nil) {
         var handled = handledCopies(of: path).filter { FileManager.default.fileExists(atPath: $0.key) }
-        handled[copy.url.path] = FileSignature(path: copy.url.path)?.text ?? ""
+        handled[copy.url.path] = signature ?? FileSignature(path: copy.url.path)?.text ?? ""
         UserDefaults.standard.set(handled, forKey: Self.handledCopiesKey(path))
     }
 
@@ -431,27 +441,29 @@ extension VaultSession {
         let (url, password, keyFile, ours, ourKDF, generation) = (file.url, file.password, file.keyFile, file.vault.rootGroupID, file.vault.kdf.kind, catalogGeneration)
         // Listing the folder can be slow, and opening a copy derives its key, which can take seconds: off the main
         // thread, as unlocking is.
-        let load: @Sendable () -> [(ConflictCopy, Vault?)] = {
+        let load: @Sendable () -> [(ConflictCopy, Vault?, String)] = {
             let found = ConflictCopies.find(beside: url).filter { copy in
                 !known.contains(copy) && handled[copy.url.path] != (FileSignature(path: copy.url.path)?.text ?? "")
             }
             return found.map { copy in
                 // A name a person could have given is never opened unasked.
-                guard copy.certain else { return (copy, nil) }
+                // The signature is taken before the bytes are read: a copy written again after that is not the one merged.
+                let signature = FileSignature(path: copy.url.path)?.text ?? ""
+                guard copy.certain else { return (copy, nil, signature) }
                 // Its header is untrusted until a key opens it: a key derivation other than this database's own, which
                 // could ask for any amount of time or memory, is not run unasked.
                 let vault = readableCopyData(at: copy.url, deriving: ourKDF).flatMap {
                     try? KDBX.load(data: $0, password: password, keyFile: keyFile)
                 }
                 // The other Mac's version of this database opens with its keys and has its root group.
-                return (copy, vault.flatMap { $0.rootGroupID != nil && $0.rootGroupID == ours ? $0 : nil })
+                return (copy, vault.flatMap { $0.rootGroupID != nil && $0.rootGroupID == ours ? $0 : nil }, signature)
             }
         }
-        let finish: @MainActor ([(ConflictCopy, Vault?)]) -> Void = { [weak self] opened in
+        let finish: @MainActor ([(ConflictCopy, Vault?, String)]) -> Void = { [weak self] opened in
             guard let self else { return }
             self.mergeState.scanning.remove(path)
             guard generation == self.catalogGeneration, !self.locked else { return }
-            for (copy, vault) in opened {
+            for (copy, vault, signature) in opened {
                 guard let vault else {
                     // Not certainly this database with these keys: asked about, never merged unasked.
                     self.mergeState.offered[path, default: []].append(copy)
@@ -461,7 +473,7 @@ extension VaultSession {
                 self.mergeState.merging[path, default: []].append(copy)
                 self.enqueueFileWork(path: path, merging: vault, settled: { [weak self] _ in
                     guard let self else { return }
-                    self.rememberHandled(copy, of: path)
+                    self.rememberHandled(copy, of: path, signature: signature)
                     if copy.isFileVersion {
                         ConflictCopies.markResolved(copy, of: URL(fileURLWithPath: path))
                     } else {
@@ -517,13 +529,15 @@ extension VaultSession {
             mergePrompts.show("\(name) is the open database.", title: Self.mergeTitle)
             return
         }
+        // As the offered copy was when it was read, not when the merge is done.
+        let offeredSignature = offered.map { _ in FileSignature(path: url.path)?.text ?? "" }
         openForMerge(url, password: file.password, keyFile: file.keyFile, firstTry: true) { [weak self] vault in
             guard let self else { return }
             let path = file.url.path
             // "Possible copy" was a guess from the file's name. A file that turns out to be another database is not
             // folded into this one on that guess: Merge from File… is the way to ask for exactly that.
             if let offered, vault.rootGroupID != file.vault.rootGroupID {
-                self.rememberHandled(offered, of: path)
+                self.rememberHandled(offered, of: path, signature: offeredSignature)
                 self.mergeState.offered[path]?.removeAll { $0 == offered }
                 self.refreshMergeNotice()
                 self.mergePrompts.show("\(name) is another database, not a copy of this one, so it was not merged. To bring its items in all the same, choose Merge from File… in the gear menu.", title: Self.mergeTitle)
@@ -535,11 +549,16 @@ extension VaultSession {
             }, done: { [weak self] failure in
                 guard let self else { return }
                 if let failure {
-                    self.mergePrompts.show(failure, title: Self.mergeTitle)
+                    if failure == Self.lockedBeforeMergeText {
+                        // `lock()` is calling this: the window waits until it has returned.
+                        DispatchQueue.main.async { self.mergePrompts.show(failure, title: Self.mergeTitle) }
+                    } else {
+                        self.mergePrompts.show(failure, title: Self.mergeTitle)
+                    }
                     return
                 }
                 if let offered {
-                    self.rememberHandled(offered, of: path)
+                    self.rememberHandled(offered, of: path, signature: offeredSignature)
                     self.mergeState.offered[path]?.removeAll { $0 == offered }
                     if !offered.isFileVersion { self.mergeState.merged[path, default: []].append(offered) }
                 }

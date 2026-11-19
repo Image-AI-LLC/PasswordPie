@@ -275,6 +275,37 @@ final class SameDatabaseTwoMacsTests: XCTestCase {
         XCTAssertEqual(session.itemsChangedOnBoth().first?.versions.first { $0.isTheEarlierChange }?.differing, ["Password"])
     }
 
+    /// The sync tool writes the copy again while its merge waits for its turn: what was merged is the version that was
+    /// read, so the newer one is neither moved to the Trash nor taken as handled.
+    func testACopyWrittenAgainWhileItsMergeWaitsIsNotTrashedAndIsMergedAfterwards() async throws {
+        let session = VaultSession()
+        session.mergePrompts = prompts
+        session.moveToTrash = { [weak self] url in
+            self?.trashed.append(url)
+            try FileManager.default.removeItem(at: url)
+        }
+        session.restore()
+        session.passwordDraft = "pw"
+        session.confirmDraft = "pw"
+        session.unlock()
+        session.saveEditing(item("Bank"))
+        await session.savesSettled()
+        let copy = try leaveCopy(named: "Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx") { $0.entries.append(self.item("API key")) }
+        let path = databaseURL.path
+
+        session.lookForCopies()
+        let read = await waitUntil { session.mergeState.merging[path]?.isEmpty == false }
+        XCTAssertTrue(read, "the copy has been read and its merge waits")
+        try otherMac { $0.entries.append(self.item("Arrived later")) }.write(to: copy, options: .atomic)
+        await session.savesSettled()
+
+        session.performMergeNotice()
+        XCTAssertEqual(trashed, [], "the copy on disk is not the one that was merged")
+        let merged = await waitUntil { self.titles(session).contains("Arrived later") }
+        XCTAssertTrue(merged, "\(titles(session))")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+    }
+
     /// This Mac's change lost to a later move to the Recycle Bin on the other Mac: that must not go unseen either.
     func testAChangeThatLostToALaterMoveToTheRecycleBinIsListedAsBeingThere() throws {
         let session = unlockedSession()
@@ -312,13 +343,15 @@ final class SameDatabaseTwoMacsTests: XCTestCase {
         await session.savesSettled()
 
         let first = try otherMac { $0.entries.append(self.item("First")) }
+        var secondVault = try KDBX.load(data: first, password: "pw")
+        secondVault.entries.append(item("Second"))
+        let second = try KDBX.save(vault: &secondVault, password: "pw")
         try arrive(first)
         session.filesChangedOnDisk()
         XCTAssertTrue(session.savesPending, "the first is being read")
-        var second = try KDBX.load(data: first, password: "pw")
-        second.entries.append(item("Second"))
-        try arrive(try KDBX.save(vault: &second, password: "pw"))
+        try arrive(second)
         session.filesChangedOnDisk()
+        XCTAssertTrue(session.mergeState.followAgain.contains(databaseURL.path), "the second change is kept for when the read ends")
 
         let read = await waitUntil { self.titles(session) == ["Bank", "First", "Second"] }
         XCTAssertTrue(read, "\(titles(session))")

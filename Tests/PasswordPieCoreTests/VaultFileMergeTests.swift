@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import PasswordPieCore
 import XCTest
@@ -231,6 +232,21 @@ final class VaultFileMergeTests: XCTestCase {
         }
     }
 
+    func testAReplacedFileWhoseHeaderCannotBeReadInItsStartIsNotOpened() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let other = try KDBX.testingDatabase(
+            xml: MergeCopy(items: [bank, mail]).xml, password: "secret", kdf: KDFParameters(kind: .aes(rounds: 200)),
+            extraHeader: [HeaderField(type: 0x7F, payload: Data(count: KDBX.headerLimit))]
+        )
+        try other.write(to: url, options: .atomic)
+        mine.entries[0].password = "new"
+
+        for onlyIfNeeded in [true, false] {
+            XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil, onlyIfNeeded: onlyIfNeeded))
+            XCTAssertEqual(try Data(contentsOf: url), other)
+        }
+    }
+
     func testTheKeySettingsAFileAsksForAreReadFromItsStartWithoutDerivingAnything() throws {
         let data = try MergeCopy(items: [bank]).data()
         XCTAssertEqual(KDBX.kdf(ofHeader: data), .aes(rounds: 100))
@@ -249,6 +265,18 @@ final class VaultFileMergeTests: XCTestCase {
         let place = try XCTUnwrap(argon.range(of: entry))
         var hostile = argon
         hostile.replaceSubrange(place.upperBound..<(place.upperBound + 8), with: Data(repeating: 0xFF, count: 8))
+        // The header's SHA-256 follows it and is checked first: put the right one in, so only the value is wrong.
+        var end = 12
+        while true {
+            let type = hostile[end]
+            let size = Int(hostile[end + 1]) | Int(hostile[end + 2]) << 8 | Int(hostile[end + 3]) << 16 | Int(hostile[end + 4]) << 24
+            end += 5 + size
+            if type == 0 { break }
+        }
+        hostile.replaceSubrange(end..<(end + 32), with: Data(SHA256.hash(data: hostile.prefix(end))))
+        XCTAssertThrowsError(try KDBX.kdfOfHeader(hostile)) { error in
+            XCTAssertEqual(error as? KDBXError, .crypto("Argon2 parameters are out of range."))
+        }
         XCTAssertNil(KDBX.kdf(ofHeader: hostile))
         XCTAssertThrowsError(try KDBX.load(data: hostile, password: "secret"))
     }
