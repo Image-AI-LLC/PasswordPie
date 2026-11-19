@@ -219,7 +219,7 @@ public enum VaultFile {
         }
     }
 
-    private static let changedOnDisk = VaultWriteError("The database changed on disk during the save. The original file was kept.")
+    static let changedOnDisk = VaultWriteError("The database changed on disk during the save. The original file was kept.")
 
     /// Exchanges the two files in one step, so a writer cannot land between the comparison and the replace. What came out
     /// is compared afterwards, and put back if it was not what this session expected. False where the volume cannot swap.
@@ -330,7 +330,7 @@ public enum VaultFile {
         try restrict(snapshot)
     }
 
-    private static func restrict(_ url: URL) throws {
+    static func restrict(_ url: URL) throws {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 

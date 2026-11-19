@@ -182,6 +182,7 @@ public final class StandingPermissions: AgentGrantStore {
                 !grant.isInForce(at: now) || (grant.mac == mac && grant.session.map { !alive($0) } ?? false)
             }
             edit(&grants)
+            grants.forgetEnded(now: now)
         }, { [weak self] written in
             done(written)
             self?.onChange?()

@@ -134,6 +134,14 @@ public struct AgentGrants: Equatable, Sendable {
     public static let customDataKey = "PasswordPie.AgentGrants"
 
     public private(set) var all: [AgentGrant] = []
+    /// Grants taken away before their time ran out, until that time. Merging another Mac's copy of the file, which may
+    /// still hold one, does not bring it back (`AgentGrantsRecord.merged` in the core library).
+    public private(set) var revoked: [Revoked] = []
+
+    public struct Revoked: Codable, Equatable, Sendable {
+        public var id: UUID
+        public var ends: Date
+    }
 
     public init(_ grants: [AgentGrant] = []) {
         all = grants
@@ -144,17 +152,19 @@ public struct AgentGrants: Equatable, Sendable {
         guard let text = customData[Self.customDataKey],
               let stored = try? Self.decoder.decode(Stored.self, from: Data(text.utf8)) else { return }
         all = stored.grants
+        revoked = stored.revoked ?? []
     }
 
+    /// True when no grant is kept.
     public var isEmpty: Bool { all.isEmpty }
 
-    /// Writes these into `customData`, or removes the key when there are none.
+    /// Writes these into `customData`, or removes the key when there is nothing to keep.
     public func write(into customData: inout [String: String]) {
-        guard !all.isEmpty else {
+        guard !all.isEmpty || !revoked.isEmpty else {
             customData[Self.customDataKey] = nil
             return
         }
-        let data = (try? Self.encoder.encode(Stored(version: 1, grants: all))) ?? Data()
+        let data = (try? Self.encoder.encode(Stored(version: 1, grants: all, revoked: revoked.isEmpty ? nil : revoked))) ?? Data()
         customData[Self.customDataKey] = String(decoding: data, as: UTF8.self)
     }
 
@@ -163,11 +173,19 @@ public struct AgentGrants: Equatable, Sendable {
     }
 
     public mutating func remove(_ id: UUID) {
-        all.removeAll { $0.id == id }
+        removeAll { $0.id == id }
     }
 
     public mutating func removeAll(where predicate: (AgentGrant) -> Bool) {
+        for grant in all where predicate(grant) && !revoked.contains(where: { $0.id == grant.id }) {
+            revoked.append(Revoked(id: grant.id, ends: grant.ends))
+        }
         all.removeAll(where: predicate)
+    }
+
+    /// Drops the record of a taken-away grant once the grant would have ended by itself.
+    public mutating func forgetEnded(now: Date) {
+        revoked.removeAll { $0.ends <= now }
     }
 
     /// The grants that count on this Mac now: this Mac's, not ended, and a session grant only while its agent session
@@ -206,6 +224,7 @@ public struct AgentGrants: Equatable, Sendable {
     private struct Stored: Codable {
         var version: Int
         var grants: [AgentGrant]
+        var revoked: [Revoked]?
     }
 
     private static let encoder: JSONEncoder = {

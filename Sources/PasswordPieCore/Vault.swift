@@ -109,6 +109,23 @@ public struct VaultEntry: Equatable, Sendable, Identifiable {
     }
 }
 
+/// One earlier version of an entry, from its history in the file.
+public struct VaultEntryVersion: Equatable, Sendable, Identifiable {
+    /// Its place in the history, 0 for the oldest.
+    public var id: Int
+    /// When this version was last changed. It was the current one from then until the next version's time.
+    public var modified: Date?
+    public var fields: [VaultField]
+    public var tags: String
+
+    public init(id: Int, modified: Date?, fields: [VaultField], tags: String) {
+        self.id = id
+        self.modified = modified
+        self.fields = fields
+        self.tags = tags
+    }
+}
+
 public struct Vault: Equatable, Sendable {
     public var name: String
     public var rootName: String
@@ -156,6 +173,23 @@ public struct Vault: Equatable, Sendable {
     /// One attachment's bytes.
     public func attachment(named name: String, of id: UUID) -> Data? {
         preserve?.attachments(of: id).first { $0.name == name }?.data
+    }
+
+    /// The earlier versions of an entry that the file keeps in its history, oldest first. Empty for a database not read
+    /// from a KDBX file.
+    public func versions(of id: UUID) -> [VaultEntryVersion] {
+        preserve?.versions(of: id) ?? []
+    }
+
+    /// When the current version of an entry was last changed, as the file says.
+    public func modified(_ id: UUID) -> Date? {
+        preserve?.modified(id)
+    }
+
+    /// The UUID of the database's root group, which every copy of one database shares: a file with another root group
+    /// is another database, not a copy of this one. Nil for a database not read from a KDBX file.
+    public var rootGroupID: UUID? {
+        preserve?.rootGroupID()
     }
 
     /// Records what the file holds after a read or a write.

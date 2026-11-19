@@ -6,35 +6,41 @@ import Foundation
 /// with the file, never in the app's preferences, so an agent that writes preferences (`defaults write`) cannot widen
 /// it. See docs/AGENTS.md, "Sharing".
 public struct AgentSharing: Equatable, Sendable {
-    public static let customDataKey = "PasswordPie.AgentSharing"
+    public static let customDataKey = AgentSharingRecord.customDataKey
 
     /// Items by their KeePass UUID.
     public private(set) var items: Set<UUID> = []
     /// Folders by their group path below the root group.
     public private(set) var folders: [[String]] = []
+    /// When each item and folder was shared or unshared. What was unshared stays here, so that merging an older copy of
+    /// the file from another Mac cannot share it again (`AgentSharingRecord.merged`).
+    private var states: [AgentSharingRecord.Key: AgentSharingRecord.State] = [:]
 
     public init() {}
 
     /// What `customData` says; nothing when it says nothing readable.
     public init(customData: [String: String]) {
-        guard let text = customData[Self.customDataKey],
-              let stored = try? JSONDecoder().decode(Stored.self, from: Data(text.utf8)) else { return }
-        items = Set(stored.items.compactMap(UUID.init(uuidString:)))
-        folders = stored.folders.filter { !$0.isEmpty }
+        guard let stored = AgentSharingRecord(text: customData[Self.customDataKey]) else { return }
+        states = stored.states
+        for (key, state) in states where state.shared {
+            switch key {
+            case .item(let id): items.insert(id)
+            case .folder(let path): folders.append(path)
+            }
+        }
+        folders.sort { $0.lexicographicallyPrecedes($1) }
     }
 
+    /// True when nothing is shared.
     public var isEmpty: Bool { items.isEmpty && folders.isEmpty }
 
-    /// Writes this into `customData`, or removes the key when nothing is shared.
+    /// Writes this into `customData`, or removes the key when nothing is shared and nothing was ever unshared.
     public func write(into customData: inout [String: String]) {
-        guard !isEmpty else {
+        guard !states.isEmpty else {
             customData[Self.customDataKey] = nil
             return
         }
-        let stored = Stored(version: 1, items: items.map(\.uuidString).sorted(), folders: folders.sorted { $0.lexicographicallyPrecedes($1) })
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        customData[Self.customDataKey] = (try? encoder.encode(stored)).map { String(decoding: $0, as: UTF8.self) }
+        customData[Self.customDataKey] = AgentSharingRecord(states: states).text
     }
 
     /// True for an item an agent may ask for. The Recycle Bin never counts.
@@ -50,20 +56,27 @@ public struct AgentSharing: Equatable, Sendable {
 
     public func isShared(folder path: [String]) -> Bool { folders.contains(path) }
 
-    public mutating func set(item id: UUID, shared: Bool) {
+    public mutating func set(item id: UUID, shared: Bool, at now: Date = Date()) {
+        guard items.contains(id) != shared else { return }
         if shared { items.insert(id) } else { items.remove(id) }
+        note(.item(id), shared: shared, at: now)
     }
 
-    public mutating func set(folder path: [String], shared: Bool) {
-        guard !path.isEmpty else { return }
+    public mutating func set(folder path: [String], shared: Bool, at now: Date = Date()) {
+        guard !path.isEmpty, folders.contains(path) != shared else { return }
         folders.removeAll { $0 == path }
-        if shared { folders.append(path) }
+        if shared {
+            folders.append(path)
+            folders.sort { $0.lexicographicallyPrecedes($1) }
+        }
+        note(.folder(path), shared: shared, at: now)
     }
 
-    private struct Stored: Codable {
-        var version: Int
-        var items: [String]
-        var folders: [[String]]
+    /// Later than what was said before about the same item, also when the clock says otherwise: this is the newer
+    /// decision.
+    private mutating func note(_ key: AgentSharingRecord.Key, shared: Bool, at now: Date) {
+        let seconds = max(now.timeIntervalSince1970.rounded(), (states[key]?.at ?? 0) + 1)
+        states[key] = AgentSharingRecord.State(shared: shared, at: seconds)
     }
 }
 #endif

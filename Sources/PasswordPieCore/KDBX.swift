@@ -156,7 +156,7 @@ public enum KDBX {
 
 /// Text XML cannot carry leaves the model too, so the model stays equal to what the file reads back as.
 /// Protected values are encrypted to base64 before they reach the XML, so they keep every character.
-private func normalizeForXML(_ vault: inout Vault) {
+func normalizeForXML(_ vault: inout Vault) {
     vault.name = storedXMLText(vault.name)
     vault.rootName = storedXMLText(vault.rootName)
     for index in vault.entries.indices {

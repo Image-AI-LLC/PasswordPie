@@ -352,7 +352,17 @@ final class KDBXPreserve: @unchecked Sendable {
             node.stringValue = base64UUID(id)
         }
         let tags = direct(element, "Tags").first?.stringValue ?? ""
-        let fields = direct(element, "String").map { stringElement in
+        return LiveEntry(
+            element: element,
+            id: id,
+            location: location(of: frames, rootName: rootName),
+            fields: fields(of: element),
+            tags: tags
+        )
+    }
+
+    private func fields(of element: XMLElement) -> [VaultField] {
+        direct(element, "String").map { stringElement in
             let key = direct(stringElement, "Key").first?.stringValue ?? ""
             let valueElement = direct(stringElement, "Value").first
             return VaultField(
@@ -361,13 +371,32 @@ final class KDBXPreserve: @unchecked Sendable {
                 protected: isInnerProtected(valueElement)
             )
         }
-        return LiveEntry(
-            element: element,
-            id: id,
-            location: location(of: frames, rootName: rootName),
-            fields: fields,
-            tags: tags
-        )
+    }
+
+    // MARK: Earlier versions
+
+    /// The versions the file keeps in the history of the entry `id`, oldest first. An edit puts the version before it
+    /// here, and so does a merge with the version that did not become current (`KDBXMerge.swift`).
+    func versions(of id: UUID) -> [VaultEntryVersion] {
+        guard let live = walkDatabase().entries.first(where: { $0.id == id }) else { return [] }
+        return direct(live.element, "History").flatMap { direct($0, "Entry") }.enumerated().map { index, version in
+            VaultEntryVersion(
+                id: index,
+                modified: modificationTime(of: version),
+                fields: fields(of: version),
+                tags: direct(version, "Tags").first?.stringValue ?? ""
+            )
+        }
+    }
+
+    func rootGroupID() -> UUID? {
+        document.rootElement().flatMap { direct($0, "Root").first }.flatMap { direct($0, "Group").first }
+            .flatMap { direct($0, "UUID").first }.flatMap { uuidFromBase64($0.stringValue ?? "") }
+    }
+
+    /// When the current version of the entry `id` was last changed.
+    func modified(_ id: UUID) -> Date? {
+        walkDatabase().entries.first { $0.id == id }.flatMap { modificationTime(of: $0.element) }
     }
 
     /// Same path rules as the previous reader: drop the database root and any "Recycle Bin" segment.
@@ -552,7 +581,7 @@ final class KDBXPreserve: @unchecked Sendable {
         trimHistory(history)
     }
 
-    private func trimHistory(_ history: XMLElement) {
+    func trimHistory(_ history: XMLElement) {
         let limits = historyLimits()
         var items = direct(history, "Entry")
         if limits.items >= 0, items.count > limits.items {
@@ -742,7 +771,7 @@ final class KDBXPreserve: @unchecked Sendable {
         direct(group, "Name").first?.stringValue ?? ""
     }
 
-    private func recycleBinID() -> UUID? {
+    func recycleBinID() -> UUID? {
         guard let file = document.rootElement(), let meta = direct(file, "Meta").first else { return nil }
         guard let text = direct(meta, "RecycleBinUUID").first?.stringValue, let id = uuidFromBase64(text), !isNilUUID(id) else {
             return nil
