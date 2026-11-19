@@ -173,6 +173,37 @@ final class DotenvImportTests: XCTestCase {
         XCTAssertEqual(try saved(&loaded).entries.filter { $0.title == "me" }.count, 2)
     }
 
+    /// In the app the database is not read again after a save, so an item moved to the Recycle Bin still says which
+    /// folder it was in. It is not the item all the same.
+    func testAnItemJustMovedToTheRecycleBinIsNotTheItem() throws {
+        let plan = try DotenvFolder.read(try DotenvFixture.make(in: directory))
+        var vault = try database()
+        _ = DotenvImport.apply(plan.items, inside: [], to: &vault)
+        let index = try XCTUnwrap(vault.entries.firstIndex { $0.title == "work" && $0.groupPath == ["stripe"] })
+        vault.entries[index].trashed = true
+        let work = try XCTUnwrap(plan.items.first { $0.title == "work" && $0.folder == ["stripe"] })
+        XCTAssertEqual(DotenvImport.status(of: work, inside: [], in: vault), .new)
+        XCTAssertEqual(DotenvImport.apply([work], inside: [], to: &vault), DotenvImport.Summary(added: 1))
+        XCTAssertEqual(vault.entries.filter { $0.title == "work" && $0.groupPath == ["stripe"] }.map(\.trashed), [true, false])
+    }
+
+    /// A file without comments says nothing about the notes: what someone wrote in the item stays.
+    func testNotesSomeoneWroteStayWhenTheFileHasNoComments() throws {
+        let root = directory.appendingPathComponent("small", isDirectory: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("svc"), withIntermediateDirectories: true)
+        try Data("KEY=PLANTED-value\n".utf8).write(to: root.appendingPathComponent("svc/me.env"))
+        let plan = try DotenvFolder.read(root)
+        var vault = try database()
+        _ = DotenvImport.apply(plan.items, inside: [], to: &vault)
+        var loaded = try saved(&vault)
+        let index = try XCTUnwrap(loaded.entries.firstIndex { $0.title == "me" })
+        loaded.entries[index].notes = "Rotate in June"
+        loaded = try saved(&loaded)
+        XCTAssertEqual(DotenvImport.status(of: plan.items[0], inside: [], in: loaded), .upToDate)
+        XCTAssertEqual(DotenvImport.apply(plan.items, inside: [], to: &loaded), DotenvImport.Summary(unchanged: 1))
+        XCTAssertEqual(try entry(loaded, "svc/me").notes, "Rotate in June")
+    }
+
     func testAFieldSomeoneLeftUnprotectedIsProtectedByTheImport() throws {
         let root = directory.appendingPathComponent("small", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("svc"), withIntermediateDirectories: true)
