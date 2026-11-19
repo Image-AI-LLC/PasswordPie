@@ -337,11 +337,36 @@ final class VaultFileMergeTests: XCTestCase {
 
     /// A folder that cannot be listed is not a folder with nothing to remove.
     func testAKeyChangeReportsTheCopiesWhenTheFolderCannotBeListed() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let baseline = try XCTUnwrap(mine.fileBaseline)
         _ = try VaultFile.keepMergeBackup(Data("an earlier version".utf8), of: url, now: Date(timeIntervalSince1970: 1_780_272_000))
         try FileManager.default.setAttributes([.posixPermissions: 0o300], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
 
-        XCTAssertFalse(VaultFile.removeMergeBackups(of: url).isEmpty)
+        let result = try VaultFile.rekey(url, vault: &mine, password: "a new password", keyFile: nil, baseline: baseline)
+        XCTAssertEqual(result.staleCopies, ["Passwords.kdbx.before-merge-*"])
+    }
+
+    /// Copies that came from a Mac whose clock is ahead sort after the one made now, which must stay all the same.
+    func testTheCopyJustMadeIsKeptWhenOtherCopiesCarryLaterTimes() throws {
+        let now = Date(timeIntervalSince1970: 1_780_272_000)
+        for number in 1...VaultFile.mergeBackupsKept {
+            _ = try VaultFile.keepMergeBackup(Data("ahead \(number)".utf8), of: url, now: now.addingTimeInterval(TimeInterval(number * 3600)))
+        }
+        let made = try VaultFile.keepMergeBackup(Data("made now".utf8), of: url, now: now)
+        XCTAssertEqual(try Data(contentsOf: made), Data("made now".utf8))
+    }
+
+    /// A vault that could be merged but was never read from this file: another database there is still left alone.
+    func testAVaultWithNoBaselineIsNotMergedIntoAnotherDatabaseThatIsThere() throws {
+        var another = MergeCopy(items: [MergeItem(0xB1, "From another database")])
+        another.root.id = 0x99
+        let theirs = try arrive(another)
+        let mine = try KDBX.load(data: try MergeCopy(items: [bank]).data(), password: "secret")
+        XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil)) { error in
+            XCTAssertEqual((error as? VaultWriteError)?.description, "Passwords.kdbx is already there and is another database, so nothing was changed.")
+        }
+        XCTAssertEqual(try Data(contentsOf: url), theirs)
     }
 
     func testAMergeThatCannotKeepACopyFromBeforeChangesNothing() throws {

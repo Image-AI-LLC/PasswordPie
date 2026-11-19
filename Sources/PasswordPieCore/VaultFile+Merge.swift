@@ -44,8 +44,8 @@ extension VaultFile {
     /// - A file that changed and cannot be opened with these keys, or is another database, is left alone, and nothing
     ///   is written. `merging:` is the caller's choice and may be any database.
     /// - A vault that was never read from or written to the file at `url` does not write over it either: a file that is
-    ///   there is merged into as the same database or refused, and one that arrives while the keys are being derived
-    ///   makes the save read again.
+    ///   there is merged into as the same database or refused, and one that arrives before the new file is ready makes
+    ///   the save read again.
     public static func save(
         _ vault: Vault,
         to url: URL,
@@ -110,10 +110,13 @@ extension VaultFile {
             do {
                 theirs = try KDBX.load(data: onDisk, password: password, keyFile: keyFile)
             } catch {
-                throw unreadable(url, error)
+                throw unreadable(url, error, readFromIt: vault.fileBaseline != nil)
             }
             // Another database that happens to open with the same keys is not a newer version of this one.
             guard theirs.rootGroupID == vault.rootGroupID else {
+                guard vault.fileBaseline != nil else {
+                    throw VaultWriteError("\(url.lastPathComponent) is already there and is another database, so nothing was changed.")
+                }
                 throw VaultWriteError("\(url.lastPathComponent) was replaced on disk by another database, so nothing was changed. Lock PasswordPie and unlock to open the file that is there now.")
             }
             theirs.noteFileContents(onDisk)
@@ -167,8 +170,11 @@ extension VaultFile {
         return VaultFileSave(vault: written, merge: report, wrote: true, backup: backup)
     }
 
-    private static func unreadable(_ url: URL, _ error: Error) -> VaultWriteError {
+    private static func unreadable(_ url: URL, _ error: Error, readFromIt: Bool) -> VaultWriteError {
         let name = url.lastPathComponent
+        guard readFromIt else {
+            return VaultWriteError("\(name) is already there and does not open as this database, so nothing was changed.")
+        }
         if let kdbx = error as? KDBXError, kdbx == .wrongPassword {
             return VaultWriteError("\(name) changed on disk and does not open with this master password, so nothing was changed. If the password was changed on another Mac, lock PasswordPie and unlock with the new one.")
         }
@@ -196,7 +202,7 @@ extension VaultFile {
     }
 
     /// This Mac's file as it was before a merge, written from the bytes that were read, 0600. A copy that already holds
-    /// the same bytes is reused. Only the newest `mergeBackupsKept` stay.
+    /// the same bytes is reused. Only the newest `mergeBackupsKept` stay, and always the one just made.
     static func keepMergeBackup(_ bytes: Data, of url: URL, now: Date) throws -> URL {
         let manager = FileManager.default
         let folder = url.deletingLastPathComponent()
