@@ -10,7 +10,8 @@ struct DotenvFolderCheck: AgentFolderReader {
     func subjects(folder: String, inside: [String]) throws -> [AgentCheckSubject] {
         let plan: DotenvPlan
         do {
-            plan = try DotenvFolder.read(URL(fileURLWithPath: folder))
+            // Only the dotenv and key files are read: which other files hold a value is the import's question.
+            plan = try DotenvFolder.read(URL(fileURLWithPath: folder), findingCopies: false)
         } catch let problem as DotenvFolderError {
             throw AgentFolderProblem(Self.said(problem, folder: folder))
         }
