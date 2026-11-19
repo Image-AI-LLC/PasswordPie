@@ -747,6 +747,8 @@ struct PaneMenu<Content: View>: View {
 let browserExtensionsMenuTitle = "Browser Extensions…"
 /// The gear menu's way to "Import". The empty database's row has the same words.
 let importPasswordsMenuTitle = "Import Passwords…"
+let mergeFromFileMenuTitle = "Merge from File…"
+let changedOnBothMenuTitle = "Changed on Both Macs…"
 
 /// Where each browser's extension stands, and the way to add it or turn it on. Always here, whatever app is in front:
 /// the line above the search box shows only over a browser that is missing it (docs/UX.md, "Getting the extension").

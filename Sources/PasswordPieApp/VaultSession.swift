@@ -104,14 +104,24 @@ struct FileWrite: Sendable {
     /// The file was open before this save began. If it is gone when the write ends, the database was removed from the
     /// list meanwhile, and it does not come back.
     var wasOpened = false
+    /// A copy of the database to merge in: one a sync tool left, or the file chosen for Merge from File….
+    var merging: Vault?
+    /// Nothing of this Mac's to write: the file is only read again if it was replaced, or a copy merged in. It is
+    /// written only when that leaves something to write.
+    var onlyIfNeeded = false
 
-    func perform() -> Result<Vault, Error> {
+    /// A database saved in place merges into its file when a sync tool replaced it meanwhile, instead of writing over
+    /// it (docs/UX.md, "The same database on two Macs"). An import's first save makes a new file beside its source.
+    func perform() -> Result<VaultFileSave, Error> {
         Result {
-            var written = vault
-            let data = try KDBX.save(vault: &written, password: password, keyFile: keyFile)
-            try VaultFile.replace(destination, with: data, password: password, keyFile: keyFile, expecting: written)
-            written.noteFileContents(data)
-            return written
+            guard destination.path == path, VaultFormat.writesKDBX(destination) else {
+                var written = vault
+                let data = try KDBX.save(vault: &written, password: password, keyFile: keyFile)
+                try VaultFile.replace(destination, with: data, password: password, keyFile: keyFile, expecting: written)
+                written.noteFileContents(data)
+                return VaultFileSave(vault: written, wrote: true)
+            }
+            return try VaultFile.save(vault, to: destination, password: password, keyFile: keyFile, merging: merging, onlyIfNeeded: onlyIfNeeded)
         }
     }
 }
@@ -122,6 +132,13 @@ private struct QueuedWrite {
     let change: () -> String?
     /// Nil when the file was written, or there was nothing to write. Otherwise why it was not.
     let done: (String?) -> Void
+    /// A copy to merge into the file. See `FileWrite.merging`.
+    var merging: Vault?
+    /// Reading a replaced file or merging a copy in, which nobody asked for at this moment: no change of this Mac's,
+    /// no beep and no red line when it fails, and it does not count as the person being active.
+    var quiet = false
+    /// What the write did, before `done`.
+    var settled: (VaultFileSave) -> Void = { _ in }
 }
 
 /// A decrypted database and the key file that opened it.
@@ -225,6 +242,15 @@ final class VaultSession: ObservableObject {
     /// "Claude Code is waiting for 2 secrets." under the lock screen's database name, while an agent's request waits for
     /// the unlock (direct download only). See "Agents" in docs/UX.md.
     @Published var agentWaitingLine: String?
+    /// The line under the search field about this database on more than one Mac. See `VaultSession+Merge.swift`.
+    @Published var mergeNotice: MergeNotice?
+    var mergeState = MergeState()
+    /// Looks at the open databases' files. Set by the app; a session without one reads a file again only when asked.
+    var fileWatcher: DatabaseFileWatcher?
+    /// The windows Merge from File… shows. Tests replace them.
+    lazy var mergePrompts: MergePrompting = AppKitMergePrompts()
+    /// Moves a merged copy to the Trash. Tests replace it.
+    var moveToTrash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
     /// The switch in Preferences > Agents, mirrored here: Share with Agents shows in an item's details only while it is on.
     @Published var agentAccessOn = false
     @Published var touchIDEnabled = false
@@ -328,6 +354,7 @@ final class VaultSession: ObservableObject {
     static let saveBusyText = "Another change is still being saved. Try again in a moment."
     static let lockedBeforeSaveText = "PasswordPie locked before a change was saved. It was not saved."
     static let itemGoneText = "That item is no longer in the database. Choose another."
+    static let lockedBeforeMergeText = "PasswordPie locked before the merge was done. Nothing was changed."
     private let clipboard: ClipboardGuard
     /// Who has Premium. Changes without a relaunch, and it is never written to the database or to disk.
     let premium: PremiumStore
@@ -559,6 +586,8 @@ final class VaultSession: ObservableObject {
         // The open panel starts its Chrome check inside the lock subscriber, so the switch has to be loaded first.
         startChromeSyncIfEnabled()
         locked = false
+        // Once it counts as unlocked: a copy a sync tool left beside the database is looked for now.
+        mergeOpened(databaseURL.path)
         let declined = UserDefaults.standard.bool(forKey: touchIDDeclinedKey)
         // touchIDHardware stays true when a sensor exists but no fingerprint is enrolled.
         // Store only when biometrics can actually gate the next read.
@@ -742,9 +771,11 @@ final class VaultSession: ObservableObject {
         // A save still waiting for its turn cannot be written: the files it changes went with the session. Each is told.
         let waiting = queuedWrites
         queuedWrites = []
-        let unsaved = waiting.isEmpty ? "" : Self.lockedBeforeSaveText
+        // Reading a replaced file again, or merging a copy in, is no change of the person's: it is simply not done, and
+        // the next unlock reads the file as it is then.
+        let unsaved = waiting.contains { !$0.quiet } ? Self.lockedBeforeSaveText : ""
         message = unsaved
-        for save in waiting { save.done(unsaved) }
+        for save in waiting { save.done(save.quiet ? Self.lockedBeforeMergeText : unsaved) }
         editorSaving = false
         editorError = ""
         locked = true
@@ -756,6 +787,9 @@ final class VaultSession: ObservableObject {
         if keyOnlyDatabase { clearKeyFile() }
         syncKeyFileDraft()
         clearChrome(locking: true)
+        mergeState = MergeState()
+        mergeNotice = nil
+        fileWatcher?.watch([])
         refreshTouchID()
         runQueuedWrites()
     }
@@ -1053,6 +1087,7 @@ final class VaultSession: ObservableObject {
         defaults.removeObject(forKey: touchIDEnabledKey(for: account))
         defaults.removeObject(forKey: touchIDStaleKey(for: account))
         defaults.removeObject(forKey: touchIDDeclinedKey(for: account))
+        forgetMergeMemory(of: account)
     }
 
     private func reportKeychainCleanupFailure(_ status: OSStatus, path: String) {
@@ -1320,6 +1355,11 @@ final class VaultSession: ObservableObject {
         }
         openedFiles[fileIndex].vault.entries = entries
         return path
+    }
+
+    /// After a file was read again from disk: the other Mac's items may fold into ours, as after opening it.
+    func foldDuplicates(at path: String) {
+        autoMergeFile(at: path)
     }
 
     /// Writes the file when a merge folded accounts. A database with nothing to fold is left untouched.
@@ -1715,6 +1755,7 @@ final class VaultSession: ObservableObject {
                     ))
                     self.publishCatalog()
                     self.autoMergeFile(at: job.path)
+                    self.mergeOpened(job.path)
                 }
             }
         }
@@ -1731,6 +1772,8 @@ final class VaultSession: ObservableObject {
             copy.id = item.listID
             return copy
         }
+        fileWatcher?.watch(openedFiles.filter(Self.follows).map(\.url.path))
+        refreshMergeNotice()
     }
 
     private func appendStored(_ entry: VaultEntry, to path: String) {
@@ -1823,6 +1866,20 @@ final class VaultSession: ObservableObject {
         runQueuedWrites()
     }
 
+    /// Reads the database at `path` again if its file was replaced, and merges `other` into it when one is given. It
+    /// takes its turn among the saves, so it never runs beside one, and starts from what the save before it wrote.
+    /// `settled` gets what was done; `done` gets why it could not be, or nil. Nothing is shown or sounded on failure.
+    func enqueueFileWork(path: String, merging other: Vault?, settled: @escaping (VaultFileSave) -> Void, done: @escaping (String?) -> Void) {
+        queuedWrites.append(QueuedWrite(
+            change: { [weak self] in self?.openedFiles.contains { $0.url.path == path } == true ? path : nil },
+            done: done, merging: other, quiet: true, settled: settled
+        ))
+        runQueuedWrites()
+    }
+
+    /// False in tests that pass `.inline`: work that would run beside the app runs in place there.
+    var writesInBackground: Bool { writeRunner == .background }
+
     /// Starts the next save unless a file is being written. Also called when a Chrome update's write ends.
     func runQueuedWrites() {
         while !writeInFlight, !chromeWriting, !queuedWrites.isEmpty {
@@ -1830,10 +1887,13 @@ final class VaultSession: ObservableObject {
             let before = openedFiles
             var staged: Result<FileWrite, VaultWriteError>?
             if let path = next.change() {
-                stampPasswordDates(path: path)
-                staged = stageWrite(path: path).map { write in
+                // Reading a file again changes nothing of this Mac's, dates included.
+                if !next.quiet { stampPasswordDates(path: path) }
+                staged = stageWrite(path: path, quiet: next.quiet).map { write in
                     var write = write
                     write.wasOpened = before.contains { $0.url.path == path }
+                    write.merging = next.merging
+                    write.onlyIfNeeded = next.quiet
                     return write
                 }
             }
@@ -1844,10 +1904,11 @@ final class VaultSession: ObservableObject {
             case nil:
                 next.done(nil)
             case .failure(let refusal):
-                next.done(reportSaveFailure(refusal.description))
+                next.done(next.quiet ? refusal.description : reportSaveFailure(refusal.description))
             case .success(let write):
                 guard writeRunner == .background else {
-                    next.done(reportSaveFailure(finishWrite(write, write.perform())))
+                    let failure = finishWrite(write, write.perform(), settled: next.settled)
+                    next.done(next.quiet ? failure : reportSaveFailure(failure))
                     continue
                 }
                 writeInFlight = true
@@ -1858,7 +1919,8 @@ final class VaultSession: ObservableObject {
                     self.writeInFlight = false
                     // Locked meanwhile: the file was replaced or it was not, and this session has nothing left to update.
                     if generation == self.unlockGeneration {
-                        next.done(self.reportSaveFailure(self.finishWrite(write, outcome)))
+                        let failure = self.finishWrite(write, outcome, settled: next.settled)
+                        next.done(next.quiet ? failure : self.reportSaveFailure(failure))
                     }
                     self.runQueuedWrites()
                 }
@@ -1901,7 +1963,7 @@ final class VaultSession: ObservableObject {
         }
         switch stageWrite(path: path) {
         case .success(let staged):
-            return reportSaveFailure(finishWrite(staged, staged.perform())) == nil
+            return reportSaveFailure(finishWrite(staged, staged.perform(), settled: { _ in })) == nil
         case .failure(let refusal):
             reportSaveFailure(refusal.description)
             return false
@@ -1909,8 +1971,8 @@ final class VaultSession: ObservableObject {
     }
 
     /// Everything a write takes from this session, read on the main actor.
-    private func stageWrite(path: String) -> Result<FileWrite, VaultWriteError> {
-        onActivity?()
+    private func stageWrite(path: String, quiet: Bool = false) -> Result<FileWrite, VaultWriteError> {
+        if !quiet { onActivity?() }
         let index = openedFiles.firstIndex { $0.url.path == path }
         var vault = index.map { openedFiles[$0].vault }
             ?? Vault(name: vaultName, rootName: rootName, entries: [], kdf: kdf)
@@ -1924,7 +1986,7 @@ final class VaultSession: ObservableObject {
             vault.rootName = rootName
             vault.kdf = kdf
         }
-        vault.entries = EntryMerge.merged(vault.entries)
+        if !quiet { vault.entries = EntryMerge.merged(vault.entries) }
         // An imported CSV, PUX, OPVault, Bitwarden, Proton Pass, or KeePass 1 file stays untouched.
         // The first change is written as a sibling .kdbx, and later saves use that file.
         // A key-file-only database can open with an empty password. The new .kdbx cannot.
@@ -1939,16 +2001,23 @@ final class VaultSession: ObservableObject {
 
     /// Back on the main actor: the file that was written becomes the opened one, and the list is published from it.
     /// Nil when the file was written, otherwise why it was not.
-    private func finishWrite(_ write: FileWrite, _ outcome: Result<Vault, Error>) -> String? {
-        let vault: Vault
+    private func finishWrite(_ write: FileWrite, _ outcome: Result<VaultFileSave, Error>, settled: (VaultFileSave) -> Void) -> String? {
+        let saved: VaultFileSave
         switch outcome {
-        case .success(let written):
-            vault = written
+        case .success(let done):
+            saved = done
         case .failure(let error):
             return (error as? VaultWriteError)?.description
                 ?? (error as? KDBXError)?.description
+                ?? (error as? VaultMergeError)?.description
                 ?? Self.saveFailedText
         }
+        // The file was looked at and holds what this session read from it: nothing happened.
+        if write.onlyIfNeeded, !saved.wrote, saved.merge == nil {
+            settled(saved)
+            return nil
+        }
+        let vault = saved.vault
         let (path, destination, password, keyFile) = (write.path, write.destination, write.password, write.keyFile)
         let index = openedFiles.firstIndex { $0.url.path == path }
         if index == nil, write.wasOpened { return nil }
@@ -1988,6 +2057,8 @@ final class VaultSession: ObservableObject {
             masterPassword = password
         }
         publishCatalog()
+        settled(saved)
+        mergeSettled(saved, path: decision.openedPath, readAgain: write.onlyIfNeeded)
         return nil
     }
 
