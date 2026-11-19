@@ -299,6 +299,8 @@ final class SameDatabaseTwoMacsTests: XCTestCase {
 
         guard case .unreadable(let file, let reason)? = session.mergeNotice else { return XCTFail("\(String(describing: session.mergeNotice))") }
         XCTAssertEqual(file, "Passwords.kdbx")
+        XCTAssertEqual(session.mergeNotice?.summary, "Passwords.kdbx cannot be read")
+        XCTAssertEqual(session.mergeNotice?.actionTitle, "Why?")
         XCTAssertTrue(reason.contains("does not open with this master password"), reason)
         XCTAssertEqual(titles(session), ["Bank", "Mail"], "what is in memory stays usable")
         // A save says why it cannot be written, and writes nothing.
@@ -339,6 +341,16 @@ final class SameDatabaseTwoMacsTests: XCTestCase {
         session.performMergeNotice()
         XCTAssertEqual(trashed, [copy])
         XCTAssertNil(session.mergeNotice)
+    }
+
+    func testAMergedCopyCanStillBeMovedToTheTrashAfterALock() async throws {
+        let session = unlockedSession()
+        let copy = try leaveCopy(named: "Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx") { $0.entries.append(self.item("API key")) }
+        session.lookForCopies()
+        await unlockAgain(session)
+        XCTAssertEqual(session.mergeNotice?.actionTitle, "Move to Trash")
+        session.performMergeNotice()
+        XCTAssertEqual(trashed, [copy])
     }
 
     func testAMergedCopyThatIsKeptIsNotMergedOrMentionedAgain() async throws {

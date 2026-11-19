@@ -787,7 +787,11 @@ final class VaultSession: ObservableObject {
         if keyOnlyDatabase { clearKeyFile() }
         syncKeyFileDraft()
         clearChrome(locking: true)
+        // Which merged copies are still beside the database is no secret, and theirs to move to the Trash after the
+        // next unlock too.
+        let mergedCopies = mergeState.merged
         mergeState = MergeState()
+        mergeState.merged = mergedCopies
         mergeNotice = nil
         fileWatcher?.watch([])
         refreshTouchID()

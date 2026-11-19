@@ -2139,8 +2139,8 @@ Time), which keeps them within a second of each other.
 
 - **A locked database.** Nothing is read or merged while locked.
 - **A master password or key file changed on one Mac.** The other Mac cannot open the new file with the old password. It
-  leaves the file alone, saves nothing over it, and the line under the search field says "Passwords.kdbx changed on disk
-  and cannot be read"; **Why?** gives the reason. Lock, and unlock with the new password. The Mac that changes the keys
+  leaves the file alone, saves nothing over it, and the line under the search field says "Passwords.kdbx cannot be
+  read"; **Why?** gives the reason. Lock, and unlock with the new password. The Mac that changes the keys
   removes its files from before a merge, which open with the old ones. A copy a sync tool left, and such a file made on
   another Mac that arrives later, still open with the old keys: remove them when you change a password because it may
   be known.

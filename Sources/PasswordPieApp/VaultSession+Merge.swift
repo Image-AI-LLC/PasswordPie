@@ -17,7 +17,7 @@ enum MergeNotice: Equatable {
 
     var summary: String {
         switch self {
-        case .unreadable(let file, _): return "\(file) changed on disk and cannot be read"
+        case .unreadable(let file, _): return "\(file) cannot be read"
         case .changedOnBoth(let count): return MergeSummary.changedOnBoth(count)
         // The words first: the panel is narrow, and a sync tool's file name is long.
         case .copyOffered(let copy): return "Possible copy: \(copy.shownName)"
@@ -394,20 +394,17 @@ extension VaultSession {
         mergeState.offered[path]?.removeAll { !FileManager.default.fileExists(atPath: $0.url.path) }
         let handled = handledCopies(of: path)
         let known = (mergeState.merged[path] ?? []) + (mergeState.offered[path] ?? [])
-        let found = ConflictCopies.find(beside: file.url).filter { copy in
-            !known.contains(copy) && handled[copy.url.path] != (FileSignature(path: copy.url.path)?.text ?? "")
-        }
-        let (certain, uncertain) = (found.filter(\.certain), found.filter { !$0.certain })
-        if !uncertain.isEmpty { mergeState.offered[path, default: []] += uncertain }
-        guard !certain.isEmpty else {
-            refreshMergeNotice()
-            return
-        }
         mergeState.scanning.insert(path)
-        let (password, keyFile, ours, generation) = (file.password, file.keyFile, file.vault.rootGroupID, catalogGeneration)
-        // Opening a copy derives its key, which can take seconds: off the main thread, as unlocking is.
+        let (url, password, keyFile, ours, generation) = (file.url, file.password, file.keyFile, file.vault.rootGroupID, catalogGeneration)
+        // Listing the folder can be slow, and opening a copy derives its key, which can take seconds: off the main
+        // thread, as unlocking is.
         let load: @Sendable () -> [(ConflictCopy, Vault?)] = {
-            certain.map { copy in
+            let found = ConflictCopies.find(beside: url).filter { copy in
+                !known.contains(copy) && handled[copy.url.path] != (FileSignature(path: copy.url.path)?.text ?? "")
+            }
+            return found.map { copy in
+                // A name a person could have given is never opened unasked.
+                guard copy.certain else { return (copy, nil) }
                 let vault = (try? Data(contentsOf: copy.url)).flatMap { try? KDBX.load(data: $0, password: password, keyFile: keyFile) }
                 // The other Mac's version of this database opens with its keys and has its root group.
                 return (copy, vault.flatMap { $0.rootGroupID != nil && $0.rootGroupID == ours ? $0 : nil })
@@ -419,7 +416,7 @@ extension VaultSession {
             guard generation == self.catalogGeneration, !self.locked else { return }
             for (copy, vault) in opened {
                 guard let vault else {
-                    // A sync tool's name, but not this database with these keys: asked about, like any other copy.
+                    // Not certainly this database with these keys: asked about, never merged unasked.
                     self.mergeState.offered[path, default: []].append(copy)
                     continue
                 }
