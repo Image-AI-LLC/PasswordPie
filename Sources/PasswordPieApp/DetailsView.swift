@@ -163,6 +163,8 @@ final class DetailsModel: ObservableObject {
     let siteHost: String?
     @Published private(set) var fields: [DetailField] = []
     let tags: [String]
+    /// The names of the files attached to the item. The details list them; they are not opened here.
+    let attachments: [String]
     @Published var focusedRow: DetailFocus = .field("")
     /// Older values of the password, kept with the account.
     @Published private(set) var previous: [PreviousPasswords.Item] = []
@@ -213,6 +215,7 @@ final class DetailsModel: ObservableObject {
         title = entry.title.isEmpty ? "Untitled" : entry.title
         siteHost = websiteHost(of: entry)
         favorite = entry.favorite
+        attachments = session.attachmentNames(of: entry.id)
         tags = entry.tagList.filter { $0.caseInsensitiveCompare("Favorite") != .orderedSame }
         self.presentation = presentation
         self.session = session
@@ -587,6 +590,13 @@ struct DetailsView: View {
                 if !model.tags.isEmpty {
                     DetailChrome(label: "tags") {
                         Text(model.tags.joined(separator: ", ")).font(.system(size: 13))
+                    }
+                }
+                if !model.attachments.isEmpty {
+                    DetailChrome(label: model.attachments.count == 1 ? "attachment" : "attachments") {
+                        Text(model.attachments.joined(separator: ", "))
+                            .font(.system(size: 13))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 #if PP_DIRECT

@@ -9,7 +9,9 @@ struct ImportPane: View {
     @ObservedObject var session: VaultSession
 
     var body: some View {
-        if let tile = flow.tile {
+        if let tile = flow.tile, tile.kind == .envFolder {
+            DotenvImportPage(flow: flow, folder: flow.folder, session: session, tile: tile)
+        } else if let tile = flow.tile {
             ImportSourcePage(flow: flow, session: session, tile: tile)
         } else {
             ImportSourcesPage(flow: flow, session: session)
@@ -150,11 +152,11 @@ private struct ImportSourcesPage: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 PaneRule()
-                ForEach(ImportTile.all.filter { $0.source == .csv }) { tile in
+                ForEach(ImportTile.all.filter { $0.source == .csv } + [ImportTile.envFolder]) { tile in
                     ImportSourceRow(tile: tile, detail: tile.hint) { flow.choose(tile) }
                 }
             }
-            Text("The file you choose is read on this Mac. Nothing is sent anywhere.")
+            Text("The file or folder you choose is read on this Mac. Nothing is sent anywhere.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
@@ -534,7 +536,7 @@ private struct CopyAddressButton: View {
 }
 
 /// A part of the source's page: its title, then what is under it. No box: the page has one, for the file.
-private struct ImportSection<Content: View>: View {
+struct ImportSection<Content: View>: View {
     let title: String
     @ViewBuilder var content: () -> Content
 
