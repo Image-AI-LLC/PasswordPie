@@ -178,6 +178,9 @@ final class CheckImportSessionTests: XCTestCase {
         }
         let inside = await check(root.path, inside: "Agents")
         XCTAssertEqual(Set((inside.checks ?? []).map(\.status)), [.same])
+        // --inside is read as Put them inside is: a Recycle Bin part is dropped.
+        let bin = await check(root.path, inside: "Recycle Bin/Agents")
+        XCTAssertEqual(Set((bin.checks ?? []).map(\.status)), [.same])
         let top = await check(root.path, inside: nil)
         XCTAssertEqual(Set((top.checks ?? []).map(\.status)), [.missing], "at the top of the database there is nothing")
         let file = await check(root.appendingPathComponent("deploy.sh").path, inside: nil)

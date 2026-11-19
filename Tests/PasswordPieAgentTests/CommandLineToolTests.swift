@@ -386,7 +386,8 @@ final class CommandLineToolTests: XCTestCase {
         """)
         XCTAssertTrue(differs.err.contains("Do not delete the files yet."), differs.err)
         XCTAssertTrue(differs.err.contains("not imported, or not shared with agents"), differs.err)
-        XCTAssertEqual(folders.asked, [folder.appendingPathComponent("keys").resolvingSymlinksInPath().path])
+        let keys = folder.appendingPathComponent("keys").resolvingSymlinksInPath().path
+        XCTAssertEqual(folders.asked, [keys, keys], "read for the window, and again once the owner allowed")
         XCTAssertEqual(approver.prompts.last?.kind, .check)
         XCTAssertEqual(approver.prompts.last?.rows.count, 2, "what is missing is not in the window")
         XCTAssertEqual(approver.prompts.last?.reason, "Before deleting")
@@ -415,6 +416,20 @@ final class CommandLineToolTests: XCTestCase {
         let everything = [differs, same, changed, denied, notAFolder].map { $0.out + $0.err }.joined()
             + String(decoding: try JSONEncoder().encode(activity.records), as: UTF8.self)
         XCTAssertFalse(everything.contains("planted"), "names and words, never a value")
+    }
+
+    /// An answer that compared nothing is not "everything is the same": no lines is a failure, with nothing printed.
+    func testCheckImportWithoutLinesFailsAndPrintsNothing() async throws {
+        server.stop()
+        let broker = self.broker!
+        server = AgentServer(handler: { request, caller in
+            request.type == .check ? AgentResponse(type: request.type.rawValue, id: request.id) : await broker.handle(request, from: caller)
+        }, peerCheck: { _ in true })
+        try server.start(path: socketPath)
+        let ran = try await run(["check-import", folder.path])
+        XCTAssertEqual(ran.code, AgentErrorCode.appUnavailable.exitCode, ran.err)
+        XCTAssertEqual(ran.out, "")
+        XCTAssertTrue(ran.err.contains("PasswordPie gave no answer about the check."), ran.err)
     }
 
     /// `write-env` through the real tool: it shows the project's `.env.pp` and writes nothing, writes with `--write`,

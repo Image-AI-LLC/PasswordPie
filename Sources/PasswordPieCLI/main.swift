@@ -204,7 +204,8 @@ func checkImportCommand(_ options: CheckImportOptions) -> Never {
     request.inside = options.inside
     request.reason = options.reason
     request.wait = options.wait
-    let lines = ask(request).checks ?? []
+    // An answer that compared nothing is not "everything is the same".
+    guard let lines = ask(request).checks, !lines.isEmpty else { refuse(.appUnavailable, detail: "PasswordPie gave no answer about the check.") }
     let failed = lines.contains { $0.status != .same }
     if options.json {
         FileHandle.standardOutput.write(AgentCoding.encode(lines) + Data("\n".utf8))

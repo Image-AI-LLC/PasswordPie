@@ -97,7 +97,32 @@ final class CheckImportTests: XCTestCase {
             "stripe/work.env STRIPE_SECRET_KEY same", "stripe/work.env STRIPE_ACCOUNT differs", "stripe/personal.env STRIPE_SECRET_KEY same",
             "google/work.env GOOGLE_API_KEY same", "google/work.pem work.pem differs",
         ])
-        XCTAssertEqual(folders.asked.map(\.folder), ["/Users/me/keys", "/Users/me/keys"])
+        XCTAssertEqual(folders.asked.map(\.folder), Array(repeating: "/Users/me/keys", count: 4), "each request reads the folder, and again once the owner allowed")
+    }
+
+    /// A folder with more names than one answer can hold is refused before anyone is asked, as a use is.
+    func testAFolderWithTooManyNamesIsRefusedBeforeAnyoneIsAsked() async {
+        allowAll()
+        folders.subjects = (0..<20_000).map { subject("stripe/work.env", "STRIPE_NAME_\($0)", ["stripe"], "work", "PLANTED-\($0)") }
+        let answer = await broker().handle(request(), from: Callers.make())
+        XCTAssertEqual(answer.errorCode, .usage)
+        XCTAssertTrue(answer.detail?.contains("too many names") == true, answer.detail ?? "")
+        XCTAssertTrue(approver.prompts.isEmpty)
+        XCTAssertEqual(vault.secretReads, 0)
+    }
+
+    /// A file changed while the owner was deciding is not what the window showed: nothing is compared.
+    func testAFolderThatChangedWhileTheOwnerDecidedIsRefusedAndNothingIsRead() async {
+        approver.onPresent = { [unowned self] prompt in
+            folders.subjects[0].expected = Data("PLANTED-changed-in-the-meantime".utf8)
+            let all = Set(prompt.rows.indices)
+            DispatchQueue.main.async { self.approver.answer(.allow(all)) }
+        }
+        let answer = await broker().handle(request(), from: Callers.make())
+        XCTAssertEqual(answer.errorCode, .usage)
+        XCTAssertEqual(answer.detail, "The files in /Users/me/keys changed while PasswordPie waited. Run check-import again.")
+        XCTAssertNil(answer.checks)
+        XCTAssertEqual(vault.secretReads, 0)
     }
 
     func testNoValueIsInTheAnswerTheWindowOrTheLog() async throws {

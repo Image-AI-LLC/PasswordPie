@@ -1,4 +1,5 @@
 import Foundation
+import PasswordPieBridge
 
 // `check`: compares a folder of dotenv files with the vault, for `passwordpie check-import` (docs/AGENTS.md, "Checking a
 // folder against the vault"). The app reads the folder and compares inside its own process: no value goes to the tool
@@ -6,7 +7,7 @@ import Foundation
 // the agent learns is, for each name, whether a file it could write holds the same value as the vault.
 
 /// One variable or key file of a folder, with where an import puts it and what the file holds.
-public struct AgentCheckSubject: Sendable {
+public struct AgentCheckSubject: Equatable, Sendable {
     /// The file inside the folder: `stripe/work.env`.
     public var file: String
     /// The variable's name, or the key file's.
@@ -64,6 +65,12 @@ extension VaultBroker {
             return refuse(.usage, .usage, detail: "No .env files or key files in \(folder).")
         case .failure(let problem):
             return refuse(.usage, .usage, detail: (problem as? AgentFolderProblem)?.message ?? "Could not read \(folder).")
+        }
+        // The answer must fit one frame with every name at the longest word. Said before anyone is asked, as for a use.
+        var widest = AgentResponse(type: request.type.rawValue, id: request.id)
+        widest.checks = subjects.map { AgentCheckLine(file: $0.file, name: $0.name, status: .notChecked) }
+        if AgentCoding.encode(widest).count + 4 > BridgeFrame.maxLength {
+            return refuse(.usage, .usage, detail: "\(folder) has too many names for one answer (an answer is at most 1 MiB).")
         }
         guard await waitForUnlock(request, caller: caller, count: subjects.count) else { return refuse(.locked, .locked) }
 
@@ -126,6 +133,13 @@ extension VaultBroker {
         guard !selected.isEmpty else {
             limiter.recordDenial(caller.sessionKey, now: clock())
             return refuse(.denied, .denied, items: labels)
+        }
+        // The files are read again: the owner may have taken minutes, and a file changed since is not what was shown.
+        let latest = await Task.detached(priority: .userInitiated) {
+            Result { try folders.subjects(folder: folder, inside: inside) }
+        }.value
+        guard case .success(subjects) = latest else {
+            return refuse(.usage, .usage, detail: "The files in \(folder) changed while PasswordPie waited. Run check-import again.", items: labels)
         }
         guard !vault.agentVaultLocked else { return refuse(.locked, .locked, items: labels) }
         for (position, row) in rows.enumerated() {

@@ -446,7 +446,10 @@ hold every name and value they hold?
 How the broker answers one (`VaultBroker+Check.swift`): the folder is read off the main thread; an unreadable folder
 or one without dotenv or key files is `usage`. The request waits for an unlock like any other. Each name is looked
 for among shared items by the folder and title the import gives it and its field ("NAME (variable)" where the import
-kept a variable apart) or attachment. Values are read from the vault only after the owner allowed, at that moment.
+kept a variable apart) or attachment. A folder with so many names that the answer would not fit one 1 MiB frame is `usage`,
+said before anyone is asked. After the owner allowed, the folder is read again, and if it no longer holds the same
+variables and values the request is `usage` ("changed while PasswordPie waited"). Values are read from the vault only
+after the owner allowed, at that moment.
 A variable the file sets to nothing is the same as a field with nothing in it.
 
 No MCP tool: a check is for the owner's migration, run once from a terminal or by an agent asked to.

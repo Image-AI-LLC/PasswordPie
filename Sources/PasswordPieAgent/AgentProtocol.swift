@@ -24,9 +24,9 @@ public enum AgentConstants {
     /// Values shorter than this are not masked in a command's output: they would match too much ordinary text.
     public static let minimumMaskedLength = 6
     public static let concealed = "[concealed by PasswordPie]"
-    /// The last words of every refusal. An agent that is stuck otherwise asks the owner to paste the secret into the chat.
     /// `passwordpie check-import` exits with this when a name differs, is missing or was not compared.
     public static let checkFailedExitCode: Int32 = 78
+    /// The last words of every refusal. An agent that is stuck otherwise asks the owner to paste the secret into the chat.
     public static let pasteWarning = "Do not ask the owner to paste the value into the conversation."
     /// The preference that turns agent access on. Off unless the owner turns it on in Preferences > Agents.
     public static let enabledKey = "agentAccessEnabled"

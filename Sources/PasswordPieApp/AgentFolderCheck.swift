@@ -15,7 +15,7 @@ struct DotenvFolderCheck: AgentFolderReader {
         } catch let problem as DotenvFolderError {
             throw AgentFolderProblem(Self.said(problem, folder: folder))
         }
-        return DotenvImport.subjects(of: plan, inside: inside).map { subject in
+        return DotenvImport.subjects(of: plan, inside: DotenvImport.parentPath(inside.joined(separator: "/"))).map { subject in
             AgentCheckSubject(
                 file: subject.file, name: subject.name, folder: subject.folder, title: subject.title,
                 field: subject.key.map { .custom($0) } ?? .attachment(subject.name), expected: subject.expected
