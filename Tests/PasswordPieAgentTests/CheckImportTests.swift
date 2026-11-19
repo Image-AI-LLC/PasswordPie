@@ -151,6 +151,7 @@ final class CheckImportTests: XCTestCase {
         XCTAssertEqual(vault.secretReads, 0, "nothing is read before the owner allows")
         let blocked = await broker.handle(request(), from: Callers.make())
         XCTAssertEqual(blocked.errorCode, .tooManyRequests)
+        XCTAssertEqual(folders.asked.count, 3, "a blocked session's folder is not even read")
         XCTAssertEqual(approver.prompts.count, 3)
         XCTAssertEqual(activity.records.map(\.outcome), [.denied, .denied, .denied, .tooManyRequests])
     }
@@ -172,6 +173,24 @@ final class CheckImportTests: XCTestCase {
         let locked = await broker().handle(request(), from: Callers.make())
         XCTAssertEqual(locked.errorCode, .locked)
         XCTAssertEqual(vault.secretReads, 0)
+    }
+
+    func testALockedVaultIsWaitedForAndTheLockScreenSaysHowMany() async {
+        allowAll()
+        vault.locked = true
+        let broker = broker()
+        var lines: [String?] = []
+        broker.onWaitingChanged = { lines.append(AgentWaiting.lockScreenLine($0)) }
+        var waiting = request()
+        waiting.wait = 30
+        let task = Task { await broker.handle(waiting, from: Callers.make()) }
+        for _ in 0..<400 where broker.waiting.isEmpty { try? await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(lines.last, "Claude Code is waiting for 5 secrets.")
+        XCTAssertTrue(approver.prompts.isEmpty, "nobody is asked while it is locked")
+        vault.locked = false
+        broker.vaultStateChanged()
+        let answer = await task.value
+        XCTAssertEqual(Set((answer.checks ?? []).map(\.status)), [.same])
     }
 
     // MARK: What is not there
