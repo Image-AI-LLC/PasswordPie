@@ -109,7 +109,7 @@ extension BrowserBridge {
         case .chrome?: browser = .chrome
         case .safari?: browser = .safari
         case nil:
-            if Self.chromeSupported, chromeConnected {
+            if Self.chromeSupported, chromeProfiles > 0 {
                 browser = .chrome
             } else if safariEnabled {
                 browser = .safari
@@ -122,10 +122,10 @@ extension BrowserBridge {
         var profile: String?
         switch browser {
         case .chrome:
-            guard Self.chromeSupported, let front = state.recent(.chrome) else { return nil }
+            guard Self.chromeSupported, let front = state.recent(.chrome, app: Self.chromeBundleID) else { return nil }
             peer = front.peer
             link = front.peer.link
-            if state.linkCount(.chrome) > 1 { profile = front.certain ? "the profile in front" : "the profile used last" }
+            if state.linkCount(.chrome, app: Self.chromeBundleID) > 1 { profile = front.certain ? "the profile in front" : "the profile used last" }
         case .safari:
             guard safariEnabled else { return nil }
             peer = BridgePeer(.safari)

@@ -52,6 +52,8 @@ public struct BridgeLinks: Sendable {
         var reportedAt: Date?
         /// When it last asked for the panel (`show`): a sign of life that is not a tab report.
         var notedAt: Date?
+        /// The bundle ID of the browser it is in: Chrome, or another browser built on Chromium. Nil when not said.
+        var app: String?
 
         /// The latest sign of life, for choosing among extensions that say nothing about focus.
         var lastSign: Date { max(reportedAt ?? .distantPast, notedAt ?? .distantPast) }
@@ -62,29 +64,53 @@ public struct BridgeLinks: Sendable {
     /// While PasswordPie's panel is open it has the keyboard, so the browser tells its extension the window lost the
     /// focus. The profile that had it when the panel opened stays the one in front until the panel closes.
     private var holding = false
-    private var held: [BridgeBrowser: BridgePeer] = [:]
+    /// Per browser app: Chrome and ego lite each have a profile in front of their own.
+    private var held: [Scope: BridgePeer] = [:]
     /// The connections that had said nothing about focus when the panel opened. The first thing such a one says may
     /// be that it lost the focus to the panel (the app was just started by the toolbar button), so until the panel
     /// closes it still counts as one that says nothing.
     private var heldSilent: Set<BridgePeer> = []
 
+    /// A browser and, for the browsers built on Chromium, which app: what "the profile in front" is counted within.
+    private struct Scope: Hashable, Sendable {
+        let browser: BridgeBrowser
+        let app: String?
+    }
+
     public init() {}
 
-    public mutating func opened(_ peer: BridgePeer) {
+    /// `app` is the bundle ID of the browser the connection is in, when known (the app learns which browser started
+    /// Chrome's host).
+    public mutating func opened(_ peer: BridgePeer, app: String? = nil) {
         if links[peer] == nil { links[peer] = Link() }
+        if let app { links[peer]?.app = app }
     }
 
     public mutating func closed(_ peer: BridgePeer) {
         links[peer] = nil
         heldSilent.remove(peer)
-        if held[peer.browser] == peer { held[peer.browser] = nil }
+        held = held.filter { $0.value != peer }
     }
 
     /// The extension went away: forget every connection of `browser`.
     public mutating func forget(_ browser: BridgeBrowser) {
         links = links.filter { $0.key.browser != browser }
         heldSilent = heldSilent.filter { $0.browser != browser }
-        held[browser] = nil
+        held = held.filter { $0.key.browser != browser }
+    }
+
+    /// The bundle ID of the browser `peer` is in, if it was said.
+    public func app(of peer: BridgePeer) -> String? {
+        links[peer]?.app
+    }
+
+    private func scope(of peer: BridgePeer) -> Scope {
+        Scope(browser: peer.browser, app: links[peer]?.app)
+    }
+
+    /// `peer` is a connection of `browser`, and of the browser app `app` when one is named.
+    private func belongs(_ peer: BridgePeer, _ link: Link, to browser: BridgeBrowser, app: String?) -> Bool {
+        peer.browser == browser && (app == nil || link.app == app)
     }
 
     /// The profile's windows gained or lost the focus.
@@ -96,7 +122,7 @@ public struct BridgeLinks: Sendable {
         if focused { links[peer]?.hadFocusOrder = order }
         // A click on the browser and the shortcut right after: the word that it has the focus can arrive when the panel
         // is already opening. Losing it never changes what the panel holds: the panel itself takes it.
-        if holding, focused { held[peer.browser] = peer }
+        if holding, focused { held[scope(of: peer)] = peer }
     }
 
     /// A `tab` report: the active tab's page (nil when it is not a web page), and the focus if the extension says it.
@@ -119,8 +145,8 @@ public struct BridgeLinks: Sendable {
     public mutating func hold() {
         if !holding { heldSilent = Set(links.filter { $0.value.focused == nil }.keys) }
         holding = true
-        for browser in BridgeBrowser.allCases {
-            if let peer = focusedLink(browser) { held[browser] = peer }
+        for scope in Set(links.keys.map(scope(of:))) {
+            if let peer = focusedLink(scope.browser, app: scope.app, exact: true) { held[scope] = peer }
         }
     }
 
@@ -131,19 +157,29 @@ public struct BridgeLinks: Sendable {
         heldSilent = []
     }
 
-    private func focusedLink(_ browser: BridgeBrowser) -> BridgePeer? {
-        links.filter { $0.key.browser == browser && $0.value.focused == true }
-            .max { $0.value.saidOrder < $1.value.saidOrder }?.key
+    /// `exact` matches a nil `app` only to connections that did not say theirs; otherwise nil matches any.
+    private func focusedLink(_ browser: BridgeBrowser, app: String?, exact: Bool = false) -> BridgePeer? {
+        links.filter { peer, link in
+            let mine = exact ? peer.browser == browser && link.app == app : belongs(peer, link, to: browser, app: app)
+            return mine && link.focused == true
+        }
+        .max { $0.value.saidOrder < $1.value.saidOrder }?.key
     }
 
     /// The connection of the profile in front, or nil when there is none: nothing connected, or every profile with the
-    /// extension says the focus is elsewhere.
-    public func front(_ browser: BridgeBrowser) -> FrontLink? {
-        if holding, let peer = held[browser], links[peer] != nil { return FrontLink(peer: peer, certain: true) }
-        if let peer = focusedLink(browser) { return FrontLink(peer: peer, certain: true) }
+    /// extension says the focus is elsewhere. `app` is the browser app in front, for the browsers built on Chromium:
+    /// only its connections count. Nil counts every connection of `browser`.
+    public func front(_ browser: BridgeBrowser, app: String? = nil) -> FrontLink? {
+        let kept = held.filter { scope, peer in
+            scope.browser == browser && (app == nil || scope.app == app) && links[peer] != nil
+        }
+        if holding, let peer = kept.values.max(by: { (links[$0]?.saidOrder ?? 0) < (links[$1]?.saidOrder ?? 0) }) {
+            return FrontLink(peer: peer, certain: true)
+        }
+        if let peer = focusedLink(browser, app: app) { return FrontLink(peer: peer, certain: true) }
         // Extensions that say nothing about focus: the last to report, as before. One that only connected still counts.
         let silent = links.filter { peer, link in
-            peer.browser == browser && (link.focused == nil || (holding && heldSilent.contains(peer)))
+            belongs(peer, link, to: browser, app: app) && (link.focused == nil || (holding && heldSilent.contains(peer)))
         }
         return Self.latest(silent).map { FrontLink(peer: $0, certain: false) }
     }
@@ -157,9 +193,9 @@ public struct BridgeLinks: Sendable {
     /// The connection that stands for `browser` when it is not the app in front (PasswordPie's own window is, or
     /// another app): the one in front if there is one, else the profile that had the focus last, else any connection.
     /// A guess, as "connected" always was: nil only when nothing is connected.
-    public func recent(_ browser: BridgeBrowser) -> FrontLink? {
-        if let front = front(browser) { return front }
-        let mine = links.filter { $0.key.browser == browser }
+    public func recent(_ browser: BridgeBrowser, app: String? = nil) -> FrontLink? {
+        if let front = front(browser, app: app) { return front }
+        let mine = links.filter { belongs($0.key, $0.value, to: browser, app: app) }
         let usedLast = mine.filter { $0.value.hadFocusOrder > 0 }.max { $0.value.hadFocusOrder < $1.value.hadFocusOrder }?.key
         return (usedLast ?? Self.latest(mine)).map { FrontLink(peer: $0, certain: false) }
     }
@@ -188,9 +224,10 @@ public struct BridgeLinks: Sendable {
         }
     }
 
-    /// How many connections `browser` has: for Chrome, the open profiles with the extension.
-    public func count(_ browser: BridgeBrowser) -> Int {
-        links.keys.filter { $0.browser == browser }.count
+    /// How many connections `browser` has: for Chrome, the open profiles with the extension; with `app`, those of that
+    /// browser app only.
+    public func count(_ browser: BridgeBrowser, app: String? = nil) -> Int {
+        links.filter { belongs($0.key, $0.value, to: browser, app: app) }.count
     }
 }
 
@@ -301,13 +338,16 @@ public struct PendingFill: Equatable, Sendable {
     /// Reset Password only: the account's new password, not used yet, for the page's new and confirm boxes. `website` is
     /// then the reset address. Nil for every ordinary fill.
     public let newPassword: String?
+    /// The browser app it is for, among the browsers built on Chromium, when no connection is named: only that app's
+    /// connections may take it. Nil lets any connection of `browser` take it.
+    public let app: String?
     #if PP_DIRECT
     /// An agent's approved login (`passwordpie login`, docs/AGENTS.md "Website login"). The tab that takes it is told to
     /// report how it went, and to send the form when the agent asked. Nil for every fill the owner picked.
     public var agent: AgentFillTicket?
     #endif
 
-    public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date, link: Int? = nil, newPassword: String? = nil) {
+    public init?(entryID: UUID, browser: BridgeBrowser, website: String, created: Date, link: Int? = nil, newPassword: String? = nil, app: String? = nil) {
         guard let site = BrowserSite(url: website) else { return nil }
         self.entryID = entryID
         self.browser = browser
@@ -316,6 +356,7 @@ public struct PendingFill: Equatable, Sendable {
         self.created = created
         self.link = link
         self.newPassword = newPassword
+        self.app = app
     }
 }
 
@@ -525,7 +566,8 @@ public struct PendingFillStore: Sendable {
     /// The pending fill, if `browser` reports a page it may fill. Taking it deletes it. An expired one is deleted unused.
     /// `link` is the connection reporting and `focused` what it says of its profile's windows: a fill for one connection
     /// goes to that one, and a fill for none never goes to a profile that says it is not in front.
-    public mutating func take(browser: BridgeBrowser, link: Int = 0, focused: Bool? = nil, pageURL: String, now: Date) -> PendingFill? {
+    /// `app` is the browser app the reporting connection is in: a fill for one app goes to no other.
+    public mutating func take(browser: BridgeBrowser, link: Int = 0, focused: Bool? = nil, app: String? = nil, pageURL: String, now: Date) -> PendingFill? {
         guard let fill = pending else { return nil }
         let age = now.timeIntervalSince(fill.created)
         guard age <= Self.lifetime, age >= -1 else {
@@ -535,6 +577,8 @@ public struct PendingFillStore: Sendable {
         if let wanted = fill.link {
             guard wanted == link else { return nil }
         } else if focused == false {
+            return nil
+        } else if let wanted = fill.app, wanted != app {
             return nil
         }
         guard fill.browser == browser, let page = BrowserSite(url: pageURL), fill.site.allowsFill(on: page) else { return nil }
@@ -662,32 +706,32 @@ public struct BridgeState: Sendable {
         links.heardFrom(browser, now: now, within: within)
     }
 
-    /// The connection of `browser`'s profile in front, if one speaks for it.
-    public func front(_ browser: BridgeBrowser) -> FrontLink? {
-        links.front(browser)
+    /// The connection of `browser`'s profile in front, if one speaks for it. `app`: of that browser app only.
+    public func front(_ browser: BridgeBrowser, app: String? = nil) -> FrontLink? {
+        links.front(browser, app: app)
     }
 
-    /// How many connections `browser` has open: for Chrome, the profiles with the extension.
-    public func linkCount(_ browser: BridgeBrowser) -> Int {
-        links.count(browser)
+    /// How many connections `browser` has open: for Chrome, the profiles with the extension. `app`: of that browser app only.
+    public func linkCount(_ browser: BridgeBrowser, app: String? = nil) -> Int {
+        links.count(browser, app: app)
     }
 
     /// The connection that stands for `browser` when it is not the app in front: see `BridgeLinks.recent`.
-    public func recent(_ browser: BridgeBrowser) -> FrontLink? {
-        links.recent(browser)
+    public func recent(_ browser: BridgeBrowser, app: String? = nil) -> FrontLink? {
+        links.recent(browser, app: app)
     }
 
     /// The web page the profile in front of `browser` reported as its active tab, if it is less than `maxAge` old.
     /// Another profile's tab is never it. `usedLast` is for when the browser is not the app in front: then the page
     /// is that of the profile used last.
-    public func currentURL(for browser: BridgeBrowser, now: Date, maxAge: TimeInterval = 3600, usedLast: Bool = false) -> String? {
-        guard let front = usedLast ? links.recent(browser) : links.front(browser) else { return nil }
+    public func currentURL(for browser: BridgeBrowser, app: String? = nil, now: Date, maxAge: TimeInterval = 3600, usedLast: Bool = false) -> String? {
+        guard let front = usedLast ? links.recent(browser, app: app) : links.front(browser, app: app) else { return nil }
         return links.url(of: front.peer, now: now, maxAge: maxAge)
     }
 
-    /// A connection opened (Chrome: a profile's extension connected).
-    public mutating func opened(_ peer: BridgePeer) {
-        links.opened(peer)
+    /// A connection opened (Chrome: a profile's extension connected). `app` is the browser app it is in, when known.
+    public mutating func opened(_ peer: BridgePeer, app: String? = nil) {
+        links.opened(peer, app: app)
     }
 
     /// A connection closed: forget what it said.
@@ -781,7 +825,7 @@ public struct BridgeState: Sendable {
             }
             #endif
             guard !locked,
-                  let fill = pending.take(browser: browser, link: link, focused: links.focused(peer), pageURL: url, now: now),
+                  let fill = pending.take(browser: browser, link: link, focused: links.focused(peer), app: links.app(of: peer), pageURL: url, now: now),
                   let account = entry(fill.entryID),
                   entryFillSites(account).contains(where: { BrowserSite(url: $0)?.allowsFill(on: page) == true }) else {
                 var answer = BridgeResponse(type: "tab", id: request.id)

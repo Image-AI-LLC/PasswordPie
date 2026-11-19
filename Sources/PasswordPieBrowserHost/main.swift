@@ -8,13 +8,14 @@ import PasswordPieBridge
 
 signal(SIGPIPE, SIG_IGN)
 
-// Chrome starts the host as its own child and passes the calling extension's origin first. The origin can be faked by
-// whoever starts the host, so the host also requires its parent to be Google Chrome, checked by code signature. Together
-// with the manifest's allowed_origins, only the PasswordPie extension inside Chrome gets through.
+// The browser starts the host as its own child and passes the calling extension's origin first. The origin can be faked
+// by whoever starts the host, so the host also requires its parent to be a browser built on Chromium, validly signed by
+// a developer Apple knows. The app checks the same parent again and lets it in only when the person allowed that browser
+// (Google's are allowed without asking). See docs/BROWSER_EXTENSION.md, "Other Chromium browsers".
 let caller = CommandLine.arguments.dropFirst().first ?? ""
 guard BridgeConstants.chromeExtensionIDs.contains(where: { caller == "chrome-extension://\($0)/" }),
-      PeerIdentity.verifiedIdentifier(ofProcess: getppid(), allowed: BridgeConstants.chromeIdentifiers, teamID: BridgeConstants.chromeTeamID) != nil else {
-    FileHandle.standardError.write(Data("PasswordPie: refused a caller that is not the PasswordPie extension in Google Chrome\n".utf8))
+      ChromiumBrowserCheck.identity(ofProcess: getppid()) != nil else {
+    FileHandle.standardError.write(Data("PasswordPie: refused a caller that is not the PasswordPie extension in a signed Chromium browser\n".utf8))
     exit(1)
 }
 

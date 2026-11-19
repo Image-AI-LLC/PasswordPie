@@ -6,6 +6,7 @@ final class ExtensionBannerView: NSView {
     static let height: CGFloat = 28
     var onClick: (() -> Void)?
     private var banner: ExtensionBanner?
+    private var browser: URL?
     private var icon: NSImage?
     private var hovering = false {
         didSet { if oldValue != hovering { needsDisplay = true } }
@@ -18,10 +19,13 @@ final class ExtensionBannerView: NSView {
     /// The panel moves by its background; without this a press here starts a drag and the click never arrives.
     override var mouseDownCanMoveWindow: Bool { false }
 
-    func show(_ banner: ExtensionBanner) {
-        guard banner != self.banner else { return }
+    /// `browser` is the browser in front, whose icon the line shows: for "Add Chrome Extension…" that may be another
+    /// browser built on Chromium. Nil shows the banner's own browser.
+    func show(_ banner: ExtensionBanner, browser: URL? = nil) {
+        guard banner != self.banner || browser != self.browser else { return }
         self.banner = banner
-        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: banner.browserBundleID) {
+        self.browser = browser
+        if let app = browser ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: banner.browserBundleID) {
             icon = NSWorkspace.shared.icon(forFile: app.path)
         } else {
             icon = nil
