@@ -224,6 +224,28 @@ final class AgentApprovalModel: ObservableObject {
         self.finish = nil
         finish(decision)
     }
+
+    #if DEBUG
+    /// The window's words, for the debug status file. No value is in a prompt, so none is here.
+    var debugSummary: [String: Any] {
+        [
+            "title": title,
+            "rows": prompt.rows.map { "\($0.title) (\($0.folder)): \(rowLine($0))" },
+            "allow": allowTitle,
+            "lasting": offersLasting ? lastingTitle : NSNull(),
+            "lastingMenu": offersLasting ? lengths.map(lengthTitle) : [],
+            "lastingUnavailable": lastingUnavailable ?? NSNull(),
+            "agent": agentLine,
+            "via": prompt.via ?? NSNull(),
+            "command": prompt.command ?? NSNull(),
+            "project": prompt.project,
+            "site": prompt.site ?? NSNull(),
+            "browser": prompt.browser ?? NSNull(),
+            "reason": prompt.reason ?? NSNull(),
+            "raw": prompt.raw,
+        ]
+    }
+    #endif
 }
 
 /// Shows approval windows over whatever is in front, one per prompt, drawn by PasswordPie itself.

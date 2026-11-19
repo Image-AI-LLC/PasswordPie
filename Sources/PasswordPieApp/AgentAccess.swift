@@ -90,14 +90,14 @@ final class AgentAccess: ObservableObject {
         refreshStanding()
     }
 
-    /// Debug builds only: `PASSWORDPIE_AGENT_APPROVE=allow|deny` shows the window, then answers it after 2 seconds without
-    /// Touch ID, so the whole path can be run and screenshotted on a Mac nobody is sitting at. Release builds ignore it.
+    /// Debug builds only: `PASSWORDPIE_AGENT_APPROVE` shows the window, then answers it without Touch ID, so the whole
+    /// path can be run and screenshotted on a Mac nobody is sitting at (`AgentApprovalScript`). Release builds ignore it.
     private static func debugApprover() -> AgentApprovalController? {
         #if DEBUG
-        guard let answer = ProcessInfo.processInfo.environment["PASSWORDPIE_AGENT_APPROVE"] else { return nil }
+        guard let script = ProcessInfo.processInfo.environment["PASSWORDPIE_AGENT_APPROVE"] else { return nil }
         return AgentApprovalController(confirmation: DebugConfirmation(), show: { model in
             let close = AgentApprovalController.window(for: model)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { if answer == "allow" { model.allow() } else { model.deny() } }
+            AgentApprovalScript.run(AgentApprovalScript.steps(script), on: model)
             return close
         })
         #else
@@ -273,6 +273,68 @@ final class AgentAccess: ObservableObject {
 private final class DebugConfirmation: OwnerConfirmation {
     func confirm(reason: String) async -> Bool { true }
     func cancel() {}
+}
+
+/// `PASSWORDPIE_AGENT_APPROVE`, debug builds only: what presses the approval window's buttons when nobody is at the Mac.
+/// Steps separated by commas, the first 2 seconds after the window opens and one every 2 seconds after that:
+///
+/// - `allow`: Allow Once (or Show to Agent).
+/// - `deny`: Deny. Any word it does not know is a Deny too.
+/// - `lasting`: the lasting button as it stands ("Allow for 7 days"); `lasting:8h` a length from its menu (`session`,
+///   `8h`, `7d`, `30d`). Without Premium this opens the Premium window and the approval window stays, so
+///   `lasting,allow` is the free user's path.
+/// - `hold`: nothing, for a screenshot of the window as it stands.
+///
+/// `@/path/to/file` reads the steps from that file each time a window opens, so one run of the app can answer each
+/// request differently. A file that cannot be read denies.
+enum AgentApprovalScript {
+    enum Step: Equatable {
+        case allow
+        case deny
+        case lasting(AgentGrantLength?)
+        case hold
+    }
+
+    static func steps(_ script: String, read: (String) -> String? = { try? String(contentsOfFile: $0, encoding: .utf8) }) -> [Step] {
+        var text = script.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("@") {
+            guard let contents = read(String(text.dropFirst())) else { return [.deny] }
+            text = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text.split(separator: ",").map { word in
+            let word = word.trimmingCharacters(in: .whitespacesAndNewlines)
+            switch word {
+            case "allow": return .allow
+            case "hold": return .hold
+            case "lasting": return .lasting(nil)
+            default:
+                guard word.hasPrefix("lasting:"), let length = AgentGrantLength(rawValue: String(word.dropFirst("lasting:".count))) else {
+                    return .deny
+                }
+                return .lasting(length)
+            }
+        }
+    }
+
+    /// Presses one step every `interval` seconds until the window is answered.
+    @MainActor
+    @discardableResult
+    static func run(_ steps: [Step], on model: AgentApprovalModel, every interval: TimeInterval = 2) -> Task<Void, Never> {
+        Task { @MainActor in
+            for step in steps {
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard !model.answered else { return }
+                switch step {
+                case .allow: model.allow()
+                case .deny: model.deny()
+                case .lasting(let length): model.allow(for: length ?? model.length)
+                case .hold: break
+                }
+                // The confirmation answers on a later turn of the main actor.
+                for _ in 0..<20 { await Task.yield() }
+            }
+        }
+    }
 }
 #endif
 

@@ -231,7 +231,7 @@ enum Arguments {
                       [--reason TEXT] [--wait SECONDS] [--no-masking] -- COMMAND [ARG]...
       passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
       passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
-      passwordpie list [QUERY] [--json]
+      passwordpie list [QUERY] [--json] [--wait SECONDS]
       passwordpie status [--json]
       passwordpie mcp
 

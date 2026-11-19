@@ -109,6 +109,14 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
         self.detail = detail
     }
 
+    /// The `detail` of a `no-matching-tab` answered because no extension speaks for the browser. The tool's line reads
+    /// it back (`noExtensionStart`): the app and the tool are one bundle, built from this file.
+    public static func noExtension(in browser: String?) -> String {
+        "\(noExtensionStart) in \(browser ?? "Google Chrome or Safari")."
+    }
+
+    static let noExtensionStart = "PasswordPie's extension is not connected"
+
     /// The tool's one line. Success goes to standard output; anything else to standard error, saying what to do, and
     /// ending, as every refusal does, with `AgentConstants.pasteWarning`.
     public var line: String { line(mcp: false) }
@@ -123,6 +131,10 @@ public struct AgentLoginAnswer: Codable, Equatable, Sendable {
         switch outcome {
         case .submitted: text = "PasswordPie: filled \(account)\(place) and pressed the form's sign-in button. Check the page to see whether the site accepted it."
         case .filled: text = "PasswordPie: filled \(account)\(place). The form was not sent; press the site's sign-in button."
+        case .noMatchingTab where detail?.hasPrefix(Self.noExtensionStart) == true:
+            // No extension speaks for the browser: there is no tab to bring forward, and only the owner can turn it on.
+            return AgentRefusal.oneLine("PasswordPie: nothing was filled. \(detail ?? "") Ask the owner to turn it on (PasswordPie > Preferences > Browsers), then try again. "
+                + (mcp ? AgentConstants.mcpGuidance : AgentConstants.pasteWarning))
         case .noMatchingTab:
             text = "PasswordPie: the tab in front\(browser.map { " in \($0)" } ?? "") is not on \(site ?? "the site"); nothing was filled. Bring the sign-in page's tab to the front (PasswordPie does not switch tabs), then try again."
         case .siteMismatch:

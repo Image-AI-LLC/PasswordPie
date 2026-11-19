@@ -74,10 +74,13 @@ extension VaultBroker {
                 detail: detail
             ))
         }
+        // A site the item does not list needs no browser to refuse, so no extension is poked for it.
+        if let url, candidates.contains(where: { logins.loginWebsite(of: $0, for: url) == nil }) {
+            return early(.siteMismatch, site: logins.loginSite(url), browser: browser?.displayName)
+        }
         guard let target = await logins.loginTarget(browser) else {
-            let which = browser?.displayName ?? "Google Chrome or Safari"
             return early(.noMatchingTab, site: url.flatMap(logins.loginSite), browser: browser?.displayName,
-                         detail: "PasswordPie's extension is not connected in \(which).")
+                         detail: AgentLoginAnswer.noExtension(in: browser?.displayName))
         }
         guard !vault.agentVaultLocked else { return refuse(.locked, outcome: .locked, items: labels) }
         let pageNotAWebsite = "The tab in front is not a website."

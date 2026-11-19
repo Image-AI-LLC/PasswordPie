@@ -1125,7 +1125,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             responderName = String(describing: type(of: field)) + "(field editor)"
             if field is NSSecureTextField { passwordLength = field.stringValue.count } else { searchText = field.stringValue }
         }
-        return [
+        var agents: [String: Any] = [:]
+        #if PP_DIRECT
+        // Agent access (docs/AGENTS.md, "Trying it on a debug build"): the switch, the newest approval window, and what a
+        // silent use leaves behind.
+        agents = [
+            "agentAccess": agentAccess.enabled,
+            "agentApproval": agentAccess.approver.open.values.first.map { $0.model.debugSummary } ?? NSNull(),
+            "agentApprovalWindow": NSApp.windows.first { $0.isVisible && $0.contentViewController is NSHostingController<AgentApprovalView> }?.windowNumber ?? NSNull(),
+            "agentStanding": agentAccess.standing.map { "\($0.agentName): \($0.description)" },
+            "agentActivity": agentAccess.activity.count,
+            "agentSilentUseDot": silentUseDotEnds != nil,
+            "agentWaiting": session.agentWaitingLine ?? NSNull(),
+        ]
+        #endif
+        var state: [String: Any] = [
             "visible": panel.isVisible,
             "locked": session.locked,
             "keyWindow": keyKind,
@@ -1178,6 +1192,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "premiumMessage": session.premium.activity.message ?? NSNull(),
             "paywallWindow": paywallWindow?.isVisible == true ? paywallWindow?.windowNumber ?? NSNull() : NSNull()
         ]
+        for (key, value) in agents { state[key] = value }
+        return state
     }
     #endif
 }

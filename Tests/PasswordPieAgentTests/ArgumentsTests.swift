@@ -32,6 +32,18 @@ final class ArgumentsTests: XCTestCase {
         XCTAssertEqual(options.literals.map(\.name), ["TEAM"])
     }
 
+    /// The usage lines name `--wait` for every command that takes it: an agent facing a locked vault reads them.
+    func testUsageNamesWaitWhereverItIsTaken() throws {
+        let lines = Arguments.usageText.split(separator: "\n").map(String.init)
+        for (command, arguments) in [("run", ["run", "--env", "A=pp://X/a", "--wait", "5", "--", "true"]), ("read", ["read", "pp://X/a", "--wait", "5"]),
+                                      ("login", ["login", "pp://X/a", "--wait", "5"]), ("list", ["list", "--wait", "5"])] {
+            XCTAssertNoThrow(try Arguments.parse(arguments), command)
+            let start = try XCTUnwrap(lines.firstIndex { $0.hasPrefix("  passwordpie \(command) ") }, command)
+            // A usage line may run on to the next (run's does).
+            XCTAssertTrue(lines[start...].prefix(2).joined().contains("[--wait SECONDS]"), command)
+        }
+    }
+
     func testMistakesAreUsageErrors() {
         for arguments in [
             ["run", "--", "true"],
