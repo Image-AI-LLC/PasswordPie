@@ -151,6 +151,31 @@ final class AttachmentSaveTests: XCTestCase {
         }
     }
 
+    /// A copy folded into an account brings a file under a name the account already holds, with other bytes. The
+    /// account's own file stays, the copy's is added beside it, and folding the same copy in again adds nothing. An
+    /// import of the item itself is different: there the file of that name is the new version.
+    func testAFileFromAFoldedInCopyNeverReplacesTheAccountsOwnFile() throws {
+        var vault = try KDBX.load(data: try existingDatabase(), password: "secret")
+        let old = try XCTUnwrap(vault.entries.first).id
+        vault.entries[0].url = "https://example.com/login"
+        vault.entries[0].username = "ann"
+        vault = try KDBX.load(data: try KDBX.save(vault: &vault, password: "secret"), password: "secret")
+        for round in 1...2 {
+            var copy = imported("Old", [VaultAttachment(name: "old.txt", data: Data("the copy's".utf8))], group: ["1Password"])
+            copy.url = "https://example.com/"
+            copy.username = "ann"
+            copy.password = "pw"
+            vault.entries.append(copy)
+            vault.entries = EntryMerge.merged(vault.entries)
+            vault = try KDBX.load(data: try KDBX.save(vault: &vault, password: "secret"), password: "secret")
+            XCTAssertEqual(vault.entries.filter { !$0.trashed }.map(\.id), [old], "round \(round)")
+            XCTAssertEqual(vault.attachmentNames(of: old), ["old.txt", "old (2).txt"], "round \(round)")
+            XCTAssertEqual(vault.attachment(named: "old.txt", of: old), Data("old bytes".utf8), "round \(round): its own file is as it was")
+            XCTAssertEqual(vault.attachment(named: "old (2).txt", of: old), Data("the copy's".utf8), "round \(round)")
+        }
+        XCTAssertEqual(vault.preserve?.binaryPayloads, [Data("old bytes".utf8), Data("the copy's".utf8)])
+    }
+
     func testSavingAgainAddsNoCopyAndNoVersion() throws {
         var vault = try KDBX.load(data: try existingDatabase(), password: "secret")
         var fresh = imported("Apple", [VaultAttachment(name: "AuthKey.p8", data: pem)])

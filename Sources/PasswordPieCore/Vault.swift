@@ -3,10 +3,16 @@ import Foundation
 public struct VaultAttachment: Equatable, Sendable {
     public var name: String
     public var data: Data
+    /// What happens when the entry already holds another file under this name. False, for what an import of the entry
+    /// itself hands over: this one takes its place (the version before stays in the entry's history). True, for a file
+    /// that came with another account folded into this one: the entry's own file stays, and this one is added beside it
+    /// under a free name.
+    public var keepsHeld: Bool
 
-    public init(name: String, data: Data) {
+    public init(name: String, data: Data, keepsHeld: Bool = false) {
         self.name = name
         self.data = data
+        self.keepsHeld = keepsHeld
     }
 }
 

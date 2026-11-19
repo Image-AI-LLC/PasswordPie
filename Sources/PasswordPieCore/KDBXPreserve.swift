@@ -268,12 +268,14 @@ final class KDBXPreserve: @unchecked Sendable {
         var result: [VaultAttachment] = []
         let cleaned = attachments.map { attachment -> VaultAttachment in
             let name = storedXMLText(attachment.name).trimmingCharacters(in: .whitespacesAndNewlines)
-            return VaultAttachment(name: name.isEmpty ? "attachment" : name, data: attachment.data)
+            return VaultAttachment(name: name.isEmpty ? "attachment" : name, data: attachment.data, keepsHeld: attachment.keepsHeld)
         }
         let asked = Set(cleaned.map(\.name))
         for attachment in cleaned {
             var name = attachment.name
-            if taken.contains(name) {
+            // A file that came with a folded-in account never takes the place of the entry's own file of that name.
+            let besideHeld = attachment.keepsHeld && held[name] != nil && held[name] != attachment.data
+            if taken.contains(name) || besideHeld {
                 let file = name as NSString
                 let ext = file.pathExtension.isEmpty ? "" : "." + file.pathExtension
                 let stem = ext.isEmpty ? name : file.deletingPathExtension
