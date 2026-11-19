@@ -45,6 +45,14 @@ the database file itself, in its custom data: under the master key, moving with 
 the app's preferences, so `defaults write` cannot share anything. The switch itself is a preference
 (`agentAccessEnabled`): turning it on that way only opens the socket; every use still asks.
 
+**On more than one Mac.** When two copies of the database are merged (`KDBXMerge.swift`), sharing is merged item by
+item and folder by folder, not one copy's list over the other's. Each share and each unshare is kept with its time
+(`itemTimes`, `unsharedItems`, `folderTimes`, `unsharedFolders` beside `items` and `folders`), and the later one counts;
+at the same second, unshared. So an item unshared on one Mac stays unshared when the other Mac's older copy, which
+still lists it, is merged in. An unshared item therefore stays in the file as unshared, and the key stays while there is
+any. What was shared before times were kept has no time, and counts as earlier than anything that has one. The App
+Store app has no agent access, but merges these records the same way (`AgentSharingRecord` in the core library).
+
 Decision: a folder is kept by its path, so renaming it unshares it until it is ticked again (failing closed). Two
 sibling folders with the same name are one path, so one tick covers both. An item's fields can grow when PasswordPie
 merges a duplicate login into it ("The newest password wins" in UX.md); a shared item shares what it holds. Folders are
@@ -158,12 +166,20 @@ and name each.
 and choosing one opens the Premium window over the approval window and approves nothing. The store checks again before
 it records a grant and before it uses one: without Premium no grant is made, and none counts (they stay listed).
 
-**Where they live.** In the database's custom data, key `PasswordPie.AgentGrants`, JSON (`version`, `grants`): under the
+**Where they live.** In the database's custom data, key `PasswordPie.AgentGrants`, JSON (`version`, `grants`, `revoked`): under the
 master key, moving with the file, written on every change. Names of items and fields are kept for the pane; never a
 value. Not in the app's preferences: a forged `defaults write` adds nothing (PRD check 9). The app's writes are staged
 (memory keeps what the file holds until the new file replaced it), so the store keeps its own changes in memory until
 the write lands: a new grant counts at once, and a revoke counts at once and for the rest of the app's run even if the
 write fails.
+
+**On more than one Mac.** A grant only counts on the Mac it was given on, but every Mac's grants are in the one file,
+and every grant change writes it. When two copies are merged, the grants are merged one by one (`AgentGrantsRecord` in
+the core library, which reads them as JSON records with an `id`): every grant either copy holds is kept, except those
+either copy lists as revoked. A grant taken away before its time (Revoke, Revoke All, unsharing, a session grant whose
+agent quit) is kept in `revoked` with its `id` and `ends` until it would have ended, so the copy that still holds it
+cannot bring it back; the record is dropped on the first grant change after that time. Should two copies hold one grant
+differently, the one that ends sooner is kept.
 
 **Ending.** A grant ends at its time; a session grant also when its agent process exits. Revoke (one) and Revoke All
 (every grant in the file, on every Mac; shown while the file holds any) in Preferences > Agents; the gear menu's Revoke Agent Permissions is Revoke All.

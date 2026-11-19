@@ -266,7 +266,10 @@ final class StandingPermissionsTests: XCTestCase {
         _ = await broker().handle(run(["Scripts/b.sh"]), from: caller)
         XCTAssertEqual(approver.prompts.count, 4)
         database.land()
-        XCTAssertNil(database.customData[AgentGrants.customDataKey], "the file holds none")
+        let kept = AgentGrants(customData: database.customData)
+        XCTAssertTrue(kept.isEmpty, "the file holds none")
+        // It says they were revoked, so that another Mac's copy of the file cannot bring them back.
+        XCTAssertEqual(kept.revoked.count, 2)
     }
 
     /// A grant made while the file is still being written counts at once.

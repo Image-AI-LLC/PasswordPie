@@ -85,18 +85,75 @@ final class AgentSharingTests: XCTestCase {
         XCTAssertFalse(sharing.covers(trashed))
     }
 
-    func testRoundTripsThroughCustomDataAndEmptyRemovesTheKey() {
+    func testRoundTripsThroughCustomData() {
         var sharing = AgentSharing()
         let id = UUID()
         sharing.set(item: id, shared: true)
+        sharing.set(folder: ["B"], shared: true)
         sharing.set(folder: ["A", "B"], shared: true)
         var data: [String: String] = ["other": "kept"]
         sharing.write(into: &data)
         XCTAssertEqual(AgentSharing(customData: data), sharing)
-        sharing.set(item: id, shared: false)
-        sharing.set(folder: ["A", "B"], shared: false)
-        sharing.write(into: &data)
-        XCTAssertEqual(data, ["other": "kept"])
+        XCTAssertEqual(AgentSharing(customData: data).folders, [["A", "B"], ["B"]])
+        var nothing = AgentSharing()
+        nothing.write(into: &data)
+        XCTAssertEqual(data, ["other": "kept"], "nothing shared and nothing ever unshared: no key")
+        nothing.set(item: id, shared: false)
+        nothing.write(into: &data)
+        XCTAssertEqual(data, ["other": "kept"], "unsharing what was not shared records nothing")
+    }
+
+    /// What was unshared stays in the file as unshared, so that an older copy from another Mac cannot share it again
+    /// (`AgentSharingRecord.merged`).
+    func testAnUnshareStaysInTheFileAndWinsOverAnOlderCopyThatStillShares() throws {
+        let id = UUID()
+        let then = Date(timeIntervalSince1970: 1_780_272_000)
+        var older = AgentSharing()
+        older.set(item: id, shared: true, at: then)
+        older.set(folder: ["Agents"], shared: true, at: then)
+        var olderData: [String: String] = [:]
+        older.write(into: &olderData)
+
+        var newer = older
+        newer.set(item: id, shared: false, at: then.addingTimeInterval(60))
+        newer.set(folder: ["Agents"], shared: false, at: then.addingTimeInterval(60))
+        XCTAssertTrue(newer.isEmpty)
+        var newerData: [String: String] = [:]
+        newer.write(into: &newerData)
+        XCTAssertNotNil(newerData[AgentSharing.customDataKey])
+        XCTAssertTrue(AgentSharing(customData: newerData).isEmpty)
+        XCTAssertFalse(AgentSharing(customData: newerData).covers(VaultEntry(id: id)))
+
+        for (mine, other) in [(newerData, olderData), (olderData, newerData)] {
+            let merged = AgentSharingRecord.merged(mine[AgentSharing.customDataKey], other[AgentSharing.customDataKey])
+            let sharing = AgentSharing(customData: [AgentSharing.customDataKey: try XCTUnwrap(merged)])
+            XCTAssertTrue(sharing.isEmpty)
+            XCTAssertFalse(sharing.covers(VaultEntry(groupPath: ["Agents"])))
+        }
+    }
+
+    func testSharingAgainInTheSameSecondAsTheUnshareIsTheLaterDecision() throws {
+        let id = UUID()
+        let now = Date(timeIntervalSince1970: 1_780_272_000)
+        var sharing = AgentSharing()
+        sharing.set(item: id, shared: true, at: now)
+        sharing.set(item: id, shared: false, at: now)
+        var unshared: [String: String] = [:]
+        sharing.write(into: &unshared)
+        sharing.set(item: id, shared: true, at: now)
+        var shared: [String: String] = [:]
+        sharing.write(into: &shared)
+        let merged = AgentSharingRecord.merged(unshared[AgentSharing.customDataKey], shared[AgentSharing.customDataKey])
+        XCTAssertTrue(AgentSharing(customData: [AgentSharing.customDataKey: try XCTUnwrap(merged)]).items.contains(id))
+    }
+
+    func testAFileWrittenBeforeTimesWereKeptStillShares() {
+        let id = UUID()
+        let old = #"{"folders":[["Agents"]],"items":["\#(id.uuidString)"],"version":1}"#
+        let sharing = AgentSharing(customData: [AgentSharing.customDataKey: old])
+        XCTAssertEqual(sharing.items, [id])
+        XCTAssertEqual(sharing.folders, [["Agents"]])
+        XCTAssertTrue(AgentSharing(customData: [AgentSharing.customDataKey: #"{"items":[]}"#]).isEmpty)
     }
 
     func testUnreadableDataSharesNothing() {

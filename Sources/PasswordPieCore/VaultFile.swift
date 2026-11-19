@@ -38,6 +38,7 @@ public enum VaultFile {
     /// keys, opened with them, and only then swapped in, and only while it still holds `baseline`. A failure leaves the file
     /// as it was. Afterwards the snapshot beside it is replaced by the new bytes too: it held the same accounts under the
     /// old keys, and a copy in the same (often synced) folder that opens with the password alone would undo a new key file.
+    /// For the same reason the copies kept from before a merge (`keepMergeBackup`) are removed.
     /// Returns the bytes written; `vault` is updated to match them.
     @discardableResult
     public static func rekey(_ url: URL, vault: inout Vault, password: String, keyFile: Data?, baseline: Data) throws -> Rekeyed {
@@ -60,11 +61,12 @@ public enum VaultFile {
                     keepingSnapshot: true, beforeReplace: beforeReplace)
         updated.noteFileContents(data)
         vault = updated
+        let stale = removeMergeBackups(of: url)
         do {
             try refreshSnapshot(of: url, with: data)
-            return Rekeyed(data: data, snapshotRefreshed: true)
+            return Rekeyed(data: data, snapshotRefreshed: true, staleCopies: stale)
         } catch {
-            return Rekeyed(data: data, snapshotRefreshed: false)
+            return Rekeyed(data: data, snapshotRefreshed: false, staleCopies: stale)
         }
     }
 
@@ -73,6 +75,9 @@ public enum VaultFile {
     public struct Rekeyed: Equatable, Sendable {
         public let data: Data
         public let snapshotRefreshed: Bool
+        /// The copies from before a merge that could not be removed, by name: they still open with the old keys. When the
+        /// folder could not be listed, the one name is the prefix of those copies followed by `*`.
+        public let staleCopies: [String]
     }
 
     private static func writesKDBXFile(_ url: URL) -> Bool {
@@ -219,7 +224,7 @@ public enum VaultFile {
         }
     }
 
-    private static let changedOnDisk = VaultWriteError("The database changed on disk during the save. The original file was kept.")
+    static let changedOnDisk = VaultWriteError("The database changed on disk during the save. The original file was kept.")
 
     /// Exchanges the two files in one step, so a writer cannot land between the comparison and the replace. What came out
     /// is compared afterwards, and put back if it was not what this session expected. False where the volume cannot swap.
@@ -330,7 +335,7 @@ public enum VaultFile {
         try restrict(snapshot)
     }
 
-    private static func restrict(_ url: URL) throws {
+    static func restrict(_ url: URL) throws {
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
