@@ -62,10 +62,11 @@ enum ExtensionBanner: Equatable {
 }
 
 /// Which banner the panel shows for the app that was in front, if any. `chromeInFront` is whether an extension speaks
-/// for the Chrome profile in front: one connected in another profile does not count.
-func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled: Bool, chromeSupported: Bool) -> ExtensionBanner? {
+/// for the Chrome profile in front: one connected in another profile does not count. Other browsers built on Chromium
+/// get Chrome's line, except one the person did not allow (`denied`).
+func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled: Bool, chromeSupported: Bool, denied: Bool = false) -> ExtensionBanner? {
     switch BrowserBridge.browser(forBundleID: frontBundleID) {
-    case .chrome: chromeSupported && !chromeInFront ? .addChrome : nil
+    case .chrome: chromeSupported && !chromeInFront && !denied ? .addChrome : nil
     case .safari: safariEnabled ? nil : .enableSafari
     case nil: nil
     }
@@ -129,6 +130,62 @@ struct ExtensionStatus: Equatable {
     }
 }
 
+/// A browser built on Chromium other than Google Chrome, in Preferences > Browsers: one the person answered about, or
+/// one connected now (Chrome Beta is never asked about, and shows only while connected).
+struct ChromiumBrowserRow: Equatable, Identifiable {
+    let bundleID: String
+    let teamID: String
+    let name: String
+    let status: ExtensionStatus
+    /// The person's answer; nil for Google's browsers, which have no button.
+    let approval: BrowserApproval?
+
+    var id: String { bundleID + "|" + teamID }
+
+    /// The button that changes the answer.
+    var button: String? {
+        switch approval {
+        case .allowed?: BrowserApprovalPrompt.denyTitle
+        case .denied?: BrowserApprovalPrompt.allowTitle
+        case nil: nil
+        }
+    }
+
+    /// What the button sets.
+    var toggled: BrowserApproval? {
+        switch approval {
+        case .allowed?: .denied
+        case .denied?: .allowed
+        case nil: nil
+        }
+    }
+}
+
+/// The rows, by name. `connected` counts the open profiles per bundle ID; `seen` are the signatures of the browsers that
+/// connected since launch.
+func chromiumBrowserRows(approvals: BrowserApprovals, connected: [String: Int], seen: [String: ChromiumBrowserIdentity]) -> [ChromiumBrowserRow] {
+    func status(_ bundleID: String, _ approval: BrowserApproval?) -> ExtensionStatus {
+        let profiles = connected[bundleID] ?? 0
+        if profiles > 0, approval != .denied { return .chrome(profiles: profiles) }
+        return approval == .denied ? ExtensionStatus(text: "Not allowed", on: false) : ExtensionStatus(text: "Allowed", on: false)
+    }
+    var rows: [ChromiumBrowserRow] = approvals.records
+        .filter { $0.bundleID != BrowserBridge.chromeBundleID }
+        .map { ChromiumBrowserRow(bundleID: $0.bundleID, teamID: $0.teamID, name: $0.name, status: status($0.bundleID, $0.approval), approval: $0.approval) }
+    for (bundleID, identity) in seen where bundleID != BrowserBridge.chromeBundleID && (connected[bundleID] ?? 0) > 0 {
+        guard !rows.contains(where: { $0.bundleID == bundleID && $0.teamID == identity.teamID }) else { continue }
+        let approval = approvals.approval(bundleID: bundleID, teamID: identity.teamID)
+        rows.append(ChromiumBrowserRow(
+            bundleID: bundleID,
+            teamID: identity.teamID,
+            name: identity.name,
+            status: status(bundleID, approval),
+            approval: identity.isGoogle ? nil : approval
+        ))
+    }
+    return rows.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+}
+
 /// Safari's button in Preferences. Both open Safari's Extensions settings with PasswordPie selected.
 func safariExtensionButtonTitle(enabled: Bool) -> String {
     enabled ? "Open Safari Settings…" : ExtensionBanner.enableSafari.title
@@ -150,21 +207,37 @@ final class BrowserBridge: ObservableObject {
     nonisolated static let chromeSupported = false
     #endif
 
+    /// Which extension speaks for the app: Safari's, or Chrome's in Google Chrome and in every other browser built on
+    /// Chromium (`ChromiumBrowsers`). Nil for any other app.
     nonisolated static func browser(forBundleID id: String?) -> BridgeBrowser? {
-        switch id {
-        case chromeBundleID: .chrome
-        case safariBundleID: .safari
-        default: nil
-        }
+        guard let id else { return nil }
+        if id == safariBundleID { return .safari }
+        return ChromiumBrowsers.isChromium(bundleID: id) ? .chrome : nil
     }
 
-    /// How many Chrome profiles have the extension connected now.
+    /// How many Google Chrome profiles have the extension connected now.
     @Published private(set) var chromeProfiles = 0
+    /// How many profiles have the extension connected now, per browser built on Chromium (bundle ID), Chrome included.
+    @Published private(set) var chromiumProfiles: [String: Int] = [:]
+    /// The browsers built on Chromium seen connecting since launch, by bundle ID, with their signatures.
+    @Published private(set) var chromiumBrowsers: [String: ChromiumBrowserIdentity] = [:]
+    /// The person's answers about the browsers built on Chromium other than Google's (docs/UX.md, "Other browsers built
+    /// on Chrome"). Kept in the preferences for good.
+    @Published private(set) var approvals: BrowserApprovals
+    /// Asks the person whether a browser may connect, and calls back with the answer. Replaced in tests.
+    var askToAllow: (ChromiumBrowserIdentity, @escaping @MainActor (Bool) -> Void) -> Void = { identity, answer in
+        BrowserApprovalPrompt.ask(identity, answer: answer)
+    }
+    /// Connections waiting for the person's answer about their browser, by `bundleID|teamID`.
+    private var waitingApprovals: [String: [@MainActor (Bool) -> Void]] = [:]
+    private let defaults: UserDefaults
+    static let approvalsKey = "chromiumBrowserApprovals"
     /// An extension speaks for the Chrome profile in front. False when every connected profile says the focus is
     /// elsewhere: the window in front belongs to a profile without the extension.
     @Published private(set) var chromeInFront = false
     @Published private(set) var safariEnabled = false
-    var chromeConnected: Bool { chromeProfiles > 0 }
+    /// Any browser built on Chromium has the extension connected, in any profile.
+    var chromeConnected: Bool { !chromiumProfiles.isEmpty }
 
     unowned let session: VaultSession
     /// Internal, not private, for the agent login (`BrowserBridge+AgentLogin.swift`).
@@ -175,6 +248,8 @@ final class BrowserBridge: ObservableObject {
     var icons: () -> SiteIconStore = { SiteIconStore.shared }
     private var server: BrowserBridgeServer?
     private var chromeLinks: Set<BridgePeer> = []
+    /// The browser app of each Chrome connection.
+    private var chromeApps: [BridgePeer: String] = [:]
     /// The connection the latest scan came from, per browser: its code is expected in that Chrome profile.
     private var scanLinks: [BridgeBrowser: Int] = [:]
     /// Sends a frame to one Chrome connection, or to all when the link is nil.
@@ -226,15 +301,21 @@ final class BrowserBridge: ObservableObject {
     var agentPokeWait: TimeInterval = 1.5
     #endif
 
-    init(session: VaultSession) {
+    init(session: VaultSession, defaults: UserDefaults = .standard) {
         self.session = session
+        self.defaults = defaults
+        approvals = BrowserApprovals.decode(defaults.data(forKey: Self.approvalsKey))
         pushToChrome = { [weak self] data, link in self?.server?.push(data, to: .chrome, link: link) }
     }
 
     func start() {
         let server = BrowserBridgeServer(
             handler: { [weak self] frame, peer in self?.answer(frame, from: peer.browser, link: peer.link) },
-            changed: { [weak self] peers in self?.connectionsChanged(peers) }
+            changed: { [weak self] peers, apps in self?.connectionsChanged(peers, apps: apps) },
+            approve: { [weak self] identity, answer in
+                guard let self else { return answer(false) }
+                self.approve(identity, answer: answer)
+            }
         )
         do {
             try server.start()
@@ -243,7 +324,25 @@ final class BrowserBridge: ObservableObject {
             NSLog("PasswordPie: browser bridge unavailable (%@)", String(describing: error))
         }
         #if PP_DIRECT
-        ChromeHostManifest.install()
+        // Asks Launch Services and reads each browser's Info.plist: not on the main thread.
+        DispatchQueue.global(qos: .utility).async { ChromeHostManifest.install() }
+        // A browser opened later, perhaps installed after PasswordPie started, gets its manifest then. Its profiles folder
+        // may only appear a moment after it starts, so look again shortly after.
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)
+            .compactMap { $0.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication }
+            .filter { $0.bundleURL.map(ChromiumBrowsers.isChromium(bundleURL:)) == true }
+            .sink { app in
+                let pid = app.processIdentifier
+                let bundleURL = app.bundleURL
+                for delay in [0.0, 3.0] {
+                    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay) {
+                        let home = FileManager.default.homeDirectoryForCurrentUser
+                        let folders = ChromiumBrowsers.folders(home: home, installed: [], running: [(pid, bundleURL)])
+                        ChromeHostManifest.install(folders: folders)
+                    }
+                }
+            }
+            .store(in: &cancellables)
         #endif
         refreshSafariState()
         session.$locked
@@ -260,27 +359,31 @@ final class BrowserBridge: ObservableObject {
 
     // MARK: State
 
-    /// The connection that stands for Chrome's window. `inFront` is whether Chrome was the app in front: then only a
-    /// profile that says it has the focus (or an extension that says nothing) counts. When PasswordPie's own window was
-    /// in front, no profile has the focus, and the one used last stands for Chrome, as any connection did before.
-    private func chromeLink(inFront: Bool) -> FrontLink? {
-        inFront ? state.front(.chrome) : state.recent(.chrome)
+    /// The connection that stands for the window of the browser `app` (a bundle ID; nil for any browser built on
+    /// Chromium). `inFront` is whether that browser was the app in front: then only a profile that says it has the focus
+    /// (or an extension that says nothing) counts. When PasswordPie's own window was in front, no profile has the focus,
+    /// and the one used last stands for the browser, as any connection did before.
+    private func chromeLink(app: String?, inFront: Bool) -> FrontLink? {
+        inFront ? state.front(.chrome, app: app) : state.recent(.chrome, app: app)
     }
 
-    /// The extension can fill `browser`'s window: a connected extension speaks for Chrome's profile (see `chromeLink`);
-    /// Safari's extension is on and has reported a tab.
-    func canFill(in browser: BridgeBrowser, inFront: Bool = true) -> Bool {
+    /// The extension can fill `browser`'s window: a connected extension speaks for the profile of the browser app `app`
+    /// (see `chromeLink`); Safari's extension is on and has reported a tab.
+    func canFill(in browser: BridgeBrowser, app: String? = nil, inFront: Bool = true) -> Bool {
         switch browser {
-        case .chrome: Self.chromeSupported && chromeLink(inFront: inFront) != nil
+        case .chrome: Self.chromeSupported && chromeLink(app: app, inFront: inFront) != nil
         case .safari: safariEnabled && state.heardFrom(.safari, now: now())
         }
     }
 
     /// The page `browser` is on: what its extension reported, checked against what Accessibility read when the panel opened.
-    /// `inFront` is whether the browser really is the app in front for this panel or fill (see `chromeLink`).
-    func pageURL(for browser: BridgeBrowser, inFront: Bool = true) -> String? {
+    /// `app` is the browser app among those built on Chromium; `inFront` whether it really is the app in front for this
+    /// panel or fill (see `chromeLink`).
+    func pageURL(for browser: BridgeBrowser, app: String? = nil, inFront: Bool = true) -> String? {
         let usedLast = browser == .chrome && !inFront
-        let reported = canFill(in: browser, inFront: inFront) ? state.currentURL(for: browser, now: now(), usedLast: usedLast) : nil
+        let reported = canFill(in: browser, app: app, inFront: inFront)
+            ? state.currentURL(for: browser, app: browser == .chrome ? app : nil, now: now(), usedLast: usedLast)
+            : nil
         return resolvedPageURL(extensionURL: reported, windowURL: readURLs[browser])
     }
 
@@ -291,22 +394,36 @@ final class BrowserBridge: ObservableObject {
     func banner(frontBundleID: String?, inFront: Bool = true) -> ExtensionBanner? {
         extensionBanner(
             frontBundleID: frontBundleID,
-            chromeInFront: chromeLink(inFront: inFront) != nil,
+            chromeInFront: chromeLink(app: frontBundleID, inFront: inFront) != nil,
             safariEnabled: safariEnabled,
-            chromeSupported: Self.chromeSupported
+            chromeSupported: Self.chromeSupported,
+            denied: frontBundleID.map(approvals.denied(bundleID:)) ?? false
         )
     }
 
-    /// The server's open connections changed. Each Chrome connection is one profile's extension.
-    func connectionsChanged(_ peers: Set<BridgePeer>) {
+    /// The server's open connections changed. Each Chrome connection is one profile's extension, in the browser `apps`
+    /// names (Google Chrome when it names none).
+    func connectionsChanged(_ peers: Set<BridgePeer>, apps: [BridgePeer: ChromiumBrowserIdentity] = [:]) {
         let chrome = peers.filter { $0.browser == .chrome }
         guard chrome != chromeLinks else { return }
         let page = state.currentURL(for: .chrome, now: now())
         let added = chrome.subtracting(chromeLinks)
-        for peer in chromeLinks.subtracting(chrome) { state.closed(peer) }
-        for peer in added { state.opened(peer) }
+        for peer in chromeLinks.subtracting(chrome) {
+            state.closed(peer)
+            chromeApps[peer] = nil
+        }
+        for peer in added {
+            let app = apps[peer]?.bundleID ?? Self.chromeBundleID
+            chromeApps[peer] = app
+            state.opened(peer, app: app)
+            if let identity = apps[peer], chromiumBrowsers[identity.bundleID] != identity { chromiumBrowsers[identity.bundleID] = identity }
+        }
         chromeLinks = chrome
-        if chromeProfiles != chrome.count { chromeProfiles = chrome.count }
+        var counts: [String: Int] = [:]
+        for peer in chrome { counts[chromeApps[peer] ?? Self.chromeBundleID, default: 0] += 1 }
+        if chromiumProfiles != counts { chromiumProfiles = counts }
+        let googleChrome = counts[Self.chromeBundleID] ?? 0
+        if chromeProfiles != googleChrome { chromeProfiles = googleChrome }
         frontChanged(pageBefore: page)
         // Ask for the tab now, so the site list does not wait for the next tab change.
         for peer in added.sorted(by: { $0.link < $1.link }) { poke(.chrome, link: peer.link) }
@@ -426,6 +543,38 @@ final class BrowserBridge: ObservableObject {
         poke(browser, link: link)
     }
 
+    // MARK: Other Chromium browsers
+
+    /// Whether the browser may connect: Google's always; another as the person answered, or after asking them once.
+    /// Connections of the same browser that arrive while the question is open wait for the same answer.
+    func approve(_ identity: ChromiumBrowserIdentity, answer: @escaping @MainActor (Bool) -> Void) {
+        switch approvals.approval(bundleID: identity.bundleID, teamID: identity.teamID) {
+        case .allowed?: answer(true)
+        case .denied?: answer(false)
+        case nil:
+            let key = identity.bundleID + "|" + identity.teamID
+            if waitingApprovals[key] != nil {
+                waitingApprovals[key]?.append(answer)
+                return
+            }
+            waitingApprovals[key] = [answer]
+            askToAllow(identity) { [weak self] allowed in
+                self?.setApproval(allowed ? .allowed : .denied, bundleID: identity.bundleID, teamID: identity.teamID, name: identity.name)
+            }
+        }
+    }
+
+    /// Keeps the person's answer for a browser, from the question or from Preferences. A browser no longer allowed is
+    /// disconnected at once.
+    func setApproval(_ approval: BrowserApproval, bundleID: String, teamID: String, name: String) {
+        approvals.set(approval, bundleID: bundleID, teamID: teamID, name: name, now: now())
+        defaults.set(approvals.encoded(), forKey: Self.approvalsKey)
+        if approval == .denied { server?.disconnect(app: bundleID) }
+        let key = bundleID + "|" + teamID
+        let waiting = waitingApprovals.removeValue(forKey: key) ?? []
+        for answer in waiting { answer(approval == .allowed) }
+    }
+
     /// Asks the extension to report its tab now. Carries nothing. For Chrome, `link` is the one connection to ask, or
     /// nil for all of them.
     func poke(_ browser: BridgeBrowser, link: Int? = nil) {
@@ -464,7 +613,7 @@ final class BrowserBridge: ObservableObject {
         switch browser {
         case .chrome:
             // Only the profile in front is asked. One that says nothing about focus cannot be told apart: ask them all.
-            if let link = chromeLink(inFront: front?.inFront ?? false) { poke(.chrome, link: link.certain ? link.peer.link : nil) }
+            if let link = chromeLink(app: front?.bundleID, inFront: front?.inFront ?? false) { poke(.chrome, link: link.certain ? link.peer.link : nil) }
         case .safari: if safariEnabled { poke(.safari) }
         }
         guard let pid else { return }
@@ -489,12 +638,13 @@ final class BrowserBridge: ObservableObject {
         frontChanged(pageBefore: page)
     }
 
-    /// Opens where the extension is added or turned on. `front` is the app the panel was over: when that is Chrome, the
-    /// store page opens in it, and Chrome puts it in the profile whose window was used last, the one in front.
+    /// Opens where the extension is added or turned on. `front` is the app the panel was over: when that is Chrome or
+    /// another browser built on Chromium, the store page opens in it, and it puts it in the profile whose window was used
+    /// last, the one in front.
     func install(_ banner: ExtensionBanner, in front: FrontApp? = nil) {
         switch banner {
         case .addChrome:
-            let chrome = front?.bundleID == Self.chromeBundleID ? front?.bundleURL : nil
+            let chrome = Self.browser(forBundleID: front?.bundleID) == .chrome ? front?.bundleURL : nil
             openInBrowser(Self.chromeInstallURL, chrome ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.chromeBundleID))
         case .enableSafari:
             SFSafariApplication.showPreferencesForExtension(withIdentifier: BridgeConstants.safariExtensionIdentifier) { _ in }
@@ -514,23 +664,28 @@ final class BrowserBridge: ObservableObject {
         guard mode != .open else { return false }
         var browser = Self.browser(forBundleID: front?.bundleID)
         var browserApp = front?.bundleURL
+        var browserID = front?.bundleID
         // From another app, Open and Fill goes to the default browser.
         if browser == nil, mode != .fill, let url = webURL(website ?? entry.url),
            let app = NSWorkspace.shared.urlForApplication(toOpen: url),
-           let found = Self.browser(forBundleID: Bundle(url: app)?.bundleIdentifier) {
+           let id = Bundle(url: app)?.bundleIdentifier,
+           let found = Self.browser(forBundleID: id) {
             browser = found
             browserApp = app
+            browserID = id
         }
         guard let browser, let browserApp else { return false }
         // The panel was over this browser, and it really was the app in front then.
         let overBrowser = front?.bundleURL == browserApp
         let inFront = overBrowser && front?.inFront == true
+        // Among the browsers built on Chromium, only this one's connections count.
+        let app = browser == .chrome ? browserID : nil
         // The connection the fill is for: in Chrome, the profile in front. Never a tab of another profile.
         let link: Int?
         switch browser {
         case .chrome:
             guard Self.chromeSupported else { return false }
-            switch chromeFillRoute(chromeInFront: inFront, front: state.front(.chrome), connected: chromeConnected) {
+            switch chromeFillRoute(chromeInFront: inFront, front: state.front(.chrome, app: app), connected: state.linkCount(.chrome, app: app) > 0) {
             case .keystrokes: return false
             case .link(let id): link = id
             case .anyProfile: link = nil
@@ -539,18 +694,18 @@ final class BrowserBridge: ObservableObject {
             guard canFill(in: .safari) else { return false }
             link = nil
         }
-        let page = overBrowser ? pageURL(for: browser, inFront: inFront) : nil
+        let page = overBrowser ? pageURL(for: browser, app: app, inFront: inFront) : nil
         switch browserFillPlan(entry: entry, mode: mode, preferredWebsite: website, pageURL: page) {
         case .keystrokes:
             return false
         case .thisTab(let site):
-            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link) else { return false }
+            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link, app: app) else { return false }
             state.pending.set(pending)
             hidePanel(true)
             poke(browser, link: link)
             return true
         case .newTab(let site, let url):
-            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link) else { return false }
+            guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link, app: app) else { return false }
             state.pending.set(pending)
             hidePanel(false)
             openInBrowser(url, browserApp)
@@ -573,20 +728,22 @@ final class BrowserBridge: ObservableObject {
               entryFillSites(entry).contains(where: { BrowserSite.allowsFill(entryWebsite: $0, pageURL: address) }) else { return false }
         var browser = Self.browser(forBundleID: front?.bundleID)
         var browserApp = front?.bundleURL
+        var browserID = front?.bundleID
         if browser == nil, let app = defaultBrowser(url) {
-            browser = Self.browser(forBundleID: Bundle(url: app)?.bundleIdentifier)
+            browserID = Bundle(url: app)?.bundleIdentifier
+            browser = Self.browser(forBundleID: browserID)
             browserApp = app
         }
         // Safari's extension does not fill a change form (docs/UX.md, "When it does not apply").
         guard browser == .chrome, let browserApp else { return false }
         let inFront = front?.bundleURL == browserApp && front?.inFront == true
         let link: Int?
-        switch chromeFillRoute(chromeInFront: inFront, front: state.front(.chrome), connected: chromeConnected) {
+        switch chromeFillRoute(chromeInFront: inFront, front: state.front(.chrome, app: browserID), connected: state.linkCount(.chrome, app: browserID) > 0) {
         case .keystrokes: return false
         case .link(let id): link = id
         case .anyProfile: link = nil
         }
-        guard let pending = PendingFill(entryID: entry.id, browser: .chrome, website: address, created: now(), link: link, newPassword: newPassword) else { return false }
+        guard let pending = PendingFill(entryID: entry.id, browser: .chrome, website: address, created: now(), link: link, newPassword: newPassword, app: browserID) else { return false }
         state.pending.set(pending)
         hidePanel(false)
         openInBrowser(url, browserApp)
@@ -595,9 +752,10 @@ final class BrowserBridge: ObservableObject {
 }
 
 #if PP_DIRECT
-/// Chrome finds native messaging hosts through a manifest in its profile folder. The app writes one at launch for each
-/// name in `BridgeConstants.nativeHostNames`, all pointing at the host inside the running bundle, and only for the
-/// extension IDs that may use it.
+/// Chrome finds native messaging hosts through a manifest in its profile folder. The app writes one for each name in
+/// `BridgeConstants.nativeHostNames`, all pointing at the host inside the running bundle, and only for the extension IDs
+/// that may use it. It does so at launch for every browser built on Chromium that has a profiles folder
+/// (`ChromiumBrowsers.folders`), and again when such a browser starts.
 enum ChromeHostManifest {
     static func fileName(_ name: String) -> String { name + ".json" }
 
@@ -612,13 +770,22 @@ enum ChromeHostManifest {
         return (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])) ?? Data()
     }
 
-    /// Writes the manifest when Chrome is installed for this user and the app runs from its bundle (not a bare debug binary).
-    static func install(bundle: Bundle = .main, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+    /// Writes the manifests into each browser's profiles folder that exists, when the app runs from its bundle (not a bare
+    /// debug binary). `folders` nil means every browser built on Chromium on this Mac.
+    static func install(bundle: Bundle = .main, home: URL = FileManager.default.homeDirectoryForCurrentUser, folders: [URL]? = nil) {
         guard !BridgeConstants.chromeExtensionIDs.isEmpty, bundle.bundleURL.pathExtension == "app",
               let host = bundle.url(forAuxiliaryExecutable: "PasswordPieBrowserHost") else { return }
-        let chrome = home.appendingPathComponent("Library/Application Support/Google/Chrome")
-        guard FileManager.default.fileExists(atPath: chrome.path) else { return }
-        let folder = chrome.appendingPathComponent("NativeMessagingHosts")
+        let browsers = folders ?? ChromiumBrowsers.folders(
+            home: home,
+            installed: ChromiumBrowsers.installedBrowsers(),
+            running: ChromiumBrowsers.runningApps()
+        )
+        for browser in browsers where FileManager.default.fileExists(atPath: browser.path) {
+            write(host: host, into: browser.appendingPathComponent("NativeMessagingHosts"))
+        }
+    }
+
+    private static func write(host: URL, into folder: URL) {
         for name in BridgeConstants.nativeHostNames {
             let file = folder.appendingPathComponent(fileName(name))
             let data = manifest(name: name, hostPath: host.path)

@@ -16,7 +16,7 @@ Firefox.
 | Extension (WXT + TypeScript: a background and a content script, no extension pages and no UI framework) | `extension/` | Chrome build and Safari build from one source, the same in both channels |
 | Safari Web Extension app extension | `PasswordPie.app/Contents/PlugIns/PasswordPieSafari.appex`, target `PasswordPieSafari` | both |
 | Chrome native messaging host | `PasswordPie.app/Contents/MacOS/PasswordPieBrowserHost`, target `PasswordPieBrowserHost` | direct only |
-| Host manifests `com.passwordpie.json` and a legacy one (see "Host manifests") | written by the app to `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/` | direct only |
+| Host manifests `com.passwordpie.json` and a legacy one (see "Host manifests") | written by the app into each Chromium browser's profiles folder, `<folder>/NativeMessagingHosts/` (`~/Library/Application Support/Google/Chrome` for Chrome; see "Other Chromium browsers") | direct only |
 | Bridge server (socket, peer check, pending fill, which Chrome profile is in front) | main app, `BrowserBridge*.swift` | both |
 | Transport (framing, socket path, peer check) | target `PasswordPieBridge` | shared by the app, the host and the appex |
 | Site matching (eTLD+1), messages, pending fill rules, the connection in front (`BridgeLinks`) | `PasswordPieCore` (`PublicSuffix.swift`, `BrowserFill.swift`) | both, tested with `swift test` |
@@ -520,11 +520,11 @@ several. This extension with an older app sends one extra field the app ignores 
   (`pnpm zip:chrome-store`) leaves the key out, because the store rejects a manifest with one.
 - That key is public, as every store item's is, so anyone can load an unpacked extension with this ID. It takes Developer
   mode and "Load unpacked" in the user's own Chrome profile: someone who can do that can already install any extension
-  there. The host still requires Google Chrome as its parent, and the app still fills only the site the user picked.
-- The host starts only for Chrome. Chrome passes the caller's origin as the first argument, but whoever starts the host
-  can fake that, so the host also requires its parent process to be Google Chrome, checked by code signature (team
-  `EQHXZ8M8AV`, `com.google.Chrome`). Chrome Beta, Dev and Canary, like other Chromium browsers, are not in v1: they keep
-  typed keystrokes.
+  there. The host still requires a signed Chromium browser the person allowed as its parent, and the app still fills only
+  the site the user picked.
+- Chrome passes the caller's origin as the first argument, but whoever starts the host can fake that, so the host also
+  requires its parent process to be a browser built on Chromium with a valid signature from a developer team, and the app
+  lets the connection in only when the person allowed that browser (Google's always are). See "Other Chromium browsers".
 - The extension keeps one `chrome.runtime.connectNative` port open, in each profile it is installed in. That keeps its
   service worker alive and the host running, and it is how pokes arrive. "Connected" means the app has an authenticated
   host connection right now; Preferences counts them ("Connected in 2 profiles"). The panel's line asks more: a
@@ -534,7 +534,8 @@ several. This extension with an older app sends one extra field the app ignores 
   still running the old code fails the app's signature check ("the code on disk does not match what is running") on
   every connection, so the extension would stay disconnected and the panel would keep offering "Add Chrome Extension…".
   While the app is not running, a new host keeps trying to connect every second.
-- The app writes the host manifest at launch (direct channel only), pointing at the host inside the running app bundle.
+- The app writes the host manifests at launch (direct channel only), pointing at the host inside the running app bundle,
+  into every Chromium browser's profiles folder that exists, and again when a Chromium browser starts.
 - **App Store channel: no Chrome in v1.** A sandboxed app cannot write into Chrome's `NativeMessagingHosts` folder, and a
   host launched by Chrome from inside a store app would have to be sandboxed without a way to receive Chrome's arguments
   reliably. The host target, the manifest writer and the "Add Chrome Extension…" row are `#if PP_DIRECT` / not assembled
@@ -570,12 +571,68 @@ before `chromeExtensionID` was the store ID do not trust it. Publishing waits fo
   cover it.
 - Works in both channels. The store build needs provisioning profiles for the appex and the App Group (post-merge list).
 
+## Other Chromium browsers
+
+Edge, Brave, Arc, Vivaldi, ego lite, ChatGPT Atlas and the rest install the Chrome Web Store item under the same ID and
+start the same host, so they need nothing of their own. Nothing in the app or the host lists them: each step checks what
+the browser is. What the person sees is in "Other browsers built on Chrome" in [UX.md](UX.md).
+
+**Is it a Chromium browser.** Its Info.plist says `NSPrincipalClass = BrowserCrApplication`, the application class of
+every Chromium build for the Mac (`ChromiumBrowserCheck.isChromium`). Electron apps, Chromium inside too, use their own
+class (`AtomApplication`, `ElectronApplication`) and are not browsers. In the app, `BrowserBridge.browser(forBundleID:)`
+answers `.chrome` for any such app (`ChromiumBrowsers.isChromium`, cached per bundle ID), so the panel, the
+Accessibility read of the address field, the "Add Chrome Extension…" line and Fill treat it as Chrome.
+
+**Where its manifest goes.** A Chromium browser reads native messaging host manifests only from `NativeMessagingHosts`
+in its own profiles folder (`~/Library/Application Support/<folder>`), never from Chrome's. The folder is found from the
+browser (`ChromiumBrowsers.folder`, `runningFolder`):
+
+1. `CrProductDirName` in its Info.plist, which Chromium itself reads (ego lite: `Citro Labs/ego lite`; ChatGPT Atlas:
+   `com.openai.codex`). A name that is absolute or climbs out with `..` is ignored.
+2. Else a short table for the browsers that build the name in (Chrome and its channels, Chromium, Edge, Brave, Vivaldi,
+   Arc, Opera).
+3. Else, while it runs: Chromium keeps a `SingletonLock` symbolic link in that folder pointing at `<host name>-<pid>`. The
+   folder under Application Support (three levels at most) whose lock names the browser's pid is its folder.
+
+At launch the app writes the manifests for Chrome and for every app Launch Services lists as opening `https` that is a
+Chromium browser, and for those running; only into folders that exist, so a browser never opened gets nothing. When a
+Chromium browser starts, it writes them again, at once and three seconds later (the lock appears a moment after start).
+A browser opened for the first time after the app started finds the manifest at its extension's next `connectNative`,
+within the minute of the reconnect alarm.
+
+**Who gets in.** The host is started by the browser's main process, so its parent is the browser.
+
+- The host (`PasswordPieBrowserHost`) refuses to run unless the extension origin is ours and its parent is a Chromium
+  browser whose signature is valid, chains to Apple (`anchor apple generic`, bound to the running code's cdhash) and has
+  a team (`PeerIdentity.verifiedSignature`, `ChromiumBrowserCheck.identity`). Ad-hoc and unsigned builds fail.
+- The app checks the same again, on its own: after the host's own signature, it takes the host's pid from the socket
+  (`LOCAL_PEERPID`), its parent from the kernel (`proc_pidinfo`; a parent that exited leaves launchd, which fails), and
+  that parent's signature. Then it asks `BrowserBridge.approve`: Google's team (`EQHXZ8M8AV`) is allowed without a
+  question, so Chrome, Beta, Dev and Canary behave as before; any other browser is allowed or refused as the person
+  answered, or the person is asked. The connection's thread waits for the answer with the host's connection open, so
+  Allow lets it in at once; other connections of the same browser meanwhile wait for the same answer.
+- The answer is kept for good in the preferences (`chromiumBrowserApprovals`, `BrowserApprovals`), keyed by bundle ID
+  and team: the same bundle ID signed by another team is another browser and is asked about again. Preferences >
+  Browsers changes it; Don't Allow there disconnects that browser's connections at once (`BrowserBridgeServer.disconnect`).
+  A refused browser's extension keeps reconnecting about once a minute and is closed each time, without a question.
+
+What this protects: anyone who can start the host could otherwise claim to be a browser and receive the account the
+person picks. Now that takes a Developer ID (or App Store) signature, an app that says it is Chromium, and the person's
+Allow, in a question that names the browser and the organization on its certificate. Before, only Google's signature
+passed; a signed impostor the person allows is the accepted risk.
+
+**Several browsers at once.** Each Chrome connection carries the bundle ID of its browser (`BridgeLinks.opened(_:app:)`).
+"The profile in front" is counted per browser app (`front(_:app:)`, `recent(_:app:)`, and what the panel holds while it
+is open), the page and the fill go only to a connection of the browser the panel opened over, and a fill for no
+connection in particular (`PendingFill.app`) is taken only by a connection of that browser. Preferences counts Chrome's
+profiles on Chrome's line and lists the other browsers below it (`chromiumBrowserRows`).
+
 ## Current URL from the window
 
-Each time the panel opens over Chrome or Safari, it also reads the URL from the browser's window with the Accessibility API
-(already granted for Fill): the `AXURL` of the focused window's `AXWebArea`, or for Chrome the value of the toolbar's
-address field. The walk is bounded (0.25 s messaging timeout, 300 nodes, 0.3 s deadline) and runs off the main thread. It
-needs Accessibility to be granted already and never asks for it.
+Each time the panel opens over Chrome, another Chromium browser or Safari, it also reads the URL from the browser's
+window with the Accessibility API (already granted for Fill): the `AXURL` of the focused window's `AXWebArea`, or for a
+Chromium browser the value of the toolbar's address field. The walk is bounded (0.25 s messaging timeout, 300 nodes,
+0.3 s deadline) and runs off the main thread. It needs Accessibility to be granted already and never asks for it.
 
 - Without a connected extension it is the only source, for the "this site" list. Fill then types keystrokes as before.
 - With the extension, it checks the extension's last report. Safari asks for access per site, and a tab the extension may
@@ -587,7 +644,7 @@ needs Accessibility to be granted already and never asks for it.
 | | Direct | App Store |
 |---|---|---|
 | Safari extension | yes | yes (needs profiles for the appex and App Group) |
-| Chrome extension (Chrome Web Store), native host | yes | not in v1 |
+| Chrome extension (Chrome Web Store), native host, in Chrome and other Chromium browsers | yes | not in v1 |
 | "Add Chrome Extension…" row, and Chrome's line in Preferences > Browsers | yes | not compiled / left out |
 | "Enable Safari Extension…" row, and Safari's line in Preferences > Browsers | yes | yes |
 | AX fallback for the current URL | yes, if Accessibility is granted | same code; untested in the sandbox (see CHANNELS.md) |
