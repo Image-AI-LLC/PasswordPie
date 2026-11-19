@@ -2072,7 +2072,7 @@ read.
 | An item changed | A different item changed, or a new one added | Both changes, nothing asked |
 | An item changed | The same item changed | The later change is the item. The earlier one is in the item's history, and the item is listed (below) |
 | An item moved to the Recycle Bin | Nothing | In the Recycle Bin on both |
-| An item moved to the Recycle Bin | The same item changed after that | It stays, with the change. Changed before that: it is in the Recycle Bin, with the change in its history, and listed |
+| An item moved to the Recycle Bin | The same item changed after that | It stays, with the change. Changed before that: it is in the Recycle Bin, with the change in its history. It is not in the list of items changed on both Macs while it is in the Recycle Bin (it is listed there only if another KeePass app takes it out again) |
 | An item deleted for good in another KeePass app | Nothing, or a change made before the deletion | Gone on both |
 | An item moved to another folder, a folder renamed or added | Nothing | Moved, renamed, added |
 | An attachment added or replaced | Nothing | The item has it |

@@ -11,6 +11,12 @@ public enum KDBX {
         try load(data: data, password: password, keyFile: keyFile, repairing: false)
     }
 
+    /// The key derivation a file's header asks for, read without deriving anything. Nil when the header is not a readable
+    /// KDBX 4 header.
+    public static func kdf(ofHeader data: Data) -> KDFKind? {
+        try? parseOuter(data).kdf
+    }
+
     /// Opens a file the old writer damaged by repairing its XML in memory. `Vault.recovery` says what changed.
     public static func loadRecovering(data: Data, password: String, keyFile: Data?) throws -> Vault {
         try load(data: data, password: password, keyFile: keyFile, repairing: true)
@@ -474,10 +480,12 @@ private func parseKDF(_ blob: Data) throws -> ParsedKDF {
         return ParsedKDF(kind: kind, salt: salt, parameters: KDFParameters(kind: kind))
     }
     let memoryBytes = integer(values["M"])
-    let memoryKiB = UInt32(memoryBytes / 1024)
-    let iterations = UInt32(integer(values["I"]))
-    let parallelism = UInt32(integer(values["P"]))
-    let version = UInt32(integer(values["V"]))
+    guard let memoryKiB = UInt32(exactly: memoryBytes / 1024),
+          let iterations = UInt32(exactly: integer(values["I"])),
+          let parallelism = UInt32(exactly: integer(values["P"])),
+          let version = UInt32(exactly: integer(values["V"])) else {
+        throw KDBXError.crypto("Argon2 parameters are out of range.")
+    }
     guard memoryKiB > 0, iterations > 0, parallelism > 0, salt.count >= 8 else {
         throw KDBXError.crypto("Argon2 parameters are incomplete.")
     }

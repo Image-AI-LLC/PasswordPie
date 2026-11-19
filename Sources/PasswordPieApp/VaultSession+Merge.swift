@@ -84,6 +84,8 @@ struct MergeState {
     /// Databases whose folder is being looked through for copies.
     var scanning: Set<String> = []
     var scanAgain: Set<String> = []
+    /// Databases whose file changed again while it was being read: read once more when that read ends.
+    var followAgain: Set<String> = []
 }
 
 /// One item of the list of items changed on both Macs.
@@ -117,6 +119,15 @@ protocol MergePrompting: AnyObject {
     func show(_ text: String, title: String)
 }
 
+/// A file a sync folder holds under a copy's name is read only when it is a regular file of a size a database can be: a
+/// named pipe, a device or a huge file must not stall or exhaust the app, which reads every such name unasked.
+private func readableCopyData(at url: URL) -> Data? {
+    let limit = 512 * 1024 * 1024
+    guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+          values.isRegularFile == true, let size = values.fileSize, size <= limit else { return nil }
+    return try? Data(contentsOf: url)
+}
+
 extension VaultSession {
     static let mergeTitle = "Merge from File"
 
@@ -138,7 +149,10 @@ extension VaultSession {
     }
 
     private func follow(_ path: String) {
-        guard !mergeState.following.contains(path) else { return }
+        guard !mergeState.following.contains(path) else {
+            mergeState.followAgain.insert(path)
+            return
+        }
         let signature = FileSignature(path: path)
         // It could not be read as it is now: nothing new to try.
         if let trouble = mergeState.unreadable[path], trouble.signature == signature { return }
@@ -152,6 +166,7 @@ extension VaultSession {
                 self.mergeState.unreadable[path] = nil
             }
             self.refreshMergeNotice()
+            if self.mergeState.followAgain.remove(path) != nil { self.follow(path) }
         })
     }
 
@@ -395,7 +410,7 @@ extension VaultSession {
         let handled = handledCopies(of: path)
         let known = (mergeState.merged[path] ?? []) + (mergeState.offered[path] ?? [])
         mergeState.scanning.insert(path)
-        let (url, password, keyFile, ours, generation) = (file.url, file.password, file.keyFile, file.vault.rootGroupID, catalogGeneration)
+        let (url, password, keyFile, ours, ourKDF, generation) = (file.url, file.password, file.keyFile, file.vault.rootGroupID, file.vault.kdf.kind, catalogGeneration)
         // Listing the folder can be slow, and opening a copy derives its key, which can take seconds: off the main
         // thread, as unlocking is.
         let load: @Sendable () -> [(ConflictCopy, Vault?)] = {
@@ -405,7 +420,11 @@ extension VaultSession {
             return found.map { copy in
                 // A name a person could have given is never opened unasked.
                 guard copy.certain else { return (copy, nil) }
-                let vault = (try? Data(contentsOf: copy.url)).flatMap { try? KDBX.load(data: $0, password: password, keyFile: keyFile) }
+                // Its header is untrusted until a key opens it: a key derivation other than this database's own, which
+                // could ask for any amount of time or memory, is not run unasked.
+                let vault = readableCopyData(at: copy.url).flatMap { data in
+                    KDBX.kdf(ofHeader: data) == ourKDF ? try? KDBX.load(data: data, password: password, keyFile: keyFile) : nil
+                }
                 // The other Mac's version of this database opens with its keys and has its root group.
                 return (copy, vault.flatMap { $0.rootGroupID != nil && $0.rootGroupID == ours ? $0 : nil })
             }
@@ -426,7 +445,7 @@ extension VaultSession {
                     if copy.isFileVersion {
                         ConflictCopies.markResolved(copy, of: URL(fileURLWithPath: path))
                     } else {
-                        self.mergeState.merged[path, default: []].append(copy)
+                        if self.mergeState.merged[path]?.contains(copy) != true { self.mergeState.merged[path, default: []].append(copy) }
                     }
                 }, done: { [weak self] _ in self?.refreshMergeNotice() })
             }
