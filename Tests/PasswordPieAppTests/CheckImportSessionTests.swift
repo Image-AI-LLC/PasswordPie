@@ -193,7 +193,7 @@ final class CheckImportSessionTests: XCTestCase {
         XCTAssertTrue(model.isCheck)
         XCTAssertEqual(model.groups.count, 4, "nine secrets of four items")
         XCTAssertEqual(model.groupLine(model.groups[0]), "2 secrets · 2 compared with the files")
-        XCTAssertEqual(model.rowLine(model.prompt.rows[0]), "field GOOGLE_API_KEY · compared with GOOGLE_API_KEY in the folder")
+        XCTAssertEqual(model.rowLine(model.prompt.rows[0]), "field GOOGLE_API_KEY · compared with the file")
         let host = NSHostingView(rootView: AgentApprovalView(model: model))
         XCTAssertNotNil(host.bitmapImageRepForCachingDisplay(in: NSRect(x: 0, y: 0, width: 520, height: 600)))
     }

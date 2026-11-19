@@ -234,7 +234,7 @@ final class AgentApprovalModel: ObservableObject {
         case .stdin: return "the command's standard input"
         case .shown: return "shown to the agent"
         case .fill: return prompt.submit ? "filled in, then the form is sent" : "filled in"
-        case .compare: return "compared with \(row.name ?? "the file") in the folder"
+        case .compare: return "compared with the file"
         }
     }
 
