@@ -38,6 +38,9 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - Preferences has an Agents pane, between Browsers and Import
 - Premium now covers agents' standing permissions as well as two-step codes. An approval each time, and everything else, stays free
 
+### Fixed
+- Files attached to an item in a 1Password export, or in a KeePass 1 or OPVault file opened as a database, were left out when the item was saved. They are now saved as the item's attachments
+
 ### Good to know
 - Agent access is in the downloaded app only. The App Store app has none of it
 - PasswordPie still opens no network connection. The `passwordpie` tool is inside the app (`PasswordPie.app/Contents/Helpers`), and Preferences → Agents links it into `~/.local/bin`

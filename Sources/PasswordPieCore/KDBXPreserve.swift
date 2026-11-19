@@ -87,6 +87,7 @@ final class KDBXPreserve: @unchecked Sendable {
                 try update(live, to: model, timeSample: fallbackTime, rootName: walked.rootName)
             } else {
                 let created = newEntry(model, timeSample: fallbackTime)
+                writeAttachments(pendingAttachments(model.attachments, in: created), to: created)
                 let parent = try targetGroup(for: model, fallbackName: walked.rootName)
                 parent.addChild(created)
             }
@@ -204,6 +205,90 @@ final class KDBXPreserve: @unchecked Sendable {
             }
         }
         return found
+    }
+
+    // MARK: Writing attachments
+
+    /// The attachments of a new database's entries, which the generated XML does not carry. No version is kept: the
+    /// entries are new.
+    func addAttachments(of entries: [VaultEntry]) {
+        let walked = walkDatabase()
+        var consumed = Set<ObjectIdentifier>()
+        for model in entries {
+            guard let live = walked.entries.first(where: { $0.id == model.id && !consumed.contains(ObjectIdentifier($0.element)) }) else { continue }
+            consumed.insert(ObjectIdentifier(live.element))
+            writeAttachments(pendingAttachments(model.attachments, in: live.element), to: live.element)
+        }
+    }
+
+    /// What the model hands over that `entry` does not hold yet under that name: an attachment that is new, or whose
+    /// bytes changed. The model carries attachments only on their way in (an import); what the file holds is read from
+    /// the file, so an entry with none in the model keeps all of its own.
+    private func pendingAttachments(_ attachments: [VaultAttachment], in entry: XMLElement) -> [VaultAttachment] {
+        guard !attachments.isEmpty else { return [] }
+        let held = Dictionary(readAttachments(entry, payloads: binaryPayloads).map { ($0.name, $0.data) }, uniquingKeysWith: { first, _ in first })
+        return Self.uniquelyNamed(attachments, held: held).filter { held[$0.name] != $0.data }
+    }
+
+    /// Adds each attachment to the entry, or points the one of that name at the new bytes. Bytes the file already holds
+    /// are stored once; new ones go after every binary there is, so no reference that exists changes its meaning.
+    private func writeAttachments(_ attachments: [VaultAttachment], to entry: XMLElement) {
+        for attachment in attachments {
+            let index = binaryIndex(holding: attachment.data)
+            let existing = direct(entry, "Binary").first { direct($0, "Key").first?.stringValue == attachment.name }
+            let binary = existing ?? {
+                let created = XMLElement(name: "Binary")
+                created.addChild(leaf("Key", attachment.name))
+                insert(created, into: entry, before: ["AutoType", "CustomData", "History"])
+                return created
+            }()
+            for value in direct(binary, "Value") { value.detach() }
+            let value = XMLElement(name: "Value")
+            if let ref = XMLNode.attribute(withName: "Ref", stringValue: String(index)) as? XMLNode {
+                value.addAttribute(ref)
+            }
+            binary.addChild(value)
+        }
+    }
+
+    private func binaryIndex(holding data: Data) -> Int {
+        let payloads = binaryPayloads
+        if let index = payloads.firstIndex(of: data) { return index }
+        // KeePassXC writes 0x01 on every binary: "protect in memory". The bytes are stored as they are.
+        pieces.append(.binary(flags: 0x01, data: data))
+        return payloads.count
+    }
+
+    /// Names as the file can hold them, each once per entry: KeePass apps keep one attachment per name and let a
+    /// second one replace the first without a word. A repeated name gets "name (2).ext", one the entry does not already
+    /// hold with other bytes; an empty one is "attachment".
+    static func uniquelyNamed(_ attachments: [VaultAttachment], held: [String: Data] = [:]) -> [VaultAttachment] {
+        // A name that was asked for keeps it: only a repeat moves to a free one.
+        var taken = Set<String>()
+        var result: [VaultAttachment] = []
+        let cleaned = attachments.map { attachment -> VaultAttachment in
+            let name = storedXMLText(attachment.name).trimmingCharacters(in: .whitespacesAndNewlines)
+            return VaultAttachment(name: name.isEmpty ? "attachment" : name, data: attachment.data, keepsHeld: attachment.keepsHeld)
+        }
+        let asked = Set(cleaned.map(\.name))
+        for attachment in cleaned {
+            var name = attachment.name
+            // A file that came with a folded-in account never takes the place of the entry's own file of that name.
+            let besideHeld = attachment.keepsHeld && held[name] != nil && held[name] != attachment.data
+            if taken.contains(name) || besideHeld {
+                let file = name as NSString
+                let ext = file.pathExtension.isEmpty ? "" : "." + file.pathExtension
+                let stem = ext.isEmpty ? name : file.deletingPathExtension
+                var number = 2
+                repeat {
+                    name = "\(stem) (\(number))\(ext)"
+                    number += 1
+                } while taken.contains(name) || asked.contains(name) || (held[name] != nil && held[name] != attachment.data)
+            }
+            taken.insert(name)
+            result.append(VaultAttachment(name: name, data: attachment.data))
+        }
+        return result
     }
 
     func encryptedXML(streamKey: Data) throws -> Data {
@@ -389,9 +474,11 @@ final class KDBXPreserve: @unchecked Sendable {
         let fieldsDiffer = live.fields != model.fields
         let tagsDiffer = live.tags != model.tags
         let moved = moved(live.location, toward: model)
-        guard fieldsDiffer || tagsDiffer || moved else { return }
+        // Only what the entry does not hold yet: handing over an attachment it already has is no edit.
+        let attachments = pendingAttachments(model.attachments, in: live.element)
+        guard fieldsDiffer || tagsDiffer || moved || !attachments.isEmpty else { return }
         // Bookkeeping about older passwords is not an edit of the account: no new version, and its dates stay.
-        if fieldsDiffer, !tagsDiffer, !moved, onlyPreviousPasswordsDiffer(live.fields, model.fields) {
+        if fieldsDiffer, !tagsDiffer, !moved, attachments.isEmpty, onlyPreviousPasswordsDiffer(live.fields, model.fields) {
             try applyFields(model.fields, to: live.element)
             return
         }
@@ -399,6 +486,7 @@ final class KDBXPreserve: @unchecked Sendable {
         if fieldsDiffer {
             try applyFields(model.fields, to: live.element)
         }
+        writeAttachments(attachments, to: live.element)
         if tagsDiffer {
             applyTags(model.tags, to: live.element)
         }
