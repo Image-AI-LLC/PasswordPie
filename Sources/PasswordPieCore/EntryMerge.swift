@@ -104,6 +104,12 @@ public enum EntryMerge {
                     #if PP_DIRECT
                     if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
                     #endif
+                    // Files an import brought with a copy go to the survivor with its fields. The copy in the Recycle
+                    // Bin keeps its own.
+                    if !other.attachments.isEmpty {
+                        entry.attachments.append(contentsOf: other.attachments)
+                        changed = true
+                    }
                 }
             }
             if changed {

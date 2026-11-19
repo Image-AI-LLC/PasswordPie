@@ -28,6 +28,9 @@ public struct VaultEntry: Equatable, Sendable, Identifiable {
     public var trashed: Bool
     public var tags: String
     public var fields: [VaultField]
+    /// Attachments on their way into the file: what an import read, to be added to this entry by the next save, or to
+    /// replace the attachment of the same name. A save empties this, and an entry read from a KDBX file has none here:
+    /// what the file holds is read from it by name (`Vault.attachment(named:of:)`), and is never removed by a save.
     public var attachments: [VaultAttachment]
 
     public init(

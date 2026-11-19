@@ -1618,7 +1618,8 @@ password in the export, such as a note, never erases a password you saved here.
 
 - **A locked database.** The pane says to unlock first, and takes no file until then.
 - **Passkeys, cards and identities in a browser export.** A browser's CSV has logins only. From a password manager,
-  every item comes in, with what is not a login kept as fields and notes.
+  every item comes in, with what is not a login kept as fields and notes, and the files attached to an item (1Password)
+  kept as its attachments, which KeePassXC and other KeePass apps show.
 - **A Bitwarden export encrypted to your account** (the ".json (Encrypted)" choice without a password) can only be
   read by Bitwarden. The page says to export again with a password. The same goes for a Proton Pass export encrypted
   with PGP.
