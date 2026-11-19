@@ -15,7 +15,8 @@ App Store builds do not contain direct-only code.
 | Network from the app | **none** of its own; the separate updater asks GitHub for a newer version once a week (see "Network" and "Updates" below) | **none**: no `URLSession`, no `network.client` entitlement |
 | Updates | `PasswordPieUpdater`, inside the app: weekly, from GitHub releases | the App Store; the updater is **not in the bundle** |
 | Extension toolbar button | Opens PasswordPie. No popup, no account, no request to the site. Right-click: Scan QR code on this page, and in Chrome Open passwordpie.com | The same Safari build as the direct channel's: no line that opens the site |
-| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
+| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` (`run`, `read`, `list`, `status`, `login`, `mcp`). An approval each time is free | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
+| Agents' standing permissions (Premium) | the app has Premium (`appHasPremium()`); nothing in a request says so | not there |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
 Check the store binary has none of it:
@@ -26,6 +27,17 @@ Check the store app has no agent access:
 
     strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e agent.sock -e com.passwordpie.cli -e agentAccessEnabled -e PasswordPie.AgentSharing -e PasswordPie.AgentGrants -e agentGrantLength -e mcp_servers -e login-result   # expect 0
     test ! -e build/mas/PasswordPie.app/Contents/Helpers && echo ok                                  # expect ok
+
+What stays in the store binary is view code both channels share and that does nothing there: the Agents pane's name in
+the list of panes (the pane is left out), and the lock screen's field for "… is waiting for 1 secret".
+
+Check the direct bundle carries the tool, signed as the app expects, and that no debug hook reached a release build
+(`PASSWORDPIE_AGENT_APPROVE` answers the approval window without Touch ID; `PASSWORDPIE_AGENT_SOCKET` skips the tool's
+check of the app):
+
+    codesign -dv build/direct/PasswordPie.app/Contents/Helpers/passwordpie 2>&1 | grep -e '^Identifier=com.passwordpie.cli$' -e 'flags=.*runtime' -e '^TeamIdentifier=2S468LUF8V$' | wc -l   # expect 3
+    strings -a build/direct/PasswordPie.app/Contents/MacOS/PasswordPie build/direct/PasswordPie.app/Contents/Helpers/passwordpie | grep -c -e PASSWORDPIE_AGENT_APPROVE -e PASSWORDPIE_AGENT_SOCKET   # expect 0
+    nm -u build/direct/PasswordPie.app/Contents/Helpers/passwordpie | grep -c -i -e URLSession -e CFNetwork   # expect 0
 
 Check no debug preview or mock site can reach a release store build, and that the direct binary does not link StoreKit:
 
@@ -69,12 +81,23 @@ Before the build:
    and the version About falls back to (`AboutCopy.versionLabel`). `AboutScreenTests` fails if they disagree.
 2. `swift test` and `cd extension && pnpm test`, in a terminal of the logged-in Mac session: over SSH the login
    keychain is out of reach and the keychain tests skip or fail.
-3. The checks at the top of this file (`make dist-direct`, `make mas-dev`, then the `strings` / `otool` lines).
+3. The checks at the top of this file (`make dist-direct`, `make mas-dev`, then the `strings` / `otool` / `codesign`
+   lines).
 4. The release build trusts the site's key and not the test key. `swift test` cannot show it (tests are debug builds):
    link a few lines that print `EntitlementToken.trustedKeys.count` (expect 1) and
    `EntitlementToken.verifyActivation` of a `Scripts/mint-activation-link.mjs` token (expect nil) against the release
    `PasswordPieCore.o`.
 5. The site signs with the private half of `EntitlementToken.publicKey`: see step 7 of "Before Premium can be sold".
+6. Agent access under the release signature. The tool has no version of its own (it reads the app's `Info.plist`), so
+   nothing more is raised. With the installed PasswordPie quit, start the `make dist-direct` bundle once with
+   `open -n -a build/direct/PasswordPie.app --args -agentAccessEnabled YES` and run
+   `build/direct/PasswordPie.app/Contents/Helpers/passwordpie status`: "running, locked", "Agent access: on" and the agent
+   it sees mean the app and the tool accepted each other's Developer ID signature. `status` asks for nothing, so the
+   lock screen stays as it is; quit the bundle and open the installed app again (it rewrites Chrome's host manifest).
+   The rest of the path needs Touch ID: [AGENTS.md](AGENTS.md), "Trying it".
+7. An agent login that sends the form needs extension 0.7.0 or later in the Chrome Web Store ("Releasing the Chrome
+   extension" in [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md)); an older one still fills, and the agent hears `filled`.
+   The text for the GitHub release is in [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 Then:
 
@@ -86,6 +109,14 @@ On a Mac that has no such profile yet, give the script the credentials once, as
 `NOTARY_ENV=<file with APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID>` or in the environment: it stores them as the profile
 and uses that from then on. `Scripts/release-direct.sh --check` only signs in and says whether it works. The keychain
 is locked to an SSH session, so run the script from a terminal of the logged-in desktop.
+
+The release does not take its credentials from PasswordPie yet: the keychain profile stands in. Moving it to an App
+Store Connect API key that `passwordpie run --file` hands out for the length of the run needs a key made in App Store
+Connect first. What works today is making the profile from an item instead of a file of credentials, with the three
+values as shared fields: `passwordpie run --env APPLE_ID=pp://… --env APPLE_PASSWORD=pp://… --env APPLE_TEAM_ID=pp://…
+-- Scripts/release-direct.sh --check` (not yet tried with the real Apple ID). PasswordPie will then report that
+`notarytool` was given the password as an argument: that is the script's one such moment, at `store-credentials`.
+Either way a release runs on the Mac where PasswordPie is unlocked: approvals happen at that Mac.
 
 It runs `make dist-direct`, notarizes and staples the app, then wraps it in `build/direct/PasswordPie-<version>.dmg`
 (with an Applications shortcut), signs, notarizes and staples the DMG, and checks both with `spctl`. Attach the DMG and
@@ -227,7 +258,11 @@ Check the store build has no updater, and the direct build's app still links no 
 
 ## Direct-only code
 
-Everything is behind `#if PP_DIRECT`: `ChromeLogins.swift`, `ChromeUpdates.swift`, `VaultSession+Chrome.swift` and
+Agent access is direct-only as a whole: the `PasswordPieAgent` library and the `PasswordPieCLI` tool are not linked or
+bundled by the store build, and the app's side (`AgentAccess.swift`, `AgentApproval.swift`, `AgentsPane.swift`,
+`VaultSession+Agents.swift`, `BrowserBridge+AgentLogin.swift`) is behind `#if PP_DIRECT` ([AGENTS.md](AGENTS.md)).
+
+The Chrome reader is behind `#if PP_DIRECT` too: `ChromeLogins.swift`, `ChromeUpdates.swift`, `VaultSession+Chrome.swift` and
 `VaultSession+ChromeUpdates.swift` (store build has no-op stubs), the Chrome section of Preferences, and the Chrome tests.
 Live Chrome logins are held in `VaultSession.liveEntries`, separate from `entries`, so `save()` can never write them
 into the KeePass file. Chrome itself is read-only. A newer Chrome password on the same account replaces the saved one,
@@ -274,8 +309,9 @@ What used to block a store build, and where each one stands:
 
 ## Premium
 
-Two-step codes need Premium, on both channels. Everything else is free. The behavior is in "Premium: two-step codes"
-in [UX.md](UX.md).
+Two-step codes need Premium, on both channels, and so do agents' standing permissions in the direct one ("Do not ask
+me every time" in [UX.md](UX.md); an approval each time is free). Everything else is free. The behavior is in "Premium:
+two-step codes" in [UX.md](UX.md).
 
 **Neither app has an account** (user decision, 2026-11-10, replacing 2026-11-08's "the direct app signs in"), **and
 neither has the browser extension** (user decision, 2026-11-11, replacing 2026-11-10's "the extension signs in and hands

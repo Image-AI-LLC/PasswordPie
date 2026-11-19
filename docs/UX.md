@@ -1667,6 +1667,7 @@ scrolling past everything else, and each new feature made the page longer.
 | Security | Locking after inactivity and on sleep, screen lock and user switch; Touch ID for the open database |
 | Database | The open database and the list of the others, its key file and its master password |
 | Browsers | The Chrome and Safari extensions, and, in the downloaded app, reading Chrome's saved passwords |
+| Agents | In the downloaded app only: what AI agents on this Mac may ask for, their standing permissions and what they did ("Agents use a secret without seeing it") |
 | Import | "Import with a guide" |
 | Premium | What you have, and the ways to get it |
 
@@ -1975,8 +1976,8 @@ and the agent hears "two-step code not filled: needs PasswordPie Premium".
 |---|---|---|
 | `submitted` | Filled, and the form's own button was pressed. Whether the site accepted it shows on the page | 0 |
 | `filled` | Filled; the form was not sent (no `--submit`, or no button was found) | 0 |
-| `no-matching-tab` | The tab in front is not on the site: the agent's tab is in the background, or another page is open. PasswordPie never switches tabs | 74 |
-| `site-mismatch` | The site asked for is not one of the item's websites. Nothing was filled, and nobody was asked | 75 |
+| `no-matching-tab` | The tab in front is not on the site: the agent's tab is in the background, or another page is open. PasswordPie never switches tabs. Also when no browser has PasswordPie's extension connected: the line then says that, and to ask you to turn it on in Preferences > Browsers | 74 |
+| `site-mismatch` | The site asked for is not one of the item's websites. Nothing was filled, and nobody was asked. Answered first, with or without a browser | 75 |
 | `timed-out` | No tab of that browser answered within 30 seconds: the extension is off or not installed in that profile | 76 |
 | `no-fields` | The tab is on the site, but no password field appeared within 30 seconds | 77 |
 

@@ -23,6 +23,7 @@ The downloaded app keeps itself up to date: once a week a separate updater insid
 - Touch ID unlock, auto-lock, and a clipboard that clears itself
 - An optional key file that stays on this Mac, so a database copied from your cloud folder cannot be opened with the password alone
 - Imports KeePass 1, 1Password, Bitwarden, Proton Pass and CSV exports
+- In the downloaded app, AI agents on your Mac (Claude Code, Codex, Cursor) can run a command with a secret, or sign in on a website in your browser, after you approve with Touch ID: the secret goes to the command or the page, not into the agent's conversation ([docs/AGENTS.md](docs/AGENTS.md))
 
 More on [passwordpie.com](https://passwordpie.com/). Support: [support@passwordpie.com](mailto:support@passwordpie.com).
 
@@ -38,7 +39,7 @@ Needs Xcode, Homebrew's `argon2`, and Node with `pnpm` for the browser extension
 
 The source code is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE): you may use, change and share it for personal and other noncommercial purposes, but not commercially. For a commercial license, write to [support@passwordpie.com](mailto:support@passwordpie.com).
 
-That license covers this source code. The PasswordPie app you download from [passwordpie.com](https://passwordpie.com/) or the Mac App Store is free for anyone to install and use, including at work, under the [Terms of Service](https://passwordpie.com/terms-of-service). Two-step codes need PasswordPie Premium on a PasswordPie account, in both versions.
+That license covers this source code. The PasswordPie app you download from [passwordpie.com](https://passwordpie.com/) or the Mac App Store is free for anyone to install and use, including at work, under the [Terms of Service](https://passwordpie.com/terms-of-service). Two-step codes need PasswordPie Premium on a PasswordPie account, in both versions; so does letting an agent use a secret again without asking, in the downloaded app.
 
 Copyright (c) 2026 Image AI, LLC.
 
