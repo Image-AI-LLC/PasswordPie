@@ -239,7 +239,7 @@ final class DotenvImportFlow: ObservableObject {
         add(count([.other]), "other file", "other files")
         add(count([.template]), "template", "templates")
         add(count([.oldCopy]), "old copy", "old copies")
-        add(count([.hidden, .underscore, .dependencies], folders: true), "folder not opened (its name starts with . or _, or it holds dependencies)", "folders not opened (their names start with . or _, or they hold dependencies)")
+        add(count([.hidden, .underscore, .dependencies], folders: true), "folder not opened", "folders not opened")
         add(count([.hidden, .underscore]), "file whose name starts with . or _", "files whose names start with . or _")
         add(count([.link]), "link, not followed", "links, not followed")
         add(count([.tooLarge]), "file too large for a key file (over 1 MB)", "files too large for a key file (over 1 MB)")
@@ -250,8 +250,8 @@ final class DotenvImportFlow: ObservableObject {
 
     static func reasonText(_ skipped: DotenvPlan.Skipped) -> String {
         switch skipped.reason {
-        case .hidden, .underscore: return skipped.isFolder ? "folder not opened" : "name starts with . or _"
-        case .dependencies: return "folder not opened"
+        case .hidden, .underscore: return skipped.isFolder ? "folder not opened: its name starts with . or _" : "name starts with . or _"
+        case .dependencies: return "folder not opened: dependencies"
         case .template: return "template"
         case .oldCopy: return "old copy"
         case .link: return "link"

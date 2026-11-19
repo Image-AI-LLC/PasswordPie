@@ -2070,10 +2070,7 @@ subfolders, and changes nothing in it: not now, and not after the import.
 **3. Import.** The button says how many: **Import 12 Items**. The page then says what happened: "9 added, 3 updated."
 
 **4. The files are still there.** PasswordPie does not delete them: they are yours, and other programs may still read
-them. The page says so, and that they still hold every value in plain text. In the downloaded app it names the check
-to run before you delete them: `passwordpie check-import <folder>` compares every name and value in the files with the
-database and prints **same**, **differs** or **missing** for each name, never a value ("Agents use a secret without
-seeing it").
+them. The page says so, and that they still hold every value in plain text.
 
 What becomes what:
 
@@ -2091,8 +2088,11 @@ What becomes what:
 Which item a key file goes to: the one whose name is in the file's name (`work.pem`, `work-service-account.json`), else
 the only item of that folder, else an item **Key files** in that folder.
 
-**Put them inside** is a field above the list, empty at first. Type a folder name such as **Agents** and everything
+**Put them inside** is a field under the list, empty at first. Type a folder name such as **Agents** and everything
 lands inside it (Agents › stripe › work), so one tick in Preferences > Agents shares all of it.
+
+An item's details list the names of its attachments under its fields. The files are not opened there: KeePass apps open
+them, and an agent is handed one by its name ("Agents use a secret without seeing it").
 
 How a value is read: as a dotenv library reads it. Quotes around a value are removed; in double quotes `\n`, `\t`,
 `\"` and `\\` are what they stand for, and a value in quotes may run over several lines; without quotes, the value ends
