@@ -311,48 +311,31 @@ final class MCPServer: @unchecked Sendable {
     }
 
     private func run(_ arguments: [String: Any], cancellation: Cancellation) throws -> [String: Any] {
-        let input = Input(arguments, allowed: ["command", "cwd", "env", "files", "stdin", "envFile", "reason", "timeoutSeconds"])
+        let input = Input(arguments, allowed: ["command", "cwd", "env", "files", "stdin", "envFile", "envFiles", "reason", "timeoutSeconds"])
         let command = try input.strings("command")
         guard !command.isEmpty, !command[0].isEmpty else { throw Refusal(.usage, detail: "command is required: the program and its arguments, as an array.") }
         let cwd = try input.folder("cwd")
-        var secrets: [AgentSecretRequest] = []
-        var literals: [(String, String)] = []
-        var names: Set<String> = []
-        func add(_ secret: AgentSecretRequest) throws {
-            if let name = secret.name {
-                guard AgentEnvFile.isVariableName(name) else { throw Refusal(.usage, detail: "\"\(name)\" is not a variable name.") }
-                guard names.insert(name).inserted else { throw Refusal(.usage, detail: "\(name) is given twice.") }
+        var inputs = RunInputs()
+        do {
+            for (name, ref) in try input.map("env") { try inputs.add(AgentSecretRequest(name: name, ref: ref, delivery: .env)) }
+            for (name, ref) in try input.map("files") { try inputs.add(AgentSecretRequest(name: name, ref: ref, delivery: .file)) }
+            if let ref = try input.string("stdin") { try inputs.add(AgentSecretRequest(name: nil, ref: ref, delivery: .stdin)) }
+            // `envFile`, then each of `envFiles`: a later file's line replaces an earlier one's of the same name.
+            for path in (try input.string("envFile").map { [$0] } ?? []) + (try input.strings("envFiles")) {
+                let full = path.hasPrefix("/") ? path : (cwd as NSString).appendingPathComponent(path)
+                guard let text = try? String(contentsOfFile: full, encoding: .utf8) else { throw Refusal(.usage, detail: "Could not read \(path).") }
+                try inputs.add(envFile: text, path: path)
             }
-            try Input.check(reference: secret.ref)
-            secrets.append(secret)
+        } catch let problem as RunInputs.Problem {
+            throw Refusal(.usage, detail: problem.message)
         }
-        for (name, ref) in try input.map("env") { try add(AgentSecretRequest(name: name, ref: ref, delivery: .env)) }
-        for (name, ref) in try input.map("files") { try add(AgentSecretRequest(name: name, ref: ref, delivery: .file)) }
-        if let ref = try input.string("stdin") { try add(AgentSecretRequest(name: nil, ref: ref, delivery: .stdin)) }
-        if let path = try input.string("envFile") {
-            let full = path.hasPrefix("/") ? path : (cwd as NSString).appendingPathComponent(path)
-            guard let text = try? String(contentsOfFile: full, encoding: .utf8) else { throw Refusal(.usage, detail: "Could not read \(path).") }
-            let lines: [AgentEnvFile.Line]
-            do {
-                lines = try AgentEnvFile.parse(text)
-            } catch let problem as AgentEnvFile.Problem {
-                throw Refusal(.usage, detail: "\(path), \(problem.description).")
-            }
-            for line in lines {
-                switch line {
-                case .secret(let name, let ref, let delivery):
-                    try add(AgentSecretRequest(name: name, ref: ref, delivery: delivery))
-                case .literal(let name, let value):
-                    guard names.insert(name).inserted else { throw Refusal(.usage, detail: "\(name) is given twice.") }
-                    literals.append((name, value))
-                }
-            }
-        }
+        let secrets = inputs.secrets
+        let literals = inputs.literals.map { ($0.name, $0.value) }
         let reason = try input.string("reason")
         let timeout = try input.integer("timeoutSeconds", in: 1...MCPLimits.maxTimeoutSeconds) ?? MCPLimits.defaultTimeoutSeconds
         try input.done()
         guard !secrets.isEmpty else {
-            throw Refusal(.usage, detail: "passwordpie_run needs at least one secret in env, files, stdin or envFile.")
+            throw Refusal(.usage, detail: "passwordpie_run needs at least one secret in env, files, stdin, envFile or envFiles.")
         }
 
         var environment = ProcessInfo.processInfo.environment
@@ -457,6 +440,7 @@ final class MCPServer: @unchecked Sendable {
                         "files": ["type": "object", "additionalProperties": ["type": "string"], "description": "Secrets to write to short-lived files: {\"NAME\": \"pp://…\"}; NAME holds the file's path."],
                         "stdin": ["type": "string", "description": "A reference whose value is written to the command's standard input."],
                         "envFile": ["type": "string", "description": "A .env.pp file of NAME=pp://… lines (NAME=file:pp://… for a file), relative to cwd."],
+                        "envFiles": ["type": "array", "items": ["type": "string"], "description": "More .env.pp files, read after envFile in this order. A later file's line replaces an earlier file's line of the same name, so a file kept on this Mac only can add or change what the committed one says; env and files win over both."],
                         "reason": ["type": "string", "description": "Why, in a few words, for the owner's approval window."],
                         "timeoutSeconds": ["type": "integer", "minimum": 1, "maximum": MCPLimits.maxTimeoutSeconds, "description": "How long the command may run once approved, in seconds. Default \(MCPLimits.defaultTimeoutSeconds), at most \(MCPLimits.maxTimeoutSeconds)."],
                     ],

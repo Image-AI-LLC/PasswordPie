@@ -23,7 +23,8 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 
 | Piece | Where | What it does |
 |---|---|---|
-| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
+| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, `write-env`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
+| A project's `.env.pp` | `PasswordPieCLI/RepositoryScan.swift`, `EnvFilePlan.swift`; what a run takes from flags and files in `RunInputs.swift` | `write-env` reads which variables a project reads and writes references for those; `run` takes more than one `--env-file` |
 | Website login | `PasswordPieAgent/AgentLogin.swift`, `VaultBroker+Login.swift`; the app's `BrowserBridge+AgentLogin.swift`; the bridge's rules in `PasswordPieCore/BrowserFill.swift` | The broker's `login`, and the browser side that turns an approval into a pending fill |
 | Argument watch | `PasswordPieAgent/ArgumentWatch.swift` | Looks for handed-out values on the command lines under a run |
 | MCP setup lines | `PasswordPieAgent/AgentMCPSetup.swift` | What the Agents pane shows for Claude Code, Codex and Cursor |
@@ -74,7 +75,7 @@ Rules it keeps:
 | Rate limit | 3 denials in 10 minutes from one session: `too-many-requests` without a prompt for 10 minutes |
 | Timeout | The window waits 2 minutes, then answers `timeout` and closes |
 | Hang-up | When the tool's connection closes (the agent killed it), its prompt is withdrawn and its wait for an unlock ends. A request queued behind another prompt notices when its turn comes |
-| Partial approval | The owner can untick secrets in the window; unticked ones come back `declined` and the tool runs without them, saying so on standard error |
+| Partial approval | The owner can untick secrets in the window; unticked ones come back `declined` and the tool runs without them, saying so on standard error. The window draws the rows of one item together (`AgentApprovalRow.item`): with more than six secrets an item with several is one row that opens, with a checkbox of its own and one per secret. The answer is row by row all the same |
 | Raw | `read`, and `run --no-masking`, show "The agent will see the value" and ask every time |
 | Two-step codes | `…/otp` answers `not-available` in this version; the fields that hold a two-step secret (`otp`, `TimeOtp-*`, `TOTP Seed`, `TOTP Settings`) are not offered as custom fields |
 
@@ -285,13 +286,75 @@ literally. `#` starts a comment, `export ` is allowed. No shell expansion; one p
     NOTARY_KEY_ID=pp://Developer/App Store Connect API key/Key ID
     SIGNING_TEAM=2S468LUF8V
 
+**More than one file.** `--env-file` may be given more than once (`envFiles` for `passwordpie_run`), so what differs
+per Mac stays out of the committed file: paths, a region, an account used only here.
+
+    passwordpie run --env-file .env.pp --env-file .env.local -- npm run deploy
+
+The rule (`RunInputs`, one for the tool and the MCP server):
+
+- The files are read in the order given. A later file's line replaces an earlier file's line of the same name, whatever
+  kind of line each is: a plain line can replace a reference, and a reference a plain line.
+- `--env` and `--file` win over every file, wherever they stand on the command line.
+- A name twice in one file, or in two flags, is a mistake (`usage`).
+- Only what is left is asked for: a reference a later file replaced is not resolved, shown to the owner or logged.
+
+The second file is as trusted as the first: both are the project's files, and what they set is in the request the owner
+approves (the secrets as rows, the plain lines by name in `environment`).
+
+### Writing a project's .env.pp
+
+    passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
+
+`write-env` works out which variables a project reads and shows the `.env.pp` that names only those, so a project that
+used a flat file of seventy values asks for the five it uses. It handles names only: it reads no value from PasswordPie
+(it asks for `list`, which needs no approval) and prints none from the project's files.
+
+1. **What the project reads** (`RepositoryScan`). Every text file up to 1 MiB under `FOLDER` (default: the working
+   folder), outside `node_modules`, `vendor`, `venv`, `dist`, `build`, `target` and the like and outside hidden folders
+   (`.github` is read): `process.env.X`, `process.env["X"]`, `const { X } = process.env`, `import.meta.env.X`,
+   `os.environ["X"]`, `os.environ.get("X")`, `os.getenv("X")`, `Getenv("X")`, `ENV["X"]`, `ENV.fetch("X")`,
+   `env::var("X")`, and `$X` or `${X}` where a shell expands it: shell scripts (by extension or first line),
+   `Makefile`, `Dockerfile`, YAML files and `package.json`. In other code `${x}` is a string template and is not
+   counted. Links are not followed.
+2. **The project's dotenv files**: `.env`, `.env.<name>` and `<name>.env` at the top of the folder, read through a
+   link (four projects linking one generated file is the usual setup). Their names say what the project could read
+   today; a value that is the path of a file says which key file a variable stands for; and the file's own name, or the
+   name of the file it links to, says whose it is (`work.env` and `.env.work` are **work**). Templates
+   (`.env.example`) are not read.
+3. **Where each name comes from.** A name the code reads is written when exactly one shared item has a field of that
+   name ("NAME (variable)" counts, as the import of a folder of dotenv files names a variable that would clash with an
+   item's own field). When items of several names hold it, the one named like the file's identity is taken. A name two
+   items of the same identity hold is left out and said. A variable set to the path of a file whose name is an
+   attachment of a shared item becomes `NAME=file:pp://…/attachment/<file>`.
+4. **One file per identity.** `--identity work --identity personal` writes `.env.work.pp` and `.env.personal.pp`; one
+   `--identity` writes `.env.pp`. Without it, each of the project's dotenv files that names an identity gets
+   `<its name>.pp` (`.env` gives `.env.pp`); with no such file, one `.env.pp`, or one `.env.<identity>.pp` each when
+   two differently named items hold a name the project reads. A `/`, `\` or line break in a name is written as `_` in the
+   file's name.
+5. **References** are written by path (`pp://stripe/work/STRIPE_SECRET_KEY`), or by the item's id where the path could
+   be read another way among the shared items.
+6. **Shown, then written.** The files are printed on standard output, and nothing is written without `--write`. A file
+   that is already there is kept: at a terminal the tool asks, anywhere else it needs `--force`, and without either it
+   says so and exits 64.
+
+Beside the files, on standard error, names only: what the code reads and the dotenv file sets but no shared item holds
+(often a path or a region: for the second file), what the dotenv file sets and a shared item holds but the code does
+not mention (a library may read it: `--also NAME` adds it), and what was left out as ambiguous. Exit 65 when no shared
+item holds anything the project reads.
+
+What it cannot know: a name only a library or a command reads (`OPENAI_API_KEY` by an SDK, `CLOUDFLARE_API_TOKEN` by
+`wrangler`). It says when the project loads its dotenv file as a whole (`load_dotenv()`, `dotenv.config()`,
+`source .env`), which is where that happens.
+
 ## The command-line tool
 
-    passwordpie run [--env NAME=REF]... [--file NAME=REF]... [--stdin REF] [--env-file PATH]
+    passwordpie run [--env NAME=REF]... [--file NAME=REF]... [--stdin REF] [--env-file PATH]...
                     [--reason TEXT] [--wait SECONDS] [--no-masking] -- COMMAND [ARG]...
     passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
     passwordpie list [QUERY] [--json] [--wait SECONDS]
     passwordpie status [--json]
+    passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
     passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
 
 **`run`** asks the app for the values, starts `COMMAND` as its child with them, and waits.
@@ -358,7 +421,7 @@ process is one agent session, and the agent is its parent in the process tree.
 |---|---|---|
 | `passwordpie_status` | none | `running`, `locked`, `agentAccess`, `agent`, `project`, `grants`. Never starts the app |
 | `passwordpie_list` | `query?`, `cwd` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Shared items only, never a value |
-| `passwordpie_run` | `command` (an argument array), `cwd`, `env?` `{NAME: ref}`, `files?` `{NAME: ref}`, `stdin?` ref, `envFile?` (relative to `cwd`), `reason?`, `timeoutSeconds?` (default 600, at most 3600) | `exitCode`, `stdout`, `stderr`, `concealed` (how many values were replaced), `truncated`, and when there are any `timedOut`, `warnings` |
+| `passwordpie_run` | `command` (an argument array), `cwd`, `env?` `{NAME: ref}`, `files?` `{NAME: ref}`, `stdin?` ref, `envFile?` (relative to `cwd`), `envFiles?` (more of them, read after it: ".env.pp", "More than one file"), `reason?`, `timeoutSeconds?` (default 600, at most 3600) | `exitCode`, `stdout`, `stderr`, `concealed` (how many values were replaced), `truncated`, and when there are any `timedOut`, `warnings` |
 | `passwordpie_read` | `ref`, `reason?` | `value` (UTF-8 text) or `base64`. Asks every time, "Show to Agent" |
 | `passwordpie_login` | `ref?`, `url?` (one of the two), `submit?`, `browser?` (`chrome`, `safari`), `reason?` | The `login` answer ("Website login"): `outcome`, `item` (title, username, websites; only once the owner allowed it), `site`, `browser`, `code`, `detail`, and `message`, the tool's line. An outcome other than `filled` or `submitted` comes with `isError`. Never a value |
 
@@ -623,6 +686,16 @@ project), the 64 KiB cut, the timeout, files and standard input, read asking eve
 place, the agent from the process tree rather than `clientInfo`, error texts, the argument watch catching a planted
 `--password` that lives one second, and cancelling or leaving ending the command. `ArgumentWatchTests` covers the watch
 against a scripted process table and reads a real process's arguments without its environment.
+
+`ArgumentsTests` covers more than one `--env-file` (a later file's line replacing an earlier one's of either kind, a
+flag over both, a repeat in one file), `CommandLineToolTests/testASecondEnvFileAddsAndOverrides` and
+`MCPServerTests/testEnvFilesAreReadInOrderAndALaterOneOverrides` run it through the real tool and server, where the
+replaced reference is never asked for. `WriteEnvTests` covers the names found in each language, the dotenv file behind
+a link, a fixture project that reads five of twenty-two names (its `.env.pp` names those five), one file per identity,
+ambiguity, and the notes; `CommandLineToolTests/testWriteEnvShowsThenWritesAndWhatItWroteRuns` shows, writes, keeps an
+existing file, and runs the project with what was written, with no prompt and no value in any output.
+`AgentAccessTests` covers the window's rows by item: twelve fields as one row that opens, the item's checkbox, and the
+answer staying row by row.
 
 `StandingPermissionsTests` and `AgentProgramRuleTests` cover grants through the broker with a scripted window and database
 (PRD check 7, Premium, lengths, sessions, revoking before the write lands); `AgentAccessTests` covers the window's

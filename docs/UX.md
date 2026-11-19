@@ -1749,6 +1749,30 @@ The approval window is the same. The **Agent** line is still what PasswordPie fo
 secondary colour, "through MCP; the client says it is “claude-code 2.1”" is what the MCP client calls itself. It is the
 client's claim, so it never takes the agent's place.
 
+### A project's .env.pp
+
+A project says which secrets it needs in a file of references, `.env.pp`, which is safe to commit: `NAME=pp://…` lines,
+no values. `passwordpie run --env-file .env.pp -- npm run deploy` then sets those variables for the command, and
+`load_dotenv()` and scripts that read the environment work as before.
+
+**Writing it.** In the project's folder, `passwordpie write-env` reads the code for the variables it reads
+(`process.env.X`, `os.environ["X"]`, `os.getenv`, `$X` in shell scripts) and the names in the project's `.env`, and shows
+the `.env.pp` that names only those, each as a reference to the item you shared that has a field of that name. A project
+that linked a file of seventy values asks for the five it uses. Nothing is written until you add `--write`, and a
+`.env.pp` that is already there is never replaced without your say: the tool asks at a terminal, and needs `--force`
+anywhere else. It works with names only; no value is read or printed, so it needs no approval.
+
+- A project that works with two accounts gets one file each: `--identity work --identity personal` writes
+  `.env.work.pp` and `.env.personal.pp`.
+- A name the code never spells out because a library reads it (`OPENAI_API_KEY`) is listed as set in `.env` but not found
+  in the code; `--also OPENAI_API_KEY` adds it.
+- A variable that held the path of a key file becomes `NAME=file:pp://…/attachment/<file>`: the command gets a
+  short-lived file and its path.
+
+**What differs per Mac.** Paths and other settings that are not secrets and are not the same on every Mac go in a
+second file that is not committed: `passwordpie run --env-file .env.pp --env-file .env.local -- …`. A later file's line
+replaces an earlier file's line of the same name.
+
 ### A value on a command line
 
 While a command runs, PasswordPie looks at the command lines of the processes under it, four times a second. When a value
@@ -1778,6 +1802,11 @@ It warns; it cannot stop it, and a process that starts and ends within a quarter
     [ Deny ]        [ Allow Once ]        [ Allow for 7 days ▾ ]
 
 - One row per secret, each with a checkbox: untick what the agent should not get. The command then runs without it.
+- The secrets of one item are drawn together, under the item. Up to six secrets, every row shows. Above that, an item
+  with several secrets is one row that opens: "work (stripe) — 12 secrets · 11 environment variables, 1 file for the
+  command". Its checkbox ticks or unticks all of them, shows a dash when only some are ticked, and the row then says
+  "2 left out". Click the row to open it and tick each secret on its own. A long list scrolls inside the window, so the
+  buttons stay where they are.
 - **The agent says** is the agent's own `--reason`, in quotes, in the secondary colour. It may have been written by a
   prompt injection; the window never puts it in its own words.
 - **Agent** is worked out by PasswordPie from the processes that started the tool, with their code signature, never from

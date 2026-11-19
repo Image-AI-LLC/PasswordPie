@@ -336,6 +336,87 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertEqual(approver.prompts.first?.rows.map(\.delivery), [.file, .env])
     }
 
+    /// Two `--env-file`s through the real tool: the second, kept on this Mac only, adds a path and replaces a line.
+    func testASecondEnvFileAddsAndOverrides() async throws {
+        allowEverything()
+        let committed = folder.appendingPathComponent(".env.pp")
+        let local = folder.appendingPathComponent(".env.local")
+        try "TOKEN=pp://Agents/Token\nREGION=eu\nKEY_ID=pp://Agents/Hidden\n".write(to: committed, atomically: true, encoding: .utf8)
+        try "REGION=us\nCONFIGS_DIR=/Users/me/configs\nKEY_ID=pp://Agents/Token/Key ID\n".write(to: local, atomically: true, encoding: .utf8)
+        let ran = try await run(["run", "--env-file", committed.path, "--env-file", local.path, "--", "sh", "-c", "echo \"$TOKEN $REGION $CONFIGS_DIR $KEY_ID\""])
+        XCTAssertEqual(ran.code, 0, ran.err)
+        XCTAssertEqual(ran.out, "\(AgentConstants.concealed) us /Users/me/configs \(AgentConstants.concealed)\n")
+        XCTAssertEqual(approver.prompts.first?.rows.map(\.name), ["TOKEN", "KEY_ID"], "the line the second file replaced is not asked for")
+        XCTAssertEqual(approver.prompts.first?.rows.map(\.field), ["password", "field Key ID"])
+    }
+
+    /// `write-env` through the real tool: it shows the project's `.env.pp` and writes nothing, writes with `--write`,
+    /// keeps a file that is there, and what it wrote runs the project. No prompt, and no value anywhere in its output.
+    func testWriteEnvShowsThenWritesAndWhatItWroteRuns() async throws {
+        allowEverything()
+        vault.add("work", folder: ["stripe"], password: "", fields: ["STRIPE_SECRET_KEY": "planted-stripe-work-8842", "STRIPE_ACCOUNT": "acct_planted"])
+        vault.add("personal", folder: ["stripe"], password: "", fields: ["STRIPE_SECRET_KEY": "planted-stripe-personal-17"])
+        vault.add("work", folder: ["google"], password: "", fields: ["GOOGLE_PROJECT": "planted-project"], attachments: ["key.json": Data("{\"planted\":1}".utf8)])
+        vault.add("unshared", folder: ["stripe"], password: "", fields: ["UNSHARED_KEY": "planted-unshared"], shared: false)
+        let project = folder.appendingPathComponent("shop", isDirectory: true)
+        try FileManager.default.createDirectory(at: project.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try "const a = process.env.STRIPE_SECRET_KEY, b = process.env.UNSHARED_KEY, c = process.env.HOME\n".write(to: project.appendingPathComponent("src/pay.js"), atomically: true, encoding: .utf8)
+        try "#!/bin/sh\necho \"$STRIPE_SECRET_KEY $GOOGLE_PROJECT\"\n".write(to: project.appendingPathComponent("deploy.sh"), atomically: true, encoding: .utf8)
+        try "STRIPE_SECRET_KEY=x\nSTRIPE_ACCOUNT=y\nUNSHARED_KEY=z\n".write(to: project.appendingPathComponent(".env.work"), atomically: true, encoding: .utf8)
+        let written = project.appendingPathComponent(".env.work.pp")
+
+        let shown = try await run(["write-env", project.path])
+        XCTAssertEqual(shown.code, 0, shown.err)
+        XCTAssertEqual(shown.out, """
+        .env.work.pp, from the items named work:
+          # References to secrets in PasswordPie, not the values: safe to commit.
+          # Use: passwordpie run --env-file .env.work.pp -- <command>
+          STRIPE_SECRET_KEY=pp://stripe/work/STRIPE_SECRET_KEY
+          GOOGLE_PROJECT=pp://google/work/GOOGLE_PROJECT
+
+        """)
+        XCTAssertTrue(shown.err.contains("in no item shared with agents: UNSHARED_KEY."), shown.err)
+        XCTAssertTrue(shown.err.contains("not found in the code, so left out: STRIPE_ACCOUNT."), shown.err)
+        XCTAssertTrue(shown.err.contains("nothing was written. Run it again with --write to write .env.work.pp."), shown.err)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: written.path), "shown before it is written")
+        XCTAssertFalse((shown.out + shown.err).contains("planted"))
+        XCTAssertTrue(approver.prompts.isEmpty, "names only: nobody is asked")
+
+        let wrote = try await run(["write-env", project.path, "--write"])
+        XCTAssertEqual(wrote.code, 0, wrote.err)
+        XCTAssertTrue(wrote.err.contains("wrote .env.work.pp."))
+        let text = try String(contentsOf: written, encoding: .utf8)
+        XCTAssertTrue(text.hasSuffix("STRIPE_SECRET_KEY=pp://stripe/work/STRIPE_SECRET_KEY\nGOOGLE_PROJECT=pp://google/work/GOOGLE_PROJECT\n"))
+
+        // A file that is there is never replaced without being asked: here nobody is at a terminal to say yes.
+        try "MINE=1\n".write(to: written, atomically: true, encoding: .utf8)
+        let kept = try await run(["write-env", project.path, "--write"])
+        XCTAssertEqual(kept.code, AgentErrorCode.usage.exitCode)
+        XCTAssertTrue(kept.err.contains(".env.work.pp is already there and was not replaced. Add --force to replace it."), kept.err)
+        XCTAssertEqual(try String(contentsOf: written, encoding: .utf8), "MINE=1\n")
+        let forced = try await run(["write-env", project.path, "--write", "--force"])
+        XCTAssertEqual(forced.code, 0, forced.err)
+        XCTAssertEqual(try String(contentsOf: written, encoding: .utf8), text)
+
+        // What it wrote runs the project's script with the values, concealed in the output.
+        let ran = try await run(["run", "--env-file", written.path, "--", "sh", project.appendingPathComponent("deploy.sh").path])
+        XCTAssertEqual(ran.code, 0, ran.err)
+        XCTAssertEqual(ran.out, "\(AgentConstants.concealed) \(AgentConstants.concealed)\n")
+        XCTAssertEqual(approver.prompts.last?.rows.map(\.name), ["STRIPE_SECRET_KEY", "GOOGLE_PROJECT"])
+
+        // Nothing shared holds what a project reads: said, with the code of an item that is not there.
+        let empty = folder.appendingPathComponent("empty", isDirectory: true)
+        try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
+        try "echo $NOTHING_OF_OURS\n".write(to: empty.appendingPathComponent("a.sh"), atomically: true, encoding: .utf8)
+        let none = try await run(["write-env", empty.path])
+        XCTAssertEqual(none.code, AgentErrorCode.notAvailable.exitCode)
+        XCTAssertEqual(none.out, "")
+        let missing = try await run(["write-env", folder.appendingPathComponent("no-such").path])
+        XCTAssertEqual(missing.code, AgentErrorCode.usage.exitCode)
+        let everything = String(decoding: try JSONEncoder().encode(activity.records), as: UTF8.self)
+        XCTAssertFalse(everything.contains("planted-stripe"))
+    }
+
     /// A standing permission through the real tool: the next identical run asks nothing, and a run started with a
     /// variable that makes programs load other code asks again, whether the agent's shell set it or the `.env.pp` did.
     @MainActor

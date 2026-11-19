@@ -136,6 +136,93 @@ func listCommand(query: String?, json: Bool, wait: Int?) -> Never {
     exit(0)
 }
 
+/// `passwordpie write-env`: shows, or with `--write` writes, the project's `.env.pp`. It asks the app only for what is
+/// shared (`list`: names, never a value) and reads the project's files for the names it reads.
+func writeEnvCommand(_ options: WriteEnvOptions) -> Never {
+    let folder = URL(fileURLWithPath: options.folder ?? FileManager.default.currentDirectoryPath).standardizedFileURL
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+        refuse(.usage, detail: "\(options.folder ?? folder.path) is not a folder.")
+    }
+    let scan: RepositoryScan
+    do {
+        scan = try RepositoryScan.scan(folder)
+    } catch let problem as UsageError {
+        refuse(.usage, detail: problem.message)
+    } catch {
+        refuse(.usage, detail: "Could not read \(folder.path).")
+    }
+    var request = AgentRequest(type: .list, id: 1)
+    request.version = AgentConstants.protocolVersion
+    request.client = "cli"
+    request.wait = options.wait
+    let items = ask(request).items ?? []
+    let plan = EnvFilePlan.make(scan: scan, items: items, identities: options.identities, also: options.also)
+    for line in WriteEnv.notes(plan, scan: scan) { printError(line) }
+    guard !plan.files.isEmpty else {
+        printError(items.isEmpty
+            ? "PasswordPie: nothing is shared with agents, so there is nothing to refer to. Ask the owner to choose Share with Agents on the items or their folder in PasswordPie."
+            : "PasswordPie: no item shared with agents has a field named like a variable this project reads. `passwordpie list` shows what is shared.")
+        exit(AgentErrorCode.notAvailable.exitCode)
+    }
+    var kept: [String] = []
+    for file in plan.files {
+        let url = folder.appendingPathComponent(file.name)
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        print("\(file.name)\(file.identity.map { ", from the items named \($0)" } ?? ""):")
+        print(file.text.split(separator: "\n", omittingEmptySubsequences: false).dropLast().map { "  " + $0 }.joined(separator: "\n"))
+        guard options.write else { continue }
+        if exists, !options.force, !WriteEnv.confirmReplacing(file.name) {
+            kept.append(file.name)
+            continue
+        }
+        do {
+            try Data(file.text.utf8).write(to: url, options: .atomic)
+            printError("PasswordPie: wrote \(file.name).")
+        } catch {
+            refuse(.usage, detail: "Could not write \(url.path).")
+        }
+    }
+    if !options.write {
+        printError("PasswordPie: nothing was written. Run it again with --write to write \(plan.files.map(\.name).joined(separator: " and ")).")
+    }
+    if !kept.isEmpty {
+        refuse(.usage, detail: "\(kept.joined(separator: " and ")) \(kept.count == 1 ? "is" : "are") already there and \(kept.count == 1 ? "was" : "were") not replaced. Add --force to replace \(kept.count == 1 ? "it" : "them").")
+    }
+    exit(0)
+}
+
+enum WriteEnv {
+    /// What the person should know beside the files: names only.
+    static func notes(_ plan: EnvFilePlan, scan: RepositoryScan) -> [String] {
+        var lines: [String] = []
+        if !plan.notShared.isEmpty {
+            lines.append("PasswordPie: read by the code and set in \(dotenvNames(scan)), but in no item shared with agents: \(plan.notShared.joined(separator: ", ")). If one is not a secret (a path, a region), set it in a second file kept on this Mac: --env-file .env.pp --env-file .env.local.")
+        }
+        if !plan.notRead.isEmpty {
+            let why = scan.loaders.first.map { " The project loads the file as a whole (\($0)), so a library may read one without the code naming it." } ?? ""
+            lines.append("PasswordPie: set in \(dotenvNames(scan)) but not found in the code, so left out: \(plan.notRead.joined(separator: ", ")).\(why) Add one with --also NAME.")
+        }
+        for name in plan.ambiguous.keys.sorted() {
+            lines.append("PasswordPie: \(name) is in more than one shared item (\((plan.ambiguous[name] ?? []).joined(separator: ", "))), so it was left out. Say whose with --identity NAME.")
+        }
+        return lines
+    }
+
+    private static func dotenvNames(_ scan: RepositoryScan) -> String {
+        let names = scan.dotenvs.map(\.name)
+        return names.isEmpty ? "the project's .env" : names.joined(separator: " and ")
+    }
+
+    /// Asks at a terminal. Anywhere else nobody can answer, so the file is kept.
+    static func confirmReplacing(_ name: String) -> Bool {
+        guard isatty(STDIN_FILENO) == 1, isatty(STDERR_FILENO) == 1 else { return false }
+        FileHandle.standardError.write(Data("\(name) is already there. Replace it? [y/N] ".utf8))
+        let answer = readLine()?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+        return answer == "y" || answer == "yes"
+    }
+}
+
 func statusCommand(json: Bool) -> Never {
     var request = AgentRequest(type: .status, id: 1)
     request.version = AgentConstants.protocolVersion
@@ -192,6 +279,8 @@ case .login(let options):
     loginCommand(options)
 case .run(let options):
     runCommand(options)
+case .writeEnv(let options):
+    writeEnvCommand(options)
 case .mcp:
     MCPServer().serve()
 }
