@@ -286,6 +286,12 @@ struct DotenvImportPage: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let check = DotenvImportFlow.checkText {
+                    Text(check)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 8) {
                     Button("Import Another Folder") { folder.startOver() }
                     Button("All Sources") { flow.showSources() }
