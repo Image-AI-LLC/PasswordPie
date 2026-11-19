@@ -330,7 +330,8 @@ used a flat file of seventy values asks for the five it uses. It handles names o
 4. **One file per identity.** `--identity work --identity personal` writes `.env.work.pp` and `.env.personal.pp`; one
    `--identity` writes `.env.pp`. Without it, each of the project's dotenv files that names an identity gets
    `<its name>.pp` (`.env` gives `.env.pp`); with no such file, one `.env.pp`, or one `.env.<identity>.pp` each when
-   two differently named items hold a name the project reads.
+   two differently named items hold a name the project reads. A `/`, `\` or line break in a name is written as `_` in the
+   file's name.
 5. **References** are written by path (`pp://stripe/work/STRIPE_SECRET_KEY`), or by the item's id where the path could
    be read another way among the shared items.
 6. **Shown, then written.** The files are printed on standard output, and nothing is written without `--write`. A file

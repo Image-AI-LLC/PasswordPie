@@ -173,6 +173,32 @@ final class WriteEnvTests: XCTestCase {
         XCTAssertEqual(single.files[0].lines.map(\.name), ["CLOUDFLARE_API_TOKEN", "GOOGLE_PROJECT", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"])
     }
 
+    func testAnIdentitysOwnDotenvFileDecidesItsKeyFile() throws {
+        let project = folder.appendingPathComponent("two", isDirectory: true)
+        try write("a.py", "import os\nos.getenv('GOOGLE_APPLICATION_CREDENTIALS')\n", in: project)
+        try write(".env", "GOOGLE_APPLICATION_CREDENTIALS=/keys/google/personal/personal.pem\n", in: project)
+        try write(".env.personal", "GOOGLE_APPLICATION_CREDENTIALS=/keys/google/personal/personal.pem\n", in: project)
+        try write(".env.work", "GOOGLE_APPLICATION_CREDENTIALS=/keys/google/work/work-service-account.json\n", in: project)
+        let plan = EnvFilePlan.make(scan: try RepositoryScan.scan(project), items: sharedItems(), identities: ["work", "personal"])
+        func value(_ file: String) -> String? { plan.files.first { $0.name == file }?.lines.first?.value }
+        XCTAssertEqual(value(".env.work.pp"), "file:pp://google/work/attachment/work-service-account.json")
+        XCTAssertEqual(value(".env.personal.pp"), "file:pp://google/personal/attachment/personal.pem")
+    }
+
+    func testAFileNameIsOnePathComponentAndAShellWord() throws {
+        var scan = RepositoryScan()
+        scan.names = ["TOKEN": "a.sh"]
+        let evil = "x\nEVIL=1\n#"
+        let items = [item("a", "AWS prod/staging", fields: ["TOKEN"]), item("b", "Stripe Live", fields: ["TOKEN"]), item("c", evil, fields: ["TOKEN"])]
+        let plan = EnvFilePlan.make(scan: scan, items: items)
+        XCTAssertEqual(plan.files.map(\.name).prefix(2), [".env.AWS prod_staging.pp", ".env.Stripe Live.pp"])
+        XCTAssertTrue(plan.files[1].text.contains("--env-file '.env.Stripe Live.pp'"))
+        for file in plan.files {
+            XCTAssertFalse(file.name.contains("/"))
+            XCTAssertEqual(try AgentEnvFile.parse(file.text).count, file.lines.count)
+        }
+    }
+
     func testANameTwoItemsOfOneIdentityHoldIsLeftOutAndSaid() {
         var scan = RepositoryScan()
         scan.names = ["TOKEN": "a.sh", "KEY": "a.sh"]

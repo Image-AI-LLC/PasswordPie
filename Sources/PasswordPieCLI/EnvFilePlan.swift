@@ -19,7 +19,7 @@ struct EnvFilePlan: Equatable {
         var lines: [Line]
 
         var text: String {
-            let use = "passwordpie run --env-file \(name) -- <command>"
+            let use = "passwordpie run --env-file \(AgentMCPSetup.shellQuoted(EnvFilePlan.safeFileName(name))) -- <command>"
             var text = "# References to secrets in PasswordPie, not the values: safe to commit.\n# Use: \(use)\n"
             for line in lines { text += "\(line.name)=\(line.value)\n" }
             return text
@@ -33,6 +33,18 @@ struct EnvFilePlan: Equatable {
     var notRead: [String] = []
     /// A name that more than one shared item holds, with nothing to choose by: left out, with the items' references.
     var ambiguous: [String: [String]] = [:]
+
+    /// An item's title or an identity as part of a file name: no path separator and no control or line-break character,
+    /// so it can neither leave the project's folder nor start a new line in the file's own comment.
+    static func safeFileName(_ text: String) -> String {
+        var out = ""
+        for scalar in text.unicodeScalars {
+            let category = scalar.properties.generalCategory
+            let unsafe = scalar == "/" || scalar == "\\" || category == .control || category == .lineSeparator || category == .paragraphSeparator
+            out.unicodeScalars.append(unsafe ? "_" : scalar)
+        }
+        return out
+    }
 
     /// The field of `item` that holds the variable `name`: its own name, or "NAME (variable)" where the import kept it
     /// apart from the item's own field (docs/UX.md, "A folder of .env files becomes items").
@@ -53,7 +65,8 @@ struct EnvFilePlan: Equatable {
         /// The item a path in a dotenv file stands for: the one with an attachment of that file's name, in the folder
         /// named like the file's own folder when several have it.
         func keyFile(_ name: String, identity: String?) -> (item: AgentListedItem, attachment: String)? {
-            for dotenv in scan.dotenvs {
+            let own = scan.dotenvs.filter { identity != nil && $0.identity == identity && $0.paths[name] != nil }
+            for dotenv in own.isEmpty ? scan.dotenvs : own {
                 guard let path = dotenv.paths[name] else { continue }
                 let file = (path as NSString).lastPathComponent
                 let folder = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
@@ -80,7 +93,7 @@ struct EnvFilePlan: Equatable {
         let titles = Set(wanted.flatMap { holders($0).map(\.title) })
         var targets: [(file: String, identity: String?)] = []
         if !identities.isEmpty {
-            targets = identities.map { (identities.count == 1 ? ".env.pp" : ".env.\($0).pp", $0) }
+            targets = identities.map { (identities.count == 1 ? ".env.pp" : ".env.\(safeFileName($0)).pp", $0) }
         } else {
             for dotenv in scan.dotenvs {
                 guard let identity = dotenv.identity, titles.contains(identity), !targets.contains(where: { $0.identity == identity }) else { continue }
@@ -92,7 +105,7 @@ struct EnvFilePlan: Equatable {
                     let found = Set(holders(name).map(\.title))
                     return found.count > 1 ? Array(found) : []
                 })
-                targets = contested.isEmpty ? [(".env.pp", nil)] : contested.sorted().map { (".env.\($0).pp", $0) }
+                targets = contested.isEmpty ? [(".env.pp", nil)] : contested.sorted().map { (".env.\(safeFileName($0)).pp", $0) }
             }
         }
 
