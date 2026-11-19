@@ -9,6 +9,7 @@ App Store builds do not contain direct-only code.
 | Swift flag | `PP_DIRECT` defined | not defined |
 | Sandbox | no (hardened runtime, notarized) | yes (`Entitlements/mas.entitlements`) |
 | Import CSV from Chrome / Apple Passwords | yes | yes |
+| Import a folder of `.env` files (Preferences > Import) | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Browsers) | **not compiled in** |
 | Two-step codes (Premium) | an activation from passwordpie.com, where Premium is bought. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
 | Two-step codes in the browser (Premium) | the app has Premium ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
