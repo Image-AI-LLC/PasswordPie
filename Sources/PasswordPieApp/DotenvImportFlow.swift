@@ -123,13 +123,14 @@ final class DotenvImportFlow: ObservableObject {
     private func refreshRows() {
         guard let plan, stage == .found else { return }
         let parent = parent
-        rows = plan.items.map { item in
+        let statuses = session.dotenvStatuses(of: plan.items, inside: parent)
+        rows = plan.items.enumerated().map { offset, item in
             Row(
                 id: item.id,
                 place: (parent + item.folder + [item.title]).joined(separator: " › "),
                 fieldNames: item.fields.map(\.key),
                 fileNames: item.keyFiles.map(\.name),
-                status: session.dotenvStatus(of: item, inside: parent) ?? .new
+                status: statuses?[offset] ?? .new
             )
         }
     }
@@ -239,7 +240,7 @@ final class DotenvImportFlow: ObservableObject {
         add(count([.other]), "other file", "other files")
         add(count([.template]), "template", "templates")
         add(count([.oldCopy]), "old copy", "old copies")
-        add(count([.hidden, .underscore, .dependencies], folders: true), "folder not opened", "folders not opened")
+        add(count([.hidden, .underscore, .dependencies, .other], folders: true), "folder not opened", "folders not opened")
         add(count([.hidden, .underscore]), "file whose name starts with . or _", "files whose names start with . or _")
         add(count([.link]), "link, not followed", "links, not followed")
         add(count([.tooLarge]), "file too large for a key file (over 1 MB)", "files too large for a key file (over 1 MB)")
@@ -258,7 +259,7 @@ final class DotenvImportFlow: ObservableObject {
         case .tooLarge: return "too large"
         case .notText: return "not text"
         case .duplicate: return "already an item"
-        case .other: return "not a .env or key file"
+        case .other: return skipped.isFolder ? "folder not opened: the database cannot keep its name" : "not a .env or key file"
         }
     }
 

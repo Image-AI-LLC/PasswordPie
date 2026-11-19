@@ -184,6 +184,15 @@ final class KDBXPreserve: @unchecked Sendable {
         return readAttachments(live.element, payloads: binaryPayloads)
     }
 
+    /// The attachments of the live entries in `ids`, by entry, in one walk.
+    func attachments(of ids: Set<UUID>) -> [UUID: [(name: String, data: Data)]] {
+        var found: [UUID: [(name: String, data: Data)]] = [:]
+        for live in walkDatabase().entries where !live.location.trashed && ids.contains(live.id) {
+            found[live.id] = readAttachments(live.element, payloads: binaryPayloads)
+        }
+        return found
+    }
+
     /// An entry's `Binary` elements that resolve to bytes: a KDBX 4 reference into the inner header's binaries (stored
     /// as they are; their flag only asks to protect them in memory), or a KDBX 3 inline value.
     private func readAttachments(_ entry: XMLElement, payloads: [Data]) -> [(name: String, data: Data)] {

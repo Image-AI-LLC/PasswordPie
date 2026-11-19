@@ -135,6 +135,7 @@ final class DotenvImportTests: XCTestCase {
         var vault = try database()
         XCTAssertEqual(DotenvImport.parentPath(" Agents / Keys /"), ["Agents", "Keys"])
         XCTAssertEqual(DotenvImport.parentPath(""), [])
+        XCTAssertEqual(DotenvImport.parentPath("Recycle Bin/Keys"), ["Keys"])
         _ = DotenvImport.apply(plan.items, inside: ["Agents"], to: &vault)
         var loaded = try saved(&vault)
         XCTAssertEqual(try entry(loaded, "Agents/stripe/work").value(for: "STRIPE_SECRET_KEY"), DotenvFixture.stripeWork)

@@ -1471,10 +1471,10 @@ final class VaultSession: ObservableObject {
 
     // MARK: A folder of dotenv files
 
-    /// What importing `item` would do to the database this session unlocked. Nil while there is none.
-    func dotenvStatus(of item: DotenvPlan.Item, inside parent: [String]) -> DotenvImport.Status? {
+    /// What importing each of `items` would do to the database this session unlocked, read in one pass. Nil while there is none.
+    func dotenvStatuses(of items: [DotenvPlan.Item], inside parent: [String]) -> [DotenvImport.Status]? {
         guard let file = openedFiles.first(where: { $0.url.path == databaseURL.path }) else { return nil }
-        return DotenvImport.status(of: item, inside: parent, in: file.vault)
+        return DotenvImport.statuses(of: items, inside: parent, in: file.vault)
     }
 
     /// Imports the items of a folder of dotenv files into the file this session unlocked and saves it (docs/UX.md, "A

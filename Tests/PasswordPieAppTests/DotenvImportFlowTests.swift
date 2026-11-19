@@ -292,6 +292,12 @@ final class DotenvImportFlowTests: XCTestCase {
         XCTAssertGreaterThan(host.fittingSize.height, 300)
     }
 
+    func testAFolderTheDatabaseCannotKeepIsCountedAndExplainedAsAFolder() {
+        let skipped = DotenvPlan.Skipped(path: "Recycle Bin", reason: .other, isFolder: true)
+        XCTAssertEqual(DotenvImportFlow.leftAlone([skipped]), ["1 folder not opened"])
+        XCTAssertEqual(DotenvImportFlow.reasonText(skipped), "folder not opened: the database cannot keep its name")
+    }
+
     func testWords() {
         XCTAssertEqual(DotenvImportFlow.statusText(.new), "New")
         XCTAssertEqual(DotenvImportFlow.statusText(.changes(DotenvImport.Changes(newFields: ["A"], changedFields: ["B", "C"], newFiles: ["k.pem", "j.json"], changedFiles: ["x"], notes: true))),

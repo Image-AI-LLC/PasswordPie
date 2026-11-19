@@ -225,10 +225,12 @@ final class DotenvFolderTests: XCTestCase {
         try write("ok/work.env", "# a\u{1}note\nA=1\n")
         try write("ok/bad\u{1}name.env", "A=2\n")
         try write("ok/bad\u{2}key.pem", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n")
+        try write("ok/ lead.pem", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n")
+        try write("ok/trail.pem ", "-----BEGIN PRIVATE KEY-----\nx\n-----END PRIVATE KEY-----\n")
         let plan = try DotenvFolder.read(root)
         XCTAssertEqual(plan.items.map { ($0.folder + [$0.title]).joined(separator: "/") }, ["ok/work"])
         XCTAssertEqual(plan.items[0].notes, "anote", "as the database will keep it")
-        XCTAssertEqual(Set(plan.skipped.map(\.path)), ["Recycle Bin", "ok/bad\u{1}name.env", "ok/bad\u{2}key.pem"])
+        XCTAssertEqual(Set(plan.skipped.map(\.path)), ["Recycle Bin", "ok/bad\u{1}name.env", "ok/bad\u{2}key.pem", "ok/ lead.pem", "ok/trail.pem "])
     }
 
     func testACheckDoesNotReadTheFilesLeftAlone() throws {

@@ -310,7 +310,7 @@ private struct Walk {
                 skip(["pem", "key", "p8", "p12", "pfx"].contains(ext) ? .tooLarge : .other)
                 continue
             }
-            guard storedXMLText(name) == name, let data = try? Data(contentsOf: child), DotenvFolder.isKeyFile(named: name, data: data) else { skip(.other); continue }
+            guard storedXMLText(name).trimmingCharacters(in: .whitespacesAndNewlines) == name, let data = try? Data(contentsOf: child), DotenvFolder.isKeyFile(named: name, data: data) else { skip(.other); continue }
             keyFiles.append(DotenvPlan.KeyFile(path: path, name: name, data: data))
         }
 

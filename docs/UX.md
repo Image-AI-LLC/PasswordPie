@@ -2089,7 +2089,8 @@ Which item a key file goes to: the one whose name is in the file's name (`work.p
 the only item of that folder, else an item **Key files** in that folder.
 
 **Put them inside** is a field under the list, empty at first. Type a folder name such as **Agents** and everything
-lands inside it (Agents › stripe › work), so one tick in Preferences > Agents shares all of it.
+lands inside it (Agents › stripe › work), so one tick in Preferences > Agents shares all of it. A part called
+**Recycle Bin** is dropped: the database keeps its Recycle Bin under that name.
 
 An item's details list the names of its attachments under its fields. The files are not opened there: KeePass apps open
 them, and an agent is handed one by its name ("Agents use a secret without seeing it").

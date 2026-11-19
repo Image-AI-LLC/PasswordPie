@@ -38,7 +38,8 @@ public enum DotenvImport {
 
     /// "Agents/Keys" typed into Put them inside: the folders everything lands in. Empty for the top of the database.
     public static func parentPath(_ text: String) -> [String] {
-        text.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        text.split(separator: "/").map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0.caseInsensitiveCompare("Recycle Bin") != .orderedSame }
     }
 
     /// The item already in the database for `item`: in the same folder, under the same name, and not in the Recycle Bin.
@@ -48,15 +49,34 @@ public enum DotenvImport {
     }
 
     public static func status(of item: DotenvPlan.Item, inside parent: [String], in vault: Vault) -> Status {
-        guard let index = existing(item, inside: parent, in: vault.entries) else { return .new }
-        let changes = changes(of: item, to: vault.entries[index], in: vault)
-        return changes.isEmpty ? .upToDate : .changes(changes)
+        statuses(of: [item], inside: parent, in: vault)[0]
+    }
+
+    /// The status of every item, reading the stored key files of the matched items in one pass.
+    public static func statuses(of items: [DotenvPlan.Item], inside parent: [String], in vault: Vault) -> [Status] {
+        let matches = items.map { existing($0, inside: parent, in: vault.entries) }
+        let stored = storedKeyFiles(of: items, matches: matches, in: vault)
+        return zip(items, matches).map { item, index in
+            guard let index else { return .new }
+            let entry = vault.entries[index]
+            let changes = changes(of: item, to: entry, stored: stored[entry.id] ?? [])
+            return changes.isEmpty ? .upToDate : .changes(changes)
+        }
+    }
+
+    /// The attachments of the matched entries whose items have key files, in one walk of the database.
+    private static func storedKeyFiles(of items: [DotenvPlan.Item], matches: [Int?], in vault: Vault) -> [UUID: [(name: String, data: Data)]] {
+        let ids = Set(zip(items, matches).compactMap { item, index in
+            index.flatMap { item.keyFiles.isEmpty ? nil : vault.entries[$0].id }
+        })
+        return ids.isEmpty ? [:] : vault.attachments(of: ids)
     }
 
     /// Adds the items, or updates the ones already there. The entries carry their new key files as attachments for the
     /// save to write.
     public static func apply(_ items: [DotenvPlan.Item], inside parent: [String], to vault: inout Vault) -> Summary {
         var summary = Summary()
+        let stored = storedKeyFiles(of: items, matches: items.map { existing($0, inside: parent, in: vault.entries) }, in: vault)
         for item in items {
             guard let index = existing(item, inside: parent, in: vault.entries) else {
                 var entry = VaultEntry(groupPath: parent + item.folder)
@@ -68,7 +88,7 @@ public enum DotenvImport {
                 summary.added += 1
                 continue
             }
-            let changes = changes(of: item, to: vault.entries[index], in: vault)
+            let changes = changes(of: item, to: vault.entries[index], stored: stored[vault.entries[index].id] ?? [])
             guard !changes.isEmpty else {
                 summary.unchanged += 1
                 continue
@@ -87,7 +107,7 @@ public enum DotenvImport {
         return summary
     }
 
-    private static func changes(of item: DotenvPlan.Item, to entry: VaultEntry, in vault: Vault) -> Changes {
+    private static func changes(of item: DotenvPlan.Item, to entry: VaultEntry, stored files: [(name: String, data: Data)]) -> Changes {
         var changes = Changes()
         for field in item.fields {
             guard let stored = entry.fields.first(where: { $0.key == field.key }) else {
@@ -100,7 +120,7 @@ public enum DotenvImport {
         // A file without comments says nothing about the notes someone wrote in the item.
         changes.notes = !item.notes.isEmpty && entry.notes != item.notes
         for keyFile in item.keyFiles {
-            guard let stored = vault.attachment(named: keyFile.name, of: entry.id) else {
+            guard let stored = files.first(where: { $0.name == keyFile.name })?.data else {
                 changes.newFiles.append(keyFile.name)
                 continue
             }
