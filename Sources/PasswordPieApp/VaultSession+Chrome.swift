@@ -7,6 +7,8 @@ import PasswordPieCore
 struct ChromeSnapshotSource: Sendable {
     var signature: @Sendable () -> ChromeStoreSignature
     var load: @Sendable (_ cachedKey: Data?) throws -> (key: Data, result: ChromeLoginsResult)
+    /// The real Chrome folder and the real "Chrome Safe Storage" key. A test checks this before it calls either.
+    var readsRealChrome = false
 
     static let live = ChromeSnapshotSource(
         signature: { ChromeLogins.storeSignature() },
@@ -20,8 +22,22 @@ struct ChromeSnapshotSource: Sendable {
                 key = try ChromeSafeStorage.deriveKey(password: password)
             }
             return (key, try ChromeLogins.load(key: key))
-        }
+        },
+        readsRealChrome: true
     )
+
+    #if DEBUG
+    /// True in a test process. The switch that turns Chrome reading on is a preference, and every test process on a Mac
+    /// shares one preferences domain: a test in one process that turns it on would send a session in another to the real
+    /// "Chrome Safe Storage" key, and macOS would ask the person at that Mac for their keychain password.
+    static var inTestProcess: Bool { NSClassFromString("XCTestCase") != nil }
+
+    /// Reads nothing: no Chrome folder, no keychain. What a session in a test process has until the test gives it one.
+    static let refusedInTests = ChromeSnapshotSource(
+        signature: { ChromeStoreSignature() },
+        load: { _ in throw ChromeLoginsError.keychain(errSecInteractionNotAllowed) }
+    )
+    #endif
 }
 #endif
 extension VaultSession {
