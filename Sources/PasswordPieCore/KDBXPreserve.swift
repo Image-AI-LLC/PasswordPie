@@ -227,7 +227,7 @@ final class KDBXPreserve: @unchecked Sendable {
     private func pendingAttachments(_ attachments: [VaultAttachment], in entry: XMLElement) -> [VaultAttachment] {
         guard !attachments.isEmpty else { return [] }
         let held = Dictionary(readAttachments(entry, payloads: binaryPayloads).map { ($0.name, $0.data) }, uniquingKeysWith: { first, _ in first })
-        return Self.uniquelyNamed(attachments).filter { held[$0.name] != $0.data }
+        return Self.uniquelyNamed(attachments, held: held).filter { held[$0.name] != $0.data }
     }
 
     /// Adds each attachment to the entry, or points the one of that name at the new bytes. Bytes the file already holds
@@ -260,8 +260,9 @@ final class KDBXPreserve: @unchecked Sendable {
     }
 
     /// Names as the file can hold them, each once per entry: KeePass apps keep one attachment per name and let a
-    /// second one replace the first without a word. A repeated name gets "name (2).ext"; an empty one is "attachment".
-    static func uniquelyNamed(_ attachments: [VaultAttachment]) -> [VaultAttachment] {
+    /// second one replace the first without a word. A repeated name gets "name (2).ext", one the entry does not already
+    /// hold with other bytes; an empty one is "attachment".
+    static func uniquelyNamed(_ attachments: [VaultAttachment], held: [String: Data] = [:]) -> [VaultAttachment] {
         // A name that was asked for keeps it: only a repeat moves to a free one.
         var taken = Set<String>()
         var result: [VaultAttachment] = []
@@ -280,7 +281,7 @@ final class KDBXPreserve: @unchecked Sendable {
                 repeat {
                     name = "\(stem) (\(number))\(ext)"
                     number += 1
-                } while taken.contains(name) || asked.contains(name)
+                } while taken.contains(name) || asked.contains(name) || (held[name] != nil && held[name] != attachment.data)
             }
             taken.insert(name)
             result.append(VaultAttachment(name: name, data: attachment.data))

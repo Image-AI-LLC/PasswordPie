@@ -109,6 +109,48 @@ final class AttachmentSaveTests: XCTestCase {
         XCTAssertEqual(loaded.attachment(named: "recovery-codes.txt", of: try XCTUnwrap(live.first).id), Data("codes".utf8))
     }
 
+    /// Copies of one login that carry the same file leave it once on the account that stays. A file of that name with
+    /// other bytes is a different file, and is kept beside it.
+    func testCopiesOfOneLoginThatCarryTheSameFileLeaveItOnce() throws {
+        let codes = VaultAttachment(name: "recovery-codes.txt", data: Data("codes".utf8))
+        let newer = VaultAttachment(name: "recovery-codes.txt", data: Data("newer codes".utf8))
+        let copies = [[codes], [codes], [codes, newer]].map { files -> VaultEntry in
+            var copy = imported("Example", files, group: ["1Password"])
+            copy.url = "https://example.com/"
+            copy.username = "ann"
+            copy.password = "pw"
+            return copy
+        }
+        var vault = try KDBX.load(data: try existingDatabase(), password: "secret")
+        vault.entries = EntryMerge.merged(vault.entries + copies)
+        let loaded = try KDBX.load(data: try KDBX.save(vault: &vault, password: "secret"), password: "secret")
+        let live = loaded.entries.filter { !$0.trashed && $0.title == "Example" }
+        XCTAssertEqual(live.count, 1)
+        let id = try XCTUnwrap(live.first).id
+        XCTAssertEqual(loaded.attachmentNames(of: id), ["recovery-codes.txt", "recovery-codes (2).txt"])
+        XCTAssertEqual(loaded.attachment(named: "recovery-codes.txt", of: id), codes.data)
+        XCTAssertEqual(loaded.attachment(named: "recovery-codes (2).txt", of: id), newer.data)
+    }
+
+    /// A repeated name moves to a numbered one the entry does not use: what it holds as "old (2).txt" is not replaced
+    /// by the second "old.txt". Handing the same two over again adds nothing.
+    func testARepeatedNameDoesNotTakeTheNameOfAnAttachmentTheEntryHolds() throws {
+        var vault = try KDBX.load(data: try existingDatabase(), password: "secret")
+        let old = try XCTUnwrap(vault.entries.first).id
+        vault.entries[0].attachments = [VaultAttachment(name: "old (2).txt", data: Data("kept".utf8))]
+        _ = try KDBX.save(vault: &vault, password: "secret")
+        let twins = [VaultAttachment(name: "old.txt", data: Data("old bytes".utf8)), VaultAttachment(name: "old.txt", data: Data("second".utf8))]
+        for round in 1...2 {
+            vault.entries[0].attachments = twins
+            let loaded = try KDBX.load(data: try KDBX.save(vault: &vault, password: "secret"), password: "secret")
+            XCTAssertEqual(loaded.attachmentNames(of: old), ["old.txt", "old (2).txt", "old (3).txt"], "round \(round)")
+            XCTAssertEqual(loaded.attachment(named: "old.txt", of: old), Data("old bytes".utf8), "round \(round)")
+            XCTAssertEqual(loaded.attachment(named: "old (2).txt", of: old), Data("kept".utf8), "round \(round)")
+            XCTAssertEqual(loaded.attachment(named: "old (3).txt", of: old), Data("second".utf8), "round \(round)")
+            XCTAssertEqual(loaded.preserve?.binaryPayloads, [Data("old bytes".utf8), Data("kept".utf8), Data("second".utf8)], "round \(round)")
+        }
+    }
+
     func testSavingAgainAddsNoCopyAndNoVersion() throws {
         var vault = try KDBX.load(data: try existingDatabase(), password: "secret")
         var fresh = imported("Apple", [VaultAttachment(name: "AuthKey.p8", data: pem)])

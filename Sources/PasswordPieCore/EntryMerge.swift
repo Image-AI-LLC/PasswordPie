@@ -105,9 +105,10 @@ public enum EntryMerge {
                     if PreviousPasswords.absorb(other, into: &entry, now: Date()) { changed = true }
                     #endif
                     // Files an import brought with a copy go to the survivor with its fields. The copy in the Recycle
-                    // Bin keeps its own.
-                    if !other.attachments.isEmpty {
-                        entry.attachments.append(contentsOf: other.attachments)
+                    // Bin keeps its own. A file the survivor already carries (same name, same bytes) is not added again.
+                    let brought = other.attachments.filter { !entry.attachments.contains($0) }
+                    if !brought.isEmpty {
+                        entry.attachments.append(contentsOf: brought)
                         changed = true
                     }
                 }
