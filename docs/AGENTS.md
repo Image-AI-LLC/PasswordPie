@@ -55,8 +55,8 @@ puts helper tools inside a bundle, and it is signed as nested code like the rest
 
 ## The broker
 
-Every request that does not come from the owner clicking in PasswordPie goes through `VaultBroker`. The tool, and later
-the MCP server and the browser login, are thin relays. For each request it:
+Every request that does not come from the owner clicking in PasswordPie goes through `VaultBroker`. The tool, the MCP
+server and the website login are thin relays. For each request it:
 
 1. **Takes the caller** the app worked out from the kernel (below). Nothing in the request says who the agent is.
 2. **Waits for an unlock** when the vault is locked, up to `--wait` (default 60 s, at most 600). The app shows its lock
@@ -78,9 +78,9 @@ Rules it keeps:
 | Raw | `read`, and `run --no-masking`, show "The agent will see the value" and ask every time |
 | Two-step codes | `…/otp` answers `not-available` in this version; the fields that hold a two-step secret (`otp`, `TimeOtp-*`, `TOTP Seed`, `TOTP Settings`) are not offered as custom fields |
 
-The seams for later work: `AgentGrantStore` (`lastingChoice(for:)` says whether the window offers a lasting choice;
-`approved(_:decision:)` records one). A grant carries its `kind`: `use` grants are bound as below, `login` grants to the
-item, the site and the agent ("Website login").
+Standing permissions reach the broker through `AgentGrantStore` (`lastingChoice(for:)` says whether the window offers a
+lasting choice; `approved(_:decision:)` records one). A grant carries its `kind`: `use` grants are bound as below,
+`login` grants to the item, the site and the agent ("Website login").
 
 ## Standing permissions
 
@@ -102,7 +102,7 @@ A grant covers a request only when every binding matches:
 | Mac | `AgentMacIdentity`: SHA-256 of PasswordPie's label and the hardware UUID, 16 bytes in hex | The same file opened on another Mac does not use it |
 | Kind | `use`, or `login` | A run grant is not a website login grant, nor the other way round |
 
-A `login` grant ("Website login", step 5) is bound to the items, the agent, the time, the Mac and the **site**
+A `login` grant ("Website login", step 6) is bound to the items, the agent, the time, the Mac and the **site**
 (registrable domain) instead of the project and the program: a login runs no command. It does not bind `--submit`, the
 browser or the Chrome profile: it lets that agent log in with that account on that site again.
 
@@ -434,29 +434,33 @@ How the broker answers one (`VaultBroker+Login.swift`), in order:
 1. **Which item.** The reference, resolved among shared items only (unshared and nonexistent answer the same
    `not-available`); a field reference (`…/username`) is `usage`. Without a reference, `--url` offers every shared item
    with a website on that page's site, and the owner picks one in the window.
-2. **Which browser.** `--browser`, else Chrome when its extension is connected, else Safari when its extension is on.
+2. **A site the item does not list.** With `--url` and a reference, the item must list a website on that page's site,
+   else `site-mismatch`. This needs no browser, so it is answered first and no extension is poked.
+3. **Which browser.** `--browser`, else Chrome when its extension is connected, else Safari when its extension is on.
    In Chrome, the profile in front, or the one used last when Chrome is not the app in front (the agent's terminal often
-   is). None: `no-matching-tab` before anyone is asked.
-3. **The tab in front.** The extension is poked and given 1.5 seconds to report its tab.
-4. **Which website.** The fill is bound to one of the item's websites (or its reset link), by the extension's same-site
-   rule: registrable domain, no step down from https. With `--url`: the item's website for that page, else
-   `site-mismatch`. Without: the website for the reported tab, else `site-mismatch`; with no report, the item's main
+   is). None: `no-matching-tab` before anyone is asked, and the tool's line says what is missing instead of naming a tab:
+   "nothing was filled. PasswordPie's extension is not connected in Google Chrome or Safari. Ask the owner to turn it on
+   (PasswordPie > Preferences > Browsers), then try again."
+4. **The tab in front.** The extension is poked and given 1.5 seconds to report its tab.
+5. **Which website.** The fill is bound to one of the item's websites (or its reset link), by the extension's same-site
+   rule: registrable domain, no step down from https. With `--url`: the item's website for that page (step 2).
+   Without: the website for the reported tab, else `site-mismatch`; with no report, the item's main
    website. A tab known to be elsewhere (another site, or not a website) is `no-matching-tab`. All of these are answered
    before any prompt, and carry no overview and never the site of the owner's tab (only the site the agent asked for):
    without an approval, `login` tells the agent nothing it did not already know.
-5. **A standing permission** for this item, this site and this agent (a `login` grant, Premium) lets it through with no
+6. **A standing permission** for this item, this site and this agent (a `login` grant, Premium) lets it through with no
    window, in any project: a login runs no command and the browser serves every project, so a grant is bound to the
    item, the site (registrable domain) and the agent instead of a project and a program. Only with a reference or a
    single item: a choice among several is always the owner's. A login grant never covers `run`, and `list`'s `covered`
    is about `run`. It does not bind `--submit`, the browser or the profile. A login let through this way shows the
    menu-bar dot, and its activity line reads "filled and sent, by 7 days, github.com" (the one that made the grant:
    "…, and for 7 days, github.com").
-6. **The prompt**: the site, the account (title, folder, username), the browser and profile, whether the form is sent,
+7. **The prompt**: the site, the account (title, folder, username), the browser and profile, whether the form is sent,
    the two-step code line, the agent and its reason. Allow Once, or "Allow for 7 days ▾" (Premium), each with Touch ID.
    Rate limit, one prompt per session and the 2-minute timeout are as for `use`.
-7. **The fill.** After the approval the item must still be shared and still list the site. The browser side makes a
+8. **The fill.** After the approval the item must still be shared and still list the site. The browser side makes a
    pending fill for that browser, connection and website, marked as the agent's, and waits for how it went.
-8. **One activity line**, with the outcome (`filled`, `filled and sent`, `no matching tab`, `site mismatch`, `no tab
+9. **One activity line**, with the outcome (`filled`, `filled and sent`, `no matching tab`, `site mismatch`, `no tab
    took the fill`, `no sign-in fields`, or the refusal; with ", by 7 days, github.com" when a standing permission let it
    through, ", and for 7 days, github.com" when the window made one), the item, and the delivery `fill <browser> <site>`.
 
@@ -529,6 +533,81 @@ What cannot be prevented: a command that receives a secret can do anything with 
 with effort, read what a command was given; a raw value given to an agent stays in its transcript, and with a hosted
 model in the provider's records; an owner who approves the wrong thing.
 
+## Trying it
+
+### On your own Mac
+
+With a direct build that has agent access: the release, or `make install` from this repository (signed with your Apple
+Development identity; it replaces the copy in `~/Applications`). Ten minutes, in the order of the acceptance list.
+
+| Step | Do | Expect |
+|---|---|---|
+| Set up | Preferences > Agents: turn on **Allow agents to ask for secrets**, press **Create Link in ~/.local/bin**. Make a folder **Agents** with a token and a test account, and tick it under Shared with agents | `passwordpie status` in a terminal: "Agent access: on" |
+| 1. Use a secret | In Claude Code: "use the Cloudflare token from PasswordPie to list my Workers" | The agent runs `passwordpie run`; the window says Claude Code, signed by Anthropic PBC, with the command and the project; one Touch ID; the token reads `[concealed by PasswordPie]` wherever the command prints it |
+| 2. See a secret | "What is the password of my test account in PasswordPie?" | The window says **wants to see** and "The agent will see the value"; **Show to Agent**; the agent answers |
+| 3. Log in | Open a site's sign-in page in Chrome, then: "log in to this site with PasswordPie" | One Touch ID; the form is filled and sent; the agent says which account and never has the password. Needs extension 0.7.0 (below) |
+| 4. Free or Premium | Run a project script twice: `passwordpie run --env T=pp://Agents/Token -- Scripts/deploy.sh` | Without Premium the third button reads **Allow for 7 days · Premium** and opens the Premium window; Allow Once still works. With Premium, **Allow for 7 days** and Touch ID once; the second run shows no window, and the menu-bar pie shows its dot |
+| 5. Refusals | An item that is not shared; Deny; ⌘L, then a request; `passwordpie login pp://… --url https://another.site/` | One line each (`not-available`, `denied`, `locked` after the wait, `site-mismatch`), ending "Do not ask the owner to paste the value into the conversation." |
+| 6. Activity and revoke | Preferences > Agents | Every request above is listed, with the processes on hover; **Revoke All**, then step 4's command asks again |
+
+- **The extension for step 3.** A login that sends the form and reports back needs extension 0.7.0. Until that version
+  is in the Chrome Web Store, build it (`make extension`) and load `extension/.output/chrome-mv3` under
+  chrome://extensions > Load unpacked, with the store copy removed (both have the same ID). With 0.6.0 the form is
+  filled, not sent, and the agent hears `filled` with a word that the extension did not say.
+- **Premium for step 4.** A `make install` build also trusts the test key: `node Scripts/mint-activation-link.mjs 1`
+  prints a one-day activation link, and `open '<link>'` gives that build Premium. A release build takes only an
+  activation from passwordpie.com.
+- **For Claude Code as an MCP client**, copy its line from Preferences > Agents > MCP server; the agent then has
+  `passwordpie_run`, `passwordpie_read` and `passwordpie_login` and the window adds "through MCP" under the agent.
+
+### On a Mac nobody sits at
+
+Touch ID cannot be scripted, so a release build cannot be driven end to end by an agent. A debug build can: it takes a
+test database and a script for the approval window, and the real socket, peer checks, caller walk, window, grants,
+Activity and browser fill all run.
+
+1. Build the three programs apart from `swift test` (`swift build --scratch-path <folder> --product PasswordPie`, then
+   `PasswordPieBrowserHost` and `PasswordPieCLI`) and lay out a bundle as `make install` does: the app and the host in
+   `Contents/MacOS`, the tool as `Contents/Helpers/passwordpie`, `Info.plist`. Sign each with a certificate of team
+   `2S468LUF8V` and its identifier (`com.passwordpie.browser-host`, `com.passwordpie.cli` with
+   `Entitlements/cli.entitlements`, then the app with `Entitlements/direct.entitlements` less its AutoFill line): the app
+   and the tool check each other's signature.
+2. Quit the installed PasswordPie (both would answer the browser's socket), and start the bundle with `open -n -a`:
+
+       --env PASSWORDPIE_DB=<test.kdbx> --env PASSWORDPIE_PASSWORD=<its password> --env PASSWORDPIE_SHOW=1
+       --env PASSWORDPIE_STATUS_FILE=<status.json> --env PASSWORDPIE_AGENT_APPROVE=@<steps file>
+       --args -agentAccessEnabled YES -chromeSyncEnabled NO -legacyNamespaceMigrated YES "-touchIDDeclined.<test.kdbx>" YES
+
+   The arguments are not saved. The preferences are the installed app's all the same (the bundle ID is the same), so a
+   run that turns the switch or chooses a length leaves `agentAccessEnabled` and `agentGrantLength` there, and
+   Activity is written to the real `agent-activity.jsonl`: remove them afterwards.
+3. `PASSWORDPIE_AGENT_APPROVE` (debug builds only; a release build ignores it) answers the window without Touch ID.
+   Steps separated by commas, the first 2 seconds after the window opens and one every 2 seconds:
+
+   | Step | Presses |
+   |---|---|
+   | `allow` | Allow Once, or Show to Agent |
+   | `deny` | Deny; so does any word it does not know |
+   | `lasting`, `lasting:7d` | The lasting button as it stands, or a length from its menu (`session`, `8h`, `7d`, `30d`). Without Premium this opens the Premium window, so `lasting,allow` is a free user's path |
+   | `hold` | Nothing: the window stays for a screenshot |
+
+   `@/path/to/file` reads the steps from that file each time a window opens, so one run answers each request
+   differently. Three denials block the agent session for 10 minutes, as for anyone.
+4. The status file (ten times a second) has `agentAccess`, `agentApproval` (the window's words: title, rows, the Allow
+   and lasting buttons, the menu, why no lasting choice, agent, command, project, site, browser, reason),
+   `agentApprovalWindow` (its window number, for `screencapture -l`), `agentStanding`, `agentActivity`,
+   `agentSilentUseDot`, `agentWaiting` (the lock screen line), `hasPremium` and `paywallWindow`.
+5. For a website login, start Chrome on a fresh profile (`--user-data-dir`) with `extension/.output/chrome-mv3`
+   loaded, copy the host manifests the app wrote (`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/
+   com.passwordpie.json`) into that profile's `NativeMessagingHosts`, and serve the test pages from two ports of
+   `localhost`: different ports are different sites to the same-site rule.
+6. Afterwards: quit the bundle, put Chrome's host manifests back (opening the installed app does it), delete the test
+   activation (`com.passwordpie.account.dev`), the two preferences and the activity file, and unregister the bundle
+   (`lsregister -u`).
+
+What this run cannot show is the Touch ID sheet itself and the release signature: the first is the owner's to try, the
+second is checked on the release bundle ([CHANNELS.md](CHANNELS.md), "Releasing the direct download").
+
 ## Testing
 
 `swift test --filter PasswordPieAgentTests` runs the library's tests and the real tool against a server inside the test
@@ -539,7 +618,7 @@ rate limit, the activity log holding no planted value, a pseudo-terminal through
 its prompt. `AgentSocketPeerTests` connects from the unsigned test process and is refused.
 
 `MCPServerTests` drives the real `passwordpie mcp` with a scripted MCP client over its standard input and output: the
-four tools and nothing else, list showing shared items only, run masking both streams in the named folder (the app's
+five tools and nothing else, list showing shared items only, run masking both streams in the named folder (the app's
 project), the 64 KiB cut, the timeout, files and standard input, read asking every time with a standing permission in
 place, the agent from the process tree rather than `clientInfo`, error texts, the argument watch catching a planted
 `--password` that lives one second, and cancelling or leaving ending the command. `ArgumentWatchTests` covers the watch

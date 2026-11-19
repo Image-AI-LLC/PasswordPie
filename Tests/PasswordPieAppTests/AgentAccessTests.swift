@@ -420,6 +420,43 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertNotNil(host.bitmapImageRepForCachingDisplay(in: host.bounds))
     }
 
+    // MARK: Answering the window on a Mac nobody sits at (debug builds)
+
+    func testTheDebugScriptReadsItsSteps() {
+        XCTAssertEqual(AgentApprovalScript.steps("allow"), [.allow])
+        XCTAssertEqual(AgentApprovalScript.steps("deny"), [.deny])
+        XCTAssertEqual(AgentApprovalScript.steps(" lasting , allow\n"), [.lasting(nil), .allow])
+        XCTAssertEqual(AgentApprovalScript.steps("lasting:7d,lasting:session,hold"), [.lasting(.days7), .lasting(.session), .hold])
+        XCTAssertEqual(AgentApprovalScript.steps("yes"), [.deny], "a word it does not know never allows")
+        XCTAssertEqual(AgentApprovalScript.steps("lasting:forever"), [.deny])
+        XCTAssertEqual(AgentApprovalScript.steps(""), [])
+        XCTAssertEqual(AgentApprovalScript.steps("@/tmp/steps") { $0 == "/tmp/steps" ? "lasting:8h\n" : nil }, [.lasting(.hours8)])
+        XCTAssertEqual(AgentApprovalScript.steps("@/tmp/missing") { _ in nil }, [.deny], "a file that cannot be read denies")
+    }
+
+    /// `lasting,allow` without Premium: the Premium window opens, nothing is approved by it, then Allow Once answers.
+    func testTheDebugScriptWalksAFreeUsersPath() async {
+        let probe = LastingProbe(premium: false)
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: Confirms(true), lasting: probe.options) { decisions.append($0) }
+        await AgentApprovalScript.run([.lasting(nil), .allow, .deny], on: model, every: 0).value
+        XCTAssertEqual(probe.premiumShown, 1)
+        XCTAssertEqual(decisions, [.allow([0])], "answered once; the steps after the answer do nothing")
+    }
+
+    func testTheDebugScriptChoosesALength() async {
+        let probe = LastingProbe(premium: true)
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: Confirms(true), lasting: probe.options) { decisions.append($0) }
+        await AgentApprovalScript.run([.lasting(.hours8)], on: model, every: 0).value
+        XCTAssertEqual(decisions, [.allowLasting([0], .hours8)])
+        let held = AgentApprovalModel(prompt: Self.lastingPrompt(), confirmation: Confirms(true), lasting: probe.options) { decisions.append($0) }
+        await AgentApprovalScript.run([.hold], on: held, every: 0).value
+        XCTAssertFalse(held.answered)
+        XCTAssertEqual(held.debugSummary["lasting"] as? String, "Allow for 8 hours")
+        XCTAssertEqual(held.debugSummary["allow"] as? String, "Allow Once")
+    }
+
     /// A project with a script, for requests that can have a standing permission.
     private func project() throws -> URL {
         let project = directory.appendingPathComponent("project", isDirectory: true)

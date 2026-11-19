@@ -1125,7 +1125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             responderName = String(describing: type(of: field)) + "(field editor)"
             if field is NSSecureTextField { passwordLength = field.stringValue.count } else { searchText = field.stringValue }
         }
-        return [
+        var state: [String: Any] = [
             "visible": panel.isVisible,
             "locked": session.locked,
             "keyWindow": keyKind,
@@ -1178,6 +1178,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "premiumMessage": session.premium.activity.message ?? NSNull(),
             "paywallWindow": paywallWindow?.isVisible == true ? paywallWindow?.windowNumber ?? NSNull() : NSNull()
         ]
+        #if PP_DIRECT
+        // Agent access (docs/AGENTS.md, "Trying it"): the switch, an open approval window, and what a silent use leaves
+        // behind. With several windows open, the summary and the window number are each of one of them.
+        state["agentAccess"] = agentAccess.enabled
+        state["agentApproval"] = agentAccess.approver.open.values.first.map { $0.model.debugSummary } ?? NSNull()
+        state["agentApprovalWindow"] = NSApp.windows.first { $0.isVisible && $0.contentViewController is NSHostingController<AgentApprovalView> }?.windowNumber ?? NSNull()
+        state["agentStanding"] = agentAccess.standing.map { "\($0.agentName): \($0.description)" }
+        state["agentActivity"] = agentAccess.activity.count
+        state["agentSilentUseDot"] = silentUseDotEnds != nil
+        state["agentWaiting"] = session.agentWaitingLine ?? NSNull()
+        #endif
+        return state
     }
     #endif
 }

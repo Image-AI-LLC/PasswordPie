@@ -137,6 +137,37 @@ final class AgentLoginTests: XCTestCase {
         XCTAssertTrue(approver.prompts.isEmpty)
     }
 
+    /// With no extension there is no tab to bring forward: the line says what is missing and who can fix it.
+    func testNoExtensionSaysSoInsteadOfBlamingTheTab() async throws {
+        logins.target = nil
+        let answer = await broker().handle(.login("pp://Web/GitHub", url: "https://github.com/login"), from: Callers.make())
+        let login = try XCTUnwrap(answer.login)
+        XCTAssertEqual(login.outcome, .noMatchingTab)
+        XCTAssertEqual(
+            login.line,
+            "PasswordPie: nothing was filled. PasswordPie's extension is not connected in Google Chrome or Safari. Ask the owner to turn it on "
+                + "(PasswordPie > Preferences > Browsers), then try again. " + AgentConstants.pasteWarning
+        )
+        XCTAssertFalse(login.line(mcp: true).contains("tab in front"))
+        XCTAssertTrue(login.line(mcp: true).hasSuffix(AgentConstants.mcpGuidance))
+        // A tab that is elsewhere keeps its own line.
+        logins.target = AgentLoginTarget(browser: .chrome, profile: nil, link: 1, page: .url("https://gitlab.com/"))
+        let elsewhere = await broker().handle(.login("pp://Web/GitHub", url: "https://github.com/login"), from: Callers.make())
+        XCTAssertTrue(try XCTUnwrap(elsewhere.login).line.hasPrefix("PasswordPie: the tab in front in Google Chrome is not on github.com; nothing was filled."))
+    }
+
+    /// A site the item does not list is refused as that, whether or not a browser could fill: it needs none to know.
+    func testASiteMismatchDoesNotNeedABrowser() async {
+        logins.target = nil
+        let answer = await broker().handle(.login("pp://Web/GitHub", url: "https://gitlab.com/users/sign_in"), from: Callers.make())
+        XCTAssertEqual(answer.login?.outcome, .siteMismatch)
+        XCTAssertEqual(answer.login?.site, "gitlab.com")
+        XCTAssertNil(answer.login?.item)
+        XCTAssertTrue(logins.targetsAsked.isEmpty, "the extension is not poked for a login that cannot happen")
+        XCTAssertTrue(approver.prompts.isEmpty)
+        XCTAssertEqual(activity.records.map(\.outcome), [.siteMismatch])
+    }
+
     /// An unknown page binds the fill to the item's main website; the browser side then waits for a tab of it.
     func testAnUnknownPageBindsTheMainWebsite() async {
         approver.script = [.allow([0])]
