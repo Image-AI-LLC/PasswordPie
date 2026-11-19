@@ -106,6 +106,11 @@ extension VaultFile {
                 }
                 throw VaultWriteError("\(url.lastPathComponent) changed on disk and this database cannot be merged with it, so nothing was changed.")
             }
+            // The file's header is untrusted until a key opens it, and nobody asked for this read: a key derivation
+            // other than this database's own, which could ask for any amount of time or memory, is not run.
+            if let asked = KDBX.kdf(ofHeader: onDisk), asked != vault.kdf.kind {
+                throw VaultWriteError("\(url.lastPathComponent) changed on disk and asks for other key settings than this database has, so it was not opened and nothing was changed. If they were changed on another Mac, lock PasswordPie and unlock.")
+            }
             var theirs: Vault
             do {
                 theirs = try KDBX.load(data: onDisk, password: password, keyFile: keyFile)

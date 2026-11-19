@@ -86,6 +86,8 @@ struct MergeState {
     var scanAgain: Set<String> = []
     /// Databases whose file changed again while it was being read: read once more when that read ends.
     var followAgain: Set<String> = []
+    /// Copies whose merge waits for its turn or is being written, by database path: not opened a second time.
+    var merging: [String: [ConflictCopy]] = [:]
 }
 
 /// One item of the list of items changed on both Macs.
@@ -105,6 +107,8 @@ struct ChangedOnBothItem: Identifiable, Equatable {
     var listID: UUID
     var title: String
     var username: String
+    /// In the Recycle Bin now: the other Mac moved it there after this Mac's change.
+    var trashed = false
     var kept: Date
     var older: Date
     /// Newest first.
@@ -119,12 +123,16 @@ protocol MergePrompting: AnyObject {
     func show(_ text: String, title: String)
 }
 
-/// A file a sync folder holds under a copy's name is read only when it is a regular file of a size a database can be: a
-/// named pipe, a device or a huge file must not stall or exhaust the app, which reads every such name unasked.
-private func readableCopyData(at url: URL) -> Data? {
+/// A file a sync folder holds under a copy's name is read unasked only when it is a regular file of a size a database
+/// can be, and asks for this database's own key derivation: a named pipe, a device, a huge file or a header asking for
+/// any amount of time or memory must not stall or exhaust the app. Only the start of the file is read to find that out.
+private func readableCopyData(at url: URL, deriving kdf: KDFKind) -> Data? {
     let limit = 512 * 1024 * 1024
     guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
-          values.isRegularFile == true, let size = values.fileSize, size <= limit else { return nil }
+          values.isRegularFile == true, let size = values.fileSize, size <= limit,
+          let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let start = try? handle.read(upToCount: KDBX.headerLimit), KDBX.kdf(ofHeader: start) == kdf else { return nil }
     return try? Data(contentsOf: url)
 }
 
@@ -134,7 +142,7 @@ extension VaultSession {
     // MARK: Reading a file that was replaced
 
     /// These databases' files changed on disk (all the open ones when nil): each is read again, and merged if this Mac
-    /// has something it lacks. Called by the file watcher, and after unlocking.
+    /// has something it lacks. Called by the file watcher.
     func filesChangedOnDisk(_ paths: [String]? = nil) {
         guard !locked else { return }
         for file in openedFiles where Self.follows(file) && (paths?.contains(file.url.path) ?? true) {
@@ -166,11 +174,14 @@ extension VaultSession {
                 self.mergeState.unreadable[path] = nil
             }
             self.refreshMergeNotice()
-            if self.mergeState.followAgain.remove(path) != nil { self.follow(path) }
+            // Not for a database that is no longer open: a lock ends the waiting reads on its way.
+            if self.mergeState.followAgain.remove(path) != nil, self.openedFiles.contains(where: { $0.url.path == path }) {
+                self.follow(path)
+            }
         })
     }
 
-    /// After every write and every read of a replaced file. `changed` is false when the file was only looked at.
+    /// After every write and every read of a replaced file. `readAgain`: nothing of this Mac's was being saved.
     func mergeSettled(_ saved: VaultFileSave, path: String, readAgain: Bool) {
         if saved.wrote || saved.merge != nil { mergeState.unreadable[path] = nil }
         // The other Mac's items may fold into ours, as after opening a file.
@@ -205,10 +216,11 @@ extension VaultSession {
     /// The menu's id for an item of the current database, by the id the file has for it.
     private func listID(forStored id: UUID) -> UUID? {
         let path = databaseURL.path
-        return entries.first { listOrigins[$0.id] == id && listPaths[$0.id] == path && !$0.trashed }?.id
+        return entries.first { listOrigins[$0.id] == id && listPaths[$0.id] == path }?.id
     }
 
-    /// What the current database lists as changed on both Macs, for the items it still has outside the Recycle Bin.
+    /// What the current database lists as changed on both Macs, for the items it still has. One in the Recycle Bin
+    /// counts: a change here that lost to a later move to the bin on the other Mac is exactly what must not go unseen.
     private func changeRecords() -> [MergeConflictLog.Record] {
         guard let file = currentFile else { return [] }
         return MergeConflictLog.records(in: file.vault.customData).filter { listID(forStored: $0.item) != nil }
@@ -228,7 +240,8 @@ extension VaultSession {
         var items: [ChangedOnBothItem] = []
         var listed = Set<UUID>()
         for record in changeRecords().reversed() where listed.insert(record.item).inserted {
-            guard let listID = listID(forStored: record.item), let entry = entry(listID) else { continue }
+            // Among everything the database holds, the Recycle Bin included.
+            guard let listID = listID(forStored: record.item), let entry = entries.first(where: { $0.id == listID }) else { continue }
             let versions = file.vault.versions(of: record.item).reversed().map { version in
                 ChangedOnBothItem.Version(
                     id: version.id,
@@ -238,7 +251,7 @@ extension VaultSession {
                 )
             }
             items.append(ChangedOnBothItem(
-                id: record.id, listID: listID, title: entry.title, username: entry.username,
+                id: record.id, listID: listID, title: entry.title, username: entry.username, trashed: entry.trashed,
                 kept: record.keptDate, older: record.olderDate, versions: Array(versions)
             ))
         }
@@ -359,7 +372,11 @@ extension VaultSession {
     private func trash(_ copies: [ConflictCopy]) {
         let path = databaseURL.path
         var failed: [ConflictCopy] = []
+        let merged = handledCopies(of: path)
         for copy in copies {
+            // Only the file that was merged. One a sync tool or a person has written again since holds something the
+            // database may lack: it stays, and is looked at afresh.
+            guard merged[copy.url.path] == FileSignature(path: copy.url.path)?.text else { continue }
             do {
                 try moveToTrash(copy.url)
             } catch {
@@ -367,6 +384,7 @@ extension VaultSession {
             }
         }
         mergeState.merged[path] = failed.isEmpty ? nil : failed
+        lookForCopies(of: [path])
         if let first = failed.first {
             mergePrompts.show("\(first.name) could not be moved to the Trash. It is still beside the database.", title: "Move to Trash")
         }
@@ -408,7 +426,7 @@ extension VaultSession {
         mergeState.merged[path]?.removeAll { !FileManager.default.fileExists(atPath: $0.url.path) }
         mergeState.offered[path]?.removeAll { !FileManager.default.fileExists(atPath: $0.url.path) }
         let handled = handledCopies(of: path)
-        let known = (mergeState.merged[path] ?? []) + (mergeState.offered[path] ?? [])
+        let known = (mergeState.merged[path] ?? []) + (mergeState.offered[path] ?? []) + (mergeState.merging[path] ?? [])
         mergeState.scanning.insert(path)
         let (url, password, keyFile, ours, ourKDF, generation) = (file.url, file.password, file.keyFile, file.vault.rootGroupID, file.vault.kdf.kind, catalogGeneration)
         // Listing the folder can be slow, and opening a copy derives its key, which can take seconds: off the main
@@ -422,8 +440,8 @@ extension VaultSession {
                 guard copy.certain else { return (copy, nil) }
                 // Its header is untrusted until a key opens it: a key derivation other than this database's own, which
                 // could ask for any amount of time or memory, is not run unasked.
-                let vault = readableCopyData(at: copy.url).flatMap { data in
-                    KDBX.kdf(ofHeader: data) == ourKDF ? try? KDBX.load(data: data, password: password, keyFile: keyFile) : nil
+                let vault = readableCopyData(at: copy.url, deriving: ourKDF).flatMap {
+                    try? KDBX.load(data: $0, password: password, keyFile: keyFile)
                 }
                 // The other Mac's version of this database opens with its keys and has its root group.
                 return (copy, vault.flatMap { $0.rootGroupID != nil && $0.rootGroupID == ours ? $0 : nil })
@@ -439,6 +457,8 @@ extension VaultSession {
                     self.mergeState.offered[path, default: []].append(copy)
                     continue
                 }
+                // From now until its merge is written, another look through the folder leaves it alone.
+                self.mergeState.merging[path, default: []].append(copy)
                 self.enqueueFileWork(path: path, merging: vault, settled: { [weak self] _ in
                     guard let self else { return }
                     self.rememberHandled(copy, of: path)
@@ -447,7 +467,10 @@ extension VaultSession {
                     } else {
                         if self.mergeState.merged[path]?.contains(copy) != true { self.mergeState.merged[path, default: []].append(copy) }
                     }
-                }, done: { [weak self] _ in self?.refreshMergeNotice() })
+                }, done: { [weak self] _ in
+                    self?.mergeState.merging[path]?.removeAll { $0 == copy }
+                    self?.refreshMergeNotice()
+                })
             }
             self.refreshMergeNotice()
             if self.mergeState.scanAgain.remove(path) != nil { self.lookForCopies(of: [path]) }
@@ -497,6 +520,15 @@ extension VaultSession {
         openForMerge(url, password: file.password, keyFile: file.keyFile, firstTry: true) { [weak self] vault in
             guard let self else { return }
             let path = file.url.path
+            // "Possible copy" was a guess from the file's name. A file that turns out to be another database is not
+            // folded into this one on that guess: Merge from File… is the way to ask for exactly that.
+            if let offered, vault.rootGroupID != file.vault.rootGroupID {
+                self.rememberHandled(offered, of: path)
+                self.mergeState.offered[path]?.removeAll { $0 == offered }
+                self.refreshMergeNotice()
+                self.mergePrompts.show("\(name) is another database, not a copy of this one, so it was not merged. To bring its items in all the same, choose Merge from File… in the gear menu.", title: Self.mergeTitle)
+                return
+            }
             var report: VaultMergeReport?
             self.enqueueFileWork(path: path, merging: vault, settled: { saved in
                 report = saved.merge

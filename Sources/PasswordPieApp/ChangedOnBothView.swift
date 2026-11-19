@@ -34,6 +34,11 @@ struct ChangedOnBothView: View {
         return min(max(rows, 90), 380)
     }
 
+    static func summary(of item: ChangedOnBothItem) -> String {
+        let versions = "the change of \(when(item.kept)). In its history: the change of \(when(item.older))."
+        return item.trashed ? "In the Recycle Bin, as of " + versions : "Now: " + versions
+    }
+
     static func differs(_ names: [String]) -> String {
         names.isEmpty ? "Same fields as now" : "Differs in " + names.joined(separator: ", ")
     }
@@ -87,8 +92,9 @@ struct ChangedOnBothView: View {
                 .controlSize(.small)
                 Button("Show Item") { session.pinEntry(item.listID) }
                     .controlSize(.small)
+                    .disabled(item.trashed)
             }
-            Text("Now: the change of \(Self.when(item.kept)). In its history: the change of \(Self.when(item.older)).")
+            Text(Self.summary(of: item))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if opened.contains(item.id) {
@@ -105,9 +111,11 @@ struct ChangedOnBothView: View {
                                 .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                         }
                         Spacer()
+                        // Nothing to bring back when the fields are the item's own, and no item to bring it back to
+                        // while it is in the Recycle Bin.
                         Button("Restore") { restore(version, of: item) }
                             .controlSize(.small)
-                            .disabled(session.savesPending)
+                            .disabled(session.savesPending || version.differing.isEmpty || item.trashed)
                     }
                     .padding(.leading, 12)
                     .padding(.top, 3)

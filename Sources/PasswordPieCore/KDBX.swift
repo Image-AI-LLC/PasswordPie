@@ -11,11 +11,15 @@ public enum KDBX {
         try load(data: data, password: password, keyFile: keyFile, repairing: false)
     }
 
-    /// The key derivation a file's header asks for, read without deriving anything. Nil when the header is not a readable
-    /// KDBX 4 header.
+    /// The key derivation a file asks for, read from the start of the file without deriving anything. Nil when that is
+    /// not a readable KDBX 4 header. Only the first `headerLimit` bytes are looked at, whatever the file's size: a header
+    /// is a few hundred bytes, and nothing in it is trusted before a key has opened the file.
     public static func kdf(ofHeader data: Data) -> KDFKind? {
-        try? parseOuter(data).kdf
+        try? parseOuter(Data(data.prefix(headerLimit))).kdf
     }
+
+    /// How much of a file `kdf(ofHeader:)` reads.
+    public static let headerLimit = 1024 * 1024
 
     /// Opens a file the old writer damaged by repairing its XML in memory. `Vault.recovery` says what changed.
     public static func loadRecovering(data: Data, password: String, keyFile: Data?) throws -> Vault {

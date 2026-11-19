@@ -2072,7 +2072,7 @@ read.
 | An item changed | A different item changed, or a new one added | Both changes, nothing asked |
 | An item changed | The same item changed | The later change is the item. The earlier one is in the item's history, and the item is listed (below) |
 | An item moved to the Recycle Bin | Nothing | In the Recycle Bin on both |
-| An item moved to the Recycle Bin | The same item changed after that | It stays, with the change. Changed before that: it is in the Recycle Bin, with the change in its history. It is not in the list of items changed on both Macs while it is in the Recycle Bin (it is listed there only if another KeePass app takes it out again) |
+| An item moved to the Recycle Bin | The same item changed after that | It stays, with the change. Changed before that: it is in the Recycle Bin, with the change in its history, and listed (below) as being in the Recycle Bin |
 | An item deleted for good in another KeePass app | Nothing, or a change made before the deletion | Gone on both |
 | An item moved to another folder, a folder renamed or added | Nothing | Moved, renamed, added |
 | An attachment added or replaced | Nothing | The item has it |
@@ -2091,7 +2091,9 @@ the search field says how many, on each of your Macs, once. **Review** opens the
 - each item with its title and account, and when the version that is current now and the one in its history were made;
 - **History** shows the item's earlier versions, newest first, each with its time and the names of the fields that
   differ from the item as it is now. Values are not shown. **Restore** makes that version the item again; the version
-  it replaces goes into the history, so Restore can be taken back the same way;
+  it replaces goes into the history, so Restore can be taken back the same way. A version whose fields are the item's
+  own has nothing to restore, and an item the other Mac moved to the Recycle Bin after your change is listed as being
+  there;
 - **Show Item** opens the item's details.
 
 **×** on the line dismisses it. The list stays in the gear menu as **Changed on Both Macs…** while the database has any
@@ -2108,13 +2110,17 @@ and each time the folder changes:
 | Unison, with its `copyonconflict` setting | `Passwords.kdbx (conflict_on_2026-11-20)` |
 | iCloud Drive | No file: a conflict version that iCloud Drive holds for the file |
 
-A copy with such a name that opens with the database's own master password and key file, and is the same database, is
+A copy with such a name that opens with the database's own master password and key file, asks for the same key
+settings (the database's key derivation, which another KeePass app can change), and is the same database, is
 merged in without asking: it is the other Mac's half of what you did. The line under the search field then says "A copy
 was merged in", with **Move to Trash**: the copy holds nothing the database lacks now, and it is yours to remove. **×** keeps the file and does not mention it again.
 
 A copy that might be something else is offered, never merged unasked: a file such as `Passwords 2.kdbx` or
 `Passwords (old).kdbx`, which you could have made yourself, or a copy with a sync tool's name that does not open with
-this database's password. The line says "Possible copy: Passwords 2.kdbx", with **Merge…**. Merged, it is yours to
+this database's password, asks for other key settings, is larger than 512 MB or is not a plain file. PasswordPie
+opens none of these by itself: a file in a shared folder could ask for any amount of time and memory before it has
+shown that it is yours. A file that turns out to be another database is not merged on that guess either; Merge from
+File… is how you ask for that. The line says "Possible copy: Passwords 2.kdbx", with **Merge…**. Merged, it is yours to
 move to the Trash like the others.
 
 **Merge from File…** in the gear menu merges any KeePass database you choose into the open one, the same way. If the
@@ -2138,6 +2144,8 @@ Time), which keeps them within a second of each other.
 ### When it does not apply
 
 - **A locked database.** Nothing is read or merged while locked.
+- **Key settings changed on one Mac** (the key derivation, in another KeePass app's database settings). The other Mac
+  does not open the new file while unlocked, for the reason above, and says so under **Why?**. Lock, and unlock.
 - **A master password or key file changed on one Mac.** The other Mac cannot open the new file with the old password. It
   leaves the file alone, saves nothing over it, and the line under the search field says "Passwords.kdbx cannot be
   read"; **Why?** gives the reason. Lock, and unlock with the new password. The Mac that changes the keys

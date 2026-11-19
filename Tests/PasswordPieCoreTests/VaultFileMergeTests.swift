@@ -215,6 +215,44 @@ final class VaultFileMergeTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), theirs)
     }
 
+    /// Nobody asked for this read, and a header is untrusted until a key opens the file: a key derivation that is not
+    /// this database's own is never run for it.
+    func testAReplacedFileThatAsksForOtherKeySettingsIsNotOpened() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let other = try KDBX.testingDatabase(xml: MergeCopy(items: [bank, mail]).xml, password: "secret", kdf: KDFParameters(kind: .aes(rounds: 200)))
+        try other.write(to: url, options: .atomic)
+        mine.entries[0].password = "new"
+
+        for onlyIfNeeded in [true, false] {
+            XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil, onlyIfNeeded: onlyIfNeeded)) { error in
+                XCTAssertTrue((error as? VaultWriteError)?.description.contains("asks for other key settings") == true, "\(error)")
+            }
+            XCTAssertEqual(try Data(contentsOf: url), other)
+        }
+    }
+
+    func testTheKeySettingsAFileAsksForAreReadFromItsStartWithoutDerivingAnything() throws {
+        let data = try MergeCopy(items: [bank]).data()
+        XCTAssertEqual(KDBX.kdf(ofHeader: data), .aes(rounds: 100))
+        XCTAssertEqual(KDBX.kdf(ofHeader: data.prefix(400)), .aes(rounds: 100), "the header is enough")
+        XCTAssertNil(KDBX.kdf(ofHeader: Data("not a database".utf8)))
+        XCTAssertNil(KDBX.kdf(ofHeader: Data(repeating: 0, count: 2 * KDBX.headerLimit)))
+
+        // A header asking for more memory than a number in this app can hold is refused, not acted on.
+        let argon = try KDBX.testingDatabase(
+            xml: MergeCopy(items: [bank]).xml, password: "secret",
+            kdf: KDFParameters(kind: .argon2id(memoryKiB: 1024, iterations: 1, parallelism: 1, version: 0x13))
+        )
+        XCTAssertEqual(KDBX.kdf(ofHeader: argon), .argon2id(memoryKiB: 1024, iterations: 1, parallelism: 1, version: 0x13))
+        // The variant entry "M": type 5, a 1-byte name, an 8-byte value.
+        let entry = Data([0x05, 0x01, 0x00, 0x00, 0x00, UInt8(ascii: "M"), 0x08, 0x00, 0x00, 0x00])
+        let place = try XCTUnwrap(argon.range(of: entry))
+        var hostile = argon
+        hostile.replaceSubrange(place.upperBound..<(place.upperBound + 8), with: Data(repeating: 0xFF, count: 8))
+        XCTAssertNil(KDBX.kdf(ofHeader: hostile))
+        XCTAssertThrowsError(try KDBX.load(data: hostile, password: "secret"))
+    }
+
     func testAReplacedFileThatIsNotADatabaseIsLeftAlone() throws {
         let mine = try open(MergeCopy(items: [bank]))
         try Data("half a file".utf8).write(to: url)

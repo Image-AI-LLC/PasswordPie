@@ -275,6 +275,55 @@ final class SameDatabaseTwoMacsTests: XCTestCase {
         XCTAssertEqual(session.itemsChangedOnBoth().first?.versions.first { $0.isTheEarlierChange }?.differing, ["Password"])
     }
 
+    /// This Mac's change lost to a later move to the Recycle Bin on the other Mac: that must not go unseen either.
+    func testAChangeThatLostToALaterMoveToTheRecycleBinIsListedAsBeingThere() throws {
+        let session = unlockedSession()
+        let common = try Data(contentsOf: databaseURL)
+        Thread.sleep(forTimeInterval: 1.1)
+        let bank = try XCTUnwrap(session.entries.first { $0.title == "Bank" }?.id)
+        session.changeEntry(bank) { entry in
+            entry.password = "from this Mac"
+            return true
+        }
+        Thread.sleep(forTimeInterval: 1.1)
+        var theirs = try KDBX.load(data: common, password: "pw")
+        theirs.entries[theirs.entries.firstIndex { $0.title == "Bank" }!].trashed = true
+        try arrive(try KDBX.save(vault: &theirs, password: "pw"))
+
+        session.filesChangedOnDisk()
+
+        XCTAssertEqual(titles(session), ["Mail"])
+        XCTAssertEqual(session.mergeNotice, .changedOnBoth(1))
+        let listed = try XCTUnwrap(session.itemsChangedOnBoth().first)
+        XCTAssertEqual(listed.title, "Bank")
+        XCTAssertTrue(listed.trashed)
+        XCTAssertTrue(ChangedOnBothView.summary(of: listed).hasPrefix("In the Recycle Bin"))
+    }
+
+    /// The other Mac's file lands twice in a row. The second arrives while the first is still being read beside the app.
+    func testAFileThatChangesAgainWhileItIsBeingReadIsReadOnceMore() async throws {
+        let session = VaultSession()
+        session.mergePrompts = prompts
+        session.restore()
+        session.passwordDraft = "pw"
+        session.confirmDraft = "pw"
+        session.unlock()
+        session.saveEditing(item("Bank"))
+        await session.savesSettled()
+
+        let first = try otherMac { $0.entries.append(self.item("First")) }
+        try arrive(first)
+        session.filesChangedOnDisk()
+        XCTAssertTrue(session.savesPending, "the first is being read")
+        var second = try KDBX.load(data: first, password: "pw")
+        second.entries.append(item("Second"))
+        try arrive(try KDBX.save(vault: &second, password: "pw"))
+        session.filesChangedOnDisk()
+
+        let read = await waitUntil { self.titles(session) == ["Bank", "First", "Second"] }
+        XCTAssertTrue(read, "\(titles(session))")
+    }
+
     func testADatabaseOpenedForTheFirstTimeDoesNotReportWhatHappenedBefore() async throws {
         let session = unlockedSession()
         try bothChangeBank(session)
@@ -417,16 +466,60 @@ final class SameDatabaseTwoMacsTests: XCTestCase {
         XCTAssertEqual(titles(session), ["API key", "Bank", "Mail"])
     }
 
-    func testASyncToolsNameOnAnotherDatabaseIsNotMergedUnasked() throws {
+    func testASyncToolsNameOnAnotherDatabaseIsNotMergedUnaskedNorOnAGuess() throws {
         let session = unlockedSession()
-        // Another database altogether, with the same password, under a conflict copy's name.
-        var other = Vault(name: "Other", rootName: "Other", entries: [item("Stranger")], kdf: .fastTest)
-        try KDBX.save(vault: &other, password: "pw").write(to: directory.appendingPathComponent("Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx"))
+        // Another database altogether, with the same password and the same key settings, under a conflict copy's name.
+        var other = Vault(name: "Other", rootName: "Other", entries: [item("Stranger")], kdf: .default)
+        let copy = directory.appendingPathComponent("Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx")
+        try KDBX.save(vault: &other, password: "pw").write(to: copy)
+        XCTAssertEqual(KDBX.kdf(ofHeader: try Data(contentsOf: copy)), KDBX.kdf(ofHeader: try Data(contentsOf: databaseURL)))
 
         session.lookForCopies()
 
         XCTAssertEqual(titles(session), ["Bank", "Mail"])
         XCTAssertEqual(session.mergeNotice?.actionTitle, "Merge…")
+        // Merge… on the line was offered on the strength of the name alone: another database is still not folded in.
+        session.performMergeNotice()
+        XCTAssertEqual(titles(session), ["Bank", "Mail"])
+        XCTAssertTrue(prompts.shown.last?.text.hasPrefix("Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx is another database") == true, prompts.shown.last?.text ?? "")
+        XCTAssertNil(session.mergeNotice)
+        // Merge from File… is how it is asked for.
+        session.mergeFile(at: copy)
+        XCTAssertEqual(titles(session), ["Bank", "Mail", "Stranger"])
+    }
+
+    /// A header is untrusted until a key opens the file: a copy that asks for another key derivation than this
+    /// database's is not opened unasked, though it is this database and would open with its password.
+    func testACopyThatAsksForOtherKeySettingsIsOfferedNotOpenedUnasked() throws {
+        let session = unlockedSession()
+        var theirs = try onDisk()
+        theirs.entries.append(item("API key"))
+        _ = try KDBX.save(vault: &theirs, password: "pw")
+        let xml = try XCTUnwrap(theirs.preserve?.document.xmlString)
+        let copy = directory.appendingPathComponent("Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx")
+        try KDBX.testingDatabase(xml: xml, password: "pw", kdf: .fastTest).write(to: copy)
+
+        session.lookForCopies()
+
+        XCTAssertEqual(titles(session), ["Bank", "Mail"], "not opened, so not merged")
+        XCTAssertEqual(session.mergeNotice?.actionTitle, "Merge…")
+        session.performMergeNotice()
+        XCTAssertEqual(titles(session), ["API key", "Bank", "Mail"], "asked for, it is this database and is merged")
+    }
+
+    func testAMergedCopyThatWasWrittenAgainIsNotMovedToTheTrash() throws {
+        let session = unlockedSession()
+        let copy = try leaveCopy(named: "Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx") { $0.entries.append(self.item("API key")) }
+        session.lookForCopies()
+        XCTAssertEqual(session.mergeNotice?.actionTitle, "Move to Trash")
+        // The sync tool writes the copy again before the button is pressed: it now holds something the database lacks.
+        try otherMac { $0.entries.append(self.item("Arrived later")) }.write(to: copy, options: .atomic)
+
+        session.performMergeNotice()
+
+        XCTAssertEqual(trashed, [], "what was not merged is not thrown away")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: copy.path))
+        XCTAssertEqual(titles(session), ["API key", "Arrived later", "Bank", "Mail"], "it is merged as the new copy it is")
     }
 
     // MARK: Merge from File…
