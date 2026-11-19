@@ -470,7 +470,8 @@ is on). **Add Chrome Extension…** stays there after Chrome is connected, becau
 **Browser Extensions…** in the gear menu, and in the menu that Option-clicking the menu bar icon opens, goes straight
 to that pane.
 
-Chrome is in the version downloaded from passwordpie.com. The App Store version has Safari only, for now.
+Chrome is in the version downloaded from passwordpie.com. The App Store version has Safari only, for now. Other browsers
+built on Chromium get the same line and the same rows once you allow them ("Other browsers built on Chrome").
 
 ### More than one Chrome profile
 
@@ -488,6 +489,61 @@ one. PasswordPie goes by the profile whose window is in front:
 
 To add the extension to another profile later, bring a window of that profile to the front in Chrome, then choose
 **Add Chrome Extension…** in Preferences: the store page opens in the profile you used last.
+
+### Other browsers built on Chrome
+
+**In one line:** Edge, Brave, Arc, Vivaldi, ego lite and every other browser built on Chromium work like Chrome, after
+you allow each one once.
+
+These browsers run the same PasswordPie extension, from the Chrome Web Store. PasswordPie needs no update for a new
+one: it recognizes a browser built on Chromium by the browser itself, finds where that browser keeps its extensions,
+and connects it there.
+
+1. Add the PasswordPie extension to the browser from the Chrome Web Store. (Edge asks you to turn on "Allow extensions
+   from other stores" first.) When the browser is in front without the extension, the panel's first line is
+   **Add Chrome Extension…** with that browser's icon, and it opens the store page in that browser.
+2. The first time the browser connects, PasswordPie asks, once:
+
+   > **Allow “ego lite” to fill passwords?**
+   > The PasswordPie extension in ego lite wants to connect. Once allowed, ego lite gets an account's username and
+   > password when you pick it in PasswordPie, as Chrome does.
+   > Signed by CITRO LABS PTE. LIMITED. Allow it only if you added the PasswordPie extension to ego lite yourself.
+   >
+   > **Don't Allow** · **Allow**
+
+   Return is **Don't Allow**: a key pressed by accident never lets a browser in. Click **Allow**.
+3. That answer stays. **Allow**: the browser works exactly like Chrome, profiles included: `⌘\` puts the site's accounts
+   at the top, and Return fills the page. **Don't Allow**: its extension gets nothing, PasswordPie does not ask again,
+   no **Add Chrome Extension…** line is shown for it, and Fill types the username and password as in any app.
+
+Google Chrome, and Chrome Beta, Dev and Canary, are never asked about: they are signed by Google.
+
+Why it asks: the extension reaches PasswordPie through a small helper that the browser starts. Any program could start
+that helper and claim to be a browser. PasswordPie lets in a program only when it is a browser built on Chromium,
+signed by a developer Apple knows, and allowed by you. Your answer is tied to that browser and its developer: another
+app with the same name, signed by someone else, is asked about again.
+
+**Preferences > Browsers** lists each browser you answered, under Chrome: its icon and name, where it stands
+(**Connected**, **Connected in 2 profiles**, **Allowed**, or **Not allowed**), and a button that changes your answer,
+**Don't Allow** or **Allow**. **Don't Allow** disconnects it at once.
+
+#### When it does not apply
+
+- A browser not signed by a developer Apple knows, such as a Chromium you built yourself, is never connected. Fill
+  types the username and password.
+- A browser opened for the first time after PasswordPie started can take up to a minute to connect: the extension
+  tries again every minute, and at once when you switch tabs.
+- A browser started with its own `--user-data-dir` outside `~/Library/Application Support` is not found.
+- Firefox and other browsers not built on Chromium have no PasswordPie extension yet.
+- Like Chrome, only in the version downloaded from passwordpie.com.
+
+#### Demo
+
+1. Install ego lite. Add PasswordPie to it from the Chrome Web Store.
+2. Within a minute PasswordPie asks: **Allow “ego lite” to fill passwords?** Click **Allow**.
+3. In ego lite, open github.com/login and press `⌘\`. The top group is GITHUB.COM. Press Return: both fields fill.
+4. Open **Preferences > Browsers**: ego lite says **Connected**. Click **Don't Allow**: it says **Not allowed**, and
+   `⌘\` on the same page no longer fills through the extension.
 
 ### What it will not do
 
