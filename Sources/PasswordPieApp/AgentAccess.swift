@@ -73,6 +73,7 @@ final class AgentAccess: ObservableObject {
         )
         self.grants = grants
         let broker = VaultBroker(vault: session, approver: approver, grants: grants, activity: relay) { false }
+        broker.folders = DotenvFolderCheck()
         self.broker = broker
         server = AgentServer(
             handler: { request, caller in await broker.handle(request, from: caller) },

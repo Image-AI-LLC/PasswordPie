@@ -156,6 +156,7 @@ final class AgentApprovalModel: ObservableObject {
             count(.file, "file for the command", "files for the command"),
             count(.stdin, "on the command's standard input", "on the command's standard input"),
             count(.shown, "shown to the agent", "shown to the agent"),
+            count(.compare, "compared with the files", "compared with the files"),
         ].compactMap { $0 }
         var line = "\(rows.count) secrets · " + ways.joined(separator: ", ")
         let off = group.rows.filter { !ticked.contains($0) }.count
@@ -171,12 +172,16 @@ final class AgentApprovalModel: ObservableObject {
 
     var isLogin: Bool { prompt.kind == .login }
 
+    /// `passwordpie check-import`: values are compared inside PasswordPie, and nothing is handed out.
+    var isCheck: Bool { prompt.kind == .check }
+
     var answered: Bool { finish == nil }
 
     /// "Claude Code wants to use 2 secrets" / "… wants to see 1 secret".
     var title: String {
         if isLogin { return "\(prompt.agent) wants to log in to \(prompt.site ?? "a website")" }
         let count = prompt.rows.count == 1 ? "1 secret" : "\(prompt.rows.count) secrets"
+        if isCheck { return "\(prompt.agent) wants to compare \(count) with files" }
         return "\(prompt.agent) wants to \(prompt.raw ? "see" : "use") \(count)"
     }
 
@@ -229,8 +234,12 @@ final class AgentApprovalModel: ObservableObject {
         case .stdin: return "the command's standard input"
         case .shown: return "shown to the agent"
         case .fill: return prompt.submit ? "filled in, then the form is sent" : "filled in"
+        case .compare: return "compared with \(row.name ?? "the file") in the folder"
         }
     }
+
+    /// What a check tells the agent, said in the window: an answer about each value, never the value.
+    static let checkNote = "PasswordPie compares each one with the file and tells the agent only “same”, “differs” or “missing”. No value leaves PasswordPie, but the agent learns whether the file holds the same value."
 
     /// "password · environment variable T"; for a login "octocat · username and password, filled in, then the form is sent".
     func rowLine(_ row: AgentApprovalRow) -> String {
@@ -258,7 +267,10 @@ final class AgentApprovalModel: ObservableObject {
     func allow() {
         guard canAllow else { return }
         let rows = ticked
-        let reason = isLogin ? "let \(prompt.agent) log in to \(prompt.site ?? "a website")" : prompt.raw ? "show a secret to \(prompt.agent)" : "let \(prompt.agent) use \(rows.count == 1 ? "1 secret" : "\(rows.count) secrets")"
+        let counted = rows.count == 1 ? "1 secret" : "\(rows.count) secrets"
+        let reason = isLogin ? "let \(prompt.agent) log in to \(prompt.site ?? "a website")"
+            : isCheck ? "let \(prompt.agent) compare \(counted) with files"
+            : prompt.raw ? "show a secret to \(prompt.agent)" : "let \(prompt.agent) use \(counted)"
         confirm(reason) { .allow(rows) }
     }
 
@@ -327,6 +339,7 @@ final class AgentApprovalModel: ObservableObject {
             "browser": prompt.browser ?? NSNull(),
             "reason": prompt.reason ?? NSNull(),
             "raw": prompt.raw,
+            "folder": prompt.folder ?? NSNull(),
         ]
     }
     #endif
@@ -451,6 +464,12 @@ struct AgentApprovalView: View {
             .scrollIndicators(.visible)
             .frame(maxHeight: 320)
             .fixedSize(horizontal: false, vertical: true)
+            if model.isCheck {
+                Text(AgentApprovalModel.checkNote)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.secondaryText(dark: dark))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if model.prompt.raw {
                 Text(AgentApprovalModel.rawWarning)
                     .font(.system(size: 12, weight: .medium))
@@ -465,6 +484,7 @@ struct AgentApprovalView: View {
                 if let command = model.prompt.command {
                     detail("Command", command, full: [command, model.prompt.program].compactMap { $0 }.joined(separator: "\n"))
                 }
+                if let folder = model.prompt.folder { detail("Folder", abbreviated(folder), full: folder) }
                 if !model.isLogin { detail("Project", abbreviated(model.prompt.project), full: model.prompt.project) }
                 detail("Agent", model.agentLine, full: model.agentLine)
                 // How the request came, and what the MCP client says it is: its claim, under the agent the app found.
