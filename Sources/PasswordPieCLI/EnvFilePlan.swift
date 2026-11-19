@@ -65,7 +65,9 @@ struct EnvFilePlan: Equatable {
         /// The item a path in a dotenv file stands for: the one with an attachment of that file's name, in the folder
         /// named like the file's own folder when several have it.
         func keyFile(_ name: String, identity: String?) -> (item: AgentListedItem, attachment: String)? {
-            let own = scan.dotenvs.filter { identity != nil && $0.identity == identity && $0.paths[name] != nil }
+            // The identity's own file decides when it sets the name at all: a path there that cannot be followed leaves
+            // the variable out, rather than taking another account's key file from a general `.env`.
+            let own = scan.dotenvs.filter { identity != nil && $0.identity == identity && $0.names.contains(name) }
             for dotenv in own.isEmpty ? scan.dotenvs : own {
                 guard let path = dotenv.paths[name] else { continue }
                 let file = (path as NSString).lastPathComponent

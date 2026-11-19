@@ -1,4 +1,5 @@
 import Foundation
+import PasswordPieAgent
 
 /// Which environment variables a project reads, found by reading its files: `process.env.X`, `os.environ["X"]`,
 /// `os.getenv("X")`, `$X` in shell scripts and the like, and the names in the dotenv files at its top. Names only: no
@@ -57,8 +58,9 @@ struct RepositoryScan: Equatable {
                     try visit(child, components + [name])
                     continue
                 }
-                guard values?.isRegularFile == true, (values?.fileSize ?? 0) <= maximumFileBytes,
-                      !name.hasPrefix(".env"), !name.hasSuffix(".env"), !name.hasSuffix(".pp"),
+                // Dotenv files hold values, not code that reads them. `.envrc` is a script, and is read.
+                let holdsValues = name == ".env" || name.hasPrefix(".env.") || name.hasSuffix(".env")
+                guard values?.isRegularFile == true, (values?.fileSize ?? 0) <= maximumFileBytes, !holdsValues, !name.hasSuffix(".pp"),
                       let data = try? Data(contentsOf: child), let text = String(data: data, encoding: .utf8) else { continue }
                 for found in Self.names(in: text, fileName: name) where scan.names[found] == nil { scan.names[found] = path }
                 if let loader = Self.loader(in: text) { scan.loaders.append("\(loader) in \(path)") }
@@ -76,9 +78,9 @@ struct RepositoryScan: Equatable {
         let lowered = name.lowercased()
         guard !lowered.hasSuffix(".pp"), !["example", "sample", "template", "dist", "tmpl", "bak"].contains(where: { lowered.hasSuffix("." + $0) }) else { return nil }
         let target = url.resolvingSymlinksInPath()
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), !isDirectory.boolValue,
-              let size = try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= maximumFileBytes,
+        // Only a regular file is read: a link to a device or a pipe would never end.
+        guard let found = try? target.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), found.isRegularFile == true,
+              let size = found.fileSize, size <= maximumFileBytes,
               let data = try? Data(contentsOf: target), let text = String(data: data, encoding: .utf8) else {
             return Dotenv(name: name, identity: identity(ofFileNamed: target.lastPathComponent), names: [], paths: [:])
         }
@@ -107,9 +109,7 @@ struct RepositoryScan: Equatable {
         return nil
     }
 
-    static func isVariableName(_ name: String) -> Bool {
-        name.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil
-    }
+    static func isVariableName(_ name: String) -> Bool { AgentEnvFile.isVariableName(name) }
 
     // MARK: Names in code
 

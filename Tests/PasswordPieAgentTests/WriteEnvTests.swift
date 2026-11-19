@@ -199,6 +199,26 @@ final class WriteEnvTests: XCTestCase {
         }
     }
 
+    /// The identity's own dotenv file decides whose key file a variable stands for. When its path cannot be followed
+    /// (relative, or with `$HOME` in it), the variable is left out: never another account's key from a general `.env`.
+    func testAKeyFileIsNeverTakenFromAnotherAccountsDotenvFile() throws {
+        let project = folder.appendingPathComponent("two", isDirectory: true)
+        try write("app.py", "import os\nos.getenv('GOOGLE_APPLICATION_CREDENTIALS')\n", in: project)
+        try write(".env", "GOOGLE_APPLICATION_CREDENTIALS=/keys/google/personal.pem\n", in: project)
+        try write(".env.work", "GOOGLE_APPLICATION_CREDENTIALS=./keys/work-service-account.json\n", in: project)
+        try write(".envrc", "export FROM_ENVRC=$STRIPE_ACCOUNT\n", in: project)
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent(".env.device"), withDestinationURL: URL(fileURLWithPath: "/dev/zero"))
+        let scan = try RepositoryScan.scan(project)
+        XCTAssertEqual(scan.names["STRIPE_ACCOUNT"], ".envrc", "a script, not a file of values")
+        XCTAssertEqual(scan.dotenvs.first { $0.name == ".env.device" }?.names, [], "a link to a device is not read")
+        let plan = EnvFilePlan.make(scan: scan, items: sharedItems(), identities: ["work"])
+        XCTAssertFalse(plan.files.flatMap(\.lines).contains { $0.name == "GOOGLE_APPLICATION_CREDENTIALS" }, "left out, not the personal key")
+        // With a path that can be followed, it is the work key.
+        try write(".env.work", "GOOGLE_APPLICATION_CREDENTIALS=/keys/google/work-service-account.json\n", in: project)
+        let fixed = EnvFilePlan.make(scan: try RepositoryScan.scan(project), items: sharedItems(), identities: ["work"])
+        XCTAssertEqual(fixed.files.flatMap(\.lines).first { $0.name == "GOOGLE_APPLICATION_CREDENTIALS" }?.value, "file:pp://google/work/attachment/work-service-account.json")
+    }
+
     func testANameTwoItemsOfOneIdentityHoldIsLeftOutAndSaid() {
         var scan = RepositoryScan()
         scan.names = ["TOKEN": "a.sh", "KEY": "a.sh"]
