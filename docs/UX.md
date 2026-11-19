@@ -2081,7 +2081,7 @@ What becomes what:
 | `work.env` at the top | Item **work**, in no folder |
 | `stripe/.env`, `stripe/.env.staging` | Folder **stripe**, items **env** and **staging** |
 | `NAME=value` | A protected field **NAME** of that item |
-| Lines that start with `#` | The item's notes |
+| Lines that start with `#` | The item's notes. Not a line that switches a variable off (`# OLD_KEY=…`): notes are not a protected field, so it is left out and listed under To check |
 | A key file beside it: a PEM key, `.p8`, `.p12`, `.pfx`, a JSON file with a private key or client secret, a file named `api_key`, `token`, `secret` or `credentials` | An attachment of the item of its folder |
 | Anything else | Left alone, and listed |
 

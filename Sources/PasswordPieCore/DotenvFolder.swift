@@ -65,6 +65,9 @@ public struct DotenvPlan: Equatable, Sendable {
         case repeated(file: String, names: [String])
         case shellSensitive(file: String, names: [String])
         case renamed(file: String, name: String, key: String)
+        /// Comment lines that are a variable switched off (`# OLD_KEY=…`). They are not copied into the notes, which
+        /// are not a protected field: such a line usually still holds a value.
+        case commentedOut(file: String, lines: [Int])
     }
 
     /// The chosen folder's own name.
@@ -310,8 +313,10 @@ private struct Walk {
                 skip(["pem", "key", "p8", "p12", "pfx"].contains(ext) ? .tooLarge : .other)
                 continue
             }
-            guard storedXMLText(name).trimmingCharacters(in: .whitespacesAndNewlines) == name, let data = try? Data(contentsOf: child), DotenvFolder.isKeyFile(named: name, data: data) else { skip(.other); continue }
-            keyFiles.append(DotenvPlan.KeyFile(path: path, name: name, data: data))
+            // Attached under the name the database keeps (no space before or after it), so it is found again next time.
+            let kept = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard storedXMLText(name) == name, !kept.isEmpty, let data = try? Data(contentsOf: child), DotenvFolder.isKeyFile(named: kept, data: data) else { skip(.other); continue }
+            keyFiles.append(DotenvPlan.KeyFile(path: path, name: kept, data: data))
         }
 
         var found: [DotenvPlan.Item] = []
@@ -325,6 +330,7 @@ private struct Walk {
                 fields.append(DotenvPlan.Field(name: variable.name, key: key, value: variable.value))
             }
             if !parsed.unreadable.isEmpty { remarks.append(.unreadable(file: path, lines: parsed.unreadable)) }
+            if !parsed.commentedOut.isEmpty { remarks.append(.commentedOut(file: path, lines: parsed.commentedOut)) }
             if !parsed.repeated.isEmpty { remarks.append(.repeated(file: path, names: parsed.repeated)) }
             let sensitive = parsed.variables.filter(\.shellSensitive).map(\.name)
             if !sensitive.isEmpty { remarks.append(.shellSensitive(file: path, names: sensitive)) }

@@ -273,6 +273,8 @@ final class DotenvImportFlow: ObservableObject {
             return "\(file): \(names.joined(separator: ", ")) \(names.count == 1 ? "is" : "are") set more than once. The last value is used."
         case .shellSensitive(let file, let names):
             return "\(file): \(names.joined(separator: ", ")) \(names.count == 1 ? "has" : "have") a $, a backtick, a backslash or a space in the value. A shell that runs source on the file reads \(names.count == 1 ? "it" : "them") differently."
+        case .commentedOut(let file, let lines):
+            return "\(file): \(lines.count == 1 ? "line \(lines[0]) is a variable" : "\(lines.count) lines are variables") switched off with #. \(lines.count == 1 ? "It was" : "They were") not copied into the notes, where nothing is protected."
         case .renamed(let file, let name, let key):
             return "\(file): \(name) is kept as the field “\(key)”, apart from the item’s own \(name.lowercased())."
         }

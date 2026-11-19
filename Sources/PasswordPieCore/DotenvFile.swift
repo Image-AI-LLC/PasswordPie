@@ -29,6 +29,8 @@ public enum DotenvFile {
         public var unreadable: [Int] = []
         /// Names set more than once.
         public var repeated: [String] = []
+        /// Comment lines that are an assignment switched off (`# NAME=value`), by number. Not among `comments`.
+        public var commentedOut: [Int] = []
     }
 
     public static func parse(_ text: String) -> Parsed {
@@ -45,7 +47,12 @@ public enum DotenvFile {
                 reader.advance()
                 var comment = reader.restOfLine()
                 if comment.hasPrefix(" ") { comment.removeFirst() }
-                parsed.comments.append(comment)
+                // `# OLD_KEY=sk_…` is a value kept beside the file's live ones, not a note about them.
+                if comment.range(of: #"^\s*(export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*="#, options: .regularExpression) != nil {
+                    parsed.commentedOut.append(line)
+                } else {
+                    parsed.comments.append(comment)
+                }
                 continue
             }
             let lineStart = reader.mark

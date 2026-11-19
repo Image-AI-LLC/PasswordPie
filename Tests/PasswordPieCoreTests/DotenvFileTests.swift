@@ -36,6 +36,14 @@ final class DotenvFileTests: XCTestCase {
         XCTAssertEqual(parsed.variables.map(\.value), ["1", "a#b", "", "#x"])
     }
 
+    /// A variable switched off with `#` usually still holds a value: it is no note, and is reported by line.
+    func testACommentedOutAssignmentIsNotANote() {
+        let parsed = DotenvFile.parse("# Rotated in May\n# OLD_KEY=PLANTED-old\n#export OTHER = PLANTED-other\n# see https://example.invalid/?a=b\nKEY=1\n")
+        XCTAssertEqual(parsed.comments, ["Rotated in May", "see https://example.invalid/?a=b"])
+        XCTAssertEqual(parsed.commentedOut, [2, 3])
+        XCTAssertEqual(parsed.variables.map(\.name), ["KEY"])
+    }
+
     func testTheLastValueOfARepeatedNameWins() {
         let parsed = DotenvFile.parse("A=1\nB=2\nA=3\nA=4\n")
         XCTAssertEqual(parsed.variables.map(\.name), ["A", "B"])
