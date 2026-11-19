@@ -15,7 +15,7 @@ enum Command: Equatable {
 }
 
 struct RunOptions: Equatable {
-    /// In the order given: `--env`, `--file`, `--stdin`, then the `--env-file` lines.
+    /// `--env`, `--file` and `--stdin` in the order given, then the `--env-file` lines no flag names (`RunInputs`).
     var secrets: [AgentSecretRequest] = []
     /// `.env.pp` lines without a reference, set as they are.
     var literals: [(name: String, value: String)] = []
@@ -92,67 +92,49 @@ enum Arguments {
 
     private static func parseRun(_ rest: inout [String], readFile: (String) throws -> String) throws -> RunOptions {
         var options = RunOptions()
-        var stdinSet = false
-        var names: Set<String> = []
-        func add(_ secret: AgentSecretRequest) throws {
-            if let name = secret.name {
-                guard AgentEnvFile.isVariableName(name) else { throw UsageError("\"\(name)\" is not a variable name.") }
-                guard names.insert(name).inserted else { throw UsageError("\(name) is given twice.") }
-            }
-            guard (try? AgentReference(secret.ref)) != nil else { throw UsageError("\(secret.ref) is not a reference (pp://folder/item[/field]).") }
-            options.secrets.append(secret)
-        }
-        while let next = rest.first {
-            if next == "--" {
+        var inputs = RunInputs()
+        do {
+            while let next = rest.first {
+                if next == "--" {
+                    rest.removeFirst()
+                    break
+                }
+                guard next.hasPrefix("-") else { break }
                 rest.removeFirst()
-                break
-            }
-            guard next.hasPrefix("-") else { break }
-            rest.removeFirst()
-            let (flag, inline) = split(next)
-            func value() throws -> String { try inline ?? take(&rest, after: flag) }
-            switch flag {
-            case "--env", "--file":
-                let pair = try value()
-                guard let equals = pair.firstIndex(of: "=") else { throw UsageError("\(flag) takes NAME=pp://….") }
-                try add(AgentSecretRequest(
-                    name: String(pair[..<equals]),
-                    ref: String(pair[pair.index(after: equals)...]),
-                    delivery: flag == "--env" ? .env : .file
-                ))
-            case "--stdin":
-                guard !stdinSet else { throw UsageError("--stdin is given twice.") }
-                stdinSet = true
-                try add(AgentSecretRequest(name: nil, ref: try value(), delivery: .stdin))
-            case "--env-file":
-                let path = try value()
-                let text: String
-                do {
-                    text = try readFile(path)
-                } catch {
-                    throw UsageError("Could not read \(path).")
-                }
-                let lines: [AgentEnvFile.Line]
-                do {
-                    lines = try AgentEnvFile.parse(text)
-                } catch let problem as AgentEnvFile.Problem {
-                    throw UsageError("\(path), \(problem.description).")
-                }
-                for line in lines {
-                    switch line {
-                    case .secret(let name, let ref, let delivery):
-                        try add(AgentSecretRequest(name: name, ref: ref, delivery: delivery))
-                    case .literal(let name, let value):
-                        guard names.insert(name).inserted else { throw UsageError("\(name) is given twice.") }
-                        options.literals.append((name, value))
+                let (flag, inline) = split(next)
+                func value() throws -> String { try inline ?? take(&rest, after: flag) }
+                switch flag {
+                case "--env", "--file":
+                    let pair = try value()
+                    guard let equals = pair.firstIndex(of: "=") else { throw UsageError("\(flag) takes NAME=pp://….") }
+                    try inputs.add(AgentSecretRequest(
+                        name: String(pair[..<equals]),
+                        ref: String(pair[pair.index(after: equals)...]),
+                        delivery: flag == "--env" ? .env : .file
+                    ))
+                case "--stdin":
+                    try inputs.add(AgentSecretRequest(name: nil, ref: try value(), delivery: .stdin))
+                case "--env-file":
+                    // May be given more than once: a later file's line replaces an earlier one's of the same name.
+                    let path = try value()
+                    let text: String
+                    do {
+                        text = try readFile(path)
+                    } catch {
+                        throw UsageError("Could not read \(path).")
                     }
+                    try inputs.add(envFile: text, path: path)
+                case "--reason": options.reason = try value()
+                case "--wait": options.wait = try waitValue(try value())
+                case "--no-masking": options.masking = false
+                default: throw UsageError("Unknown option \(flag) for run.")
                 }
-            case "--reason": options.reason = try value()
-            case "--wait": options.wait = try waitValue(try value())
-            case "--no-masking": options.masking = false
-            default: throw UsageError("Unknown option \(flag) for run.")
             }
+        } catch let problem as RunInputs.Problem {
+            throw UsageError(problem.message)
         }
+        options.secrets = inputs.secrets
+        options.literals = inputs.literals
         options.command = rest
         guard !options.command.isEmpty else { throw UsageError("run needs a command after --.") }
         guard !options.secrets.isEmpty else { throw UsageError("run needs at least one --env, --file, --stdin or --env-file reference.") }
@@ -227,7 +209,7 @@ enum Arguments {
     static let usageText = """
     passwordpie: use secrets from PasswordPie without seeing them.
 
-      passwordpie run [--env NAME=REF]... [--file NAME=REF]... [--stdin REF] [--env-file PATH]
+      passwordpie run [--env NAME=REF]... [--file NAME=REF]... [--stdin REF] [--env-file PATH]...
                       [--reason TEXT] [--wait SECONDS] [--no-masking] -- COMMAND [ARG]...
       passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
       passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
@@ -241,6 +223,9 @@ enum Arguments {
     run starts COMMAND with the values in its environment (--env), in short-lived files whose paths are in the
     environment (--file), or on its standard input (--stdin), and replaces every value in its output with
     [concealed by PasswordPie]. Each use asks the owner, who approves with Touch ID.
+
+    --env-file reads NAME=pp://… lines from a file (.env.pp). Give it more than once to add a file kept on this Mac
+    only: a later file's line replaces an earlier file's line of the same name, and --env or --file wins over both.
 
     Your shell expands $NAME before passwordpie runs, so `passwordpie run --env T=… -- curl -H "Authorization: $T"`
     sends an empty header. Put such commands in a script, or in sh -c '…' (which asks every time).

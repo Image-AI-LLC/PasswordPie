@@ -329,6 +329,29 @@ final class MCPServerTests: XCTestCase {
         XCTAssertEqual(ran.structured["stdout"] as? String, "0\n")
     }
 
+    /// `envFiles`: more `.env.pp` files after `envFile`, a later one replacing an earlier one's line, and `env` over both.
+    @MainActor
+    func testEnvFilesAreReadInOrderAndALaterOneOverrides() async throws {
+        try startServer(grants: NoAgentGrants())
+        allowEverything()
+        try await connect()
+        try "TOKEN=pp://Agents/Hidden\nREGION=eu\nID=pp://Agents/Hidden\n".write(to: inside.appendingPathComponent(".env.pp"), atomically: true, encoding: .utf8)
+        try "TOKEN=pp://Agents/Token\nREGION=us\n".write(to: inside.appendingPathComponent(".env.local"), atomically: true, encoding: .utf8)
+        try "WHERE=here\n".write(to: inside.appendingPathComponent("third.pp"), atomically: true, encoding: .utf8)
+        let result = try await call("passwordpie_run", [
+            "command": ["sh", "-c", "echo \"$TOKEN $REGION $WHERE $ID\""], "cwd": inside.path,
+            "envFile": ".env.pp", "envFiles": [".env.local", "third.pp"], "env": ["ID": "pp://Agents/Token/Key ID"],
+        ])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(result.structured["stdout"] as? String, "\(AgentConstants.concealed) us here \(AgentConstants.concealed)\n")
+        XCTAssertEqual(approver.prompts.last?.rows.map(\.name), ["ID", "TOKEN"])
+        let twice = try await call("passwordpie_run", ["command": ["true"], "cwd": inside.path, "envFiles": ["missing.pp"]])
+        XCTAssertTrue(twice.isError)
+        XCTAssertTrue(twice.text.contains("Could not read missing.pp."), twice.text)
+        let wrong = try await call("passwordpie_run", ["command": ["true"], "cwd": inside.path, "envFiles": ".env.pp"])
+        XCTAssertTrue(wrong.isError, "envFiles is an array")
+    }
+
     /// Phase 2: read asks every time, even with a standing permission in place, and says the agent will see it.
     /// A standing permission covers a repeated `passwordpie_run`; an `envFile` that sets a variable that makes programs load
     /// other code asks again, as it does through the command-line tool.

@@ -311,6 +311,107 @@ final class AgentAccessTests: XCTestCase {
         XCTAssertEqual(use.agentLine, "Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)")
     }
 
+    // MARK: Rows by item
+
+    /// A request for many secrets: `counts` fields of each item, asked for item by item unless `interleaved`.
+    private static func prompt(items counts: [Int], interleaved: Bool = false, short: Set<Int> = []) -> AgentApprovalPrompt {
+        var rows: [AgentApprovalRow] = []
+        let ids = counts.map { _ in UUID() }
+        for (item, count) in counts.enumerated() {
+            for field in 0..<count {
+                rows.append(AgentApprovalRow(
+                    title: "Item \(item)", folder: "stripe", field: "field VAR_\(item)_\(field)", delivery: field == 0 && count > 2 ? .file : .env,
+                    name: "VAR_\(item)_\(field)", tooShortToMask: false, item: ids[item]
+                ))
+            }
+        }
+        if interleaved { rows = rows.enumerated().sorted { ($0.offset % 2, $0.offset) < ($1.offset % 2, $1.offset) }.map(\.element) }
+        for index in short { rows[index].tooShortToMask = true }
+        var prompt = Self.prompt(raw: false)
+        prompt.rows = rows
+        return prompt
+    }
+
+    /// Twelve fields of one item are one row that opens, and every field keeps its own checkbox.
+    func testManySecretsOfOneItemAreOneRowThatOpens() async {
+        var decisions: [AgentApprovalDecision] = []
+        let model = AgentApprovalModel(prompt: Self.prompt(items: [12, 1, 3]), confirmation: Confirms(true)) { decisions.append($0) }
+        XCTAssertEqual(model.title, "Claude Code wants to use 16 secrets")
+        XCTAssertEqual(model.groups.map(\.rows), [Array(0..<12), [12], [13, 14, 15]])
+        XCTAssertEqual(model.groups.map(\.title), ["Item 0", "Item 1", "Item 2"])
+        let twelve = model.groups[0]
+        XCTAssertFalse(model.isOpen(twelve), "many secrets: an item starts closed")
+        XCTAssertTrue(model.isOpen(model.groups[1]), "a single secret has nothing to open")
+        XCTAssertEqual(model.groupLine(twelve), "12 secrets · 11 environment variables, 1 file for the command")
+        XCTAssertEqual(model.tick(of: twelve), .all)
+
+        // Open it and untick two fields: the item's checkbox says "some", and the closed row says how many are out.
+        model.toggleOpen(twelve)
+        XCTAssertTrue(model.isOpen(twelve))
+        model.toggle(3)
+        model.toggle(7)
+        XCTAssertEqual(model.tick(of: twelve), .some)
+        XCTAssertEqual(model.groupLine(twelve), "12 secrets · 11 environment variables, 1 file for the command · 2 left out")
+        // The item's checkbox on a part-ticked item ticks the rest; again, it unticks them all.
+        model.toggle(group: twelve)
+        XCTAssertEqual(model.tick(of: twelve), .all)
+        model.toggle(group: twelve)
+        XCTAssertEqual(model.tick(of: twelve), .none)
+        XCTAssertEqual(model.groupLine(twelve), "12 secrets · 11 environment variables, 1 file for the command · all left out")
+        XCTAssertEqual(model.tick(of: model.groups[2]), .all, "another item's rows are not touched")
+        model.toggle(5)
+        model.allow()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(decisions, [.allow([5, 12, 13, 14, 15])], "the answer is still row by row")
+    }
+
+    func testAFewSecretsAreAllInViewAndRowsOfOneItemStayTogether() {
+        let few = AgentApprovalModel(prompt: Self.prompt(items: [2, 2]), confirmation: Confirms(true)) { _ in }
+        XCTAssertEqual(few.groups.map(\.rows), [[0, 1], [2, 3]])
+        XCTAssertTrue(few.groups.allSatisfy(few.isOpen), "up to six secrets, every row shows")
+        few.toggleOpen(few.groups[0])
+        XCTAssertFalse(few.isOpen(few.groups[0]))
+
+        // Asked for in any order, an item's secrets are under the item, where it was first asked for.
+        let mixed = AgentApprovalModel(prompt: Self.prompt(items: [4, 4], interleaved: true), confirmation: Confirms(true)) { _ in }
+        XCTAssertEqual(mixed.groups.count, 2)
+        XCTAssertEqual(mixed.groups.map(\.id), [0, 2])
+        XCTAssertEqual(Set(mixed.groups.flatMap(\.rows)), Set(0..<8))
+        XCTAssertTrue(mixed.groups.allSatisfy { group in Set(group.rows.map { mixed.prompt.rows[$0].title }).count == 1 })
+        XCTAssertFalse(mixed.isOpen(mixed.groups[0]))
+
+        // Rows that name no item (an older broker), and two items with one title, are never put together.
+        let plain = AgentApprovalModel(prompt: Self.prompt(raw: false, rows: 8), confirmation: Confirms(true)) { _ in }
+        XCTAssertEqual(plain.groups.map(\.rows), (0..<8).map { [$0] })
+        var twins = Self.prompt(items: [1, 1])
+        twins.rows[1].title = twins.rows[0].title
+        XCTAssertEqual(AgentApprovalModel(prompt: twins, confirmation: Confirms(true)) { _ in }.groups.count, 2)
+    }
+
+    func testAClosedItemStillSaysWhatIsTooShortToHide() {
+        let model = AgentApprovalModel(prompt: Self.prompt(items: [8], short: [1, 4]), confirmation: Confirms(true)) { _ in }
+        XCTAssertEqual(model.tooShortCount(model.groups[0]), 2)
+    }
+
+    func testAnItemsCheckboxDoesNothingWhileTouchIDIsUp() async {
+        let slow = SlowConfirmation()
+        let model = AgentApprovalModel(prompt: Self.prompt(items: [8]), confirmation: slow) { _ in }
+        model.allow()
+        model.toggle(group: model.groups[0])
+        XCTAssertEqual(model.tick(of: model.groups[0]), .all)
+        model.dismiss()
+        slow.finish(false)
+    }
+
+    func testTheWindowDrawsManySecretsWithoutGrowingPastTheScreen() {
+        let model = AgentApprovalModel(prompt: Self.prompt(items: [12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 2, 2, 2, 2]), confirmation: Confirms(true)) { _ in }
+        for group in model.groups { model.toggleOpen(group) }
+        let host = NSHostingView(rootView: AgentApprovalView(model: model))
+        XCTAssertNotNil(host.bitmapImageRepForCachingDisplay(in: NSRect(x: 0, y: 0, width: 520, height: 700)))
+        XCTAssertLessThan(host.fittingSize.height, 700, "74 rows scroll inside the window")
+        XCTAssertGreaterThan(host.fittingSize.height, 300)
+    }
+
     func testTheWindowDraws() {
         let model = AgentApprovalModel(prompt: Self.prompt(raw: true, rows: 1), confirmation: Confirms(true)) { _ in }
         let host = NSHostingView(rootView: AgentApprovalView(model: model))

@@ -336,6 +336,20 @@ final class CommandLineToolTests: XCTestCase {
         XCTAssertEqual(approver.prompts.first?.rows.map(\.delivery), [.file, .env])
     }
 
+    /// Two `--env-file`s through the real tool: the second, kept on this Mac only, adds a path and replaces a line.
+    func testASecondEnvFileAddsAndOverrides() async throws {
+        allowEverything()
+        let committed = folder.appendingPathComponent(".env.pp")
+        let local = folder.appendingPathComponent(".env.local")
+        try "TOKEN=pp://Agents/Token\nREGION=eu\nKEY_ID=pp://Agents/Hidden\n".write(to: committed, atomically: true, encoding: .utf8)
+        try "REGION=us\nCONFIGS_DIR=/Users/me/configs\nKEY_ID=pp://Agents/Token/Key ID\n".write(to: local, atomically: true, encoding: .utf8)
+        let ran = try await run(["run", "--env-file", committed.path, "--env-file", local.path, "--", "sh", "-c", "echo \"$TOKEN $REGION $CONFIGS_DIR $KEY_ID\""])
+        XCTAssertEqual(ran.code, 0, ran.err)
+        XCTAssertEqual(ran.out, "\(AgentConstants.concealed) us /Users/me/configs \(AgentConstants.concealed)\n")
+        XCTAssertEqual(approver.prompts.first?.rows.map(\.name), ["TOKEN", "KEY_ID"], "the line the second file replaced is not asked for")
+        XCTAssertEqual(approver.prompts.first?.rows.map(\.field), ["password", "field Key ID"])
+    }
+
     /// A standing permission through the real tool: the next identical run asks nothing, and a run started with a
     /// variable that makes programs load other code asks again, whether the agent's shell set it or the `.env.pp` did.
     @MainActor
