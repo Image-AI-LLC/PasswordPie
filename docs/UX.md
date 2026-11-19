@@ -536,6 +536,7 @@ app with the same name, signed by someone else, is asked about again.
 - A browser started with its own `--user-data-dir` outside `~/Library/Application Support` is not found.
 - Firefox and other browsers not built on Chromium have no PasswordPie extension yet.
 - Like Chrome, only in the version downloaded from passwordpie.com.
+- Agent logins go to Google Chrome or Safari only, never to another browser built on Chrome.
 
 #### Demo
 

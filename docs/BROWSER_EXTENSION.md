@@ -610,7 +610,8 @@ within the minute of the reconnect alarm.
   that parent's signature. Then it asks `BrowserBridge.approve`: Google's team (`EQHXZ8M8AV`) is allowed without a
   question, so Chrome, Beta, Dev and Canary behave as before; any other browser is allowed or refused as the person
   answered, or the person is asked. The connection's thread waits for the answer with the host's connection open, so
-  Allow lets it in at once; other connections of the same browser meanwhile wait for the same answer.
+  Allow lets it in at once; other connections of the same browser meanwhile wait for the same answer. A browser that
+  calls itself a Google one (`com.google.…`) under another team is refused without a question and nothing is kept.
 - The answer is kept for good in the preferences (`chromiumBrowserApprovals`, `BrowserApprovals`), keyed by bundle ID
   and team: the same bundle ID signed by another team is another browser and is asked about again. Preferences >
   Browsers changes it; Don't Allow there disconnects that browser's connections at once (`BrowserBridgeServer.disconnect`).

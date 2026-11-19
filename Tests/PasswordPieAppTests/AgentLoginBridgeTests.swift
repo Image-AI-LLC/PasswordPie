@@ -1,5 +1,6 @@
 #if PP_DIRECT
 import Foundation
+import PasswordPieBridge
 @testable import PasswordPieAgent
 @testable import PasswordPieCore
 import XCTest
@@ -289,6 +290,22 @@ final class AgentLoginBridgeTests: XCTestCase {
         let answer = await broker.handle(login("pp://Web/GitHub"), from: caller)
         XCTAssertEqual(answer.login?.outcome, .noMatchingTab)
         XCTAssertTrue(approver.prompts.isEmpty)
+    }
+
+    func testAnotherChromiumBrowserUsedLastNeverTakesTheLogin() async throws {
+        let ego = ChromiumBrowserIdentity(
+            bundleID: "com.example.passwordpie-tests.ego", teamID: "JGQLC6YQYJ",
+            bundleURL: URL(fileURLWithPath: "/tmp/ego lite.app"), name: "ego lite", signer: nil
+        )
+        let chrome = BridgePeer(.chrome, link: 1)
+        let other = BridgePeer(.chrome, link: 2)
+        bridge.connectionsChanged([chrome, other], apps: [other: ego])
+        _ = bridge.answer(Data(#"{"type":"tab","id":1,"url":"https://github.com/","reason":"poke","focused":true}"#.utf8), from: .chrome, link: 2)
+        let target = await bridge.agentLoginTarget(nil)
+        XCTAssertEqual(target?.link, 1, "Google Chrome's connection, though the other browser was used last")
+        bridge.connectionsChanged([other], apps: [other: ego])
+        let none = await bridge.agentLoginTarget(nil)
+        XCTAssertNil(none, "only the other browser is connected")
     }
 
     func testAURLOffersOnlySharedItemsOfThatSite() async throws {

@@ -548,6 +548,9 @@ final class BrowserBridge: ObservableObject {
     /// Whether the browser may connect: Google's always; another as the person answered, or after asking them once.
     /// Connections of the same browser that arrive while the question is open wait for the same answer.
     func approve(_ identity: ChromiumBrowserIdentity, answer: @escaping @MainActor (Bool) -> Void) {
+        // The bundle ID comes from an Info.plist the signature does not vouch for here, and connections are told apart by it
+        // alone: another team's browser must never take Google Chrome's (or Beta's) place and share its profile scope.
+        if identity.bundleID.hasPrefix("com.google."), !identity.isGoogle { return answer(false) }
         switch approvals.approval(bundleID: identity.bundleID, teamID: identity.teamID) {
         case .allowed?: answer(true)
         case .denied?: answer(false)
@@ -569,7 +572,7 @@ final class BrowserBridge: ObservableObject {
     func setApproval(_ approval: BrowserApproval, bundleID: String, teamID: String, name: String) {
         approvals.set(approval, bundleID: bundleID, teamID: teamID, name: name, now: now())
         defaults.set(approvals.encoded(), forKey: Self.approvalsKey)
-        if approval == .denied { server?.disconnect(app: bundleID) }
+        if approval == .denied { server?.disconnect(app: bundleID, teamID: teamID) }
         let key = bundleID + "|" + teamID
         let waiting = waitingApprovals.removeValue(forKey: key) ?? []
         for answer in waiting { answer(approval == .allowed) }

@@ -97,10 +97,10 @@ final class BrowserBridgeServer: @unchecked Sendable {
         }
     }
 
-    /// Ends every connection from the browser app `bundleID`: the person no longer allows it.
-    func disconnect(app bundleID: String) {
+    /// Ends every connection from the browser app `bundleID` signed by `teamID`: the person no longer allows it.
+    func disconnect(app bundleID: String, teamID: String) {
         lock.lock()
-        let targets = connections.values.filter { $0.browserApp?.bundleID == bundleID }
+        let targets = connections.values.filter { $0.browserApp?.bundleID == bundleID && $0.browserApp?.teamID == teamID }
         lock.unlock()
         for connection in targets { connection.hangUp() }
     }

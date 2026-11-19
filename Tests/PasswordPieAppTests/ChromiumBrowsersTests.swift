@@ -201,6 +201,17 @@ final class ChromiumBrowsersBridgeTests: XCTestCase {
         XCTAssertTrue(answers.isEmpty)
     }
 
+    func testAnotherTeamsBrowserCallingItselfChromeIsRefusedWithoutAQuestion() {
+        let (bridge, _) = bridge()
+        let impostor = ChromiumBrowserIdentity(bundleID: BrowserBridge.chromeBundleID, teamID: "ZZZZZZZZZZ", bundleURL: URL(fileURLWithPath: "/tmp/Fake.app"), name: "Chrome", signer: nil)
+        var answers: [Bool] = []
+        bridge.approve(impostor) { answers.append($0) }
+        XCTAssertEqual(answers, [false])
+        XCTAssertTrue(asked.isEmpty)
+        XCTAssertNil(bridge.approvals.approval(bundleID: BrowserBridge.chromeBundleID, teamID: "ZZZZZZZZZZ"))
+        XCTAssertEqual(bridge.banner(frontBundleID: BrowserBridge.chromeBundleID), .addChrome)
+    }
+
     func testGooglesBrowsersAreNeverAskedAbout() {
         let (bridge, _) = bridge()
         let beta = ChromiumBrowserIdentity(bundleID: "com.google.Chrome.beta", teamID: ChromiumBrowserIdentity.googleTeamID, bundleURL: URL(fileURLWithPath: "/tmp/Chrome Beta.app"), name: "Google Chrome Beta", signer: "Google LLC")
