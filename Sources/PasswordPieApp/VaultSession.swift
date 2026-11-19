@@ -1461,6 +1461,41 @@ final class VaultSession: ObservableObject {
         return merged.summary
     }
 
+    /// The names of the files attached to an item of the list, as its database holds them. The files themselves stay in
+    /// the database: PasswordPie lists them, KeePass apps open them, and agents are handed one by its name.
+    func attachmentNames(of id: UUID) -> [String] {
+        let path = listPaths[id] ?? databaseURL.path
+        guard let file = openedFiles.first(where: { $0.url.path == path }) else { return [] }
+        return file.vault.attachmentNames(of: listOrigins[id] ?? id)
+    }
+
+    // MARK: A folder of dotenv files
+
+    /// What importing each of `items` would do to the database this session unlocked, read in one pass. Nil while there is none.
+    func dotenvStatuses(of items: [DotenvPlan.Item], inside parent: [String]) -> [DotenvImport.Status]? {
+        guard let file = openedFiles.first(where: { $0.url.path == databaseURL.path }) else { return nil }
+        return DotenvImport.statuses(of: items, inside: parent, in: file.vault)
+    }
+
+    /// Imports the items of a folder of dotenv files into the file this session unlocked and saves it (docs/UX.md, "A
+    /// folder of .env files becomes items"). Returns nil, with nothing changed, when the file cannot be saved.
+    func importDotenv(_ items: [DotenvPlan.Item], inside parent: [String]) -> DotenvImport.Summary? {
+        let path = databaseURL.path
+        guard let fileIndex = openedFiles.firstIndex(where: { $0.url.path == path }) else { return nil }
+        let backup = openedFiles[fileIndex].vault
+        var vault = backup
+        let summary = DotenvImport.apply(items, inside: parent, to: &vault)
+        // Everything is there already: there is nothing to write.
+        guard summary.added + summary.updated > 0 else { return summary }
+        openedFiles[fileIndex].vault = vault
+        guard persist(path: path) else {
+            if let index = openedFiles.firstIndex(where: { $0.url.path == path }) { openedFiles[index].vault = backup }
+            publishCatalog()
+            return nil
+        }
+        return summary
+    }
+
     // MARK: Actions
 
     func value(of target: CopyTarget, in entry: VaultEntry) -> String {

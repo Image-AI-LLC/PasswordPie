@@ -35,6 +35,8 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - **Activity.** Preferences → Agents lists every request, allowed or not, with the processes that started it. It is kept for 90 days and never holds a value
 - **A value on a command line.** While a command runs, PasswordPie warns when a value it handed out shows up in a process's arguments, where any program on the Mac can read it
 - **Locked.** A request while PasswordPie is locked waits: the lock screen says "Claude Code is waiting for 1 secret." Only you unlock
+- **A folder of `.env` files becomes items.** Preferences → Import → A Folder of .env Files reads a folder of dotenv files: each file becomes an item named after it in a folder named after its folder, every variable a protected field, comment lines the notes, and key files beside it (PEM, `.p8`, a service-account JSON) attachments. You see the list before anything is written, importing the same folder again updates instead of doubling, and the folder itself is never changed. In the App Store app too
+- **Attachments are listed.** An item's details name the files attached to it
 
 ### Changed
 - Preferences has an Agents pane, between Browsers and Import

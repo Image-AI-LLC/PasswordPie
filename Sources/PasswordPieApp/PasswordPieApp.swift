@@ -1043,7 +1043,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         // Preferences > Import on a source's page, with the database unlocked. `PASSWORDPIE_IMPORT_FILE` is handed over
         // as if dropped; `PASSWORDPIE_IMPORT_COMMIT` presses Import a second later (`delete`: then Delete File).
-        if let tile = env["PASSWORDPIE_IMPORT"].flatMap(ImportTile.tile) {
+        if let tile = env["PASSWORDPIE_IMPORT"].flatMap(ImportTile.tile), tile.kind == .envFolder {
+            // A Folder of .env Files: `PASSWORDPIE_IMPORT_FILE` is the folder, `PASSWORDPIE_IMPORT_INSIDE` the folder
+            // to put the items inside, `PASSWORDPIE_IMPORT_COMMIT` presses Import a second later.
+            showPreferences(at: .importPasswords)
+            importFlow.choose(tile)
+            if let inside = env["PASSWORDPIE_IMPORT_INSIDE"] { importFlow.folder.parentDraft = inside }
+            if let path = env["PASSWORDPIE_IMPORT_FILE"] {
+                importFlow.folder.take(URL(fileURLWithPath: path))
+                Task { @MainActor [importFlow] in
+                    await importFlow.folder.settled()
+                    guard env["PASSWORDPIE_IMPORT_COMMIT"] != nil else { return }
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    importFlow.folder.commit()
+                }
+            }
+        } else if let tile = env["PASSWORDPIE_IMPORT"].flatMap(ImportTile.tile) {
             showPreferences(at: .importPasswords)
             importFlow.choose(tile)
             if let path = env["PASSWORDPIE_IMPORT_FILE"] {
@@ -1146,6 +1161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "importSource": importFlow.tile?.id ?? NSNull(),
             "importStage": String(describing: importFlow.stage).split(separator: "(").first.map(String.init) ?? "",
             "importError": importFlow.error,
+            "importFolder": importFlow.folder.debugSummary,
             "editorWindow": editorWindow?.isVisible == true ? editorWindow?.windowNumber ?? NSNull() : NSNull(),
             "editorSaving": session.editorSaving,
             "editorError": session.editorError,

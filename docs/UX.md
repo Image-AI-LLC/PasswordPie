@@ -1543,7 +1543,8 @@ list of sources, in two columns by kind:
 | Password managers | Apple Passwords, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane, KeePass |
 
 Each row is the source's icon, its name, and the kind of file it takes (CSV, 1PUX, JSON, ZIP, KDBX). The whole row
-is the button. Under the two columns, one row across the page: **Another App**, for any CSV file with a header row.
+is the button. Under the two columns, two rows across the page: **Another App**, for any CSV file with a header row,
+and **A Folder of .env Files**, for API keys and tokens kept in dotenv files ("A folder of .env files becomes items").
 The last line says that the file is read on this Mac and nothing is sent anywhere.
 
 A source shows the icon of its app on this Mac. When that app is not installed, it shows an icon that ships with
@@ -2034,3 +2035,124 @@ Use the direct download with the Chrome extension, an item **Demo Login** in **A
 3. Open another site in that tab and run step 2 again: `no-matching-tab`, nothing filled.
 4. `passwordpie login 'pp://Agents/Demo Login' --url https://example.com/`: `site-mismatch` at once, no window.
 5. Preferences > Agents > Activity shows each line with its outcome.
+
+## A folder of .env files becomes items
+
+**In one line:** point PasswordPie at the folder where your API keys sit in `.env` files, look at what it found, and
+each file becomes an item with one protected field per variable. The files themselves are never changed.
+
+### The problem
+
+Developers keep keys in dotenv files: `stripe/work.env`, `cloudflare/personal.env`, a PEM key beside them. They are
+plain text, readable by every program that runs as you, and today that includes AI agents. Import read exports of
+logins from browsers and password managers; a folder of `NAME=value` files was nothing it knew. Nobody types seventy
+variables into items by hand, so the files stayed where they were.
+
+### What happens now
+
+**Preferences > Import** has one more row under the two columns, below Another App: **A Folder of .env Files**.
+
+**1. Choose the folder.** Drop it on the box, or click **Choose Folder…**. PasswordPie reads it on this Mac, with its
+subfolders, and changes nothing in it: not now, and not after the import.
+
+**2. Look at what it found.** Nothing is in the database yet. The page says, in this order:
+
+- **Items**, one per `.env` file: where it goes ("stripe › work"), how many fields, the key files attached to it, and
+  what importing would do: **New**, **2 fields change, 1 new**, or **Up to date**. Click a row to see the names of its
+  variables and files. A value is never shown. Every row has a checkbox; untick one to leave it out.
+- **Left alone**: every other file, counted by kind (scripts, images, templates, old copies), with the list one click
+  away. A file left alone that holds one of the values being imported is named apart: "3 other files hold values from
+  these files." Those are the generated copies, backups and scripts with a pasted token that you will want to delete
+  too.
+- **To check**: a line that could not be read (file and line number), a name set twice in one file, and values that
+  a shell and a dotenv library read differently (see below). Names only.
+
+**3. Import.** The button says how many: **Import 12 Items**. The page then says what happened: "9 added, 3 updated."
+
+**4. The files are still there.** PasswordPie does not delete them: they are yours, and other programs may still read
+them. The page says so, and that they still hold every value in plain text.
+
+What becomes what:
+
+| In the folder | In the database |
+|---|---|
+| `stripe/work.env` | Folder **stripe**, item **work** |
+| `a/b/work.env` | Folder **a**, in it folder **b**, item **work** |
+| `work.env` at the top | Item **work**, in no folder |
+| `stripe/.env`, `stripe/.env.staging` | Folder **stripe**, items **env** and **staging** |
+| `NAME=value` | A protected field **NAME** of that item |
+| Lines that start with `#` | The item's notes. Not a line that switches a variable off (`# OLD_KEY=…`): notes are not a protected field, so it is left out and listed under To check |
+| A key file beside it: a PEM key, `.p8`, `.p12`, `.pfx`, a JSON file with a private key or client secret, a file named `api_key`, `token`, `secret` or `credentials` | An attachment of the item of its folder |
+| Anything else | Left alone, and listed |
+
+Which item a key file goes to: the one whose name is in the file's name (`work.pem`, `work-service-account.json`), else
+the only item of that folder, else an item **Key files** in that folder.
+
+**Put them inside** is a field under the list, empty at first. Type a folder name such as **Agents** and everything
+lands inside it (Agents › stripe › work), so one tick in Preferences > Agents shares all of it. A part called
+**Recycle Bin** is dropped: the database keeps its Recycle Bin under that name.
+
+An item's details list the names of its attachments under its fields. The files are not opened there: KeePass apps open
+them, and an agent is handed one by its name ("Agents use a secret without seeing it").
+
+How a value is read: as a dotenv library reads it. Quotes around a value are removed; in double quotes `\n`, `\t`,
+`\"` and `\\` are what they stand for, and a value in quotes may run over several lines; without quotes, the value ends
+at the end of the line or at ` #`. `export NAME=value` is the same as `NAME=value`. Nothing is expanded: `$OTHER` and
+`${OTHER}` stay as typed. A value that has `$`, a backtick or a backslash in it is listed under To check, because a
+shell that runs `source` on the file would have read it differently.
+
+### Importing the same folder again
+
+| | |
+|---|---|
+| A file that is new | A new item |
+| A variable that is new | A new field of its item |
+| A value that changed | The field is updated; the item's history keeps the version before |
+| Comments that changed | The notes are replaced; the history keeps the version before |
+| A key file that changed | The attachment is replaced; the history keeps the version before |
+| A variable or a file that is gone | Left as it is. Nothing is ever removed |
+| Nothing changed | "Already up to date. Nothing was changed." |
+
+An item is the same one when it is in the same folder and has the same name. Other fields you added to it, its tags
+and everything else in the database are not touched.
+
+### When it does not apply
+
+- **A locked database.** The pane says to unlock first.
+- **Names that start with `.` or `_`.** A folder such as `.git`, `.backup` or `_local`, and a hidden file, are left
+  alone and listed. The exception is `.env` itself and `.env.<name>`.
+- **Templates and old copies.** `.env.example`, `.env.sample`, `.env.template`, `work.env.example` and anything ending
+  in `.bak`, `.old`, `.orig` or `~` are left alone and listed.
+- **A variable named like an item's own field** (`PASSWORD`, `USERNAME`, `URL`, `TITLE`, `NOTES`, `OTP`, in any case)
+  is kept as the field **PASSWORD (variable)**, so it is not confused with the item's password.
+- **A key file over 1 MB**, or a link to a file elsewhere, is left alone and listed.
+- **An item in the Recycle Bin.** It is not brought back: importing its file again makes a new item.
+
+### What it will not do
+
+- Change, move or delete anything in the folder.
+- Show a value in the preview, in a message or in a log.
+- Remove a field, an attachment or an item because it is gone from the folder.
+- Share what it imported with agents. Sharing is your tick in Preferences > Agents, as for any item.
+
+### Privacy
+
+- The folder is read on this Mac. Nothing is sent anywhere: PasswordPie opens no network connection.
+- What was read is held in memory only until you import it, choose another folder or source, or close Preferences,
+  and it is dropped when the database locks.
+- The database file from before the import is kept beside it as `.snapshot`, as for every save.
+
+### Demo script
+
+Use a database with a few items, and a folder `keys` on the Desktop: `stripe/work.env` (two variables and a comment),
+`stripe/personal.env`, `google/work.env`, `google/work-service-account.json`, `apple/AuthKey_ABC123.p8`,
+`deploy.sh` and `stripe/work.env.bak`.
+
+1. Preferences > Import > **A Folder of .env Files**. Drop `keys` on the box.
+2. The page lists four items: stripe › work, stripe › personal, google › work with one key file, and apple › Key files
+   with one key file; "2 files left alone", and that `work.env.bak` holds values from these files.
+3. Click stripe › work: the names of its two variables, no values.
+4. Click **Import 4 Items**: "4 added." Press `⌘\` and type "stripe": both items are there, each with its fields.
+5. Change one value in `stripe/work.env` and drop the folder again: stripe › work says **1 field changes**, the others
+   **Up to date**. Import: "1 updated."
+6. In Finder the folder is exactly as it was.
