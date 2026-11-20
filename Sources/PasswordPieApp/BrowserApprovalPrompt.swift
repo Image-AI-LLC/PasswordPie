@@ -101,6 +101,8 @@ final class BrowserApprovalModel: ObservableObject {
         self.answer = nil
         answer(allowed)
         onAnswered?()
+        // The closure holds the panel, and the panel holds this model through its view: break the cycle once answered.
+        onAnswered = nil
     }
 
     /// The window's words, for the status file a debug build writes.
