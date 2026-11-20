@@ -364,7 +364,9 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   `text`, and an 7 pt bold `xmark` at 60 %, 5 pt between them and 6 pt at the sides. The close mark is always there, so
   nothing moves under the pointer. Hover: `field-surface` fill, outline at 45 %, mark at 100 %. A click anywhere on
   the token unlinks. Apps that do not fit are counted: "+2 more".
-- **Link bubble** — says that an account was linked to an app, was unlinked, or may be linked again. A borderless
+- **Link bubble** — says that an account was linked to an app, was unlinked, or may be linked again, or that a site
+  was added to an account ("portal.example is now a website of Northwind SSO", with "Undo"; then the account's icon
+  carries no app mark). A borderless
   panel that never takes focus, at the pinned windows' level, centred 48 pt above the bottom of the screen's visible
   frame. 44 pt tall, at most 560 pt wide, radius 10, `surface` with a 1 pt `border` outline and the system window
   shadow; nothing behind it shows through. From the left, 12 pt in: the account's 24 pt icon with the app's icon as its

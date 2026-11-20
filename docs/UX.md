@@ -439,11 +439,13 @@ starts it and then opens the panel. If it is not installed, it opens passwordpie
 Right-click the button for **Scan QR code on this page** (see "Scan a two-step QR code") and, in Chrome, **Open
 passwordpie.com**.
 
-| What you press on an account | The site in the browser is the account's site | It is another site |
-|---|---|---|
-| Return | Fills this page | Opens the account's website in a new tab of the same browser, and fills it when it loads |
-| ⇧Return (Fill) | Fills this page | The same as Return: a new tab, then fill |
-| ⌥Return (Open and Fill) | Opens the website in a new tab and fills it | The same |
+| What you press on an account | The site in the browser is the account's site | Another site, and the page shows a sign-in form | Another site, no sign-in form |
+|---|---|---|---|
+| Return | Fills this page | Adds this site to the account and fills this page | Opens the account's website in a new tab of the same browser, and fills it when it loads |
+| ⇧Return (Fill) | Fills this page | The same as Return | The same as Return: a new tab, then fill |
+| ⌥Return (Open and Fill) | Opens the website in a new tab and fills it | The same: a new tab | The same |
+
+The middle column is "An account you pick on another site's sign-in page", below.
 
 Return fills from the account's details too. Press → to see the username and password, then Return: with the username or
 password selected it fills, exactly as Return on the account's row does. On the other fields of the details (the one-time
@@ -453,6 +455,50 @@ A sign-in that asks for the username first and the password on the next step get
 when its field appears, within 30 seconds.
 
 Without the extension, or in any other app, Fill types the username and password as before.
+
+### An account you pick on another site's sign-in page
+
+**In one line:** on a sign-in page, the account you pick fills that page, and the page's site is added to the account,
+so next time it is already at the top.
+
+**The problem.** One account often signs in at more than one address: a company account on each of the company's
+tools, a Microsoft account on `live.com` and `office.com`, a shop's account on its checkout domain. You open the panel
+on a sign-in page because you want to sign in there. But when the account you picked did not list that site,
+PasswordPie opened the account's own website in a new tab and filled that one. The page you were on stayed empty, and
+an account with no website at all asked for Accessibility access to type instead.
+
+**What happens now.** The page in front shows a sign-in form, and you pick an account that does not list its site
+(by searching, or from Favorites):
+
+1. Press Return. The panel closes, and the username and password go into the page you are on. No new tab opens.
+2. The site is added to the account as one more website, such as `https://portal.northwind.example`. An account that
+   had no website gets it as its website.
+3. A small bubble at the bottom of the screen says "portal.northwind.example is now a website of Northwind SSO", with
+   **Undo**. It never takes the keyboard, leaves after 6 seconds, and waits while the pointer is on it. Undo takes the
+   website off the account again; what was filled stays in the form.
+4. The next time you press `⌘\` on that site, the account is in the site's group at the top, and Return fills it.
+
+Return from the account's details does the same, and so does ⇧Return. ⌥Return still opens the account's own website
+in a new tab.
+
+A sign-in form means a password field on the page, or a username field that the site marks as one or that the caret is
+in. The extension tells PasswordPie only yes or no.
+
+**When it does not apply.**
+
+- The page shows no sign-in form: Return opens the account's website in a new tab and fills it, as before.
+- The page is plain `http://` (other than this Mac's own `localhost`): nothing is added, and Return works as before.
+  Add such an address in the editor if you want it.
+- The extension is older than 0.8.0. It does not say whether the page has a sign-in form, so Return works as before.
+- Without the extension, Fill types the username and password as before.
+- The account has no password to fill.
+- The database could not be saved: nothing is added and nothing is filled, and PasswordPie says why, as for any save.
+- An account from Chrome is saved into your database with the new website, as when you star it. Chrome is not changed.
+
+**Look at the address first.** The site's group at the top lists only the accounts of the site you are on, so a
+look-alike address never offers you an account by itself. An account you search for and pick on a sign-in page goes
+into that page, as if you had typed it there, and the bubble names the site that was added. If that is not the site
+you meant, press **Undo** and do not submit the form.
 
 ### Getting the extension
 
@@ -564,8 +610,10 @@ app with the same name, signed by someone else, is asked about again.
 
 ### What it will not do
 
-- Fill a page from another site than the account's. A look-alike domain gets nothing, because the domain is checked by
-  PasswordPie, not by what the page says.
+- Fill a page from another site than the account's by itself. The domain is checked by PasswordPie, not by what the page
+  says, and a look-alike domain is offered no account. Only an account you pick yourself on a sign-in page goes into
+  another site's page, and that site is then added to the account, with Undo ("An account you pick on another site's
+  sign-in page").
 - Fill a frame from another site inside the page, such as an ad or an embedded widget.
 - Fill a plain `http://` page with an account saved for `https://`.
 - Fill anything while PasswordPie is locked.
@@ -574,7 +622,8 @@ app with the same name, signed by someone else, is asked about again.
 ### Privacy
 
 - The site of the tab you are on (such as `https://github.com`, never the page or anything after it) goes from the
-  extension to PasswordPie on your Mac, to find the accounts for it. Chrome's extension also says whether a window of
+  extension to PasswordPie on your Mac, to find the accounts for it, with a yes or no on whether the page shows a
+  sign-in form (nothing about the form or what is typed in it). Chrome's extension also says whether a window of
   its profile is in front, and nothing else about your windows. It is kept in memory only, never written to disk or
   to a log, and never sent anywhere else.
 - The username and password go only to the page you asked to fill, and only while PasswordPie is unlocked.
@@ -591,13 +640,17 @@ Use a database with a GitHub login, and the PasswordPie extension installed in C
    and the page stays on the sign-in form.
 3. Reload the page. Press `⌘\`, press → to open the login's details, then Return: both fields fill the same way.
 4. Go to example.com. Press `⌘\`, type `github`, press Return. A new tab opens github.com/login and fills it.
-5. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
-6. Repeat 2 to 4 in Safari after "Enable Safari Extension…".
-7. Two Chrome profiles, the extension only in the first, both on github.com/login. In the first, `⌘\` shows GITHUB.COM
+5. Open the sign-in page of a site no account lists, such as `http://localhost:8787/demo/login` from
+   `extension/dev/mock-site.mjs`. Press `⌘\`, type `github`, press Return: no new tab opens, both fields fill on this
+   page, and a bubble says "localhost:8787 is now a website of GitHub", with Undo. Press `⌘\` again: the top group is
+   LOCALHOST:8787 with GitHub in it. Do it once more and click Undo: the group is gone.
+6. Lock PasswordPie with ⌘L and try again: nothing is filled until you unlock.
+7. Repeat 2 to 5 in Safari after "Enable Safari Extension…".
+8. Two Chrome profiles, the extension only in the first, both on github.com/login. In the first, `⌘\` shows GITHUB.COM
    and Return fills. Click the second profile's window and press `⌘\`: the first line is "Add Chrome Extension…", and
    ⇧Return types into this window; the first profile's tab stays empty. Click the line: the store page opens in the
    second profile.
-8. Open Preferences from the gear menu's Browser Extensions…: Chrome says "Connected", with Add Chrome Extension… next
+9. Open Preferences from the gear menu's Browser Extensions…: Chrome says "Connected", with Add Chrome Extension… next
    to it.
 
 ## Site icons without telling anyone
