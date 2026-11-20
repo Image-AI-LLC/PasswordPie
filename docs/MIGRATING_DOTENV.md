@@ -192,8 +192,8 @@ What happened on that Mac is in its Activity file. From your own Mac:
 
 ## 8. Try it
 
-These are the checks of "Acceptance, by the owner". The two-Mac behaviour is also covered by tests with two copies of
-one database (`SecretsAcrossMacsAcceptanceTests`); these are the parts only you can see on real Macs.
+Seven checks on your real Macs, once everything above is set up. The two-Mac behaviour is also covered by tests with two
+copies of one database (`SecretsAcrossMacsAcceptanceTests`); these are the parts only you can see on real Macs.
 
 | | Do | Expect |
 |---|---|---|

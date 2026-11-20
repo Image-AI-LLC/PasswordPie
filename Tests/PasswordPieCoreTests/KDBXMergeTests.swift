@@ -118,6 +118,7 @@ final class KDBXMergeTests: XCTestCase {
     /// its history was made from it and wins, both ways, and nobody is told of a change on both. (Seen in the two-Mac
     /// acceptance: a change made right after the item was written was undone by the merge about half the time.)
     func testAChangeInTheSameSecondAsTheVersionTheOtherCopyHoldsWins() throws {
+        // Several new values: the old tie-break chose by content, so with one value the test could pass by luck.
         for password in ["second", "b", "c", "d", "e", "f"] {
             let original = MergeItem(0xA1, "Bank", password: "first", modified: 10)
             let here = try MergeCopy(items: [
