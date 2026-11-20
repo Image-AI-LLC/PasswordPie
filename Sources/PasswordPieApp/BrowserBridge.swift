@@ -12,11 +12,16 @@ enum BrowserFillPlan: Equatable {
     case thisTab(website: String)
     /// Open the account's website in a new tab of that browser and fill it when it loads.
     case newTab(website: String, url: URL)
+    /// The browser is on a sign-in page of a site the account does not list: add `website` (the page's origin) to the
+    /// account, then fill this tab. See "An account you pick on another site's sign-in page" in docs/UX.md.
+    case addSite(website: String)
 }
 
-/// Return and ⇧Return fill this tab when it is the account's site, otherwise a new tab; ⌥Return always opens a new tab.
-/// `pageURL` is the browser's current tab, or nil when it is not known.
-func browserFillPlan(entry: VaultEntry, mode: FillMode, preferredWebsite: String?, pageURL: String?) -> BrowserFillPlan {
+/// Return and ⇧Return fill this tab when it is the account's site. On another site they fill this tab too when it
+/// shows a sign-in form, and the site is added to the account; otherwise a new tab. ⌥Return always opens a new tab.
+/// `pageURL` is the browser's current tab, or nil when it is not known; `signIn` whether its extension said that page
+/// shows a sign-in form.
+func browserFillPlan(entry: VaultEntry, mode: FillMode, preferredWebsite: String?, pageURL: String?, signIn: Bool = false) -> BrowserFillPlan {
     guard mode != .open else { return .keystrokes }
     if mode != .openAndFill, let pageURL {
         if let preferredWebsite, BrowserSite.allowsFill(entryWebsite: preferredWebsite, pageURL: pageURL) {
@@ -24,6 +29,11 @@ func browserFillPlan(entry: VaultEntry, mode: FillMode, preferredWebsite: String
         }
         if let website = SiteSuggestions.matchingWebsite(of: entry, pageURL: pageURL) {
             return .thisTab(website: website)
+        }
+        // The person opened the panel on a sign-in page and picked this account: it is for this page. Never a plain
+        // http page, and never an account with nothing to sign in with.
+        if signIn, !entry.password.isEmpty, let website = EntryWebsites.address(forPage: pageURL) {
+            return .addSite(website: website)
         }
     }
     // A new tab opens a website of the account, never its reset link.
@@ -39,6 +49,14 @@ func resolvedPageURL(extensionURL: String?, windowURL: String?) -> String? {
     guard let extensionURL else { return windowURL }
     guard let windowURL, let reported = BrowserSite(url: extensionURL), let shown = BrowserSite(url: windowURL) else { return extensionURL }
     return reported.key == shown.key ? extensionURL : windowURL
+}
+
+/// Whether the extension's word that its page shows a sign-in form is about the page a fill would go to. `reported` is
+/// its last report, `windowURL` the address read from the window. When the window shows another site, the report is
+/// stale (`resolvedPageURL`) and says nothing about the page in front.
+func signInApplies(reported: ReportedPage?, windowURL: String?) -> Bool {
+    guard let reported, reported.signIn else { return false }
+    return resolvedPageURL(extensionURL: reported.url, windowURL: windowURL) == reported.url
 }
 
 /// The line above the search field when the front browser's extension is missing.
@@ -398,6 +416,14 @@ final class BrowserBridge: ObservableObject {
             ? state.currentURL(for: browser, app: browser == .chrome ? app : nil, now: now(), usedLast: usedLast)
             : nil
         return resolvedPageURL(extensionURL: reported, windowURL: readURLs[browser])
+    }
+
+    /// Whether the page `pageURL(for:app:inFront:)` names shows a sign-in form, by its extension's own report of it.
+    func signInShowing(for browser: BridgeBrowser, app: String? = nil, inFront: Bool = true) -> Bool {
+        guard canFill(in: browser, app: app, inFront: inFront) else { return false }
+        let usedLast = browser == .chrome && !inFront
+        let reported = state.currentPage(for: browser, app: browser == .chrome ? app : nil, now: now(), usedLast: usedLast)
+        return signInApplies(reported: reported, windowURL: readURLs[browser])
     }
 
     func banner(for app: NSRunningApplication?, inFront: Bool = true) -> ExtensionBanner? {
@@ -767,9 +793,23 @@ final class BrowserBridge: ObservableObject {
             link = nil
         }
         let page = overBrowser ? pageURL(for: browser, app: app, inFront: inFront) : nil
-        switch browserFillPlan(entry: entry, mode: mode, preferredWebsite: website, pageURL: page) {
+        let signIn = overBrowser && signInShowing(for: browser, app: app, inFront: inFront)
+        switch browserFillPlan(entry: entry, mode: mode, preferredWebsite: website, pageURL: page, signIn: signIn) {
         case .keystrokes:
             return false
+        case .addSite(let site):
+            guard PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link, app: app) != nil else { return false }
+            hidePanel(true)
+            let id = entry.id
+            // The website is saved first: a fill only ever goes to a site the account holds, so the fill waits for the
+            // file. A save that fails fills nothing, and says why as any save does.
+            session.addWebsite(site, to: id) { [weak self] saved in
+                guard let self, saved, !self.session.locked,
+                      let pending = PendingFill(entryID: id, browser: browser, website: site, created: self.now(), link: link, app: app) else { return }
+                self.state.pending.set(pending)
+                self.poke(browser, link: link)
+            }
+            return true
         case .thisTab(let site):
             guard let pending = PendingFill(entryID: entry.id, browser: browser, website: site, created: now(), link: link, app: app) else { return false }
             state.pending.set(pending)

@@ -61,6 +61,9 @@ const tabs: TabsAdapter = {
   sendToFrame(tabId, frameId, msg) {
     return browser.tabs.sendMessage(tabId, msg, { frameId });
   },
+  askSignIn(tabId, frameId, msg) {
+    return browser.tabs.sendMessage(tabId, msg, { frameId });
+  },
   openTab(url) {
     return browser.tabs.create({ url });
   },

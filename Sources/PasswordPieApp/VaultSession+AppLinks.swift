@@ -38,7 +38,52 @@ enum AppLinkNotice: Equatable {
     }
 }
 
+/// What the bubble says after a pick on a sign-in page added the page's site to the account. See "An account you pick
+/// on another site's sign-in page" in docs/UX.md.
+enum SiteNotice: Equatable {
+    /// `website` was just added to the account. The bubble offers Undo.
+    case added(entry: UUID, title: String, website: String)
+
+    var message: String {
+        switch self {
+        case .added(_, let title, let website): "\(EntryWebsites.label(of: website)) is now a website of \(title)"
+        }
+    }
+
+    var action: String { "Undo" }
+
+    var entry: UUID {
+        switch self {
+        case .added(let entry, _, _): entry
+        }
+    }
+
+    var website: String {
+        switch self {
+        case .added(_, _, let website): website
+        }
+    }
+}
+
 extension VaultSession {
+    /// A pick on a sign-in page of a site the account does not list: the site becomes one of its websites, and the
+    /// bubble says so. `done` gets true once the file holds it; only then may the page be filled.
+    func addWebsite(_ website: String, to id: UUID, then done: @escaping (Bool) -> Void = { _ in }) {
+        onActivity?()
+        changeEntry(id, { EntryWebsites.add(website, to: &$0) }, then: { [weak self] saved in
+            if saved, let self, let entry = self.entry(id) {
+                self.onSiteNotice?(.added(entry: id, title: Self.linkTitle(of: entry), website: website))
+            }
+            done(saved)
+        })
+    }
+
+    /// Undo on the bubble: takes off exactly the website that was added, if it is still there as it was added.
+    func removeWebsite(_ website: String, from id: UUID, then done: @escaping (Bool) -> Void = { _ in }) {
+        onActivity?()
+        changeEntry(id, { EntryWebsites.remove(website, from: &$0) }, then: done)
+    }
+
     /// The one rule that links an account to an app without asking: its password was copied while the app was in front.
     /// The username is not asked for, because many apps already show it. A wrong guess costs one click on Undo or on
     /// the app in the account's details, and after that the same copy only asks.

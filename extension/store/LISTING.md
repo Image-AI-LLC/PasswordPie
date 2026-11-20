@@ -39,10 +39,10 @@ HOW IT WORKS
 • On a sign-in page, press ⌘\ or click the PasswordPie button in the toolbar. The PasswordPie panel opens with the accounts for that site at the top.
 • Press Return. The username and password appear in the form. PasswordPie never presses Sign In for you.
 • A sign-in that asks for the username first and the password on the next page gets both.
-• Picked an account for another site? PasswordPie opens its website in a new tab and fills it when it loads.
+• Picked an account that does not list the sign-in page you are on? PasswordPie fills this page and adds its site to the account, with Undo. On a page with no sign-in form, it opens the account's website in a new tab and fills it when it loads.
 
 BUILT TO FILL THE RIGHT PAGE
-• It fills only a page on the account's own site. A look-alike domain gets nothing, because PasswordPie checks the domain itself, not what the page says.
+• It offers only the accounts of the site you are on. A look-alike domain is offered no account, because PasswordPie checks the domain itself, not what the page says. An account goes into another site's page only when you pick it yourself on a sign-in page, and PasswordPie then names the site it added, with Undo.
 • It never fills a frame from another site, a plain http page with an account saved for https, or anything while PasswordPie is locked.
 • Each pick fills once, and is dropped if no matching page shows up within 30 seconds.
 
@@ -60,7 +60,7 @@ NO ACCOUNT, NO SIGN-IN
 PRIVATE BY DESIGN
 • Your passwords stay in your KeePass file on your Mac. They go only to the PasswordPie app on the same Mac, through Chrome's native messaging, and never to us or to any server.
 • The extension has no account, stores nothing in the browser, and sends nothing to passwordpie.com or to us.
-• It tells the app only the site of the active tab (such as https://example.com) and whether a window of this Chrome profile is in front, never the page's full address, its contents or your history.
+• It tells the app only the site of the active tab (such as https://example.com), whether that page shows a sign-in field (yes or no, nothing about the field or what is typed in it) and whether a window of this Chrome profile is in front, never the page's full address, its contents or your history.
 • When PasswordPie has an account for that site but no icon for it, the extension sends the app the site's icon, which it fetches without cookies from the address the page gives for it.
 • No analytics, no tracking, no remote code.
 
@@ -121,7 +121,7 @@ Fill the username, password and two-step code that the user picks in the Passwor
 **nativeMessaging**
 
 ```text
-The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.passwordpie). It sends the origin of the active tab (such as https://example.com) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. After the user presses Reset Password in the app, it also receives the new password the app made for the change-password form, and tells the app the page's origin once that form is submitted. It is not used for anything else.
+The extension's only channel to the PasswordPie app on the same Mac, through the native messaging host the app installs (com.passwordpie). It sends the origin of the active tab (such as https://example.com), whether that page shows a sign-in field (yes or no) and whether a window of this Chrome profile has the focus (so the app never fills a tab of another profile), and receives the username and password the user picked in the app, and the two-step code when the app has Premium. When the app has an account for that site but no icon for it, it also sends a PNG of the site's icon. When the user chooses Scan, it sends the otpauth:// link of the two-step QR code on the page. After the user presses Reset Password in the app, it also receives the new password the app made for the change-password form, and tells the app the page's origin once that form is submitted. It is not used for anything else.
 ```
 
 **webNavigation**
@@ -145,7 +145,7 @@ Adds two lines to the right-click menu of the extension's toolbar button (Scan Q
 **Host permissions (<all_urls>)**
 
 ```text
-Sign-in pages can be on any site; the user's database decides which. Host access lets the background read the active tab's URL (only its origin goes to the PasswordPie app, to find that site's accounts) and lets the content script find and fill the sign-in fields of the page the user asked to fill. After Reset Password in the app, it fills the site's change-password form (current and new password) and notices when the user submits it. If the app has an account for the site but no icon, the background asks the top frame for the page's icon links and fetches the icon without cookies. When the user chooses Scan QR code in a right-click menu, the top frame reads on-screen pictures that could be a QR code and, if none reads, the background takes one picture of the visible tab (tabs.captureVisibleTab); the code is decoded in the extension and only its otpauth:// link goes to the app. Otherwise the content script reads nothing until the user picks an account, and it never submits a form.
+Sign-in pages can be on any site; the user's database decides which. Host access lets the background read the active tab's URL (only its origin goes to the PasswordPie app, to find that site's accounts) and lets the content script say whether the page shows a sign-in field (yes or no, nothing more about it) and find and fill the sign-in fields of the page the user asked to fill. After Reset Password in the app, it fills the site's change-password form and notices when the user submits it. If the app has an account for the site but no icon, the background asks the top frame for the page's icon links and fetches the icon without cookies. When the user chooses Scan QR code, the top frame reads on-screen pictures that could be a QR code and, if none reads, the background takes one picture of the visible tab (tabs.captureVisibleTab); the code is decoded in the extension and only its otpauth:// link goes to the app. The content script reads nothing else, and it never submits a form.
 ```
 
 ### Remote code
@@ -162,7 +162,9 @@ Collected and handled only on the user's Mac, never sent to the developer or a s
 
 - **Authentication information:** the username and password the user picks in the PasswordPie app, put into the page;
   and, after Reset Password in the app, the new password the app made, put into the site's change-password form.
-- **Web history:** the origin of the active tab, sent to the PasswordPie app on the same Mac to list that site's accounts.
+- **Web history:** the origin of the active tab, and whether that page shows a sign-in field (yes or no, nothing about
+  the field or what is typed in it), sent to the PasswordPie app on the same Mac to list that site's accounts and to
+  fill the page the user is on.
 - **Website content:** the site's icon, sent to the PasswordPie app on the same Mac when it has an account for that
   site but no icon for it; and, only when the user chooses Scan, the two-step QR code shown on the page, decoded in the
   extension and sent as an otpauth:// link to the PasswordPie app on the same Mac. The pictures are not kept.

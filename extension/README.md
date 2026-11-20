@@ -66,7 +66,8 @@ transparent background with a see-through keyhole. Regenerate the PNGs after cha
   `FillController` and `Toolbar`.
 - `src/app/content.ts`: wires fill and code messages and focus events to `PageFiller` and `CodeFiller`, and shows the
   note for a scan that found nothing.
-- `src/lib/controller.ts`: tab reports, the in-memory fill (30 s, per tab and origin), frame targeting, the code flow
+- `src/lib/controller.ts`: tab reports (the origin, the focus, and whether the page shows a sign-in form: `fields.ts`
+  `showsSignIn`, asked of the page through `sign-in.ts`), the in-memory fill (30 s, per tab and origin), frame targeting, the code flow
   (watch for a code field, ask the app, fill or hint), and Upgrade in the hint (asks the app for its Premium window).
 - `src/lib/toolbar.ts`: the right-click menus: scan and the website on the button, scan on the page, and what a scan
   that handed nothing over says.

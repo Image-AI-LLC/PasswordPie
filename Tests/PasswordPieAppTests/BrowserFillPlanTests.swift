@@ -36,6 +36,66 @@ final class BrowserFillPlanTests: XCTestCase {
         XCTAssertEqual(plan, .newTab(website: "https://github.com", url: URL(string: "https://github.com")!))
     }
 
+    // MARK: A pick on another site's sign-in page (docs/UX.md, "An account you pick on another site's sign-in page")
+
+    func testReturnOnAnotherSitesSignInPageAddsTheSiteAndFillsThere() {
+        let entry = login("https://github.com/login")
+        for mode in [FillMode.fillOrOpen, .fill] {
+            let plan = browserFillPlan(entry: entry, mode: mode, preferredWebsite: nil, pageURL: "https://portal.example.com/", signIn: true)
+            XCTAssertEqual(plan, .addSite(website: "https://portal.example.com"))
+        }
+    }
+
+    func testWithoutASignInFormAnotherSiteStillOpensANewTab() {
+        let plan = browserFillPlan(entry: login("https://github.com/login"), mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://example.com/", signIn: false)
+        XCTAssertEqual(plan, .newTab(website: "https://github.com/login", url: URL(string: "https://github.com/login")!))
+    }
+
+    func testOptionReturnOpensTheAccountsWebsiteEvenOnASignInPage() {
+        let plan = browserFillPlan(entry: login("https://github.com"), mode: .openAndFill, preferredWebsite: nil, pageURL: "https://portal.example.com/", signIn: true)
+        XCTAssertEqual(plan, .newTab(website: "https://github.com", url: URL(string: "https://github.com")!))
+    }
+
+    func testTheAccountsOwnSiteIsFilledWithoutAddingAnything() {
+        let plan = browserFillPlan(entry: login("https://github.com"), mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://gist.github.com/", signIn: true)
+        XCTAssertEqual(plan, .thisTab(website: "https://github.com"))
+    }
+
+    func testAnAccountWithoutAWebsiteIsFilledOnTheSignInPage() {
+        // Before, there was nothing to open, so Fill typed keystrokes and asked for Accessibility.
+        XCTAssertEqual(browserFillPlan(entry: login(""), mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://portal.example.com/", signIn: false), .keystrokes)
+        XCTAssertEqual(browserFillPlan(entry: login(""), mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://portal.example.com/", signIn: true),
+                       .addSite(website: "https://portal.example.com"))
+    }
+
+    func testAPlainHTTPSignInPageAddsNothing() {
+        let entry = login("https://github.com")
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .fillOrOpen, preferredWebsite: nil, pageURL: "http://portal.example.com/", signIn: true),
+                       .newTab(website: "https://github.com", url: URL(string: "https://github.com")!))
+        // The account's own site over plain http is still not filled, and not added either.
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .fillOrOpen, preferredWebsite: nil, pageURL: "http://github.com/login", signIn: true),
+                       .newTab(website: "https://github.com", url: URL(string: "https://github.com")!))
+        // This Mac's own loopback is not the network.
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .fillOrOpen, preferredWebsite: nil, pageURL: "http://localhost:8787/demo/login", signIn: true),
+                       .addSite(website: "http://localhost:8787"))
+    }
+
+    func testAnAccountWithNoPasswordAddsNothing() {
+        var entry = login("https://github.com")
+        entry.password = ""
+        XCTAssertEqual(browserFillPlan(entry: entry, mode: .fillOrOpen, preferredWebsite: nil, pageURL: "https://portal.example.com/", signIn: true),
+                       .newTab(website: "https://github.com", url: URL(string: "https://github.com")!))
+    }
+
+    func testTheExtensionsWordCountsOnlyForThePageItReported() {
+        let page = ReportedPage(url: "https://portal.example.com/", signIn: true)
+        XCTAssertTrue(signInApplies(reported: page, windowURL: nil), "without Accessibility the report is all there is")
+        XCTAssertTrue(signInApplies(reported: page, windowURL: "https://portal.example.com/sign-in"))
+        XCTAssertFalse(signInApplies(reported: page, windowURL: "https://news.example.org/"), "the window shows another site: the report is stale")
+        XCTAssertFalse(signInApplies(reported: ReportedPage(url: "https://portal.example.com/", signIn: false), windowURL: nil))
+        XCTAssertFalse(signInApplies(reported: nil, windowURL: "https://portal.example.com/"))
+    }
+
     func testUnknownPageOpensANewTab() {
         let plan = browserFillPlan(entry: login("https://github.com"), mode: .fillOrOpen, preferredWebsite: nil, pageURL: nil)
         XCTAssertEqual(plan, .newTab(website: "https://github.com", url: URL(string: "https://github.com")!))

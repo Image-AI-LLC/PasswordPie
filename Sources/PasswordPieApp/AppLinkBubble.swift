@@ -64,7 +64,8 @@ struct AppLinkBubbleView: View {
     var action: String
     var title: String
     var siteHost: String?
-    var appIcon: NSImage
+    /// The app the notice is about, as the mark on the account's icon. Nil for a notice about a website.
+    var appIcon: NSImage?
     var onAct: () -> Void
     var onHover: (Bool) -> Void
 
@@ -77,14 +78,16 @@ struct AppLinkBubbleView: View {
             // The account's icon carries the app's as its mark, as an account from Chrome carries Chrome's.
             SiteIconView(host: siteHost, title: title, side: 24)
                 .overlay(alignment: .bottomTrailing) {
-                    Image(nsImage: appIcon)
-                        .resizable()
-                        .frame(width: 13, height: 13)
-                        .padding(1.5)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Palette.surface(dark: dark)))
-                        .offset(x: 6, y: 6)
+                    if let appIcon {
+                        Image(nsImage: appIcon)
+                            .resizable()
+                            .frame(width: 13, height: 13)
+                            .padding(1.5)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Palette.surface(dark: dark)))
+                            .offset(x: 6, y: 6)
+                    }
                 }
-                .padding(.trailing, 4)
+                .padding(.trailing, appIcon == nil ? 0 : 4)
             Text(message)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Palette.text(dark: dark))
@@ -114,10 +117,19 @@ final class AppLinkBubbleController {
     var isShowing: Bool { panel != nil }
 
     func show(_ notice: AppLinkNotice, title: String, siteHost: String?, act: @escaping () -> Void) {
+        show(message: notice.message, action: notice.action, title: title, siteHost: siteHost, appIcon: AppIdentity.icon(for: notice.app), act: act)
+    }
+
+    /// A site was added to an account: the same bubble, with no app's mark on the account's icon.
+    func show(_ notice: SiteNotice, title: String, siteHost: String?, act: @escaping () -> Void) {
+        show(message: notice.message, action: notice.action, title: title, siteHost: siteHost, appIcon: nil, act: act)
+    }
+
+    private func show(message: String, action: String, title: String, siteHost: String?, appIcon: NSImage?, act: @escaping () -> Void) {
         dismiss(animated: false)
         let view = AppLinkBubbleView(
-            message: notice.message, action: notice.action, title: title, siteHost: siteHost,
-            appIcon: AppIdentity.icon(for: notice.app),
+            message: message, action: action, title: title, siteHost: siteHost,
+            appIcon: appIcon,
             onAct: { [weak self] in
                 act()
                 self?.dismiss(animated: true)
@@ -140,7 +152,7 @@ final class AppLinkBubbleController {
         }
         self.panel = panel
         NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
-            .announcement: notice.message, .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+            .announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue,
         ])
         countdown.start(at: Date())
         schedule()
