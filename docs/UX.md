@@ -2604,6 +2604,9 @@ and everything else in the database are not touched.
 - Remove a field, an attachment or an item because it is gone from the folder.
 - Share what it imported with agents. Sharing is your tick in Preferences > Agents, as for any item.
 
+The whole move, from a folder of `.env` files to projects that run from a `.env.pp` on two Macs and plain files
+deleted, is a guide of its own: [MIGRATING_DOTENV.md](MIGRATING_DOTENV.md).
+
 ### Privacy
 
 - The folder is read on this Mac. Nothing is sent anywhere: PasswordPie opens no network connection.

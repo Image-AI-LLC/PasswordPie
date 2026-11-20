@@ -846,6 +846,12 @@ Development identity; it replaces the copy in `~/Applications`). Ten minutes, in
 - **For Claude Code as an MCP client**, copy its line from Preferences > Agents > MCP server; the agent then has
   `passwordpie_run`, `passwordpie_read` and `passwordpie_login` and the window adds "through MCP" under the agent.
 
+### On two Macs
+
+The owner's acceptance for secrets on more than one Mac (a database for agents, the import of a folder of `.env` files,
+a sync tool, a Mac where agents work alone) is step 8 of [MIGRATING_DOTENV.md](MIGRATING_DOTENV.md), which also says
+what to set up first. What an agent can run without the owner is `SecretsAcrossMacsAcceptanceTests` ("Testing").
+
 ### On a Mac nobody sits at
 
 Touch ID cannot be scripted, so a release build cannot be driven end to end by an agent. A debug build can: it takes a
@@ -967,3 +973,15 @@ read back from it); a request waiting until the agents database is unlocked besi
 the screen lock, sleep, a user switch and power off but not on the screen saver or the display sleeping, and as before
 with it off. `KeepUnlockedTests` in PasswordPieCoreTests covers the policy (idle, the switches not weakening it, off
 unchanged); `ApprovalWithoutTouchIDTests` that the window's confirmation falls back to the login password.
+
+Secrets on more than one Mac, end to end: `SecretsAcrossMacsAcceptanceTests` in PasswordPieAppTests runs the owner's
+acceptance list with two copies of one agents database standing in for the two Macs, each opened by its own session,
+and a test copying the file between them as a sync tool would. Different items changed on each Mac are on both with
+nothing asked; the same item changed on both (through a Syncthing conflict copy) is the later change on both, the
+earlier in its history, and listed on both; an item moved to the Recycle Bin on one is gone on the other, also for
+agents; a night job on the worker runs under a standing permission given there, which a merge with the other Mac's
+file keeps, while a grant given on the other Mac asks; a key saved on the worker waits, is saved from the list on the
+other Mac, and comes back as an item the worker's agents can use; a generated folder of `.env` files is imported,
+checked, and a project's `.env.pp` resolves on both Macs. Every test then looks for its planted value in every file
+the two Macs wrote: only the encrypted databases hold it. `PASSWORDPIE_ACCEPTANCE_VALUE` sets that value and
+`PASSWORDPIE_ACCEPTANCE_KEEP` a folder to leave the files in, so a search of the whole home folder can follow.
