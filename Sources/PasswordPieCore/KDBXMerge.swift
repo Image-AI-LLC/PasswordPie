@@ -17,8 +17,9 @@ import Foundation
 // Where this differs from KeePassXC, on purpose:
 //
 // - Nothing depends on which copy is merged into which, so two Macs that each merge the other's copy end with the same
-//   content and stop writing. KeePassXC keeps its own version when two differ with the same time; here the choice is
-//   by content, and the other version goes into the history.
+//   content and stop writing. KeePassXC keeps its own version when two differ with the same time; here the copy whose
+//   history holds the other's current version wins (it was saved again in the same second), else the choice is by
+//   content, and the other version goes into the history. A move at the same time follows the same rule.
 // - A history item is one version, by its time and content. KeePassXC keys history by time alone and drops one of two
 //   different versions with the same time.
 // - Moving an item to the Recycle Bin is how PasswordPie deletes. An item changed on the other Mac after that move stays
@@ -322,6 +323,16 @@ final class KDBXMerger {
         guard let id = uuid(of: existing) else { return }
         let ours = modified(existing), theirs = modified(source)
 
+        // Times are whole seconds, so a version saved in the same second as the one before it has that one's time. A
+        // copy whose history holds the other copy's current version was made from it, and is the later one, whatever
+        // the second says. Only a tie is decided this way; neither or both holding the other's falls back to the rules
+        // below.
+        let ourHistory = Set((direct(existing, "History").first.map { direct($0, "Entry") } ?? []).map { versionKey($0, pool: targetPool) })
+        let theirHistory = Set(direct(source, "History").flatMap { direct($0, "Entry") }.map { versionKey($0, pool: sourcePool) })
+        let ourKey = versionKey(existing, pool: targetPool), theirKey = versionKey(source, pool: sourcePool)
+        let theyFollow = theirHistory.contains(ourKey) && !ourHistory.contains(theirKey)
+        let weFollow = ourHistory.contains(theirKey) && !theirHistory.contains(ourKey)
+
         // Where it is: the later move wins. Moving to the Recycle Bin is a deletion, and loses against a change made
         // after it in the other copy, as a `DeletedObjects` time does.
         var location = timeText(existing, "LocationChanged")
@@ -329,7 +340,13 @@ final class KDBXMerger {
         let movedHere = time(existing, "LocationChanged"), movedThere = time(source, "LocationChanged")
         if let current = existing.parent as? XMLElement, current !== targetParent {
             let trashedHere = isTrashed(existing, bin: targetBin), trashedThere = isTrashed(source, bin: sourceBin)
-            move = movedThere > movedHere || (movedThere == movedHere && orderKey(of: targetParent) > orderKey(of: current))
+            if movedThere != movedHere {
+                move = movedThere > movedHere
+            } else if theyFollow || weFollow {
+                move = theyFollow
+            } else {
+                move = orderKey(of: targetParent) > orderKey(of: current)
+            }
             if move, trashedThere, !trashedHere, ours > movedThere {
                 move = false
             } else if !move, trashedHere, !trashedThere, theirs > movedHere {
@@ -341,12 +358,12 @@ final class KDBXMerger {
             location = timeText(source, "LocationChanged") ?? location
         }
 
-        // Which version is current: the later one. With the same time and different content the choice must not
-        // depend on which copy is which, so it is made by content.
+        // Which version is current: the later one. With the same time, the one made from the other; else, with
+        // different content, the choice must not depend on which copy is which, so it is made by content.
         let ourContent = digest(of: existing, pool: targetPool, kind: .content)
         let theirContent = digest(of: source, pool: sourcePool, kind: .content)
         let differs = ourContent != theirContent
-        let sourceWins = ours != theirs ? theirs > ours : (differs && theirContent > ourContent)
+        let sourceWins = ours != theirs ? theirs > ours : (theyFollow || weFollow ? theyFollow : differs && theirContent > ourContent)
 
         // The history: both histories, and the current version that lost unless the winner already has it there.
         let history = direct(existing, "History").first

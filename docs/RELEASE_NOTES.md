@@ -50,6 +50,7 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - Premium now covers agents' standing permissions as well as two-step codes. An approval each time, and everything else, stays free
 
 ### Fixed
+- A database made in PasswordPie named a Recycle Bin it did not have until something was deleted, and KeePassXC warned of "1 invalid group reference" when it opened the file. A new database now names none until it has one
 - Files attached to an item in a 1Password export, or in a KeePass 1 or OPVault file opened as a database, were left out when the item was saved. They are now saved as the item's attachments
 
 ### Good to know

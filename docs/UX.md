@@ -2161,8 +2161,10 @@ read.
 | An attachment added or replaced | Nothing | The item has it |
 
 Which change is "later" is decided by the time each Mac wrote into the item when it saved it, to the second, as in
-KeePass and KeePassXC, whose rules these are. Two different changes with the same second: PasswordPie picks one, the
-same one on both Macs, and keeps the other in the history.
+KeePass and KeePassXC, whose rules these are. A change saved in the same second as the version before it still wins
+over that version on the other Mac: the item's history shows it was made from it. Two different changes with the same
+second, neither made from the other: PasswordPie picks one, the same one on both Macs, and keeps the other in the
+history.
 
 Nothing PasswordPie does not understand is lost in a merge: fields and settings other KeePass apps wrote, attachments,
 custom icons and each item's history are kept as a save keeps them.
