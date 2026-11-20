@@ -23,13 +23,14 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 
 | Piece | Where | What it does |
 |---|---|---|
-| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, `write-env`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
+| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, `write-env`, `check-import`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
 | A project's `.env.pp` | `PasswordPieCLI/RepositoryScan.swift`, `EnvFilePlan.swift`; what a run takes from flags and files in `RunInputs.swift` | `write-env` reads which variables a project reads and writes references for those; `run` takes more than one `--env-file` |
 | Website login | `PasswordPieAgent/AgentLogin.swift`, `VaultBroker+Login.swift`; the app's `BrowserBridge+AgentLogin.swift`; the bridge's rules in `PasswordPieCore/BrowserFill.swift` | The broker's `login`, and the browser side that turns an approval into a pending fill |
 | Argument watch | `PasswordPieAgent/ArgumentWatch.swift` | Looks for handed-out values on the command lines under a run |
 | MCP setup lines | `PasswordPieAgent/AgentMCPSetup.swift` | What the Agents pane shows for Claude Code, Codex and Cursor |
 | Messages, references, `.env.pp`, refusal lines, output masking | target `PasswordPieAgent` (`AgentProtocol`, `AgentReference`, `AgentEnvFile`, `AgentErrors`, `OutputMasker`) | Shared by the app and the tool |
 | Who is asking | `PasswordPieAgent/CallerIdentity.swift` | The kernel's view of the tool's process and its parents |
+| Checking a folder | `PasswordPieAgent/VaultBroker+Check.swift`; the app's reader in `AgentFolderCheck.swift`, which is the importer's (`PasswordPieCore/DotenvFolder.swift`) | The broker's `check`: a folder of dotenv files compared with the vault inside the app |
 | `VaultBroker` | `PasswordPieAgent/VaultBroker.swift` | The one place a request that is not the owner clicking in PasswordPie is answered |
 | `agent.sock` server | `PasswordPieAgent/AgentServer.swift` | Peer check, caller walk per request, hands requests to the broker |
 | Activity log | `PasswordPieAgent/AgentActivity.swift`, file `~/Library/Application Support/PasswordPie/agent-activity.jsonl` | One line per request, no values |
@@ -266,6 +267,7 @@ credential: the tool holds no token.
 | `list` | `query`, `wait` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Never a value |
 | `status` | none | `status`: `locked`, `access`, `agent`, `project`, `grants` |
 | `login` | `secrets` with at most one `{ref, as: "fill"}`, `url`, `submit`, `browser` (`chrome`, `safari`), `reason`, `wait` | `login` (below), `by` (`once`). Never a value |
+| `check` | `folder` (an absolute path), `inside?`, `reason`, `wait` | `checks`: one `{file, name, status}` per variable and key file of the folder; `status` is `same`, `differs`, `missing`, `ambiguous` or `not-checked`. Never a value |
 | `argument` | one secret (`name`, `ref`, `as`) and `program`: the argument watch saw its value on that program's command line | nothing (one activity line). Never the command line, which holds the value |
 | `error` | | `code` (below), `ref` (the reference it is about, as the agent typed it), `refs` (for `ambiguous`) |
 
@@ -371,6 +373,7 @@ What it cannot know: a name only a library or a command reads (`OPENAI_API_KEY` 
     passwordpie list [QUERY] [--json] [--wait SECONDS]
     passwordpie status [--json]
     passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
+    passwordpie check-import FOLDER [--inside FOLDER] [--reason TEXT] [--wait SECONDS] [--json]
     passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
 
 **`run`** asks the app for the values, starts `COMMAND` as its child with them, and waits.
@@ -405,6 +408,51 @@ whether the app runs, is locked, whether agent access is on, who the agent is an
 The tool waits up to `--wait` plus 30 minutes for an answer (a request can queue behind other prompts of the same agent
 session); the app enforces the real limits. When PasswordPie is not running, `run`, `read` and `list` start it (`AppLaunch`) and wait up to 10 seconds for the
 socket. Running without a socket means agent access is off.
+
+## Checking a folder against the vault
+
+    passwordpie check-import FOLDER [--inside FOLDER] [--reason TEXT] [--wait SECONDS] [--json]
+
+After a folder of dotenv files was imported (Preferences > Import > A Folder of .env Files, "A folder of .env files
+becomes items" in UX.md), `check-import` answers the question that comes before deleting the files: does PasswordPie
+hold every name and value they hold?
+
+    stripe/work.env
+      STRIPE_SECRET_KEY      same
+      STRIPE_WEBHOOK_SECRET  differs
+    google/work-service-account.json
+      work-service-account.json  same
+    2 same, 1 differs.
+
+- **Names and a word, never a value.** For every variable and every key file: `same`, `differs`, `missing`,
+  `ambiguous` (more than one shared item is where the import would have put it) or `not checked` (the owner unticked
+  it). `--json` prints the same as an array of `{file, name, status}`.
+- **Exit 0 only when everything is the same.** Otherwise 78 (`check-failed`), with one line on standard error saying
+  not to delete the files yet and what each word means.
+- **The app compares, in its own memory.** The tool sends the folder's path; PasswordPie reads the folder with the
+  importer's own reader (so a check sees a folder exactly as an import does: the same files become the same items,
+  fields and key files) and compares there. No value goes to the tool and none comes from it. Nothing is written,
+  anywhere.
+- **It asks, every time.** The window says "Claude Code wants to compare 74 secrets with files", lists the secrets by
+  item with a checkbox each, names the folder, and says what the agent learns: for each name, whether the file holds
+  the same value. That is an answer about values, so no standing permission covers a check and the window offers none;
+  three denials block the session as for any request.
+- **Shared items only.** `missing` means not in the vault or not shared with agents: one answer for both, as
+  everywhere. With nothing shared at the places the folder's files would be, everything is `missing` and nobody is
+  asked.
+- `--inside Agents` when the import put everything inside a folder (**Put them inside**).
+- One activity line: kind `check`, outcome `compared`, the folder, and the items and fields compared.
+
+How the broker answers one (`VaultBroker+Check.swift`): the folder is read off the main thread; an unreadable folder
+or one without dotenv or key files is `usage`. The request waits for an unlock like any other. Each name is looked
+for among shared items by the folder and title the import gives it and its field ("NAME (variable)" where the import
+kept a variable apart) or attachment. A folder with so many names that the answer would not fit one 1 MiB frame is `usage`,
+said before anyone is asked. After the owner allowed, the folder is read again, and if it no longer holds the same
+variables and values the request is `usage` ("changed while PasswordPie waited"). Values are read from the vault only
+after the owner allowed, at that moment.
+A variable the file sets to nothing is the same as a field with nothing in it.
+
+No MCP tool: a check is for the owner's migration, run once from a terminal or by an agent asked to.
 
 ## Argument watch
 
@@ -486,6 +534,7 @@ is the party asking.
 | 75 | `site-mismatch` | `login`: the site asked for is not one of the item's websites; nobody was asked |
 | 76 | `timed-out` | `login`: no tab took the fill within 30 seconds |
 | 77 | `no-fields` | `login`: the tab took the fill, but no password field appeared within 30 seconds |
+| 78 | `check-failed` | `check-import`: a name differs, is missing, is ambiguous or was not checked. The lines on standard output say which |
 
 Each refusal prints one line (control characters from what the agent typed are percent-encoded) on standard error that
 says what to do, for the agent to relay, and ends with "Do not ask
@@ -605,6 +654,7 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | The agent sees the password through a login | The answer is the outcome and the item's overview; the fill goes to the page, not to the tool | A page the agent controls on the item's own site could read its own form |
 | An agent watches what the owner browses through `login` | Answers given before an approval carry no overview and never name the site of the owner's tab | Whether the tab in front is on one site the agent names (one `no-matching-tab` per guess, logged in Activity) |
 | A login sends a form that is not a sign-in (a password reset on the same site) | The username-only step presses only a Next, Continue, Sign in or Log in button; a page sends at most once | The owner approves a login on a page that is not a sign-in page |
+| An agent uses `check-import` to learn a value | It learns only whether a file it names holds the same value, after the owner approved that request with Touch ID; no standing permission covers a check; denials count toward the rate limit; only shared items are compared | A guess the owner approves the check of is confirmed or not: one answer per name per approval |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |
 
@@ -712,6 +762,13 @@ ambiguity, and the notes; `CommandLineToolTests/testWriteEnvShowsThenWritesAndWh
 existing file, and runs the project with what was written, with no prompt and no value in any output.
 `AgentAccessTests` covers the window's rows by item: twelve fields as one row that opens, the item's checkbox, and the
 answer staying row by row.
+
+`CheckImportTests` covers `check` through the broker with a scripted folder: same after an import and differs after a
+change, no value in the answer, the window or the log, asked every time with no lasting choice and no grant consulted,
+deny and the rate limit, unticked rows, unshared and nonexistent both `missing`, no window when nothing is shared, an
+empty value, `--inside`, and the tool's words. `CommandLineToolTests/testCheckImport…` runs the real tool (exit 78, 0,
+`--json`). `CheckImportSessionTests` in PasswordPieAppTests is the acceptance with the real pieces: a generated folder
+imported twice into a database file, shared, checked (`same`), changed (`differs`), imported again (`same`).
 
 `StandingPermissionsTests` and `AgentProgramRuleTests` cover grants through the broker with a scripted window and database
 (PRD check 7, Premium, lengths, sessions, revoking before the write lands); `AgentAccessTests` covers the window's

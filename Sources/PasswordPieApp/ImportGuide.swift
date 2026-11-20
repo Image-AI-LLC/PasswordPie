@@ -7,6 +7,8 @@ struct ImportTile: Identifiable, Equatable {
         case source(BrowserImportSource)
         /// Nothing to import: a KeePass database is opened as it is.
         case keePass
+        /// A folder of dotenv files, with a page of its own (docs/UX.md, "A folder of .env files becomes items").
+        case envFolder
     }
 
     enum Group: String, CaseIterable {
@@ -52,7 +54,13 @@ struct ImportTile: Identifiable, Equatable {
         ImportTile(id: "csv", name: "Another App", group: .manager, kind: .source(.csv), symbol: "tablecells", hint: "Any CSV file with a header row", format: "Any CSV")
     ]
 
-    static func tile(_ id: String) -> ImportTile? { all.first { $0.id == id } }
+    /// Not a file from another app, so not one of `all`: it has a row of its own under the two columns, and its own page.
+    static let envFolder = ImportTile(
+        id: "env-folder", name: "A Folder of .env Files", group: .manager, kind: .envFolder, symbol: "folder",
+        hint: "API keys and tokens kept in dotenv files", format: "Folder"
+    )
+
+    static func tile(_ id: String) -> ImportTile? { (all + [envFolder]).first { $0.id == id } }
 }
 
 /// What a source's page says: how to get the file out of the other app, and which file that is. Steps are Markdown,

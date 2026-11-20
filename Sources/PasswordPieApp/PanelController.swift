@@ -713,7 +713,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
 
     private func updateBanner() {
         shownBanner = session.locked ? nil : bridge?.banner(for: previousApp, inFront: targetInFront)
-        if let shownBanner { banner.show(shownBanner) }
+        if let shownBanner { banner.show(shownBanner, browser: previousApp?.bundleURL) }
         effect.bannerHeight = shownBanner == nil ? 0 : ExtensionBannerView.height
     }
 
@@ -753,7 +753,7 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
             return MenuBuilder.appRows(app: app, entries: session.appEntries(for: app), sources: session.entrySources)
         }
         guard let bridge, let browser = BrowserBridge.browser(forBundleID: previousApp?.bundleIdentifier),
-              let page = bridge.pageURL(for: browser, inFront: targetInFront), let site = BrowserSite(url: page) else { return [] }
+              let page = bridge.pageURL(for: browser, app: previousApp?.bundleIdentifier, inFront: targetInFront), let site = BrowserSite(url: page) else { return [] }
         let entries = SiteSuggestions.entries(session.allEntries, pageURL: page, lastUsed: session.lastUsedMap)
         return MenuBuilder.siteRows(site: site.key, entries: entries, sources: session.entrySources)
     }

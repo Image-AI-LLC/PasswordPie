@@ -58,6 +58,9 @@ final class ImportFlow: ObservableObject {
         return chooser.runModal() == .OK ? chooser.url : nil
     }
 
+    /// A Folder of .env Files has a flow of its own: a folder instead of a file, and a list to look at before importing.
+    let folder: DotenvImportFlow
+
     private let session: VaultSession
     /// The file in hand. In the App Store sandbox a dropped or chosen file can be security-scoped: access is held
     /// from the moment it is taken until it is let go, which covers reading it and deleting it.
@@ -77,6 +80,7 @@ final class ImportFlow: ObservableObject {
 
     init(session: VaultSession) {
         self.session = session
+        folder = DotenvImportFlow(session: session)
         lockWatch = session.$locked.dropFirst().sink { [weak self] locked in
             if locked { self?.forget() }
         }
@@ -262,6 +266,7 @@ final class ImportFlow: ObservableObject {
     }
 
     private func forget() {
+        folder.forget()
         // A read still running finishes into nothing.
         generation += 1
         pending = nil

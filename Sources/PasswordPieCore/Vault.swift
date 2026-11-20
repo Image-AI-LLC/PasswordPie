@@ -179,6 +179,11 @@ public struct Vault: Equatable, Sendable {
         preserve?.attachmentNames(of: ids) ?? [:]
     }
 
+    /// The attachments of the live entries in `ids`, read in one pass.
+    public func attachments(of ids: Set<UUID>) -> [UUID: [(name: String, data: Data)]] {
+        preserve?.attachments(of: ids) ?? [:]
+    }
+
     /// One attachment's bytes.
     public func attachment(named name: String, of id: UUID) -> Data? {
         preserve?.attachments(of: id).first { $0.name == name }?.data

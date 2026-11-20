@@ -82,7 +82,7 @@ struct PreparedRun {
         values.append(bytes)
         watched.append(ArgumentWatch.Watched(name: secret.name, ref: secret.ref, delivery: secret.delivery, value: bytes))
         switch secret.delivery {
-        case .fill:
+        case .fill, .compare:
             // Never asked for by `run` (the app refuses it); nothing goes to the command.
             return
         case .env, .shown:

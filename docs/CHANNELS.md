@@ -10,13 +10,14 @@ App Store builds do not contain direct-only code.
 | Sandbox | no (hardened runtime, notarized) | yes (`Entitlements/mas.entitlements`) |
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Changes made on two Macs are merged ([UX.md](UX.md), "The same database on two Macs") | yes | yes, the same code. The file and the copies a sync tool leaves beside it are read through the folder the app was allowed; not yet tried in the sandbox (see "Before an App Store submission") |
+| Import a folder of `.env` files (Preferences > Import) | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Browsers) | **not compiled in** |
 | Two-step codes (Premium) | an activation from passwordpie.com, where Premium is bought. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
 | Two-step codes in the browser (Premium) | the app has Premium ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
 | Network from the app | **none** of its own; the separate updater asks GitHub for a newer version once a week (see "Network" and "Updates" below) | **none**: no `URLSession`, no `network.client` entitlement |
 | Updates | `PasswordPieUpdater`, inside the app: weekly, from GitHub releases | the App Store; the updater is **not in the bundle** |
 | Extension toolbar button | Opens PasswordPie. No popup, no account, no request to the site. Right-click: Scan QR code on this page, and in Chrome Open passwordpie.com | The same Safari build as the direct channel's: no line that opens the site |
-| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` (`run`, `read`, `list`, `status`, `login`, `mcp`). An approval each time is free | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
+| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` (`run`, `read`, `list`, `status`, `login`, `write-env`, `check-import`, `mcp`). An approval each time is free | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
 | Agents' standing permissions (Premium) | the app has Premium (`appHasPremium()`); nothing in a request says so | not there |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 

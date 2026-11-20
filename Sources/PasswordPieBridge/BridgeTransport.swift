@@ -25,13 +25,9 @@ public enum BridgeConstants {
     /// development build gets the same ID (extension/tests/extension-id.test.ts checks they match). See
     /// docs/BROWSER_EXTENSION.md, "Chrome".
     public static let chromeExtensionID = "ebgkjnfglbkeckkknmeakpkbdpjndjhk"
-    /// The extension IDs Chrome may start the host for.
+    /// The extension IDs Chrome may start the host for. Every browser built on Chromium installs the Chrome Web Store item
+    /// under the same ID.
     public static let chromeExtensionIDs = [chromeExtensionID]
-    /// Google Chrome's signing team and identifier. The host only serves a parent process signed with them. Only stable
-    /// Chrome: the host manifest is written to its profile folder alone, and the app tells browsers apart by bundle ID,
-    /// so Beta, Dev and Canary keep typed keystrokes in v1.
-    public static let chromeTeamID = "EQHXZ8M8AV"
-    public static let chromeIdentifiers: Set<String> = ["com.google.Chrome"]
 }
 
 public enum BridgeError: Error, Equatable {
@@ -208,9 +204,32 @@ public enum PeerIdentity {
         verifiedIdentifier(guest: [kSecGuestAttributePid: NSNumber(value: pid)], allowed: allowed, teamID: teamID)
     }
 
-    /// Team and identifier are read from the signature on disk, and then bound to the running code: the validity check
-    /// requires the code directory hash read with them, so a binary swapped on disk in between fails.
     private static func verifiedIdentifier(guest: [CFString: Any], allowed: Set<String>, teamID: String) -> String? {
+        guard let signature = verifiedSignature(guest: guest, accept: { $1 == teamID && allowed.contains($0) }) else { return nil }
+        return signature.identifier
+    }
+
+    /// What a process's valid signature says: its identifier, its team, its bundle and who the certificate names.
+    public struct Signature: Equatable, Sendable {
+        public let identifier: String
+        public let teamID: String
+        /// The app bundle, or the executable when it is not in one.
+        public let bundleURL: URL
+        /// The organization the leaf certificate names, when it is a developer's certificate.
+        public let organization: String?
+    }
+
+    /// The signature of any process signed by a certificate Apple issued to a developer team (Developer ID, or the App
+    /// Store), whatever the team. Nil for an unsigned or ad-hoc signed process, one of Apple's own (no team), or one whose
+    /// signature does not hold. Only for a pid that cannot be reused meanwhile, such as this process's parent.
+    public static func verifiedSignature(ofProcess pid: pid_t) -> Signature? {
+        verifiedSignature(guest: [kSecGuestAttributePid: NSNumber(value: pid)], accept: { _, _ in true })
+    }
+
+    /// Team and identifier are read from the signature on disk, and then bound to the running code: the validity check
+    /// requires the code directory hash read with them, so a binary swapped on disk in between fails. `accept` is asked
+    /// about the identifier and team before that check.
+    private static func verifiedSignature(guest: [CFString: Any], accept: (String, String) -> Bool) -> Signature? {
         var code: SecCode?
         guard SecCodeCopyGuestWithAttributes(nil, guest as CFDictionary, [], &code) == errSecSuccess, let code else { return nil }
         var staticCode: SecStaticCode?
@@ -218,15 +237,24 @@ public enum PeerIdentity {
         var info: CFDictionary?
         guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
               let details = info as? [String: Any],
-              details[kSecCodeInfoTeamIdentifier as String] as? String == teamID,
+              let team = details[kSecCodeInfoTeamIdentifier as String] as? String, !team.isEmpty,
               let identifier = details[kSecCodeInfoIdentifier as String] as? String,
-              allowed.contains(identifier),
+              accept(identifier, team),
               let cdhash = details[kSecCodeInfoUnique as String] as? Data, !cdhash.isEmpty else { return nil }
         let hex = cdhash.map { String(format: "%02x", $0) }.joined()
         var requirement: SecRequirement?
         guard SecRequirementCreateWithString("anchor apple generic and cdhash H\"\(hex)\"" as CFString, [], &requirement) == errSecSuccess,
               SecCodeCheckValidity(code, [], requirement) == errSecSuccess else { return nil }
-        return identifier
+        var path: CFURL?
+        guard SecCodeCopyPath(staticCode, [], &path) == errSecSuccess, let path else { return nil }
+        let certificates = details[kSecCodeInfoCertificates as String] as? [SecCertificate]
+        let summary = certificates?.first.flatMap { SecCertificateCopySubjectSummary($0) as String? }
+        return Signature(
+            identifier: identifier,
+            teamID: team,
+            bundleURL: path as URL,
+            organization: summary.flatMap(ChromiumBrowserCheck.organization(fromCertificateSummary:))
+        )
     }
 }
 

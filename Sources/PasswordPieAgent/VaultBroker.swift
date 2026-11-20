@@ -41,6 +41,7 @@ public struct AgentResolvedSecret: Equatable, Sendable {
         case .stdin: return "stdin"
         case .shown: return "shown"
         case .fill: return "fill"
+        case .compare: return "compare"
         }
     }
 }
@@ -156,6 +157,8 @@ public struct AgentApprovalPrompt: Equatable, Sendable {
     /// A secondary detail on how the request came: "through MCP; the client says it is “claude-code 2.1”". The agent's
     /// name above is always the process tree's, never the MCP client's own word.
     public var via: String? = nil
+    /// `check`: the folder whose files the secrets are compared with, as the tool named it.
+    public var folder: String? = nil
 }
 
 public enum AgentApprovalDecision: Equatable, Sendable {
@@ -231,6 +234,8 @@ public final class VaultBroker {
     public let activity: AgentActivityLogging
     /// The browser side of `login`. Without it a login answers `usage`.
     public var logins: AgentBrowserLogins?
+    /// Reads a folder of dotenv files for `check`. Without it a check answers `usage`.
+    public var folders: AgentFolderReader?
     /// Agent access is on (Preferences > Agents).
     public var isEnabled: () -> Bool
     public var clock: () -> Date = Date.init
@@ -289,6 +294,8 @@ public final class VaultBroker {
             return await use(request, caller: caller)
         case .login:
             return await login(request, caller: caller)
+        case .check:
+            return await check(request, caller: caller)
         case .argument:
             return argument(request, caller: caller)
         }
@@ -311,6 +318,7 @@ public final class VaultBroker {
             case .stdin: return "stdin"
             case .shown: return "shown"
             case .fill: return "fill"
+            case .compare: return "compare"
             }
         })
         return AgentResponse(type: request.type.rawValue, id: request.id)
@@ -342,7 +350,8 @@ public final class VaultBroker {
             }
             references.append(reference)
         }
-        guard !asked.isEmpty, request.type != .read || asked.count == 1, !asked.contains(where: { $0.delivery == .fill }) else {
+        guard !asked.isEmpty, request.type != .read || asked.count == 1,
+              !asked.contains(where: { $0.delivery == .fill || $0.delivery == .compare }) else {
             log(request, caller: caller, outcome: .usage, items: [], delivery: [])
             return .error(.usage, id: request.id)
         }
@@ -630,6 +639,7 @@ public final class VaultBroker {
         switch request.type {
         case .use, .argument: kind = "run"
         case .read: kind = "read"
+        case .check: kind = "check"
         default: kind = request.type.rawValue
         }
         activity.append(AgentActivityRecord(
@@ -639,7 +649,8 @@ public final class VaultBroker {
             grant: grant,
             caller: caller,
             // The argument watch names the program the value was seen in, never that program's command line.
-            command: request.type == .argument ? request.program : Self.commandText(request.argv),
+            // A check runs no command: the line names the folder it compared.
+            command: request.type == .argument ? request.program : request.type == .check ? request.folder : Self.commandText(request.argv),
             items: items,
             delivery: delivery,
             reason: request.reason,

@@ -766,6 +766,20 @@ struct BrowserExtensionsSection: View {
                     button: ExtensionBanner.addChrome.title
                 ) { bridge.install(.addChrome) }
                 Divider()
+                // Other browsers built on Chromium: each one the person answered, and each connected now.
+                ForEach(chromiumBrowserRows(approvals: bridge.approvals, connected: bridge.chromiumProfiles, seen: bridge.chromiumBrowsers)) { browser in
+                    row(
+                        browser: browser.name,
+                        bundleID: browser.bundleID,
+                        detail: "Built on Chromium: it uses the Chrome extension.",
+                        status: browser.status,
+                        button: browser.button
+                    ) {
+                        guard let approval = browser.toggled else { return }
+                        bridge.setApproval(approval, bundleID: browser.bundleID, teamID: browser.teamID, name: browser.name)
+                    }
+                    Divider()
+                }
             }
             row(
                 browser: "Safari",
@@ -781,7 +795,7 @@ struct BrowserExtensionsSection: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in bridge.refreshSafariState() }
     }
 
-    private func row(browser: String, bundleID: String, detail: String, status: ExtensionStatus, button: String, action: @escaping () -> Void) -> some View {
+    private func row(browser: String, bundleID: String, detail: String, status: ExtensionStatus, button: String?, action: @escaping () -> Void) -> some View {
         HStack(alignment: .top, spacing: 12) {
             if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
                 Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
@@ -810,8 +824,10 @@ struct BrowserExtensionsSection: View {
             // The text takes the width the button leaves, instead of sharing it with the spacer.
             .layoutPriority(1)
             Spacer(minLength: 8)
-            Button(button, action: action)
-                .fixedSize()
+            if let button {
+                Button(button, action: action)
+                    .fixedSize()
+            }
         }
     }
 }
