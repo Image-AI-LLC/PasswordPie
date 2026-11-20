@@ -76,7 +76,8 @@ struct AgentsPane: View {
                 if let waiting = session.agentWaitingLine {
                     Text(waiting).font(note).fixedSize(horizontal: false, vertical: true)
                 }
-                DatabaseUnlockField(session: session, path: path, startOpen: true)
+                // A new field per database: a password typed for one never goes to another.
+                DatabaseUnlockField(session: session, path: path, startOpen: true).id(path)
             }
             Text("Agents ask for secrets from this database only: what is shared in it, its standing permissions, and the items references name. Other open databases are never searched.")
                 .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

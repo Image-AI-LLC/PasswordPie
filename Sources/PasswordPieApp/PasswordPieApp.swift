@@ -171,14 +171,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fileWatcher = watcher
         session.fileWatcher = watcher
         session.restore()
-        autoLock = AutoLockMonitor(settings: session.autoLock, keepUnlocked: { [weak self] in
-            #if PP_DIRECT
-            // "Keep unlocked while this Mac is awake", for the agents database alone (docs/UX.md).
-            return MainActor.assumeIsolated { self?.session.keepsAgentDatabaseUnlocked ?? false }
-            #else
-            return false
-            #endif
-        }) { [weak self] in
+        #if PP_DIRECT
+        // "Keep unlocked while this Mac is awake", for the agents database alone (docs/UX.md).
+        let keepUnlocked: () -> Bool = { [weak self] in MainActor.assumeIsolated { self?.session.keepsAgentDatabaseUnlocked ?? false } }
+        #else
+        let keepUnlocked: () -> Bool = { false }
+        #endif
+        autoLock = AutoLockMonitor(settings: session.autoLock, keepUnlocked: keepUnlocked) { [weak self] in
             guard let self, !self.session.locked || self.session.unlocking else { return }
             self.session.lock()
         }
