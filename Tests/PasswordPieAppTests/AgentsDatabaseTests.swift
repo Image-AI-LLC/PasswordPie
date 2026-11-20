@@ -83,6 +83,20 @@ final class AgentsDatabaseTests: XCTestCase {
         return session
     }
 
+    private struct Timeout: Error {}
+
+    /// Waits for `condition`, failing (not hanging) when it never comes.
+    private func until(_ condition: () -> Bool, _ what: String, seconds: Double = 15) async throws {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !condition() {
+            guard Date() < deadline else {
+                XCTFail("timed out: \(what)")
+                throw Timeout()
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     private func unlockAlongside(_ session: VaultSession, _ path: String, _ password: String) async -> String? {
         await withCheckedContinuation { continuation in
             session.unlockAlongside(path, password: password) { continuation.resume(returning: $0) }
@@ -275,7 +289,8 @@ final class AgentsDatabaseTests: XCTestCase {
         var asked = 0
         access.onNeedsUnlock = { asked += 1 }
         let pending = Task { await access.broker.handle(self.request(project, wait: 30), from: self.caller(in: project)) }
-        while asked == 0 { await Task.yield() }
+        defer { pending.cancel() }
+        try await until({ asked > 0 }, "the request asks for an unlock")
         XCTAssertNotNil(session.agentWaitingLine)
         let opened = await unlockAlongside(session, agents.path, "agents-pw")
         XCTAssertNil(opened)
@@ -294,11 +309,12 @@ final class AgentsDatabaseTests: XCTestCase {
         var asked: [Bool] = []
         access.onNeedsUnlock = { asked.append(session.locked) }
         let pending = Task { await access.broker.handle(self.request(project, wait: 30), from: self.caller(in: project)) }
-        while asked.isEmpty { await Task.yield() }
+        defer { pending.cancel() }
+        try await until({ !asked.isEmpty }, "the request asks for an unlock")
         XCTAssertEqual(asked, [true], "locked: the lock screen")
         session.passwordDraft = "personal-pw"
         session.unlock()
-        while asked.count < 2 { await Task.yield() }
+        try await until({ asked.count >= 2 }, "the unlock that left it closed asks again")
         XCTAssertEqual(asked, [true, false], "unlocked, and the agents database still closed: its password")
         XCTAssertTrue(session.agentDatabaseNeedsUnlock)
         let opened = await unlockAlongside(session, agents.path, "agents-pw")
@@ -337,7 +353,7 @@ final class AgentsDatabaseTests: XCTestCase {
         XCTAssertTrue(session.locked, "removing the current database locks, as before")
         session.passwordDraft = "agents-pw"
         session.unlock()
-        while session.locked || session.unlocking { await Task.yield() }
+        try await until({ !session.locked && !session.unlocking }, "the agents database unlocks")
         XCTAssertEqual(session.openDatabasePaths, [agents.path])
         XCTAssertTrue(session.keepsAgentDatabaseUnlocked)
         session.agentAccessOn = false
