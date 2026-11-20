@@ -460,6 +460,8 @@ public struct PendingFillStore: Sendable {
     public private(set) var pending: PendingFill?
     public private(set) var code: PendingCode?
     public private(set) var change: PendingChange?
+    /// How many picks there have been: a pick that waits for a save can tell whether a newer one came meanwhile.
+    public private(set) var picks = 0
     #if PP_DIRECT
     public private(set) var agentResult: PendingAgentResult?
     /// From the moment a tab took an agent's fill: the fill's own 30 s for the fields to appear, and a little more.
@@ -471,8 +473,15 @@ public struct PendingFillStore: Sendable {
     /// A new pick replaces the old one, and the code of the one before. A change still waiting for its page stays:
     /// filling another account meanwhile does not answer it.
     public mutating func set(_ fill: PendingFill) {
+        picks += 1
         pending = fill
         code = nil
+    }
+
+    /// Counts a pick whose fill is set later, once its save is written.
+    public mutating func nextPick() -> Int {
+        picks += 1
+        return picks
     }
 
     public mutating func clear() {

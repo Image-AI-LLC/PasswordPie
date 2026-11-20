@@ -36,8 +36,8 @@ final class SiteAddedTests: XCTestCase {
     }
 
     /// An unlocked database with one login, and a bridge that records what it would send, open and hide.
-    private func bridge(website: String = "https://github.com") -> (BrowserBridge, UUID) {
-        let session = VaultSession(writes: .inline)
+    private func bridge(website: String = "https://github.com", session background: VaultSession? = nil) -> (BrowserBridge, UUID) {
+        let session = background ?? VaultSession(writes: .inline)
         session.restore()
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"
@@ -54,7 +54,7 @@ final class SiteAddedTests: XCTestCase {
         bridge.pushToChrome = { [weak self] _, link in self?.pokes.append(link) }
         bridge.openInBrowser = { [weak self] url, _ in self?.opened.append(url) }
         bridge.hidePanel = { [weak self] refocus in self?.hidden.append(refocus) }
-        return (bridge, session.allEntries.first { $0.title == "GitHub" }!.id)
+        return (bridge, entry.id)
     }
 
     private func account(_ id: UUID) throws -> VaultEntry {
@@ -244,6 +244,48 @@ final class SiteAddedTests: XCTestCase {
         XCTAssertEqual(fill["password"] as? String, "from-chrome")
     }
     #endif
+
+    /// The save is written off the main thread, as in the app, and takes a moment: a pick made meanwhile is the newest.
+    func testAPickMadeDuringTheSaveKeepsItsFill() async throws {
+        let (bridge, id) = bridge(session: VaultSession())
+        let session = try XCTUnwrap(session)
+        await session.savesSettled()
+        var other = VaultEntry()
+        other.title = "Other"
+        other.url = "https://github.com"
+        other.username = "hubot"
+        other.password = "pw2"
+        session.saveEditing(other)
+        await session.savesSettled()
+        connect(bridge, 1)
+        try tab(bridge, portal, signIn: true)
+
+        XCTAssertTrue(bridge.fill(try account(id), .fillOrOpen, website: nil, front: chrome))
+        XCTAssertTrue(pokes.isEmpty, "nothing is filled before the file is written")
+        try tab(bridge, "https://github.com/login", signIn: true)
+        XCTAssertTrue(bridge.fill(try account(id), .fillOrOpen, website: "https://github.com", front: chrome))
+        await session.savesSettled()
+
+        let fill = try XCTUnwrap(try tab(bridge, "https://github.com/login", signIn: true)["fill"] as? [String: Any])
+        XCTAssertEqual(fill["origin"] as? String, "https://github.com", "the older pick does not replace it")
+        XCTAssertEqual(entryWebsites(try account(id)), ["https://github.com", "https://portal.example.com"])
+    }
+
+    func testTheSameAccountPickedTwiceDuringTheSaveFillsOnce() async throws {
+        let (bridge, id) = bridge(session: VaultSession())
+        let session = try XCTUnwrap(session)
+        await session.savesSettled()
+        connect(bridge, 1)
+        try tab(bridge, portal, signIn: true)
+
+        XCTAssertTrue(bridge.fill(try account(id), .fillOrOpen, website: nil, front: chrome))
+        XCTAssertTrue(bridge.fill(try account(id), .fillOrOpen, website: nil, front: chrome))
+        await session.savesSettled()
+
+        XCTAssertNotNil(try tab(bridge, portal, signIn: true)["fill"])
+        XCTAssertNil(try tab(bridge, portal, signIn: true)["fill"], "once")
+        XCTAssertEqual(entryWebsites(try account(id)), ["https://github.com", "https://portal.example.com"])
+    }
 
     func testLockedNothingIsFilled() throws {
         let (bridge, id) = bridge()

@@ -11,10 +11,10 @@ public enum EntryWebsites {
         return page.origin
     }
 
-    /// What the bubble calls the website: its host, with the port when it has one.
+    /// What the bubble calls the website: its host, with the port when it has one, as the address bar shows them.
     public static func label(of website: String) -> String {
         guard let site = BrowserSite(url: website) else { return website }
-        return site.port.map { "\(site.host):\($0)" } ?? site.host
+        return String(site.origin.dropFirst(site.scheme.count + 3))
     }
 
     /// Adds `website` after the websites the entry has, or as its website when it has none. False, and nothing changed,

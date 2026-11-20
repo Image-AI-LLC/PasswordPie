@@ -97,6 +97,7 @@ final class EntryWebsitesTests: XCTestCase {
     func testTheLabelIsTheHostAndItsPort() {
         XCTAssertEqual(EntryWebsites.label(of: "https://portal.example.com"), "portal.example.com")
         XCTAssertEqual(EntryWebsites.label(of: "http://localhost:8787"), "localhost:8787")
+        XCTAssertEqual(EntryWebsites.label(of: "http://[::1]:8787"), "[::1]:8787")
         XCTAssertEqual(EntryWebsites.label(of: "not a site"), "not a site")
     }
 

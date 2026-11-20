@@ -498,7 +498,9 @@ in. The extension tells PasswordPie only yes or no.
 **Look at the address first.** The site's group at the top lists only the accounts of the site you are on, so a
 look-alike address never offers you an account by itself. An account you search for and pick on a sign-in page goes
 into that page, as if you had typed it there, and the bubble names the site that was added. If that is not the site
-you meant, press **Undo** and do not submit the form.
+you meant, press **Undo** and do not submit the form. Undo takes the website off the account; it cannot take back what
+is already in the page, and a page can read its own fields. If you filled a page you do not trust, change that
+password.
 
 ### Getting the extension
 

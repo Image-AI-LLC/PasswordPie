@@ -802,9 +802,11 @@ final class BrowserBridge: ObservableObject {
             hidePanel(true)
             let id = entry.id
             // The website is saved first: a fill only ever goes to a site the account holds, so the fill waits for the
-            // file. A save that fails fills nothing, and says why as any save does.
-            session.addWebsite(site, to: id) { [weak self] saved in
-                guard let self, saved, !self.session.locked,
+            // file. A save that fails fills nothing, and says why as any save does. A pick made meanwhile wins.
+            let pick = state.pending.nextPick()
+            session.addWebsite(site, to: id) { [weak self] _ in
+                guard let self, !self.session.locked, self.state.pending.picks == pick,
+                      let entry = self.session.entry(id), SiteSuggestions.matchingWebsite(of: entry, pageURL: site) != nil,
                       let pending = PendingFill(entryID: id, browser: browser, website: site, created: self.now(), link: link, app: app) else { return }
                 self.state.pending.set(pending)
                 self.poke(browser, link: link)

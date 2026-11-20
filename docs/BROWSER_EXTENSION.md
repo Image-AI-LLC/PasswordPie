@@ -351,7 +351,7 @@ All in `PasswordPieCore`, with tests:
   `https` or this Mac's loopback, and the account has a password. The account is saved first (`VaultSession.changeEntry`,
   which also saves a Chrome login into the database); the pending fill is set, for the connection picked at Return,
   only after the file holds the website, so "Same site" holds for this fill as for any other and a failed save fills
-  nothing. Unlocked, as always. ⌥Return never adds. The person is told in a bubble with Undo (`SiteNotice`), which
+  nothing. A pick made while the save is written is the newer one and keeps its fill (`PendingFillStore.picks`). Unlocked, as always. ⌥Return never adds. The person is told in a bubble with Undo (`SiteNotice`), which
   removes exactly that website again. What the person sees is "An account you pick on another site's sign-in page" in
   [UX.md](UX.md).
 - **Fresh and once.** A pending fill is used by the first matching report and then deleted. After 30 s it is deleted
