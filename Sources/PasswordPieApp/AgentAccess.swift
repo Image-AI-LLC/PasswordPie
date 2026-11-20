@@ -88,6 +88,7 @@ final class AgentAccess: ObservableObject {
         grants.onChange = { [weak self] in self?.refreshStanding() }
         activity = log.records().reversed()
         session.agentAccessOn = enabled
+        servedPath = session.agentVaultLocked ? nil : session.agentDatabasePath
         refreshStanding()
     }
 
@@ -144,6 +145,27 @@ final class AgentAccess: ObservableObject {
         if locked { approver.withdrawAll() } else { grants.unlocked() }
         broker.vaultStateChanged()
         refreshStanding()
+    }
+
+    /// The agents database that served the last request, or nil while it is not open.
+    private var servedPath: String?
+    /// The agents database needed its password the last time anything changed.
+    private var neededUnlock = false
+
+    /// Something agents depend on changed: PasswordPie locked or unlocked, a database opened or closed, the list changed,
+    /// or another agents database was chosen. A database closing is a lock to agents; another one taking its place
+    /// withdraws the windows open for the first. A request waiting when the agents database turns out not to open with
+    /// this unlock asks for its password (`onNeedsUnlock`).
+    func agentStateChanged() {
+        let needs = session.agentDatabaseNeedsUnlock
+        defer { neededUnlock = needs }
+        if needs, !neededUnlock, session.agentWaitingLine != nil { onNeedsUnlock?() }
+        let path = session.agentVaultLocked ? nil : session.agentDatabasePath
+        guard path != servedPath else { return }
+        let switched = servedPath != nil && path != nil
+        servedPath = path
+        if switched { approver.withdrawAll() }
+        vaultStateChanged(locked: path == nil)
     }
 
     // MARK: Standing permissions

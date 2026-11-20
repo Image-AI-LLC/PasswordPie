@@ -1724,9 +1724,9 @@ scrolling past everything else, and each new feature made the page longer.
 |---|---|
 | General | The keyboard shortcut, clearing the clipboard, searching all fields, and, in the downloaded app, updates |
 | Security | Locking after inactivity and on sleep, screen lock and user switch; Touch ID for the open database |
-| Database | The open database and the list of the others, its key file and its master password |
+| Database | The open database and the list of the others, which of them are open (Unlock… for one that is not), its key file and its master password |
 | Browsers | The Chrome and Safari extensions, and, in the downloaded app, reading Chrome's saved passwords |
-| Agents | In the downloaded app only: what AI agents on this Mac may ask for, their standing permissions and what they did ("Agents use a secret without seeing it") |
+| Agents | In the downloaded app only: which database serves agents and whether it stays unlocked, what AI agents on this Mac may ask for, their standing permissions and what they did ("Agents use a secret without seeing it") |
 | Import | "Import with a guide" |
 | Premium | What you have, and the ways to get it |
 
@@ -1966,7 +1966,8 @@ items, the program and project, and when it ends ("until 26 Nov, 16:02", or "unt
 ### Locked
 
 A request while PasswordPie is locked does not fail at once. The lock screen opens with a line under the database name,
-**Claude Code is waiting for 1 secret.** Unlock, and the request continues to the approval window. Nobody but you
+**Claude Code is waiting for 1 secret.** (With an agents database other than the current one that did not open, Preferences >
+Agents opens instead, with the same line and a field for its password.) Unlock, and the request continues to the approval window. Nobody but you
 unlocks; agent use never counts as activity for auto-lock. After 60 seconds (`--wait`, up to 600) the agent hears
 `locked`. Locking closes any approval window that is open.
 
@@ -1989,7 +1990,8 @@ never holds a value.
 - Hand anything out while locked, or unlock.
 - Put a value on a command line, or in a log.
 - Hide a value the command transforms (base64, part of it), or stop a command from sending what it was given elsewhere.
-- Serve another database than the one you unlocked, or an agent on another Mac.
+- Serve any database but the agents database ("Two databases at once, and a Mac nobody sits at"), or an agent on
+  another Mac.
 
 ### Demo script
 
@@ -2272,6 +2274,121 @@ Two Macs, or two user accounts, with Syncthing sharing one folder that holds `Pa
 6. On the first Mac, move an item to the Recycle Bin. It leaves the menu on the second.
 7. Choose Merge from File… in the gear menu and pick an old backup of the database: "The database already has
    everything in Passwords-backup.kdbx", or what it added.
+
+## Two databases at once, and a Mac nobody sits at
+
+**In one line:** keep the secrets agents use in a database of their own, use it beside your personal one on your own
+Mac, and on a Mac where agents work alone keep only that one, unlocked while the Mac is awake if you choose.
+
+**What you see:** Preferences > Database says which databases are open, with **Unlock…** for one that is not.
+Preferences > Agents starts with **Agents database**. Nothing changes until you use them.
+
+### The problem
+
+Agents on a Mac nobody sits at (a second Mac that runs scheduled jobs and coding agents overnight) need secrets with
+nobody there to unlock PasswordPie. Keeping a database unlocked there is only acceptable if it holds nothing but those
+secrets: never the bank, personal logins or notes. So the agents' secrets have to live in a database of their own, and
+the owner's own Mac has to use that database and the personal one at the same time. PasswordPie already opened the
+other databases in its list when it unlocked, but only those whose Touch ID unlock was saved and less than 7 days old.
+Any other one could be used only by switching to it, which locked the one that was open. And agents were served only
+by the database PasswordPie had unlocked.
+
+### What happens now
+
+**Two databases unlocked at once.** Unlocking the current database also opens every other database in the list whose
+own Touch ID unlock is saved on this Mac (7 days from its last master password, as before). One that did not open is
+**Locked** in Preferences > Database: **Unlock…** there asks for that database's master password (and uses the key file
+this Mac remembers for it), and opens it beside the one that is open. Nothing is locked to do it.
+
+| | |
+|---|---|
+| The menu and search | Items of every open database, as one list. When two databases each have an item of the same title, each row says which database (as before); an item's details have a **database** line naming it whenever more than one database is open |
+| A new item, a generated password, an import | Goes into the current database, as before |
+| Touch ID | Each database has its own: unlocking one with its master password saves its Touch ID unlock and starts its own 7 days. Turning Touch ID off in Preferences > Security is for the current database |
+| Lock (⌘L), idle, sleep, screen lock | Lock every open database at once |
+| Switch, in Preferences > Database | Locks everything, as before, and the lock screen is for the database you switched to |
+
+Decision: the two databases are one list, not two lists or a database picker in the menu. The menu stays one search
+field, and the cost is one line in the details. Two items of one title already said their database.
+
+**The agents database.** Preferences > Agents > **Agents database** chooses which database in the list serves agents.
+Until you choose, it is the current database, as it always was. Agents get only what is shared in that database, its
+standing permissions are the ones that count, and every reference (`pp://…`) is resolved there and nowhere else: an
+item of the same name in your personal database is not found, and cannot be shared (its details have no Share with
+Agents). Activity stays one list per Mac.
+
+While the agents database is not open, a request waits, as it does while PasswordPie is locked. If PasswordPie is
+locked, its lock screen says who is waiting; if it is unlocked but the agents database is not open, Preferences >
+Agents opens with the same line and a field for that database's master password.
+
+**A Mac where agents work alone.** Keep only the agents database in its list: then it is both the current database and
+the agents database, and nothing personal is on that Mac. Sharing and standing permissions are in the database file, so
+they come with it ("The same database on two Macs"); a standing permission still counts only on the Mac it was given on.
+
+**Keep unlocked while this Mac is awake.** Under Agents database, off by default, a setting of this Mac (not of the
+file): **Keep “Agents.kdbx” unlocked while this Mac is awake**. Its note says what it costs: "On this Mac the lock no
+longer protects this database: what you share and the standing permissions you give are the whole protection." With it
+on:
+
+| | Locks the agents database |
+|---|---|
+| The Mac sleeps, logs out, restarts or shuts down | Yes |
+| The screen locks (the power button, ⌃⌘Q, Lock Screen, or the screen saver or display asking for a password) | Yes |
+| Switching to another user | Yes |
+| Lock (⌘L, or the gear menu) | Yes |
+| No activity for the time in Preferences > Security | No |
+| The display sleeping or the screen saver starting, without a password | No |
+
+It applies only while the agents database is the only thing open: agent access is on, no other database is open, and
+no Chrome passwords are shown. With your personal database open too, the usual locking applies to both, so it never
+keeps anything personal unlocked. The switches in Preferences > Security do not change the table above. Could
+auto-lock simply be turned off? Lock after inactivity: Never, and the switches below it off, does stop it, but for every
+database and also on sleep and screen lock: this setting stops only the idle lock, for one database.
+
+**Approving at that Mac.** A new use, with no standing permission covering it, waits for the approval window there
+(two minutes, as anywhere). The owner connects with Screen Sharing, and approves with that Mac's login password: the
+window asks for Touch ID or the login password ("Use Password…"), and a Mac whose Touch ID cannot be used (a closed
+lid, no sensor, a remote screen) asks for the password. If that Mac is locked, unlock with the master password first.
+
+**What happened there.** Activity is a file on that Mac. From your own Mac:
+
+    ssh worker-mac 'tail -n 20 "Library/Application Support/PasswordPie/agent-activity.jsonl"'
+
+### When it does not apply
+
+- **A database that needs a key file this Mac does not remember.** Unlock… says so: switch to it once, choose its key
+  file on the lock screen, and this Mac remembers it.
+- **The App Store app** has no agent access, so no agents database and no keep-unlocked setting. Two databases unlocked
+  at once work in both apps.
+- **A database removed from the list** closes, and if it was the agents database, agents go back to the current one.
+- **Approving from your own Mac** without going to the other one's screen is not built: approve there over Screen
+  Sharing, or give standing permissions for the jobs that run at night.
+
+### Privacy
+
+- Each database is decrypted with its own master password and stays encrypted on disk. Unlocking a second one keeps
+  its password in memory only while it is open, like the first.
+- Which database serves agents and the keep-unlocked setting are this Mac's preferences, not in the file: another Mac
+  opening the same file keeps its own choice. Anything that can write this Mac's preferences can turn the setting on;
+  it still cannot share anything or give a standing permission, which are in the database.
+
+### Demo script
+
+Two databases, `Personal.kdbx` and `Agents.kdbx`, each with its own master password; `Agents.kdbx` holds a folder
+**Agents** with an item **Token**.
+
+1. Open `Agents.kdbx` (Open…), unlock it, then Switch to `Personal.kdbx` and unlock it. Preferences > Database shows
+   both, `Agents.kdbx` **Open** (its Touch ID unlock was saved), or **Locked** with **Unlock…** on a Mac without Touch
+   ID: type its password there.
+2. Search "token": the Token row is there beside your own items, and its details say **database** Agents.kdbx.
+3. Preferences > Agents > Agents database: choose `Agents.kdbx`, turn agent access on, tick **Agents**.
+   `passwordpie run --env T=pp://Agents/Token -- sh -c 'echo "$T"'` asks, then prints `[concealed by PasswordPie]`.
+4. Make an item **Token** in a folder **Agents** of `Personal.kdbx` too: the same command still uses `Agents.kdbx`'s.
+5. ⌘L: both are locked. Run step 3's command: the lock screen says "A command in Terminal is waiting for 1 secret".
+6. On a second Mac with only `Agents.kdbx`: turn on **Keep “Agents.kdbx” unlocked while this Mac is awake**, set Lock
+   after inactivity to 1 minute, and wait two minutes: still unlocked. Lock the screen (⌃⌘Q) and log back in: locked.
+7. On that Mac, run step 3's command over SSH and approve over Screen Sharing with the login password. From the first
+   Mac, the SSH line above shows the request.
 
 ## A folder of .env files becomes items
 

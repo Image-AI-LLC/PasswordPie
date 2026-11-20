@@ -39,9 +39,11 @@ final class AutoLockMonitor {
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
 
     /// `distributed` is replaced in tests: posting a real screen-lock notice would lock every app on the Mac.
+    /// `keepUnlocked` says whether "Keep unlocked while this Mac is awake" is in force now (`AutoLockPolicy.keepUnlocked`).
     init(settings: AutoLockSettings, distributed: NotificationCenter = DistributedNotificationCenter.default(),
-         lock: @escaping () -> Void) {
+         keepUnlocked: @escaping () -> Bool = { false }, lock: @escaping () -> Void) {
         policy = AutoLockPolicy(settings: settings, systemIdle: { SystemIdle.seconds() })
+        policy.keepUnlocked = keepUnlocked
         self.distributed = distributed
         self.lock = lock
     }
@@ -55,7 +57,7 @@ final class AutoLockMonitor {
         }
         let workspace = NSWorkspace.shared.notificationCenter
         observe(workspace, NSWorkspace.willSleepNotification) { $0.sleep() }
-        observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.sleep() }
+        observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.displaySleep() }
         observe(workspace, NSWorkspace.didWakeNotification) { $0.wake() }
         observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.wake() }
         observe(workspace, NSWorkspace.sessionDidResignActiveNotification) { if $0.policy.sessionDidResignActive() { $0.lock() } }
@@ -74,6 +76,7 @@ final class AutoLockMonitor {
     var systemIdle: TimeInterval { SystemIdle.seconds() }
 
     private func sleep() { if policy.willSleep() { lock() } }
+    private func displaySleep() { if policy.displayDidSleep() { lock() } }
     private func wake() { if policy.didWake() { lock() } }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ body: @escaping @MainActor (AutoLockMonitor) -> Void) {

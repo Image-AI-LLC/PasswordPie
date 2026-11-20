@@ -19,7 +19,7 @@ public final class StandingPermissions: AgentGrantStore {
     /// The grants changed (made, revoked): the Agents pane reads them again.
     public var onChange: (() -> Void)?
 
-    /// The grants in the database PasswordPie unlocked, or nil while locked.
+    /// The grants in the agents database, or nil while it is not open.
     private let read: () -> AgentGrants?
     /// Changes them in that database and writes the file, then says whether it was written. The app's memory keeps what
     /// the file holds until then, so what this store did meanwhile is kept here.
