@@ -28,13 +28,19 @@ extension VaultBroker {
         }
         let ref = asked[0].ref
         guard let reference = try? AgentReference(ref) else { return refuse(.usage, .usage, ref: ref, items: [ref]) }
-        guard let bytes = request.savedBytes, !bytes.isEmpty else {
-            return refuse(.usage, .usage, detail: "Nothing to save: the value was empty.", ref: ref, items: [ref])
-        }
-        guard bytes.count <= AgentConstants.maxSaveBytes else {
-            return refuse(.usage, .usage, detail: "The value is larger than \(AgentConstants.maxSaveBytes / 1024) KiB.", ref: ref, items: [ref])
+        let validating = request.validateOnly == true
+        let bytes = request.savedBytes ?? Data()
+        if !validating {
+            guard !bytes.isEmpty else {
+                return refuse(.usage, .usage, detail: "Nothing to save: the value was empty.", ref: ref, items: [ref])
+            }
+            guard bytes.count <= AgentConstants.maxSaveBytes else {
+                return refuse(.usage, .usage, detail: "The value is larger than \(AgentConstants.maxSaveBytes / 1024) KiB.", ref: ref, items: [ref])
+            }
         }
         if limiter.isBlocked(caller.sessionKey, now: clock()) { return refuse(.tooManyRequests, .tooManyRequests, items: [ref]) }
+        // The question before a command runs opens no window: locked is its answer.
+        if validating, vault.agentVaultLocked { return refuse(.locked, .locked, items: [ref]) }
         guard await waitForUnlock(request, caller: caller, count: 1) else { return refuse(.locked, .locked, items: [ref]) }
 
         let target: SaveTarget
@@ -53,7 +59,13 @@ extension VaultBroker {
             (existing, field, folder, title) = (nil, fieldNamed, place, named)
         }
         if let problem = Self.unsavable(field) { return refuse(.usage, .usage, detail: problem, ref: ref, items: [ref]) }
-        if case .attachment = field {} else if String(data: bytes, encoding: .utf8) == nil {
+        // The owner decides on these names alone, so an agent-made name cannot hold a line break or a direction override
+        // that makes the window say something else.
+        let named = (existing == nil ? folder + [title] : []) + field.referenceSuffix
+        if named.contains(where: Self.hasMisleadingCharacter) {
+            return refuse(.usage, .usage, detail: "A name in the reference holds a control or direction-changing character.", ref: ref, items: [ref])
+        }
+        if validating {} else if case .attachment = field {} else if String(data: bytes, encoding: .utf8) == nil {
             return refuse(.usage, .usage, detail: "The value is not text. Save a file as an attachment: …/attachment/<name>.", ref: ref, items: [ref])
         }
         // Whether the field holds something now decides the words "a change", never the answer's: the agent hears the
@@ -67,9 +79,12 @@ extension VaultBroker {
         }
         let kept = saves.proposals ?? []
         let now = clock()
-        guard kept.filter({ $0.state == .pending }).count < AgentProposals.maxPending else {
-            return refuse(.tooManyRequests, .tooManyRequests, detail: nil, items: [ref])
+        func tooMany() -> AgentResponse {
+            refuse(.tooManyRequests, .tooManyRequests, detail: "\(AgentProposals.maxPending) saves already wait for the owner and this one was not kept. Tell the owner to save or reject them in PasswordPie > Preferences > Agents, then save again.", items: [ref])
         }
+        guard kept.filter({ $0.state == .pending }).count < AgentProposals.maxPending else { return tooMany() }
+        // Asked before a command runs: it would be accepted, and nothing is kept.
+        if validating { return AgentResponse(type: request.type.rawValue, id: request.id) }
         let proposal = AgentProposal(
             id: AgentProposal.newID(avoiding: Set(kept.map(\.id))), created: now, mac: mac, agent: caller.grantIdentity,
             agentName: caller.agentName, signature: caller.signatureText, project: caller.project,
@@ -78,7 +93,10 @@ extension VaultBroker {
         )
         let labels = [proposal.logLabel]
         let delivery = [Self.saveDelivery(change)]
-        guard await saves.propose(proposal) else {
+        switch await saves.propose(proposal) {
+        case .kept: break
+        case .full: return tooMany()
+        case .notWritten:
             return refuse(.appUnavailable, .usage, detail: "PasswordPie could not write the agents database, so nothing was saved.", items: labels)
         }
         func pending() -> AgentResponse {
@@ -135,9 +153,12 @@ extension VaultBroker {
         guard let saves, let proposal = saves.proposals?.first(where: { $0.id == id && $0.state == .pending }) else {
             return .failed("It is no longer waiting.")
         }
+        // The place the item has now, where the save writes.
+        var placed = proposal
+        if let item = proposal.item, let now = vault.agentSharedItems().first(where: { $0.id == item }) { (placed.folder, placed.title) = (now.folder, now.title) }
         let result = await saves.save(id)
         if case .saved(_, let change) = result {
-            logAnswer(proposal, outcome: .savedFromList, delivery: Self.saveDelivery(change))
+            logAnswer(placed, outcome: .savedFromList, delivery: Self.saveDelivery(change))
         }
         return result
     }
@@ -211,6 +232,16 @@ extension VaultBroker {
                 reading = readings[0]
             }
             return .success(.new(folder: reading.folder, title: reading.title, field: reading.field))
+        }
+    }
+
+    /// A control character, a line or paragraph separator, or a bidirectional override: none belongs in a name the owner reads.
+    nonisolated static func hasMisleadingCharacter(_ name: String) -> Bool {
+        name.unicodeScalars.contains { scalar in
+            switch scalar.properties.generalCategory {
+            case .control, .lineSeparator, .paragraphSeparator: return true
+            default: return (0x202A...0x202E).contains(scalar.value) || (0x2066...0x2069).contains(scalar.value)
+            }
         }
     }
 

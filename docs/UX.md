@@ -2470,7 +2470,8 @@ with `/password`. When the reference could name two shared items, the agent hear
   shared item beside it, which the window shows as a new item.
 - Save while locked. The request waits for you to unlock, as for a secret, then the agent hears `locked`. The command
   in front of `passwordpie save` has already run by then: `passwordpie_save` asks first and runs its command only
-  while PasswordPie is unlocked.
+  while PasswordPie is unlocked and would take a save to that place (not one it would refuse, such as a field a save
+  cannot set, or 20 saves already waiting).
 
 ### Activity
 

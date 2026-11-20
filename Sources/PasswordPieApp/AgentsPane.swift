@@ -121,7 +121,7 @@ struct AgentsPane: View {
                 }
                 ForEach(access.waitingSaves) { proposal in
                     WaitingSaveRow(
-                        proposal: proposal,
+                        proposal: session.agentSavePlaced(proposal),
                         preview: session.agentSavePreview(proposal),
                         mac: access.macText(proposal),
                         problem: access.saveProblems[proposal.id],

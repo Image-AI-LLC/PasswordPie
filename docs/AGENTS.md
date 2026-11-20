@@ -521,8 +521,10 @@ with the attacker's would send the next deploy to the attacker's account. No gra
 The MCP tool runs a command and saves what it prints, so the value never passes through the conversation: `ref`,
 `command` (an argument array), `cwd`, `reason?`, `timeoutSeconds?` (default 120, at most 3600).
 
-1. It asks the app first (`hello`): when PasswordPie is locked or agent access is off it answers that and **runs
-   nothing**, so a key is not made only to be lost.
+1. It asks the app first, as a `save` for `ref` with `validateOnly` and no value: when PasswordPie is locked, agent
+   access is off, or the app would refuse the save (a reference that names nothing shared or two items, a field a save
+   cannot set, too many denials, 20 saves already waiting) it answers that and **runs nothing**, so a key is not made
+   only to be lost. The question keeps nothing, opens no window and does not say whether the item or field exists.
 2. It runs the command as `passwordpie_run` does (no shell, in `cwd`, its own process group, empty standard input),
    keeping its standard output whole, up to 64 KiB, as the value.
 3. A command that fails, prints nothing, or prints more is not saved (`usage`, with its exit code).
@@ -608,7 +610,7 @@ is the party asking.
 | 69 | `locked` | Still locked after `--wait` |
 | 70 | `app-unavailable` | PasswordPie is not installed, did not start, or did not answer |
 | 71 | `access-off` | Agent access is off in Preferences |
-| 72 | `too-many-requests` | Too many denied prompts from this agent session |
+| 72 | `too-many-requests` | Too many denied prompts from this agent session, or 20 saves already waiting for the owner |
 | 73 | `premium-required` | Reserved for Premium-only parts |
 | 74 | `no-matching-tab` | `login`: the tab in front is not on the site, or no extension speaks for the browser |
 | 75 | `site-mismatch` | `login`: the site asked for is not one of the item's websites; nobody was asked |
@@ -810,6 +812,7 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | An agent learns a value through `save` | A save's answer never says whether the value was the same; only shared items are found, and an unshared one answers as one that does not exist | none known |
 | An agent uses `save` to delete, move or rename | It writes one field or attached file; the title, the two-step fields and PasswordPie's own fields cannot be named; no message deletes or moves | Overwriting a field's value, which the history keeps |
 | A save's value leaks | It travels only from the tool to the app; it is in no answer, log, activity line or window; while pending it is inside the encrypted database; saving or rejecting drops it from the proposal | The command that printed it (its own logs, a shell history if typed) |
+| An agent makes `passwordpie_save` run any command | The command runs before the owner is asked, and gets no secret; only the agent host's permission for the tool gates it (the tool is marked destructive, as `passwordpie_run` is) | A host set to always allow the tool lets the agent run any command; PasswordPie's window comes after the command and does not name it |
 
 What cannot be prevented: a command that receives a secret can do anything with it; code running as the same user can,
 with effort, read what a command was given; a raw value given to an agent stays in its transcript, and with a hosted

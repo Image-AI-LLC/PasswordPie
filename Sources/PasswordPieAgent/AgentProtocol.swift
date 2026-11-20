@@ -139,6 +139,9 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     /// to the app; no answer carries one back.
     public var value: String?
     public var base64: String?
+    /// `save`, without a value: only asks whether a save of this reference would be taken now (`passwordpie_save` asks
+    /// before it runs a command). Nothing is kept, no window opens, and the answer says nothing of what the item holds.
+    public var validateOnly: Bool?
     /// What an MCP client calls itself (its `clientInfo`). Its own claim: shown only as a secondary detail ("through MCP;
     /// the client says it is …"), never as the agent, which the app works out from the process tree.
     public var mcpClient: String?

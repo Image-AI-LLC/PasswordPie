@@ -247,6 +247,27 @@ final class AgentSavesTests: XCTestCase {
         XCTAssertEqual(saves.proposals?.first?.state, .pending, "it still waits, for Reject")
     }
 
+    /// An item renamed and moved while its change waited: the list shows where the save writes now, and that is where it goes.
+    func testAChangeToAnItemMovedWhileItWaitedShowsTheNewPlace() async throws {
+        let session = populated()
+        let (broker, saves) = broker(session, answer: .dismissed)
+        let answer = await save("pp://Agents/Stripe/API key", Data(value.utf8), with: broker)
+        let id = try XCTUnwrap(answer.save?.proposal)
+        var stripe = try XCTUnwrap(session.entries.first { $0.title == "Stripe" })
+        stripe.title = "Stripe (test mode)"
+        stripe.groupPath = ["Agents", "Archive"]
+        session.saveEditing(stripe)
+        let proposal = try XCTUnwrap(saves.proposals?.first)
+        let shown = session.agentSavePlaced(proposal)
+        XCTAssertEqual(shown.title, "Stripe (test mode)")
+        XCTAssertEqual(shown.folder, ["Agents", "Archive"])
+        guard case .saved(let item, _) = await broker.saveProposal(id) else { return XCTFail("not saved") }
+        let written = try XCTUnwrap(try onDisk().entries.first { $0.id == item })
+        XCTAssertEqual(written.title, shown.title)
+        XCTAssertEqual(written.groupPath, shown.folder)
+        XCTAssertEqual(written.value(for: "API key"), value)
+    }
+
     /// Two waiting proposals for one new place: the second one saved changes the item the first made.
     func testTheSecondProposalForANewPlaceChangesTheItemTheFirstMade() async throws {
         let session = populated()
@@ -262,6 +283,26 @@ final class AgentSavesTests: XCTestCase {
     }
 
     // MARK: The window
+
+    /// The store counts in the write itself, which sees every proposal kept before it: requests that all passed the
+    /// broker's count while a write was under way still leave at most twenty waiting.
+    func testTheStoreKeepsAtMostTwentyWaiting() async throws {
+        let session = populated()
+        let (_, saves) = broker(session, answer: .dismissed)
+        for index in 0..<AgentProposals.maxPending {
+            let kept = await saves.propose(AgentProposal(
+                id: String(format: "%08x", index), created: Date(), mac: "this-mac", agent: "a", agentName: "a", signature: "s", project: "/p",
+                reason: nil, via: nil, item: nil, folder: ["Agents"], title: "P\(index)", field: .password, change: .newItem, value: Data(value.utf8)
+            ))
+            XCTAssertEqual(kept, .kept)
+        }
+        let over = await saves.propose(AgentProposal(
+            id: "ffffffff", created: Date(), mac: "this-mac", agent: "a", agentName: "a", signature: "s", project: "/p",
+            reason: nil, via: nil, item: nil, folder: ["Agents"], title: "Over", field: .password, change: .newItem, value: Data(value.utf8)
+        ))
+        XCTAssertEqual(over, .full)
+        XCTAssertEqual(AgentProposals(customData: try onDisk().customData).pending(now: Date()).count, AgentProposals.maxPending)
+    }
 
     private func savePrompt() -> AgentApprovalPrompt {
         AgentApprovalPrompt(

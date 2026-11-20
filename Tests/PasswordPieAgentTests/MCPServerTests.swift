@@ -173,7 +173,9 @@ final class MCPServerTests: XCTestCase {
         XCTAssertFalse(result.raw.contains(made), "the value is not in the result")
         let item = try XCTUnwrap(vault.agentSharedItems().first { $0.title == "Shop" })
         XCTAssertEqual(vault.values[item.id]?[.custom("API key")], Data(made.utf8), "stored without its line break")
-        XCTAssertEqual(sent.map(\.type), [.hello, .save])
+        XCTAssertEqual(sent.map(\.type), [.save, .save], "asked without a value before it ran, then saved")
+        XCTAssertEqual(sent.first?.validateOnly, true)
+        XCTAssertNil(sent.first?.value)
         XCTAssertEqual(sent.last?.client, "mcp")
         XCTAssertNil(sent.last?.argv, "the command is not part of the request")
         XCTAssertEqual(approver.prompts.first?.via, "through MCP; the client says it is “test-client 9.9”")
@@ -193,7 +195,36 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(result.text.hasPrefix("locked: "), result.text)
         XCTAssertTrue(result.text.contains("Nothing was run."))
         XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the command did not run")
-        XCTAssertEqual(sent.map(\.type), [.hello])
+        XCTAssertEqual(sent.map(\.type), [.save])
+    }
+
+    func testSaveRunsNothingWhenTheAppWouldRefuseIt() async throws {
+        let marker = folder.appendingPathComponent("ran")
+        try await connect()
+        let result = try await call("passwordpie_save", [
+            "ref": "pp://Agents/Shop/otp", "cwd": inside.path, "command": ["sh", "-c", "touch '\(marker.path)'; echo PLANTED-x"],
+        ])
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.text.contains("Nothing was run."), result.text)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the command did not run")
+        XCTAssertEqual(sent.map(\.type), [.save])
+        XCTAssertTrue(saves.kept.isEmpty)
+    }
+
+    func testSaveRunsNothingForASessionWithTooManyDenialsAndSaysToWait() async throws {
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.deny) } }
+        try await connect()
+        for index in 0..<3 {
+            let denied = try await call("passwordpie_save", ["ref": "pp://Agents/D\(index)", "cwd": inside.path, "command": ["echo", "PLANTED-d"]])
+            XCTAssertTrue(denied.text.hasPrefix("denied: "), denied.text)
+        }
+        let marker = folder.appendingPathComponent("ran")
+        let blocked = try await call("passwordpie_save", [
+            "ref": "pp://Agents/D9", "cwd": inside.path, "command": ["sh", "-c", "touch '\(marker.path)'; echo PLANTED-x"],
+        ])
+        XCTAssertTrue(blocked.text.hasPrefix("too-many-requests: "), blocked.text)
+        XCTAssertTrue(blocked.text.contains("Wait 10 minutes"), blocked.text)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the command did not run")
     }
 
     func testAFailingCommandSavesNothing() async throws {
@@ -206,7 +237,8 @@ final class MCPServerTests: XCTestCase {
         XCTAssertFalse(failed.raw.contains("PLANTED-half"), "what it printed is concealed in its error output too")
         let empty = try await call("passwordpie_save", ["ref": "pp://Agents/Shop/API key", "cwd": inside.path, "command": ["true"]])
         XCTAssertTrue(empty.isError)
-        XCTAssertEqual(sent.map(\.type), [.hello, .hello], "no save reached the app")
+        XCTAssertEqual(sent.map(\.type), [.save, .save], "no save with a value reached the app")
+        XCTAssertEqual(sent.compactMap(\.validateOnly), [true, true])
         XCTAssertTrue(saves.kept.isEmpty)
     }
 

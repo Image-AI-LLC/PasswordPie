@@ -85,6 +85,7 @@ public enum AgentRefusal {
         case .accessOff:
             return "Agent access is off. Ask the owner to turn it on in PasswordPie > Preferences > Agents."
         case .tooManyRequests:
+            if let detail { return detail }
             return "Too many requests from this agent session were denied. Wait 10 minutes before asking again, and tell the owner why you need the secret."
         case .premiumRequired:
             return "This needs PasswordPie Premium. Ask the owner; Allow Once still works without it."

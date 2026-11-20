@@ -410,9 +410,17 @@ final class MCPServer: @unchecked Sendable {
         guard let program = ProgramPath.resolve(command[0], path: environment["PATH"], cwd: cwd) else {
             throw Refusal(.usage, detail: "Command not found: \(command[0]).")
         }
-        // Before anything runs: a key made while PasswordPie cannot take it would be lost.
-        let hello = try ask(request(.hello), in: cwd, cancellation: cancellation)
-        if hello.locked == true { throw Refusal(.locked, detail: "Nothing was run.") }
+        // Before anything runs: a key made while PasswordPie cannot take a save to this reference would be lost. The app
+        // answers as it would to the save itself, without a value, and keeps nothing.
+        var asking = request(.save)
+        asking.secrets = [AgentSecretRequest(name: nil, ref: ref, delivery: .save)]
+        asking.validateOnly = true
+        asking.wait = 0
+        do {
+            _ = try ask(asking, in: cwd, cancellation: cancellation)
+        } catch let refusal as Refusal {
+            throw Refusal(refusal.code, ref: refusal.ref, refs: refusal.refs, detail: refusal.detail.map { $0 + " Nothing was run." } ?? (refusal.code == .locked ? "Nothing was run." : nil))
+        }
 
         let outcome = try CapturedRun.run(CapturedRun.Plan(
             path: program, argv: command, environment: environment, cwd: cwd, stdin: nil, mask: [], timeout: TimeInterval(timeout),
@@ -538,7 +546,7 @@ final class MCPServer: @unchecked Sendable {
             [
                 "name": "passwordpie_save",
                 "title": "Save a new secret",
-                "description": "Saves a key or token you created into PasswordPie without it passing through this conversation: runs `command` (an argument array, without a shell; [\"sh\", \"-c\", \"…\"] for a pipeline) in `cwd`, and hands what it prints on standard output (one line break at the end dropped; at most 64 KiB) to PasswordPie for `ref`. Nothing runs while PasswordPie is locked. The owner sees where it goes, never the value, and saves it with Touch ID. A shared item at that place is changed and its old value kept in its history; else a new item is made, shared with agents: with three parts or more the last part of ref is the field (pp://Agents/Stripe/API key), with two the item's password. The result has `outcome` (saved, or pending: the owner answers later in PasswordPie, and passwordpie_status lists it), `proposal`, the item's `ref` when saved, the exit code and the command's standard error with the value concealed. Never the value. Do not print the value yourself first." + guidance,
+                "description": "Saves a key or token you created into PasswordPie without it passing through this conversation: runs `command` (an argument array, without a shell; [\"sh\", \"-c\", \"…\"] for a pipeline) in `cwd`, and hands what it prints on standard output (one line break at the end dropped; at most 64 KiB) to PasswordPie for `ref`. Nothing runs while PasswordPie is locked, or when it would refuse the save (a reference it cannot save to, too many saves already waiting). The owner sees where it goes, never the value, and saves it with Touch ID. A shared item at that place is changed and its old value kept in its history; else a new item is made, shared with agents: with three parts or more the last part of ref is the field (pp://Agents/Stripe/API key), with two the item's password. The result has `outcome` (saved, or pending: the owner answers later in PasswordPie, and passwordpie_status lists it), `proposal`, the item's `ref` when saved, the exit code and the command's standard error with the value concealed. Never the value. Do not print the value yourself first." + guidance,
                 "inputSchema": [
                     "type": "object",
                     "properties": [
@@ -551,7 +559,7 @@ final class MCPServer: @unchecked Sendable {
                     "required": ["ref", "command", "cwd"],
                     "additionalProperties": false,
                 ],
-                "annotations": ["readOnlyHint": false, "destructiveHint": false, "openWorldHint": true],
+                "annotations": ["readOnlyHint": false, "destructiveHint": true, "openWorldHint": true],
             ],
             [
                 "name": "passwordpie_login",

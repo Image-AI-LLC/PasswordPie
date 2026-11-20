@@ -255,10 +255,15 @@ final class FakeSaves: AgentSaveStore {
         return AgentProposals(kept).current(now: clock())
     }
 
-    func propose(_ proposal: AgentProposal) async -> Bool {
-        guard !failWrites else { return false }
+    /// Runs between a `propose` call and its write, where a request that arrived meanwhile can be made.
+    var beforeKeeping: (() async -> Void)?
+
+    func propose(_ proposal: AgentProposal) async -> AgentProposeResult {
+        await beforeKeeping?()
+        guard !failWrites else { return .notWritten }
+        guard AgentProposals(kept).pending(now: clock()).count < AgentProposals.maxPending else { return .full }
         kept.append(proposal)
-        return true
+        return .kept
     }
 
     func save(_ id: String) async -> AgentSaveResult {

@@ -21,15 +21,22 @@ final class AgentSaves: AgentSaveStore {
         return AgentProposals(customData: custom).current(now: clock())
     }
 
-    func propose(_ proposal: AgentProposal) async -> Bool {
+    func propose(_ proposal: AgentProposal) async -> AgentProposeResult {
         let now = clock()
-        return await change { vault in
+        // The limit is checked in the write, which sees every proposal kept before it, not in what the file held when asked.
+        var full = false
+        let written = await change { vault in
             var all = AgentProposals(customData: vault.customData)
             all.forgetEnded(now: now)
+            guard all.pending(now: now).count < AgentProposals.maxPending else {
+                full = true
+                return false
+            }
             all.add(proposal)
             all.write(into: &vault.customData)
             return true
         }
+        return written ? .kept : (full ? .full : .notWritten)
     }
 
     func save(_ id: String) async -> AgentSaveResult {
@@ -134,6 +141,17 @@ enum AgentSaveApply {
         }
         if places.count > 1 { return .failure(Problem(message: "Two items shared with agents are at this place now.")) }
         return .success(places.first)
+    }
+
+    /// `proposal` with the folder and title its item has now, which is where a save writes; as proposed when the item is not found.
+    static func placed(_ proposal: AgentProposal, in vault: Vault) -> AgentProposal {
+        guard proposal.item != nil, case .success(let index?) = target(of: proposal, in: vault, sharing: AgentSharing(customData: vault.customData)) else {
+            return proposal
+        }
+        var copy = proposal
+        copy.folder = vault.entries[index].groupPath
+        copy.title = vault.entries[index].title
+        return copy
     }
 
     /// What saving it would do now, for the Agents pane: a new item, a new field or a change; or why it cannot be saved.

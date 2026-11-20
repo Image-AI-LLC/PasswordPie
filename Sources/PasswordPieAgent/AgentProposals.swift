@@ -183,13 +183,23 @@ public enum AgentSaveResult: Equatable, Sendable {
     case failed(String)
 }
 
+/// How keeping a new proposal went.
+public enum AgentProposeResult: Equatable, Sendable {
+    case kept
+    /// `AgentProposals.maxPending` already wait: nothing was kept.
+    case full
+    /// The agents database could not be written.
+    case notWritten
+}
+
 /// Where proposals are kept and how a saved one is written. The app's keeps them in the agents database (`AgentSaves`).
 @MainActor
 public protocol AgentSaveStore: AnyObject {
     /// The proposals in the agents database, without those past their lifetime, oldest first; nil while it is not open.
     var proposals: [AgentProposal]? { get }
-    /// Keeps a new proposal in the agents database and writes the file. False when it could not be written.
-    func propose(_ proposal: AgentProposal) async -> Bool
+    /// Keeps a new proposal in the agents database and writes the file, unless `AgentProposals.maxPending` already wait
+    /// when it is written.
+    func propose(_ proposal: AgentProposal) async -> AgentProposeResult
     /// The owner saved it: writes the value into the item and marks the proposal saved, in one write.
     func save(_ id: String) async -> AgentSaveResult
     /// The owner rejected it: marks it rejected, without its value. False when it could not be written.

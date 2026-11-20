@@ -173,6 +173,66 @@ final class SaveTests: XCTestCase {
         }
         let over = await broker.handle(.save("pp://Agents/Over", value: value), from: Callers.make())
         XCTAssertEqual(over.errorCode, .tooManyRequests)
+        let sentence = AgentRefusal.line(.tooManyRequests, detail: over.detail)
+        XCTAssertTrue(sentence.contains("Preferences > Agents"), sentence)
+        XCTAssertFalse(sentence.contains("denied"), sentence)
+        XCTAssertTrue(AgentRefusal.line(.tooManyRequests).contains("denied"), "the denial limit keeps its words")
+    }
+
+    func testSavesAskedForTogetherLeaveAtMostTwentyWaiting() async throws {
+        answerWith(.dismissed)
+        // Every request passes the count before any is kept, as when the writes are slow.
+        saves.beforeKeeping = { await Task.yield() }
+        let broker = broker()
+        let answers = await withTaskGroup(of: AgentResponse.self) { group in
+            for index in 0..<(AgentProposals.maxPending + 10) {
+                group.addTask { @MainActor in
+                    await broker.handle(.save("pp://Agents/T\(index)", value: self.value), from: Callers.make(session: "agent:\(index):1"))
+                }
+            }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        XCTAssertEqual(saves.kept.filter { $0.state == .pending }.count, AgentProposals.maxPending)
+        XCTAssertEqual(answers.filter { $0.errorCode == .tooManyRequests }.count, 10)
+    }
+
+    func testAskingWithoutAValueKeepsNothingAndOpensNoWindow() async throws {
+        var ask = AgentRequest.save("pp://Agents/Cloudflare/API token", value: value)
+        ask.value = nil
+        ask.validateOnly = true
+        let answer = await broker().handle(ask, from: Callers.make())
+        XCTAssertNil(answer.errorCode)
+        XCTAssertNil(answer.save)
+        XCTAssertTrue(saves.kept.isEmpty)
+        XCTAssertTrue(approver.prompts.isEmpty)
+        ask.secrets = [AgentSecretRequest(name: nil, ref: "pp://Agents/Shop/otp", delivery: .save)]
+        let refused = await broker().handle(ask, from: Callers.make())
+        XCTAssertEqual(refused.errorCode, .usage, "a field a save cannot set is refused before a command runs")
+        for index in 0..<AgentProposals.maxPending { _ = saves.kept.append(Self.pending(index)) }
+        ask.secrets = [AgentSecretRequest(name: nil, ref: "pp://Agents/Over", delivery: .save)]
+        let full = await broker().handle(ask, from: Callers.make())
+        XCTAssertEqual(full.errorCode, .tooManyRequests)
+    }
+
+    func testAskingWhileLockedAnswersLockedAndShowsNoLockScreen() async throws {
+        vault.locked = true
+        var needed = 0
+        let broker = broker()
+        broker.onNeedsUnlock = { needed += 1 }
+        var ask = AgentRequest.save("pp://Agents/Cloudflare/API token", value: value)
+        ask.value = nil
+        ask.validateOnly = true
+        let answer = await broker.handle(ask, from: Callers.make())
+        XCTAssertEqual(answer.errorCode, .locked)
+        XCTAssertEqual(needed, 0, "the question before a command runs opens no window")
+        XCTAssertTrue(broker.waiting.isEmpty)
+    }
+
+    private static func pending(_ index: Int) -> AgentProposal {
+        AgentProposal(
+            id: "p\(index)", created: Date(), mac: "this-mac", agent: "a", agentName: "a", signature: "s", project: "/p", reason: nil, via: nil,
+            item: nil, folder: ["Agents"], title: "P\(index)", field: .password, change: .newItem, value: Data("PLANTED-x".utf8)
+        )
     }
 
     // MARK: Where it goes
