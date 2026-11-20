@@ -1,6 +1,7 @@
 import AppKit
 import PasswordPieBridge
 import PasswordPieCore
+import SwiftUI
 import XCTest
 @testable import PasswordPie
 
@@ -246,12 +247,86 @@ final class ChromiumBrowsersBridgeTests: XCTestCase {
         XCTAssertEqual(busy.map(\.button), [nil, "Don't Allow", "Allow"], "Google's browsers have no answer to change")
     }
 
+    // MARK: The question window (docs/UX.md, "Other browsers built on Chrome")
+
     func testTheQuestionNamesTheBrowserAndWhoSignedIt() {
-        XCTAssertEqual(BrowserApprovalPrompt.title(egoIdentity), "Allow “ego lite” to fill passwords?")
-        let message = BrowserApprovalPrompt.message(egoIdentity)
-        XCTAssertTrue(message.contains("Signed by CITRO LABS PTE. LIMITED."))
-        XCTAssertTrue(message.contains("Preferences > Browsers"))
-        XCTAssertEqual(BrowserApprovalPrompt.denyTitle, "Don't Allow", "the first button, which Return presses")
+        // The browser's name never breaks across lines: its spaces are non-breaking.
+        XCTAssertEqual(BrowserApprovalPrompt.title(egoIdentity), "Allow “ego\u{A0}lite” to fill passwords?")
+        XCTAssertEqual(BrowserApprovalPrompt.signerLine(egoIdentity), "Signed by CITRO LABS PTE. LIMITED")
+        XCTAssertEqual(BrowserApprovalPrompt.effect, "It gets the username and password of each account you pick.")
+        XCTAssertEqual(
+            BrowserApprovalPrompt.condition(egoIdentity),
+            "Only allow it if you added the PasswordPie extension to ego\u{A0}lite yourself."
+        )
+        XCTAssertEqual(BrowserApprovalPrompt.changeNote, "You can change this in Preferences > Browsers.")
+        XCTAssertEqual(BrowserApprovalPrompt.denyTitle, "Don't Allow")
+        XCTAssertEqual(BrowserApprovalPrompt.allowTitle, "Allow")
+    }
+
+    func testACertificateWithoutAnOrganizationShowsNoSignerLine() {
+        let unnamed = ChromiumBrowserIdentity(bundleID: Self.egoID, teamID: "ZZZZZZZZZZ", bundleURL: egoIdentity.bundleURL, name: "ego lite", signer: nil)
+        XCTAssertNil(BrowserApprovalPrompt.signerLine(unnamed))
+    }
+
+    func testEachButtonAnswersOnceAndClosesTheWindow() {
+        var answers: [Bool] = []
+        var closed = 0
+        let allowing = BrowserApprovalModel(identity: egoIdentity) { answers.append($0) }
+        allowing.onAnswered = { closed += 1 }
+        allowing.allow()
+        allowing.deny()
+        XCTAssertEqual(answers, [true], "a second press answers nothing")
+        XCTAssertEqual(closed, 1)
+
+        let denying = BrowserApprovalModel(identity: egoIdentity) { answers.append($0) }
+        denying.deny()
+        denying.allow()
+        XCTAssertEqual(answers, [true, false])
+    }
+
+    func testNoKeyAnswersTheQuestion() throws {
+        var answers: [Bool] = []
+        let model = BrowserApprovalModel(identity: egoIdentity) { answers.append($0) }
+        let panel = BrowserApprovalPrompt.panel(for: model)
+        defer { panel.close() }
+        panel.layoutIfNeeded()
+        XCTAssertNil(panel.defaultButtonCell, "neither button is the default")
+        XCTAssertFalse(panel.styleMask.contains(.closable), "no close button: Escape has nothing to press")
+        for (characters, code) in [("\r", UInt16(36)), ("\u{1B}", UInt16(53)), (" ", UInt16(49))] {
+            let key = try XCTUnwrap(NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+            ))
+            XCTAssertFalse(panel.performKeyEquivalent(with: key), "key code \(code)")
+        }
+        XCTAssertTrue(answers.isEmpty, "a key pressed by accident neither lets a browser in nor shuts it out")
+    }
+
+    func testTheWindowIsOneWidthAndGrowsForALongName() {
+        let short = NSHostingView(rootView: BrowserApprovalView(model: BrowserApprovalModel(identity: egoIdentity) { _ in }))
+        XCTAssertEqual(short.fittingSize.width, BrowserApprovalPrompt.width)
+        XCTAssertGreaterThan(short.fittingSize.height, 200)
+        XCTAssertLessThan(short.fittingSize.height, 320)
+
+        let long = ChromiumBrowserIdentity(
+            bundleID: "com.example.long", teamID: "ZZZZZZZZZZ", bundleURL: URL(fileURLWithPath: "/tmp/Long.app"),
+            name: "Microsoft Edge Canary for Enterprise Preview", signer: "Microsoft Corporation"
+        )
+        let tall = NSHostingView(rootView: BrowserApprovalView(model: BrowserApprovalModel(identity: long) { _ in }))
+        XCTAssertEqual(tall.fittingSize.width, BrowserApprovalPrompt.width)
+        XCTAssertGreaterThan(tall.fittingSize.height, short.fittingSize.height, "a long name wraps instead of being cut")
+
+        // The hidden title bar adds no band of its own: the window is exactly as tall as what it shows.
+        let panel = BrowserApprovalPrompt.panel(for: BrowserApprovalModel(identity: egoIdentity) { _ in })
+        defer { panel.close() }
+        XCTAssertEqual(panel.frame.size, short.fittingSize)
+    }
+
+    func testTheQuestionSaysWhatItShowsForTheStatusFile() {
+        let model = BrowserApprovalModel(identity: egoIdentity) { _ in }
+        XCTAssertEqual(model.debugSummary["title"] as? String, "Allow “ego\u{A0}lite” to fill passwords?")
+        XCTAssertEqual(model.debugSummary["signer"] as? String, "Signed by CITRO LABS PTE. LIMITED")
+        XCTAssertEqual(model.debugSummary["buttons"] as? [String], ["Don't Allow", "Allow"])
     }
 }
 
