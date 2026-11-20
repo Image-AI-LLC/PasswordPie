@@ -327,11 +327,20 @@ final class KDBXMerger {
         // copy whose history holds the other copy's current version was made from it, and is the later one, whatever
         // the second says. Only a tie is decided this way; neither or both holding the other's falls back to the rules
         // below.
-        let ourHistory = Set((direct(existing, "History").first.map { direct($0, "Entry") } ?? []).map { versionKey($0, pool: targetPool) })
-        let theirHistory = Set(direct(source, "History").flatMap { direct($0, "Entry") }.map { versionKey($0, pool: sourcePool) })
-        let ourKey = versionKey(existing, pool: targetPool), theirKey = versionKey(source, pool: sourcePool)
-        let theyFollow = theirHistory.contains(ourKey) && !ourHistory.contains(theirKey)
-        let weFollow = ourHistory.contains(theirKey) && !theirHistory.contains(ourKey)
+        let history = direct(existing, "History").first
+        let ourVersions = (history.map { direct($0, "Entry") } ?? []).map {
+            Version(key: versionKey($0, pool: targetPool), element: $0, fromSource: false)
+        }
+        let theirVersions = direct(source, "History").flatMap { direct($0, "Entry") }.map {
+            Version(key: versionKey($0, pool: sourcePool), element: $0, fromSource: true)
+        }
+        let ourHistory = Set(ourVersions.map(\.key)), theirHistory = Set(theirVersions.map(\.key))
+        var theyFollow = false, weFollow = false
+        if theirVersions.contains(where: { $0.key.seconds == ours }) || ourVersions.contains(where: { $0.key.seconds == theirs }) {
+            let ourKey = versionKey(existing, pool: targetPool), theirKey = versionKey(source, pool: sourcePool)
+            theyFollow = theirHistory.contains(ourKey) && !ourHistory.contains(theirKey)
+            weFollow = ourHistory.contains(theirKey) && !theirHistory.contains(ourKey)
+        }
 
         // Where it is: the later move wins. Moving to the Recycle Bin is a deletion, and loses against a change made
         // after it in the other copy, as a `DeletedObjects` time does.
@@ -366,21 +375,14 @@ final class KDBXMerger {
         let sourceWins = ours != theirs ? theirs > ours : (theyFollow || weFollow ? theyFollow : differs && theirContent > ourContent)
 
         // The history: both histories, and the current version that lost unless the winner already has it there.
-        let history = direct(existing, "History").first
-        let ourVersions = (history.map { direct($0, "Entry") } ?? []).map {
-            Version(key: versionKey($0, pool: targetPool), element: $0, fromSource: false)
-        }
-        let theirVersions = direct(source, "History").flatMap { direct($0, "Entry") }.map {
-            Version(key: versionKey($0, pool: sourcePool), element: $0, fromSource: true)
-        }
-        var known = Set(ourVersions.map(\.key))
+        var known = ourHistory
         var versions = ourVersions
         for version in theirVersions where known.insert(version.key).inserted { versions.append(version) }
         var changedOnBoth = false
         if differs {
             let loser = sourceWins ? existing : source
             let loserKey = versionKey(loser, pool: sourceWins ? targetPool : sourcePool)
-            let winnersHistory = Set((sourceWins ? theirVersions : ourVersions).map(\.key))
+            let winnersHistory = sourceWins ? theirHistory : ourHistory
             if known.insert(loserKey).inserted {
                 versions.append(Version(key: loserKey, element: loser, fromSource: !sourceWins, current: true))
             }
