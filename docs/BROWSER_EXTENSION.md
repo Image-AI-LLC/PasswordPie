@@ -615,7 +615,16 @@ within the minute of the reconnect alarm.
 - The answer is kept for good in the preferences (`chromiumBrowserApprovals`, `BrowserApprovals`), keyed by bundle ID
   and team: the same bundle ID signed by another team is another browser and is asked about again. Preferences >
   Browsers changes it; Don't Allow there disconnects that browser's connections at once (`BrowserBridgeServer.disconnect`).
-  A refused browser's extension keeps reconnecting about once a minute and is closed each time, without a question.
+- A refused browser's connection is kept open and never registered (`BrowserBridgeServer`, "held"): it is not a
+  connected profile, nothing is pushed to it and none of its frames reach `BrowserFill`. `BrowserBridge.refusedFrame`
+  reads each frame it sends and answers only `show`, the toolbar button, with a plain `show` (so the extension does not
+  open the website as if the app were missing) and asks the person again, at most once every 10 seconds after a
+  Don't Allow and never while the question is open. Every other frame gets no answer. When the answer becomes Allow
+  (the question, or Preferences) the held connections of that browser are poked; the extension's next frame finds the
+  browser allowed, and the connection is registered and served like any other. A browser with no answer on record
+  that was refused (one calling itself Google's under another team) is closed as before.
+- The panel offers the same question: with a refused browser in front, `ExtensionBanner.allowBrowser` takes the place
+  of "Add Chrome Extension…", and `BrowserBridge.install` asks again for the running browser's own signature.
 - The question is a window of its own (`BrowserApprovalPrompt`, `BrowserApprovalView`; DESIGN.md, "Browser question
   window"), not a modal alert: the app keeps working while it waits. Its two buttons are equal and neither is the
   default, and no key presses either: until 2026-11-20 it was a system alert whose one tinted button was Don't Allow,

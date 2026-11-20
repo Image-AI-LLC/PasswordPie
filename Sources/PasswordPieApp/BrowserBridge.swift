@@ -45,17 +45,20 @@ func resolvedPageURL(extensionURL: String?, windowURL: String?) -> String? {
 enum ExtensionBanner: Equatable {
     case addChrome
     case enableSafari
+    /// Over a browser built on Chromium the person said no to: opens the question again. `name` is the browser's.
+    case allowBrowser(name: String)
 
     var title: String {
         switch self {
         case .addChrome: "Add Chrome Extension…"
         case .enableSafari: "Enable Safari Extension…"
+        case .allowBrowser(let name): "Allow “\(name)” to Fill Passwords…"
         }
     }
 
     var browserBundleID: String {
         switch self {
-        case .addChrome: BrowserBridge.chromeBundleID
+        case .addChrome, .allowBrowser: BrowserBridge.chromeBundleID
         case .enableSafari: BrowserBridge.safariBundleID
         }
     }
@@ -63,12 +66,15 @@ enum ExtensionBanner: Equatable {
 
 /// Which banner the panel shows for the app that was in front, if any. `chromeInFront` is whether an extension speaks
 /// for the Chrome profile in front: one connected in another profile does not count. Other browsers built on Chromium
-/// get Chrome's line, except one the person did not allow (`denied`).
-func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled: Bool, chromeSupported: Bool, denied: Bool = false) -> ExtensionBanner? {
+/// get Chrome's line, except one the person did not allow: `deniedName` is its name, and its line asks again.
+func extensionBanner(frontBundleID: String?, chromeInFront: Bool, safariEnabled: Bool, chromeSupported: Bool, deniedName: String? = nil) -> ExtensionBanner? {
     switch BrowserBridge.browser(forBundleID: frontBundleID) {
-    case .chrome: chromeSupported && !chromeInFront && !denied ? .addChrome : nil
-    case .safari: safariEnabled ? nil : .enableSafari
-    case nil: nil
+    case .chrome:
+        guard chromeSupported else { return nil }
+        if let deniedName { return .allowBrowser(name: deniedName) }
+        return chromeInFront ? nil : .addChrome
+    case .safari: return safariEnabled ? nil : .enableSafari
+    case nil: return nil
     }
 }
 
@@ -228,6 +234,12 @@ final class BrowserBridge: ObservableObject {
     var askToAllow: (ChromiumBrowserIdentity, @escaping @MainActor (Bool) -> Void) -> Void = { identity, answer in
         BrowserApprovalPrompt.ask(identity, answer: answer)
     }
+    /// The signature of the running browser the panel was over: what the question names. Replaced in tests.
+    var identityOfRunning: (FrontApp) -> ChromiumBrowserIdentity? = { front in
+        guard let bundleID = front.bundleID,
+              let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else { return nil }
+        return ChromiumBrowserCheck.identity(ofProcess: app.processIdentifier)
+    }
     /// Connections waiting for the person's answer about their browser, by `bundleID|teamID`.
     private var waitingApprovals: [String: [@MainActor (Bool) -> Void]] = [:]
     private let defaults: UserDefaults
@@ -315,7 +327,8 @@ final class BrowserBridge: ObservableObject {
             approve: { [weak self] identity, answer in
                 guard let self else { return answer(false) }
                 self.approve(identity, answer: answer)
-            }
+            },
+            refused: { [weak self] frame, identity in self?.refusedFrame(frame, from: identity) ?? .close }
         )
         do {
             try server.start()
@@ -397,7 +410,7 @@ final class BrowserBridge: ObservableObject {
             chromeInFront: chromeLink(app: frontBundleID, inFront: inFront) != nil,
             safariEnabled: safariEnabled,
             chromeSupported: Self.chromeSupported,
-            denied: frontBundleID.map(approvals.denied(bundleID:)) ?? false
+            deniedName: approvals.records.first { $0.bundleID == frontBundleID && $0.approval == .denied }?.name
         )
     }
 
@@ -567,12 +580,57 @@ final class BrowserBridge: ObservableObject {
         }
     }
 
+    /// Opens the question again for a browser the person said no to: from the panel's line, or from that browser's
+    /// toolbar button. Nothing happens for a browser with another answer, or while its question is open.
+    func askAgain(_ identity: ChromiumBrowserIdentity) {
+        guard approvals.approval(bundleID: identity.bundleID, teamID: identity.teamID) == .denied else { return }
+        let key = identity.bundleID + "|" + identity.teamID
+        guard waitingApprovals[key] == nil else { return }
+        waitingApprovals[key] = []
+        askToAllow(identity) { [weak self] allowed in
+            self?.setApproval(allowed ? .allowed : .denied, bundleID: identity.bundleID, teamID: identity.teamID, name: identity.name)
+        }
+    }
+
+    /// What to do with a frame from a browser the person said no to. Its connection is kept open but is not a connected
+    /// profile: nothing it sends reaches the vault, and it is told nothing.
+    enum RefusedFrame: Equatable {
+        /// The person allows the browser now: serve this frame and the rest like any connection's.
+        case admit
+        /// Not served. `answer` goes back when there is one: only the toolbar button gets one.
+        case hold(answer: Data?)
+        /// No answer on record: end the connection, and the next one is asked about afresh.
+        case close
+    }
+
+    /// How long after a Don't Allow the browser's own toolbar button can bring the question back.
+    static let askAgainAfter: TimeInterval = 10
+
+    func refusedFrame(_ frame: Data, from identity: ChromiumBrowserIdentity) -> RefusedFrame {
+        switch approvals.approval(bundleID: identity.bundleID, teamID: identity.teamID) {
+        case .allowed?: return .admit
+        case nil: return .close
+        case .denied?: break
+        }
+        // The toolbar button: say the app heard it, so the extension does not open the website as if PasswordPie were
+        // missing, and ask the person again. The answer carries nothing but the request's own id.
+        guard let request = try? JSONDecoder().decode(BridgeRequest.self, from: frame), request.type == "show" else {
+            return .hold(answer: nil)
+        }
+        let decided = approvals.records.first { $0.bundleID == identity.bundleID && $0.teamID == identity.teamID }?.decided
+        if decided.map({ now().timeIntervalSince($0) >= Self.askAgainAfter }) ?? true { askAgain(identity) }
+        return .hold(answer: try? JSONEncoder().encode(BridgeResponse.show(id: request.id)))
+    }
+
     /// Keeps the person's answer for a browser, from the question or from Preferences. A browser no longer allowed is
-    /// disconnected at once.
+    /// disconnected at once; one allowed now is let in as soon as its extension speaks, which the poke makes it do.
     func setApproval(_ approval: BrowserApproval, bundleID: String, teamID: String, name: String) {
         approvals.set(approval, bundleID: bundleID, teamID: teamID, name: name, now: now())
         defaults.set(approvals.encoded(), forKey: Self.approvalsKey)
         if approval == .denied { server?.disconnect(app: bundleID, teamID: teamID) }
+        if approval == .allowed, let poke = try? JSONEncoder().encode(BridgeResponse.poke) {
+            server?.pushToHeld(poke, app: bundleID, teamID: teamID)
+        }
         let key = bundleID + "|" + teamID
         let waiting = waitingApprovals.removeValue(forKey: key) ?? []
         for answer in waiting { answer(approval == .allowed) }
@@ -651,6 +709,10 @@ final class BrowserBridge: ObservableObject {
             openInBrowser(Self.chromeInstallURL, chrome ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.chromeBundleID))
         case .enableSafari:
             SFSafariApplication.showPreferencesForExtension(withIdentifier: BridgeConstants.safariExtensionIdentifier) { _ in }
+        case .allowBrowser:
+            // The question names the browser by its own signature, read from the running app, not by the line's words.
+            guard let front, let identity = identityOfRunning(front) else { return }
+            askAgain(identity)
         }
     }
 

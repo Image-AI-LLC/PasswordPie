@@ -668,6 +668,11 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
 
     public static let poke = BridgeResponse(type: "poke")
 
+    /// The answer to `show`, the toolbar button: the app heard it. Carries nothing but the request's id.
+    public static func show(id: Int?) -> BridgeResponse {
+        BridgeResponse(type: "show", id: id)
+    }
+
     public static func error(_ code: String, id: Int?) -> BridgeResponse {
         BridgeResponse(type: "error", id: id, code: code)
     }

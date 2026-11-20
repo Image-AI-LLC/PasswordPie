@@ -472,6 +472,9 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   Allow are two plain system buttons of equal width, large, 10 pt apart; neither is the default and no key presses
   either, so neither answer is pushed. Never `BrandPrimaryButtonStyle` here, and never the system's blue default
   button. Board and critic log: `art/browser-approval/`.
+- **Allow line** — over a browser the person said no to, the extension banner's row reads "Allow “<browser>” to Fill
+  Passwords…" with that browser's icon: the same row, height and hover as "Add Chrome Extension…". A click opens the
+  browser question window again.
 - **Preferences pane list** — `surface` with ink 4 % over it, and a 1 pt ink 8 % line on its right edge. Rows start
   42 pt from the top of the window, 8 pt from the sides, 30 pt tall, radius 7: a 13 pt symbol in a 20 pt slot, 8 pt,
   the name in `body`. No tile behind the symbol. Unselected: the symbol is `text-secondary`. Selected: the row takes

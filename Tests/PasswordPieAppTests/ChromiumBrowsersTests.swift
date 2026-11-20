@@ -182,7 +182,10 @@ final class ChromiumBrowsersBridgeTests: XCTestCase {
         bridge.approve(egoIdentity) { answers.append($0) }
         XCTAssertEqual(answers, [false, false])
         XCTAssertEqual(asked.count, 1)
-        XCTAssertNil(bridge.banner(frontBundleID: Self.egoID), "no Add Chrome Extension… over a browser the person said no to")
+        XCTAssertEqual(
+            bridge.banner(frontBundleID: Self.egoID), .allowBrowser(name: "ego lite"),
+            "not Add Chrome Extension… over a browser the person said no to: the line that asks again"
+        )
 
         // Changed in Preferences.
         bridge.setApproval(.allowed, bundleID: Self.egoID, teamID: "JGQLC6YQYJ", name: "ego lite")
@@ -245,6 +248,111 @@ final class ChromiumBrowsersBridgeTests: XCTestCase {
         XCTAssertEqual(busy.map(\.name), ["Chrome Beta", "ego lite", "Other"], "Chrome has its own row")
         XCTAssertEqual(busy.map(\.status.text), ["Connected", "Connected in 2 profiles", "Not allowed"])
         XCTAssertEqual(busy.map(\.button), [nil, "Don't Allow", "Allow"], "Google's browsers have no answer to change")
+    }
+
+    // MARK: Asking again about a browser the person said no to
+
+    private func show(id: Int) -> Data { Data(#"{"type":"show","id":\#(id)}"#.utf8) }
+
+    private func refuse(_ bridge: BrowserBridge) {
+        bridge.approve(egoIdentity) { _ in }
+        answerQuestion?(false)
+        answerQuestion = nil
+    }
+
+    func testThePanelsLineOverARefusedBrowserAsksAgain() {
+        let (bridge, _) = bridge()
+        refuse(bridge)
+        let line = ExtensionBanner.allowBrowser(name: "ego lite")
+        XCTAssertEqual(line.title, "Allow “ego lite” to Fill Passwords…")
+        XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), line)
+
+        // The question names the running browser by its own signature, not by the line's words.
+        var looked: [FrontApp] = []
+        bridge.identityOfRunning = { [egoIdentity] front in
+            looked.append(front)
+            return egoIdentity
+        }
+        bridge.install(line, in: ego)
+        XCTAssertEqual(looked, [ego])
+        XCTAssertEqual(asked.count, 2, "the question opens again")
+        bridge.install(line, in: ego)
+        XCTAssertEqual(asked.count, 2, "one question at a time")
+
+        answerQuestion?(true)
+        XCTAssertEqual(bridge.approvals.approval(bundleID: Self.egoID, teamID: "JGQLC6YQYJ"), .allowed)
+        XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), .addChrome, "allowed and not connected yet: Chrome's line")
+        XCTAssertTrue(opened.isEmpty, "the line opens no store page")
+    }
+
+    func testThePanelsLineAsksNothingWhenTheBrowserIsGoneOrIsAnother() {
+        let (bridge, _) = bridge()
+        refuse(bridge)
+        let line = ExtensionBanner.allowBrowser(name: "ego lite")
+        bridge.identityOfRunning = { _ in nil }
+        bridge.install(line, in: ego)
+        XCTAssertEqual(asked.count, 1, "the browser quit meanwhile")
+
+        // The same bundle ID signed by someone else has no answer on record: its own first connection asks, not this line.
+        let impostor = ChromiumBrowserIdentity(bundleID: Self.egoID, teamID: "ZZZZZZZZZZ", bundleURL: egoIdentity.bundleURL, name: "ego lite", signer: nil)
+        bridge.identityOfRunning = { _ in impostor }
+        bridge.install(line, in: ego)
+        XCTAssertEqual(asked.count, 1)
+    }
+
+    func testTheToolbarButtonOfARefusedBrowserAsksAgain() throws {
+        let (bridge, _) = bridge()
+        var clock = Date(timeIntervalSince1970: 1_000_000)
+        bridge.now = { clock }
+        refuse(bridge)
+
+        // Nothing else it sends is served or answered.
+        for other in [#"{"type":"hello","id":1,"version":1}"#, #"{"type":"tab","id":2,"url":"https://github.com/login"}"#, "not json"] {
+            XCTAssertEqual(bridge.refusedFrame(Data(other.utf8), from: egoIdentity), .hold(answer: nil), other)
+        }
+        XCTAssertEqual(asked.count, 1)
+
+        // The button is answered at once, so the extension does not open the website; right after a Don't Allow it does
+        // not bring the question back.
+        guard case .hold(let early?) = bridge.refusedFrame(show(id: 7), from: egoIdentity) else { return XCTFail("the button gets an answer") }
+        let answer = try XCTUnwrap(JSONSerialization.jsonObject(with: early) as? [String: Any])
+        XCTAssertEqual(answer["type"] as? String, "show")
+        XCTAssertEqual(answer["id"] as? Int, 7)
+        XCTAssertEqual(answer.count, 2, "nothing but the request's own id")
+        XCTAssertEqual(asked.count, 1, "not within 10 seconds of the answer")
+
+        clock += BrowserBridge.askAgainAfter
+        XCTAssertNotEqual(bridge.refusedFrame(show(id: 8), from: egoIdentity), .hold(answer: nil))
+        XCTAssertEqual(asked.count, 2, "the question opens again")
+        _ = bridge.refusedFrame(show(id: 9), from: egoIdentity)
+        XCTAssertEqual(asked.count, 2, "one question at a time")
+
+        // Don't Allow again: the 10 seconds start again.
+        answerQuestion?(false)
+        _ = bridge.refusedFrame(show(id: 10), from: egoIdentity)
+        XCTAssertEqual(asked.count, 2)
+        clock += BrowserBridge.askAgainAfter
+        _ = bridge.refusedFrame(show(id: 11), from: egoIdentity)
+        XCTAssertEqual(asked.count, 3)
+
+        // Allow: the next frame is served like any connection's.
+        answerQuestion?(true)
+        XCTAssertEqual(bridge.refusedFrame(show(id: 12), from: egoIdentity), .admit)
+        XCTAssertEqual(bridge.refusedFrame(Data(#"{"type":"tab","id":13}"#.utf8), from: egoIdentity), .admit)
+        XCTAssertEqual(asked.count, 3)
+    }
+
+    func testABrowserWithNoAnswerOnRecordIsNotHeld() {
+        let (bridge, _) = bridge()
+        // Refused without a question: it calls itself Google's under another team. Nothing is kept, so nothing is held.
+        let fake = ChromiumBrowserIdentity(bundleID: "com.google.Chrome", teamID: "ZZZZZZZZZZ", bundleURL: egoIdentity.bundleURL, name: "Google Chrome", signer: nil)
+        var answers: [Bool] = []
+        bridge.approve(fake) { answers.append($0) }
+        XCTAssertEqual(answers, [false])
+        XCTAssertEqual(bridge.refusedFrame(show(id: 1), from: fake), .close)
+        XCTAssertTrue(asked.isEmpty, "its toolbar button asks nothing")
+        bridge.askAgain(fake)
+        XCTAssertTrue(asked.isEmpty)
     }
 
     // MARK: The question window (docs/UX.md, "Other browsers built on Chrome")
