@@ -410,7 +410,14 @@ final class BrowserBridge: ObservableObject {
             chromeInFront: chromeLink(app: frontBundleID, inFront: inFront) != nil,
             safariEnabled: safariEnabled,
             chromeSupported: Self.chromeSupported,
-            deniedName: approvals.records.first { $0.bundleID == frontBundleID && $0.approval == .denied }?.name
+            // A refused browser's connections are held, never registered: a connected one is the browser the person
+            // allowed. A denial on record for another signing team than the running browser's is not its answer either.
+            deniedName: (frontBundleID.flatMap { chromiumProfiles[$0] } ?? 0) > 0
+                ? nil
+                : approvals.records.first { record in
+                    record.bundleID == frontBundleID && record.approval == .denied
+                        && (frontBundleID.flatMap { identityOfRunning(FrontApp(bundleID: $0, bundleURL: nil)) }?.teamID ?? record.teamID) == record.teamID
+                }?.name
         )
     }
 

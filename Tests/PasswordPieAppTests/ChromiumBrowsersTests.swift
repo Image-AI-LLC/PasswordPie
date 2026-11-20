@@ -194,6 +194,18 @@ final class ChromiumBrowsersBridgeTests: XCTestCase {
         XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), .addChrome)
     }
 
+    func testADenialForAnotherTeamNeverHidesTheConnectedBrowsersOwnLine() throws {
+        let (bridge, _) = bridge()
+        bridge.setApproval(.denied, bundleID: Self.egoID, teamID: "ZZZZZZZZZZ", name: "ego lite")
+        bridge.setApproval(.allowed, bundleID: Self.egoID, teamID: "JGQLC6YQYJ", name: "ego lite")
+        let egoPeer = BridgePeer(.chrome, link: 2)
+        bridge.connectionsChanged([egoPeer], apps: [egoPeer: egoIdentity])
+        try tab(bridge, link: 2, "https://github.com/", focused: true)
+        XCTAssertNil(bridge.banner(frontBundleID: Self.egoID))
+        try tab(bridge, link: 2, "https://github.com/", focused: false)
+        XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), .addChrome)
+    }
+
     func testTheSameBrowserSignedBySomeoneElseIsAskedAgain() {
         let (bridge, _) = bridge()
         bridge.approve(egoIdentity) { _ in }
