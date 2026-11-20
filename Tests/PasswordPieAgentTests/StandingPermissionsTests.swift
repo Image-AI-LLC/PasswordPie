@@ -282,6 +282,46 @@ final class StandingPermissionsTests: XCTestCase {
         XCTAssertEqual(store.inForce.count, 1)
     }
 
+    /// A store that serves one of two databases at a time: what it holds for one does not count in the other.
+    private func switchingStore(_ served: @escaping () -> String, _ databases: [String: FakeGrantDatabase]) {
+        store = StandingPermissions(
+            mac: "this-mac", hasPremium: { [unowned self] in self.premium }, read: { databases[served()]!.read() },
+            write: { databases[served()]!.write($0, $1) }, database: served
+        )
+        store.clock = { [unowned self] in self.now }
+        store.sessionAlive = { _ in true }
+    }
+
+    /// Revoke All and a grant not yet written belong to the database they were made under.
+    func testWhatIsKeptInMemoryBelongsToItsDatabase() async {
+        var served = "A"
+        let a = FakeGrantDatabase()
+        let b = FakeGrantDatabase()
+        switchingStore({ served }, ["A": a, "B": b])
+        _ = await grant(run(["Scripts/a.sh"]))
+        served = "B"
+        _ = await grant(run(["Scripts/a.sh"]))
+        served = "A"
+        a.deferWrites = true
+        store.revokeAll()
+        XCTAssertTrue(store.inForce.isEmpty)
+        served = "B"
+        XCTAssertEqual(store.inForce.count, 1, "Revoke All under A leaves B's grants in force")
+        served = "A"
+        XCTAssertTrue(store.inForce.isEmpty, "A's revoke still holds when A serves again")
+        // A grant still pending for A is not in force for B.
+        let c = FakeGrantDatabase()
+        c.deferWrites = true
+        served = "A"
+        switchingStore({ served }, ["A": c, "B": FakeGrantDatabase()])
+        _ = await grant(run(["Scripts/a.sh"]))
+        XCTAssertEqual(store.inForce.count, 1)
+        served = "B"
+        XCTAssertTrue(store.inForce.isEmpty, "a grant pending for A does not count for B")
+        served = "A"
+        XCTAssertEqual(store.inForce.count, 1)
+    }
+
     func testLockedUsesNothing() async {
         _ = await grant(run(["Scripts/a.sh"]))
         database.locked = true

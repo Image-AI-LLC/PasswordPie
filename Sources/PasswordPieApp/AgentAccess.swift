@@ -69,7 +69,8 @@ final class AgentAccess: ObservableObject {
             write: { [weak session] edit, done in
                 guard let session else { return done(false) }
                 session.changeAgentGrants(edit, then: done)
-            }
+            },
+            database: { [weak session] in session?.agentDatabasePath }
         )
         self.grants = grants
         let broker = VaultBroker(vault: session, approver: approver, grants: grants, activity: relay) { false }
