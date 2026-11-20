@@ -13,6 +13,8 @@ public enum AgentErrorCode: String, Codable, Sendable, CaseIterable {
     case accessOff = "access-off"
     case tooManyRequests = "too-many-requests"
     case premiumRequired = "premium-required"
+    /// `save`: nobody saved or rejected it yet. An answer, not a refusal: the proposal waits.
+    case pending = "pending"
 
     public var exitCode: Int32 {
         switch self {
@@ -26,6 +28,7 @@ public enum AgentErrorCode: String, Codable, Sendable, CaseIterable {
         case .accessOff: return 71
         case .tooManyRequests: return 72
         case .premiumRequired: return 73
+        case .pending: return AgentConstants.pendingExitCode
         }
     }
 }
@@ -73,6 +76,7 @@ public enum AgentRefusal {
         case .timeout:
             return "Nobody answered the approval prompt in 2 minutes. Tell the owner a PasswordPie approval is waiting, then try again."
         case .locked:
+            if let detail { return "PasswordPie is locked. " + detail + " Tell the owner to unlock it, then try again." }
             return mcp
                 ? "PasswordPie is locked. Tell the owner to unlock it, then try again."
                 : "PasswordPie is locked. Tell the owner to unlock it, then try again (or use --wait SECONDS, up to 600)."
@@ -81,9 +85,13 @@ public enum AgentRefusal {
         case .accessOff:
             return "Agent access is off. Ask the owner to turn it on in PasswordPie > Preferences > Agents."
         case .tooManyRequests:
+            if let detail { return detail }
             return "Too many requests from this agent session were denied. Wait 10 minutes before asking again, and tell the owner why you need the secret."
         case .premiumRequired:
             return "This needs PasswordPie Premium. Ask the owner; Allow Once still works without it."
+        case .pending:
+            let status = mcp ? "passwordpie_status" : "`passwordpie status`"
+            return (detail ?? "The save waits for the owner.") + " PasswordPie keeps the value until the owner saves or rejects it in Preferences > Agents; you do not need a copy, and cannot use it before then. \(status) shows whether it was saved."
         }
     }
 }

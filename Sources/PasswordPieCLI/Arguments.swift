@@ -9,6 +9,7 @@ enum Command: Equatable {
     case list(query: String?, json: Bool, wait: Int?)
     case writeEnv(WriteEnvOptions)
     case checkImport(CheckImportOptions)
+    case save(SaveOptions)
     case status(json: Bool)
     /// `passwordpie mcp`: the MCP server on standard input and output.
     case mcp
@@ -68,6 +69,14 @@ struct CheckImportOptions: Equatable {
     var folder: String
     /// The folder in the database the import put everything inside.
     var inside: String?
+    var reason: String?
+    var wait: Int?
+    var json = false
+}
+
+/// `passwordpie save`: a value from standard input, proposed for the owner to save.
+struct SaveOptions: Equatable {
+    var ref: String
     var reason: String?
     var wait: Int?
     var json = false
@@ -143,6 +152,28 @@ enum Arguments {
             guard let folder, !folder.isEmpty else { throw UsageError("check-import needs the folder of .env files: passwordpie check-import FOLDER.") }
             options.folder = folder
             return .checkImport(options)
+        case "save":
+            var ref: String?
+            var options = SaveOptions(ref: "")
+            while let next = rest.first {
+                rest.removeFirst()
+                let (flag, inline) = split(next)
+                switch flag {
+                case "--reason": options.reason = try inline ?? take(&rest, after: flag)
+                case "--wait": options.wait = try waitValue(try inline ?? take(&rest, after: flag))
+                case "--json": options.json = true
+                default:
+                    // A second word would be a value typed on the command line, where any process can read it.
+                    guard !next.hasPrefix("-"), ref == nil else {
+                        throw UsageError(ref == nil ? "Unknown option \(next) for save." : "save takes the value on standard input, never as an argument: some-command | passwordpie save REF.")
+                    }
+                    ref = next
+                }
+            }
+            guard let ref else { throw UsageError("save needs a reference: some-command | passwordpie save pp://folder/item[/field].") }
+            guard (try? AgentReference(ref)) != nil else { throw UsageError("\(ref) is not a reference (pp://folder/item[/field]).") }
+            options.ref = ref
+            return .save(options)
         case "status":
             for next in rest where next != "--json" { throw UsageError("Unknown option \(next) for status.") }
             return .status(json: rest.contains("--json"))
@@ -279,6 +310,7 @@ enum Arguments {
       passwordpie read REF [--reason TEXT] [--wait SECONDS] [-n]
       passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
       passwordpie list [QUERY] [--json] [--wait SECONDS]
+      some-command | passwordpie save REF [--reason TEXT] [--wait SECONDS] [--json]
       passwordpie status [--json]
       passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
       passwordpie check-import FOLDER [--inside FOLDER] [--reason TEXT] [--wait SECONDS] [--json]
@@ -319,13 +351,21 @@ enum Arguments {
     PasswordPie reads the folder and compares inside the app. Run it before the files are deleted. --inside names the
     folder the import put everything in, when it did. missing also means not shared with agents.
 
+    save hands PasswordPie a value you made (a new API key): it reads it from standard input, never from an
+    argument, and drops one line break at its end (an attachment/<name> keeps its bytes). The owner sees where it
+    goes, never the value, and saves it with Touch ID: it prints `saved REF`, or `pending ID` (exit 79) when the
+    owner answers later in PasswordPie; `status` lists your proposals. A shared item at that place is changed (the old
+    value goes into its history); else a new item is made: with three parts or more the last part is the field
+    (pp://Agents/Stripe/API key), with two the item's password (pp://Agents/Cloudflare token).
+
     mcp is an MCP server on standard input and output, for agents that use MCP tools: passwordpie_status,
-    passwordpie_list, passwordpie_run, passwordpie_read and passwordpie_login. Add it to the agent's MCP
+    passwordpie_list, passwordpie_run, passwordpie_read, passwordpie_login and passwordpie_save. Add it to the agent's MCP
     configuration (Preferences > Agents shows the lines for Claude Code, Codex and Cursor).
 
     Exit codes: the command's own, or 64 usage, 65 not-available, 66 ambiguous, 67 denied, 68 timeout, 69 locked,
     70 app-unavailable, 71 access-off, 72 too-many-requests, 73 premium-required; for login, 74 no-matching-tab,
-    75 site-mismatch, 76 timed-out, 77 no-fields; for check-import, 78 when a name differs or is missing. See
+    75 site-mismatch, 76 timed-out, 77 no-fields; for check-import, 78 when a name differs or is missing; for save,
+    79 pending. See
     docs/AGENTS.md.
     """
 }

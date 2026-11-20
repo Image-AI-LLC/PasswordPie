@@ -13,23 +13,25 @@ Direct download only (`#if PP_DIRECT`, and the App Store app links none of it): 
 asks the owner for every use (Allow Once, Show to Agent) unless a standing permission covers it ("Allow for 7 days ▾",
 Premium). `passwordpie mcp` serves the same requests as MCP tools, and every run watches the command lines under it for
 the values it handed out. An agent can also log in on a website in the owner's browser (`passwordpie login`, or the
-`passwordpie_login` MCP tool: "Website login" below). What the owner sees is in "Agents use a secret without seeing it"
-and "Agents log in on a website" in [UX.md](UX.md).
+`passwordpie_login` MCP tool: "Website login" below), and hand PasswordPie a key it made (`passwordpie save`, or
+`passwordpie_save`: "Saving a secret" below), which the owner saves with Touch ID. What the owner sees is in "Agents use
+a secret without seeing it", "Agents log in on a website" and "Agents save a new secret" in [UX.md](UX.md).
 
-Free or Premium: using a secret with an approval each time is free, and so is a raw read. Standing permissions are
+Free or Premium: using a secret with an approval each time is free, and so are a raw read and a save. Standing permissions are
 Premium, checked by the app's own `appHasPremium()`; nothing in a request carries Premium state.
 
 ## Pieces
 
 | Piece | Where | What it does |
 |---|---|---|
-| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, `write-env`, `check-import`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
+| `passwordpie` | `PasswordPie.app/Contents/Helpers/passwordpie`, target `PasswordPieCLI`, signing identifier `com.passwordpie.cli`, hardened runtime | `run`, `read`, `list`, `status`, `login`, `save`, `write-env`, `check-import`, and `mcp` (`MCPServer.swift`, `CapturedRun.swift`). Holds no vault: asks the app, then hands values to the command |
 | A project's `.env.pp` | `PasswordPieCLI/RepositoryScan.swift`, `EnvFilePlan.swift`; what a run takes from flags and files in `RunInputs.swift` | `write-env` reads which variables a project reads and writes references for those; `run` takes more than one `--env-file` |
 | Website login | `PasswordPieAgent/AgentLogin.swift`, `VaultBroker+Login.swift`; the app's `BrowserBridge+AgentLogin.swift`; the bridge's rules in `PasswordPieCore/BrowserFill.swift` | The broker's `login`, and the browser side that turns an approval into a pending fill |
 | Argument watch | `PasswordPieAgent/ArgumentWatch.swift` | Looks for handed-out values on the command lines under a run |
 | MCP setup lines | `PasswordPieAgent/AgentMCPSetup.swift` | What the Agents pane shows for Claude Code, Codex and Cursor |
 | Messages, references, `.env.pp`, refusal lines, output masking | target `PasswordPieAgent` (`AgentProtocol`, `AgentReference`, `AgentEnvFile`, `AgentErrors`, `OutputMasker`) | Shared by the app and the tool |
 | Who is asking | `PasswordPieAgent/CallerIdentity.swift` | The kernel's view of the tool's process and its parents |
+| Saving a secret | `PasswordPieAgent/VaultBroker+Save.swift` (the broker's `save`), `AgentProposals.swift` (what is kept); the app's `AgentSaves.swift` (the store, and `AgentSaveApply`, which writes the item); `AgentProposalsRecord` in `PasswordPieCore/KDBXCustomDataMerge.swift` | A value from an agent, kept as a proposal until the owner saves it ("Saving a secret") |
 | Checking a folder | `PasswordPieAgent/VaultBroker+Check.swift`; the app's reader in `AgentFolderCheck.swift`, which is the importer's (`PasswordPieCore/DotenvFolder.swift`) | The broker's `check`: a folder of dotenv files compared with the vault inside the app |
 | `VaultBroker` | `PasswordPieAgent/VaultBroker.swift` | The one place a request that is not the owner clicking in PasswordPie is answered |
 | `agent.sock` server | `PasswordPieAgent/AgentServer.swift` | Peer check, caller walk per request, hands requests to the broker |
@@ -248,8 +250,8 @@ run it against a server in the test process. Release builds ignore it.
 ## Messages
 
 Each connection carries requests and answers, one answer per request, matched by `id`. A request carries references and
-a command line, never a value, and nothing about who the agent is or which project it is in. Nothing in a message is a
-credential: the tool holds no token.
+a command line, never a value (except `save`, whose value goes from the tool to the app, never back), and nothing about
+who the agent is or which project it is in. Nothing in a message is a credential: the tool holds no token.
 
     → {"type":"hello","id":1,"version":1,"client":"cli","cliVersion":"0.3.0"}
     ← {"type":"hello","id":1,"version":1,"locked":false,"access":true}
@@ -266,9 +268,10 @@ credential: the tool holds no token.
 | `use` | `secrets` (`name`, `ref`, `as`: `env`, `file`, `stdin`), `program`, `argv`, `reason`, `masking`, `wait`, `environment` (the names the tool sets besides the secrets; without it no standing permission is used) | `secrets` (`value` for UTF-8 text, `base64` otherwise, or `declined: true`), `by` (`once`, or a standing permission) |
 | `read` | one secret with `as: "shown"`, `reason`, `wait` | `secrets` with the one value |
 | `list` | `query`, `wait` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Never a value |
-| `status` | none | `status`: `locked`, `access`, `agent`, `project`, `grants` |
+| `status` | none | `status`: `locked`, `access`, `agent`, `project`, `grants`, `proposals` (this agent's saves on this Mac: `id`, `ref`, `state`, `created`) |
 | `login` | `secrets` with at most one `{ref, as: "fill"}`, `url`, `submit`, `browser` (`chrome`, `safari`), `reason`, `wait` | `login` (below), `by` (`once`). Never a value |
 | `check` | `folder` (an absolute path), `inside?`, `reason`, `wait` | `checks`: one `{file, name, status}` per variable and key file of the folder; `status` is `same`, `differs`, `missing`, `ambiguous` or `not-checked`. Never a value |
+| `save` | one secret `{ref, as: "save"}`, `value` (UTF-8 text) or `base64`, `reason`, `wait` | `save`: `outcome` (`saved`, `pending`), `proposal`, and when saved `ref` (`pp://id/…`) and `change` (`new item`, `new field`, `changed`). Never a value |
 | `argument` | one secret (`name`, `ref`, `as`) and `program`: the argument watch saw its value on that program's command line | nothing (one activity line). Never the command line, which holds the value |
 | `error` | | `code` (below), `ref` (the reference it is about, as the agent typed it), `refs` (for `ambiguous`) |
 
@@ -376,6 +379,7 @@ What it cannot know: a name only a library or a command reads (`OPENAI_API_KEY` 
     passwordpie write-env [FOLDER] [--identity NAME]... [--also NAME]... [--write [--force]] [--wait SECONDS]
     passwordpie check-import FOLDER [--inside FOLDER] [--reason TEXT] [--wait SECONDS] [--json]
     passwordpie login [REF] [--url URL] [--submit] [--browser chrome|safari] [--reason TEXT] [--wait SECONDS] [--json]
+    some-command | passwordpie save REF [--reason TEXT] [--wait SECONDS] [--json]
 
 **`run`** asks the app for the values, starts `COMMAND` as its child with them, and waits.
 
@@ -455,6 +459,81 @@ A variable the file sets to nothing is the same as a field with nothing in it.
 
 No MCP tool: a check is for the owner's migration, run once from a terminal or by an agent asked to.
 
+## Saving a secret
+
+    some-command | passwordpie save REF [--reason TEXT] [--wait SECONDS] [--json]
+
+An agent that made a key hands it to PasswordPie instead of pasting it into the conversation or leaving it in a file.
+What the owner sees is "Agents save a new secret" in [UX.md](UX.md).
+
+- **The value comes from standard input**, never an argument. At a terminal the tool refuses (`usage`): it is for a
+  pipe. For a field, the input must be UTF-8 text and one line break at its end is dropped (`echo` adds one); for
+  `attachment/<name>` the bytes are kept as they are. Empty input, or more than 64 KiB, is `usage`. Nothing the tool
+  prints holds the value.
+- **A save is a proposal.** The app keeps it in the agents database (below), then shows the approval window: the
+  folder, the title, the field and whether it is a new item, a new field or a change, never the value. **Save** (Touch
+  ID, or the login password) writes it; **Reject** answers `denied` and counts toward the rate limit; **Decide Later**,
+  or no answer in 2 minutes, answers `pending` with the proposal's id. One window at a time per agent session, as for
+  every request.
+- **On stdout**: `saved pp://id/<UUID>[/<field>]` (the item's reference), or `pending <id>` and exit 79. `--json`
+  prints the answer (`outcome`, `proposal`, `ref`, `change`) instead. A line on standard error says the same in words.
+
+**Where it goes** (`VaultBroker+Save.swift`). The reference is resolved against the agents database's shared items, by
+place: a shared item whose folder and title one reading of the reference names (whatever fields it has) is changed;
+two are `ambiguous`; `pp://id/<UUID>` must name a shared item (else `not-available`, as for any reference). With none, a
+new item is made at the reading where the last part is the field when the reference has three parts or more, or two
+and the last is `password`, `username`, `url` or `notes`; else the last part is the title and the value its password.
+`otp`, `title` and any custom name that is a standard field's (`Password`, `UserName`…), a two-step secret's
+(`TOTP Seed`, `TimeOtp-…`) or PasswordPie's own (`PasswordPie.…`) are `usage`: a save never renames an item or sets
+its code.
+
+**Applying it** (the app's `AgentSaveApply`, when the owner saves, in the window or the list):
+
+| The proposal | What is written, in one write of the agents database |
+|---|---|
+| A new item | An item at the folder and title (folders made as needed) with the one field or attached file, protected for a password or a custom field; shared with agents on its own unless its folder is shared. The proposal is marked saved |
+| A change | The field set, or the attached file of that name replaced. The version before goes into the item's history (KeePass's own `History`, trimmed as KeePassXC trims it); a changed password is also listed in the item's previous passwords. The item stays where it is, keeps its title and every other field |
+| A new item, saved from the list after a shared item appeared at its place (an earlier proposal for the same place saved meanwhile) | A change of that item |
+| An item that is no longer there or no longer shared, or a place two shared items now hold | Nothing; the list says why and offers Reject |
+
+**Pending proposals** (`AgentProposals.swift`, custom data key `PasswordPie.AgentProposals`, JSON `version` and
+`proposals`): each has an id (8 hex digits), the time, the Mac (`AgentMacIdentity`), the agent (its grant identity,
+name and signature), the project, the reason, the place (item UUID, or folder and title), the field, what kind of change
+it was when proposed, the state (`pending`, `saved`, `rejected`) and, while pending only, the value (base64). Kept in the
+database because it must outlive a restart on a Mac nobody sits at, and because the owner may answer it on the other
+Mac: the value stays under the master key, and is not an item, so nothing lists, searches, fills or hands it out. At
+most 20 pending at once (`too-many-requests` after that). A proposal older than 30 days counts as gone and is dropped
+on the next write; an answered one keeps its record, without the value, until then.
+
+Two copies of the database merge proposals record by record (`AgentProposalsRecord` in the core library, in every build):
+every id either copy has is kept; an answered one wins over a pending one (saved over rejected, should two Macs answer it
+differently), so a copy that still holds it pending cannot bring the value back.
+
+**`status`** lists this agent's proposals made on this Mac in the last 30 days (`proposals` in `--json`: `id`, `ref`,
+`state`, `created`), so an agent that heard `pending` can see later whether the owner saved it. The value is never in it,
+and the agent cannot use one before it is saved: a pending proposal is not an item.
+
+**No standing permission covers a save**, and the window offers none: a save that could replace the Cloudflare token
+with the attacker's would send the next deploy to the attacker's account. No grant is consulted and none is made.
+
+### `passwordpie_save`
+
+The MCP tool runs a command and saves what it prints, so the value never passes through the conversation: `ref`,
+`command` (an argument array), `cwd`, `reason?`, `timeoutSeconds?` (default 120, at most 3600).
+
+1. It asks the app first, as a `save` for `ref` with `validateOnly` and no value: when PasswordPie is locked, agent
+   access is off, or the app would refuse the save (a reference that names nothing shared or two items, a field a save
+   cannot set, too many denials, 20 saves already waiting) it answers that and **runs nothing**, so a key is not made
+   only to be lost. The question keeps nothing, opens no window and does not say whether the item or field exists.
+2. It runs the command as `passwordpie_run` does (no shell, in `cwd`, its own process group, empty standard input),
+   keeping its standard output whole, up to 64 KiB, as the value.
+3. A command that fails, prints nothing, or prints more is not saved (`usage`, with its exit code).
+4. Otherwise the save goes to the app as from the command-line tool.
+
+The result: `outcome` (`saved` or `pending`), `proposal`, `ref` and `change` when saved, `exitCode`, and `stderr` with
+every occurrence of the value replaced by `[concealed by PasswordPie]` (cut to 64 KiB after that). Never the standard
+output. A rejection is the `denied` error.
+
 ## Argument watch
 
 While a run's command lasts, the tool (or the MCP server) looks four times a second at the command lines of the command
@@ -488,6 +567,7 @@ process is one agent session, and the agent is its parent in the process tree.
 | `passwordpie_list` | `query?`, `cwd` | `items`: `ref`, `idRef`, `title`, `folder`, `fields`, `attachments`, `covered`. Shared items only, never a value |
 | `passwordpie_run` | `command` (an argument array), `cwd`, `env?` `{NAME: ref}`, `files?` `{NAME: ref}`, `stdin?` ref, `envFile?` (relative to `cwd`), `envFiles?` (more of them, read after it: ".env.pp", "More than one file"), `reason?`, `timeoutSeconds?` (default 600, at most 3600) | `exitCode`, `stdout`, `stderr`, `concealed` (how many values were replaced), `truncated`, and when there are any `timedOut`, `warnings` |
 | `passwordpie_read` | `ref`, `reason?` | `value` (UTF-8 text) or `base64`. Asks every time, "Show to Agent" |
+| `passwordpie_save` | `ref`, `command` (an argument array), `cwd`, `reason?`, `timeoutSeconds?` (default 120, at most 3600) | `outcome` (`saved`, `pending`), `proposal`, `ref` and `change` when saved, `exitCode`, `stderr` (masked). Never the value: the command's standard output is the value and is not returned ("`passwordpie_save`") |
 | `passwordpie_login` | `ref?`, `url?` (one of the two), `submit?`, `browser?` (`chrome`, `safari`), `reason?` | The `login` answer ("Website login"): `outcome`, `item` (title, username, websites; only once the owner allowed it), `site`, `browser`, `code`, `detail`, and `message`, the tool's line. An outcome other than `filled` or `submitted` comes with `isError`. Never a value |
 
 - **Errors** are tool results with `isError`, whose text starts with the code's name, as the exit codes are named:
@@ -508,7 +588,8 @@ process is one agent session, and the agent is its parent in the process tree.
   the call (`notifications/cancelled`) or goes away (end of input, SIGTERM), the group gets SIGTERM, then SIGKILL two
   seconds later; files are removed. A cancelled call is not answered. A request still waiting on the app has its
   connection closed, so its prompt is withdrawn.
-- **No tool** creates, widens or extends a standing permission, shares an item, or unlocks. Masking cannot be turned off
+- **No tool** creates, widens or extends a standing permission, shares an item, deletes, moves or renames one, or
+  unlocks. `passwordpie_save` proposes; the owner saves. Masking cannot be turned off
   (`passwordpie_read` is the raw way, and asks every time).
 
 Decision (the PRD's): `run` is a tool, with an argument array and an explicit `cwd`, so agents without a shell tool can
@@ -529,13 +610,14 @@ is the party asking.
 | 69 | `locked` | Still locked after `--wait` |
 | 70 | `app-unavailable` | PasswordPie is not installed, did not start, or did not answer |
 | 71 | `access-off` | Agent access is off in Preferences |
-| 72 | `too-many-requests` | Too many denied prompts from this agent session |
+| 72 | `too-many-requests` | Too many denied prompts from this agent session, or 20 saves already waiting for the owner |
 | 73 | `premium-required` | Reserved for Premium-only parts |
 | 74 | `no-matching-tab` | `login`: the tab in front is not on the site, or no extension speaks for the browser |
 | 75 | `site-mismatch` | `login`: the site asked for is not one of the item's websites; nobody was asked |
 | 76 | `timed-out` | `login`: no tab took the fill within 30 seconds |
 | 77 | `no-fields` | `login`: the tab took the fill, but no password field appeared within 30 seconds |
 | 78 | `check-failed` | `check-import`: a name differs, is missing, is ambiguous or was not checked. The lines on standard output say which |
+| 79 | `pending` | `save`: nobody saved or rejected it yet. It waits in Preferences > Agents; `passwordpie status` shows it by its id |
 
 Each refusal prints one line (control characters from what the agent typed are percent-encoded) on standard error that
 says what to do, for the agent to relay, and ends with "Do not ask
@@ -622,14 +704,17 @@ fill is made is not going to be the right one by itself, and PasswordPie never s
 
 ## Activity
 
-Every `run`, `read`, `list` and `login` request is one JSON line in `~/Library/Application Support/PasswordPie/agent-activity.jsonl`,
+Every `run`, `read`, `list`, `login`, `check` and `save` request is one JSON line in `~/Library/Application Support/PasswordPie/agent-activity.jsonl`,
 mode 0600, whether it was allowed or not: time, kind, outcome (allowed once, allowed and granted, allowed by a standing
 permission and which, shown to the agent, denied, timed out, locked, not available, ambiguous, too many requests, not
-understood, from the argument watch, value seen on a command line, and for a login its outcome), `via` (`MCP` through the
+understood, from the argument watch, value seen on a command line, for a login its outcome, and for a save saved,
+waiting for the owner, rejected or saved from the list), `via` (`MCP` through the
 MCP server), agent and signature,
 the agent's pid, project, command, items and fields (or the reference as typed when it found nothing; a login's `--url` only as its origin, never its path or query), deliveries, the
 agent's reason, and the walked chain (pid, path and signature of each ancestor). Never a value. Lines older than 90 days
-are dropped. It is not tamper-proof: same-user code can edit or delete it.
+are dropped. It is not tamper-proof: same-user code can edit or delete it. A save's line names the folder, item and
+field, with "save: new item", "save: new field" or "save: change" as its delivery; saving or rejecting one from the list
+in Preferences > Agents is a line of its own, with the proposing agent's name.
 
 ## The agents database and a Mac nobody sits at
 
@@ -723,6 +808,11 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |
 | A database kept unlocked on a Mac nobody sits at | Only the agents database, only while it is the only thing open; sleep, the screen lock, a user switch, logging out and Lock still lock it; sharing and standing permissions still decide what an agent gets | Anyone at that Mac's screen, or with its login, can use the open database; same-user code can turn the preference on |
 | A reference reaches the personal database | References, sharing and grants come from the agents database only; another open database's sharing never counts | none known |
+| Prompt injection replaces a key through `save` (the next deploy goes to the attacker) | Every save asks with Touch ID; no standing permission covers one; the window says new item or change and names the field; the value is not used until saved | The owner saves a value they did not expect |
+| An agent learns a value through `save` | A save's answer never says whether the value was the same; only shared items are found, and an unshared one answers as one that does not exist | none known |
+| An agent uses `save` to delete, move or rename | It writes one field or attached file; the title, the two-step fields and PasswordPie's own fields cannot be named; no message deletes or moves | Overwriting a field's value, which the history keeps |
+| A save's value leaks | It travels only from the tool to the app; it is in no answer, log, activity line or window; while pending it is inside the encrypted database; saving or rejecting drops it from the proposal | The command that printed it (its own logs, a shell history if typed) |
+| An agent makes `passwordpie_save` run any command | The command runs before the owner is asked, and gets no secret; only the agent host's permission for the tool gates it (the tool is marked destructive, as `passwordpie_run` is) | A host set to always allow the tool lets the agent run any command; PasswordPie's window comes after the command and does not name it |
 
 What cannot be prevented: a command that receives a secret can do anything with it; code running as the same user can,
 with effort, read what a command was given; a raw value given to an agent stays in its transcript, and with a hosted
@@ -744,6 +834,7 @@ Development identity; it replaces the copy in `~/Applications`). Ten minutes, in
 | 4. Free or Premium | Run a project script twice: `passwordpie run --env T=pp://Agents/Token -- Scripts/deploy.sh` | Without Premium the third button reads **Allow for 7 days · Premium** and opens the Premium window; Allow Once still works. With Premium, **Allow for 7 days** and Touch ID once; the second run shows no window, and the menu-bar pie shows its dot |
 | 5. Refusals | An item that is not shared; Deny; ⌘L, then a request; `passwordpie login pp://… --url https://another.site/` | One line each (`not-available`, `denied`, `locked` after the wait, `site-mismatch`), ending "Do not ask the owner to paste the value into the conversation." |
 | 6. Activity and revoke | Preferences > Agents | Every request above is listed, with the processes on hover; **Revoke All**, then step 4's command asks again |
+| 7. Save | In Claude Code: "make a random token with openssl and save it to PasswordPie as pp://Agents/Demo/token" | The window says **wants to save a secret**, "Demo (Agents) · field token · a new item", no value; **Save**, Touch ID; the item is there, shared. Again with **Decide Later**: it waits in Preferences > Agents > Saves waiting for you |
 
 - **The extension for step 3.** A login that sends the form and reports back needs extension 0.7.0. Until that version
   is in the Chrome Web Store, build it (`make extension`) and load `extension/.output/chrome-mv3` under
@@ -785,6 +876,7 @@ Activity and browser fill all run.
    | `deny` | Deny; so does any word it does not know |
    | `lasting`, `lasting:7d` | The lasting button as it stands, or a length from its menu (`session`, `8h`, `7d`, `30d`). Without Premium this opens the Premium window, so `lasting,allow` is a free user's path |
    | `hold` | Nothing: the window stays for a screenshot |
+   | `later` | Decide Later, in a save's window: the proposal waits in the list |
 
    `@/path/to/file` reads the steps from that file each time a window opens, so one run answers each request
    differently. Three denials block the agent session for 10 minutes, as for anyone.
@@ -848,6 +940,22 @@ result counted once from the connection and site that took it, the code with and
 `AgentLoginBridgeTests` in PasswordPieAppTests (the app's session and bridge with a scripted extension: submitted, another
 tab, the 30-second expiry, locking, hanging up, Premium), and `extension/tests/agent-login.test.ts` (pressing the form's
 own button, the username-only step, `login-result`).
+
+Saving: `SaveTests` (the broker with a scripted window and store: a new item and a change shown with folder, title,
+field and new or change and never the value; the answer the same whatever the item held; no grant consulted with one
+that would cover anything, and none offered; nobody answering leaves it pending and not usable by `run` or `read`, a
+pending change leaves the old value in use; Reject is `denied` and counts toward the rate limit; locked; which item a
+reference names; fields a save cannot write; empty, too large and not text; `status` listing this agent's proposals on
+this Mac only; saving and rejecting from the list; at most 20 waiting; no value in any answer, window or activity
+line), `CommandLineToolTests/testSave…` (the real tool: standard input only, never on a command line while it waits
+(`ps -axww`), `saved` and `pending` with exit 79, `status`, `--json`, an attached file's bytes), `MCPServerTests` for
+`passwordpie_save` (the command's output stored and not returned, its standard error concealed, nothing run while
+locked, a failing command saves nothing, pending in `passwordpie_status`), `AgentSavesTests` in PasswordPieAppTests
+(the real session and a file on disk: a new item made and shared, a change with the old value in the history and in the
+previous passwords, an attached file, a waiting proposal that outlives a restart and is saved from the list with Touch ID,
+an item unshared meanwhile not written, two proposals for one new place, a save into KeePassXC's own file keeping every
+other item, and the window's words), and `AgentRecordsMergeTests` (proposals of two Macs merged, an answered one not
+pending again).
 
 The agents database and the Mac nobody sits at: `AgentsDatabaseTests` in PasswordPieAppTests, with two real database
 files: a second database unlocked beside the first (a wrong password opens nothing, nothing is locked to do it, the list

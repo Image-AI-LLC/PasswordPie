@@ -201,6 +201,26 @@ extension VaultSession: AgentVault {
         }, then: done)
     }
 
+    // MARK: Saves agents proposed
+
+    /// The agents database's custom data, where the proposals are kept, or nil while it is not open.
+    var agentCustomData: [String: String]? {
+        guard !agentVaultLocked, let file = agentFile else { return nil }
+        return file.vault.customData
+    }
+
+    /// What saving `proposal` would do now in the agents database, for the Agents pane.
+    func agentSavePreview(_ proposal: AgentProposal) -> Result<AgentSaveChange, AgentSaveApply.Problem>? {
+        guard !agentVaultLocked, let file = agentFile else { return nil }
+        return AgentSaveApply.preview(proposal, in: file.vault)
+    }
+
+    /// `proposal` with the place its item has now, for the Agents pane: where Save would write.
+    func agentSavePlaced(_ proposal: AgentProposal) -> AgentProposal {
+        guard !agentVaultLocked, let file = agentFile else { return proposal }
+        return AgentSaveApply.placed(proposal, in: file.vault)
+    }
+
     // MARK: Standing permissions
 
     /// The standing permissions kept in the agents database, or nil while it is not open. See "Standing

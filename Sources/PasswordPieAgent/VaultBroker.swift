@@ -42,6 +42,7 @@ public struct AgentResolvedSecret: Equatable, Sendable {
         case .shown: return "shown"
         case .fill: return "fill"
         case .compare: return "compare"
+        case .save: return "save"
         }
     }
 }
@@ -236,6 +237,10 @@ public final class VaultBroker {
     public var logins: AgentBrowserLogins?
     /// Reads a folder of dotenv files for `check`. Without it a check answers `usage`.
     public var folders: AgentFolderReader?
+    /// Keeps `save` proposals and writes the ones the owner saves. Without it a save answers `usage`.
+    public var saves: AgentSaveStore?
+    /// This Mac, as a proposal records where it was made (`AgentMacIdentity`).
+    public var mac: String = AgentMacIdentity.current
     /// Agent access is on (Preferences > Agents).
     public var isEnabled: () -> Bool
     public var clock: () -> Date = Date.init
@@ -285,7 +290,8 @@ public final class VaultBroker {
                 access: true,
                 agent: "\(caller.agentName) (\(caller.signatureText))",
                 project: caller.project,
-                grants: vault.agentVaultLocked ? [] : grants.grants(for: caller)
+                grants: vault.agentVaultLocked ? [] : grants.grants(for: caller),
+                proposals: vault.agentVaultLocked || saves == nil ? nil : proposalLines(for: caller)
             )
             return answer
         case .list:
@@ -296,6 +302,8 @@ public final class VaultBroker {
             return await login(request, caller: caller)
         case .check:
             return await check(request, caller: caller)
+        case .save:
+            return await save(request, caller: caller)
         case .argument:
             return argument(request, caller: caller)
         }
@@ -319,6 +327,7 @@ public final class VaultBroker {
             case .shown: return "shown"
             case .fill: return "fill"
             case .compare: return "compare"
+            case .save: return "save"
             }
         })
         return AgentResponse(type: request.type.rawValue, id: request.id)
@@ -351,7 +360,7 @@ public final class VaultBroker {
             references.append(reference)
         }
         guard !asked.isEmpty, request.type != .read || asked.count == 1,
-              !asked.contains(where: { $0.delivery == .fill || $0.delivery == .compare }) else {
+              asked.allSatisfy({ [.env, .file, .stdin, .shown].contains($0.delivery) }) else {
             log(request, caller: caller, outcome: .usage, items: [], delivery: [])
             return .error(.usage, id: request.id)
         }

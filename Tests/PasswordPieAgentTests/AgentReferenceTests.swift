@@ -211,7 +211,8 @@ final class AgentRefusalTests: XCTestCase {
     }
 
     func testExitCodesFollowTheTable() {
-        XCTAssertEqual(AgentErrorCode.allCases.map(\.exitCode), Array(64...73))
+        XCTAssertEqual(AgentErrorCode.allCases.map(\.exitCode), Array(64...73) + [AgentConstants.pendingExitCode])
+        XCTAssertEqual(AgentConstants.pendingExitCode, 79, "74–78 are login's and check-import's own codes")
     }
 
     func testNotAvailableDoesNotSayWhichCase() {

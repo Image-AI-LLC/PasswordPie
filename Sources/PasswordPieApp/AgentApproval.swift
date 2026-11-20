@@ -179,17 +179,23 @@ final class AgentApprovalModel: ObservableObject {
     /// `passwordpie check-import`: values are compared inside PasswordPie, and nothing is handed out.
     var isCheck: Bool { prompt.kind == .check }
 
+    /// `passwordpie save`: the agent hands a value in. Save writes it, Reject drops it, Decide Later leaves it in the list.
+    var isSave: Bool { prompt.kind == .save }
+
     var answered: Bool { finish == nil }
 
     /// "Claude Code wants to use 2 secrets" / "… wants to see 1 secret".
     var title: String {
         if isLogin { return "\(prompt.agent) wants to log in to \(prompt.site ?? "a website")" }
+        if isSave { return "\(prompt.agent) wants to save a secret" }
         let count = prompt.rows.count == 1 ? "1 secret" : "\(prompt.rows.count) secrets"
         if isCheck { return "\(prompt.agent) wants to compare \(count) with files" }
         return "\(prompt.agent) wants to \(prompt.raw ? "see" : "use") \(count)"
     }
 
-    var allowTitle: String { prompt.raw ? "Show to Agent" : "Allow Once" }
+    var allowTitle: String { isSave ? "Save" : prompt.raw ? "Show to Agent" : "Allow Once" }
+
+    var denyTitle: String { isSave ? "Reject" : "Deny" }
 
     /// Shown beside Allow Once, greyed when the request cannot have one (`lastingUnavailable`).
     var offersLasting: Bool {
@@ -239,14 +245,19 @@ final class AgentApprovalModel: ObservableObject {
         case .shown: return "shown to the agent"
         case .fill: return prompt.submit ? "filled in, then the form is sent" : "filled in"
         case .compare: return "compared with the file"
+        case .save: return "saved into PasswordPie"
         }
     }
 
     /// What a check tells the agent, said in the window: an answer about each value, never the value.
+    static let saveNote = "The value is not shown. It came from the agent: save it only if you expect this secret."
+
     static let checkNote = "PasswordPie compares each one with the file and tells the agent only “same”, “differs” or “missing”. No value leaves PasswordPie, but the agent learns whether the file holds the same value."
 
     /// "password · environment variable T"; for a login "octocat · username and password, filled in, then the form is sent".
     func rowLine(_ row: AgentApprovalRow) -> String {
+        // A save's row is the field; the line under it says new item or a change.
+        if isSave { return row.field }
         guard isLogin else { return "\(row.field) · \(deliveryText(row))" }
         let who = row.username.flatMap { $0.isEmpty ? nil : $0 + " · " } ?? ""
         return "\(who)\(row.field), \(deliveryText(row))"
@@ -274,6 +285,7 @@ final class AgentApprovalModel: ObservableObject {
         let counted = rows.count == 1 ? "1 secret" : "\(rows.count) secrets"
         let reason = isLogin ? "let \(prompt.agent) log in to \(prompt.site ?? "a website")"
             : isCheck ? "let \(prompt.agent) compare \(counted) with files"
+            : isSave ? "save a secret from \(prompt.agent)"
             : prompt.raw ? "show a secret to \(prompt.agent)" : "let \(prompt.agent) use \(counted)"
         confirm(reason) { .allow(rows) }
     }
@@ -313,6 +325,12 @@ final class AgentApprovalModel: ObservableObject {
         }
     }
 
+    /// Decide Later, in a save's window: nothing is written, and the proposal waits in Preferences > Agents.
+    func later() {
+        guard isSave else { return }
+        dismiss()
+    }
+
     /// The broker withdrew it, or the vault locked.
     func dismiss() {
         if confirming { confirmation.cancel() }
@@ -332,6 +350,8 @@ final class AgentApprovalModel: ObservableObject {
             "title": title,
             "rows": prompt.rows.map { "\($0.title) (\($0.folder)): \(rowLine($0))" },
             "allow": allowTitle,
+            "deny": denyTitle,
+            "note": isSave ? AgentApprovalModel.saveNote : NSNull(),
             "lasting": offersLasting ? lastingTitle : NSNull(),
             "lastingMenu": offersLasting ? lengths.map(lengthTitle) : [],
             "lastingUnavailable": lastingUnavailable ?? NSNull(),
@@ -468,6 +488,12 @@ struct AgentApprovalView: View {
             .scrollIndicators(.visible)
             .frame(maxHeight: 320)
             .fixedSize(horizontal: false, vertical: true)
+            if model.isSave {
+                Text(AgentApprovalModel.saveNote)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.secondaryText(dark: dark))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if model.isCheck {
                 Text(AgentApprovalModel.checkNote)
                     .font(.system(size: 12))
@@ -514,9 +540,13 @@ struct AgentApprovalView: View {
                 Text("Not confirmed. Nothing was allowed.").font(.system(size: 11)).foregroundStyle(.secondary)
             }
             HStack {
-                Button("Deny") { model.deny() }
+                Button(model.denyTitle) { model.deny() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
+                if model.isSave {
+                    Button("Decide Later") { model.later() }
+                        .help("Keep it in Preferences > Agents > Saves waiting for you, and answer it there")
+                }
                 Button {
                     model.allow()
                 } label: {
