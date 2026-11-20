@@ -314,11 +314,6 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         XCTAssertEqual(night.by, "7 days, this project")
         XCTAssertEqual(m2Shown(), 1, "at night: no window")
 
-        // Another secret, not covered: the window opens on the M2.
-        let other = [AgentSecretRequest(name: "RESEND", ref: "pp://Agents/Resend", delivery: .env)]
-        _ = await m2Access.broker.handle(use(other, in: nightly), from: caller(in: nightly))
-        XCTAssertEqual(m2Shown(), 2, "a use no permission covers asks")
-
         // The MacBook Pro gets the M2's file: the grant is there, but it is the M2's, so the MacBook Pro asks.
         await m2.savesSettled()
         try carry(from: m2File, to: macbookFile, then: macbook)
@@ -327,13 +322,23 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         XCTAssertEqual(macbookShown(), 1, "a grant counts only on the Mac it was given on")
         await macbook.savesSettled()
 
-        // Both files now hold a grant each; merged back on the M2, the M2's still lets the job through.
+        // Meanwhile, on the M2, another secret no permission covers: its window opens there, and the owner gives it one
+        // too. Both Macs have now changed the grants since the file last travelled.
+        let other = [AgentSecretRequest(name: "RESEND", ref: "pp://Agents/Resend", delivery: .env)]
+        _ = await m2Access.broker.handle(use(other, in: nightly), from: caller(in: nightly))
+        XCTAssertEqual(m2Shown(), 2, "a use no permission covers asks")
+        await m2.savesSettled()
+
+        // The MacBook Pro's file reaches the M2, which merges grant by grant: every grant of both Macs is kept, and the
+        // M2's still let its jobs through.
         try carry(from: macbookFile, to: m2File, then: m2)
         let grants = AgentGrants(customData: try onDisk(m2File).customData).all
         XCTAssertEqual(grants.filter { $0.mac == "m2" }.count, 2, "the M2's two grants are kept")
         XCTAssertEqual(grants.filter { $0.mac == "macbook" }.count, 1, "and the MacBook Pro's")
         let after = await m2Access.broker.handle(use(token, in: nightly), from: caller(in: nightly))
         XCTAssertEqual(after.by, "7 days, this project")
+        let resend = await m2Access.broker.handle(use(other, in: nightly), from: caller(in: nightly))
+        XCTAssertEqual(resend.by, "7 days, this project")
         XCTAssertEqual(m2Shown(), 2)
         XCTAssertTrue(m2.keepsAgentDatabaseUnlocked, "reading the MacBook Pro's file did not lock it")
         try assertPlantedValueOnlyEncrypted()
@@ -374,20 +379,29 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         await macbook.savesSettled()
         XCTAssertEqual(live("OpenAI", in: macbook)?.value(for: "API key"), planted)
 
+        // Meanwhile the M2 went on working: another key waits there, so the M2 merges what comes back.
+        var second = save
+        second.secrets = [AgentSecretRequest(name: nil, ref: "pp://Agents/Mailer/token", delivery: .save)]
+        second.setSaved(Data("second-key-fixture".utf8))
+        let later = await m2Access.broker.handle(second, from: caller(in: shop))
+        let secondID = try XCTUnwrap(later.save?.proposal)
+        await m2.savesSettled()
+
         try carry(from: macbookFile, to: m2File, then: m2)
         XCTAssertEqual(live("OpenAI", in: m2)?.value(for: "API key"), planted, "after approval it is on both Macs")
         let file = try onDisk(m2File)
-        XCTAssertEqual(AgentProposals(customData: file.customData).all.map(\.state), [.saved])
+        let states = Dictionary(uniqueKeysWithValues: AgentProposals(customData: file.customData).all.map { ($0.id, $0.state) })
+        XCTAssertEqual(states, [id: .saved, secondID: .pending], "saved on the MacBook Pro stays saved; the M2's new one waits")
         XCTAssertFalse(file.customData.values.joined().contains(planted), "the saved proposal holds no value")
         var status = AgentRequest(type: .status, id: 2)
         status.wait = 0
         let said = await m2Access.broker.handle(status, from: caller(in: shop))
-        XCTAssertEqual(said.status?.proposals?.map(\.state), [.saved], "the agent on the M2 sees it was saved")
+        XCTAssertEqual(said.status?.proposals?.first { $0.id == id }?.state, .saved, "the agent on the M2 sees it was saved")
         let now = await m2Access.broker.handle(use([AgentSecretRequest(name: "K", ref: "pp://Agents/OpenAI/API key", delivery: .env)], in: shop),
                                                from: caller(in: shop))
         XCTAssertEqual(now.secrets?.first?.value, planted)
 
-        let spoken = [answer, early, said].map { String(decoding: AgentCoding.encode($0), as: UTF8.self) }.joined()
+        let spoken = [answer, early, later, said].map { String(decoding: AgentCoding.encode($0), as: UTF8.self) }.joined()
         XCTAssertFalse(spoken.contains(planted), "the agent's transcript never holds the value")
         try assertPlantedValueOnlyEncrypted()
     }
