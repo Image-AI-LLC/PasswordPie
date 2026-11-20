@@ -39,6 +39,11 @@ public struct AutoLockPolicy {
     private let systemIdle: () -> TimeInterval
     private var lastActivity: Date
     private var wentToSleepAt: Date?
+    /// "Keep unlocked while this Mac is awake" is in force (docs/UX.md, "Two databases at once, and a Mac nobody sits
+    /// at"): idleness never locks, nor do the display sleeping or the screen saver starting, which are idleness too.
+    /// Sleep, the screen lock, a user switch and powering off then lock whatever the switches say. Read at each event,
+    /// since it depends on what is open.
+    public var keepUnlocked: () -> Bool = { false }
 
     public init(
         settings: AutoLockSettings = AutoLockSettings(),
@@ -58,26 +63,33 @@ public struct AutoLockPolicy {
 
     /// Run on the 30-second timer.
     public func shouldLockForIdle() -> Bool {
-        guard settings.lockOnIdle else { return false }
+        guard settings.lockOnIdle, !keepUnlocked() else { return false }
         let limit = settings.timeout
         return systemIdle() > limit && clock().timeIntervalSince(lastActivity) > limit
     }
 
+    /// The Mac itself goes to sleep.
     public mutating func willSleep() -> Bool {
         wentToSleepAt = clock()
-        return settings.lockOnSleep
+        return keepUnlocked() || settings.lockOnSleep
+    }
+
+    /// Only the display sleeps. It counts as sleep, unless "keep unlocked" is in force: the Mac is awake.
+    public mutating func displayDidSleep() -> Bool {
+        guard !keepUnlocked() else { return false }
+        return willSleep()
     }
 
     public mutating func didWake() -> Bool {
         defer { wentToSleepAt = nil }
-        guard settings.lockOnIdle, let slept = wentToSleepAt else { return false }
+        guard settings.lockOnIdle, !keepUnlocked(), let slept = wentToSleepAt else { return false }
         return clock().timeIntervalSince(slept) >= settings.timeout
     }
 
-    public func screenSaverDidStart() -> Bool { settings.lockOnScreenSaver }
+    public func screenSaverDidStart() -> Bool { !keepUnlocked() && settings.lockOnScreenSaver }
     /// The power button, ⌃⌘Q or Lock Screen. The screen may stay lit, so no sleep notice comes; the screen saver switch covers it.
-    public func screenDidLock() -> Bool { settings.lockOnScreenSaver }
-    public func sessionDidResignActive() -> Bool { settings.lockOnUserSwitch }
+    public func screenDidLock() -> Bool { keepUnlocked() || settings.lockOnScreenSaver }
+    public func sessionDidResignActive() -> Bool { keepUnlocked() || settings.lockOnUserSwitch }
     public func willPowerOff() -> Bool { true }
 }
 

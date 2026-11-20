@@ -9,10 +9,10 @@ import PasswordPieBridge
 /// What the broker needs from the open database. The app's session implements it.
 @MainActor
 public protocol AgentVault: AnyObject {
-    /// True while no database is unlocked. Nothing is handed out then.
+    /// True while the agents database is not open. Nothing is handed out then.
     var agentVaultLocked: Bool { get }
-    /// The items shared with agents in the database PasswordPie unlocked, without the Recycle Bin. One database: a
-    /// reference does not name one, and the same item UUID can be in two copies of a file.
+    /// The items shared with agents in the agents database, without the Recycle Bin. One database: a reference does not
+    /// name one, and the same item UUID can be in two copies of a file.
     func agentSharedItems() -> [AgentItem]
     /// The bytes of one field or attachment of a shared item. Nil when it has none.
     func agentSecret(_ item: AgentItem, field: AgentField) -> Data?

@@ -14,6 +14,7 @@ struct AgentsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
             group("Agent access") { accessSection }
+            group("Agents database") { databaseSection }
             group("Command-line tool") { toolSection }
             group("MCP server") { mcpSection }
             group("Shared with agents") { sharingSection }
@@ -45,6 +46,62 @@ struct AgentsPane: View {
                 Text(problem).font(note).foregroundStyle(.red)
             }
         }
+    }
+
+    // MARK: Agents database
+
+    /// Which database serves agents, whether it is open, and "Keep unlocked while this Mac is awake". See "Two databases
+    /// at once, and a Mac nobody sits at" in docs/UX.md.
+    private var databaseSection: some View {
+        let path = session.agentDatabasePath
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                if session.databasePaths.count > 1 {
+                    PaneMenu(title: "Agents database", value: name) {
+                        Picker("Agents database", selection: Binding(get: { session.agentDatabasePath }, set: { session.chooseAgentDatabase($0) })) {
+                            ForEach(Array(session.databasePaths.enumerated()), id: \.element) { index, option in
+                                Text(session.databaseMenuTitles[index] + (option == session.databaseURL.path ? " (current)" : "")).tag(option)
+                            }
+                        }
+                        .labelsHidden().pickerStyle(.inline)
+                    }
+                    .accessibilityIdentifier("agents.database")
+                } else {
+                    Text(name).fontWeight(.medium).lineLimit(1).truncationMode(.middle)
+                }
+                Text(databaseState).font(note).foregroundStyle(.secondary)
+            }
+            if session.agentDatabaseNeedsUnlock {
+                if let waiting = session.agentWaitingLine {
+                    Text(waiting).font(note).fixedSize(horizontal: false, vertical: true)
+                }
+                // A new field per database: a password typed for one never goes to another.
+                DatabaseUnlockField(session: session, path: path, startOpen: true).id(path)
+            }
+            Text("Agents ask for secrets from this database only: what is shared in it, its standing permissions, and the items references name. Other open databases are never searched.")
+                .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Toggle("Keep “\(name)” unlocked while this Mac is awake", isOn: Binding(
+                get: { session.agentKeepUnlocked },
+                set: { session.setKeepAgentDatabaseUnlocked($0) }
+            ))
+            .padding(.top, 4)
+            .accessibilityIdentifier("agents.keepUnlocked")
+            Text(Self.keepUnlockedNote)
+                .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if session.agentKeepUnlocked, !session.locked, !session.keepsAgentDatabaseUnlocked {
+                Text("Not in force now: it applies only while agent access is on and this database is the only one open, with no Chrome passwords shown.")
+                    .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    static let keepUnlockedNote = "On this Mac the lock no longer protects this database: what you share and the standing permissions you give are the whole protection. Being idle does not lock it; the Mac sleeping, logging out or restarting, the screen locking, switching users and Lock still do. A setting of this Mac, not of the file."
+
+    private var databaseState: String {
+        if session.locked { return "Locked" }
+        if session.agentDatabaseNeedsUnlock { return "Not open" }
+        return session.agentVaultLocked ? "Opening…" : "Open"
     }
 
     // MARK: Command-line tool
@@ -107,7 +164,7 @@ struct AgentsPane: View {
     @ViewBuilder
     private var sharingSection: some View {
         if session.agentVaultLocked {
-            Text("Unlock PasswordPie to see and change what agents may ask for.").font(note).foregroundStyle(.secondary)
+            Text("Unlock the agents database to see and change what agents may ask for.").font(note).foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Agents see nothing until you share it, and every use still asks you. Tip: keep the keys and tokens agents need in a folder such as Agents or Developer, and share the folder.")
@@ -153,7 +210,7 @@ struct AgentsPane: View {
     @ViewBuilder
     private var standingSection: some View {
         if session.agentVaultLocked {
-            Text("Unlock PasswordPie to see standing permissions. They are kept in the database.").font(note).foregroundStyle(.secondary)
+            Text("Unlock the agents database to see standing permissions. They are kept in it.").font(note).foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Choose Allow for 7 days ▾ in an agent's approval window to stop it asking every time, for the same items, agent, project and program (a login: the same item, site and agent, in any project). Premium.")

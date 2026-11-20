@@ -1,15 +1,68 @@
 #if PP_DIRECT
+import Combine
 import Foundation
 import PasswordPieAgent
 import PasswordPieCore
 
-/// The open database as agents see it (docs/AGENTS.md): only what the owner shared, from the database PasswordPie
-/// unlocked, and never anything in the Recycle Bin. Sharing is kept in that database's own custom data, so it moves with
-/// the file, is under the master key, and cannot be widened by writing the app's preferences.
+/// The open database as agents see it (docs/AGENTS.md): only what the owner shared, from the agents database, and never
+/// anything in the Recycle Bin. Sharing is kept in that database's own custom data, so it moves with the file, is under
+/// the master key, and cannot be widened by writing the app's preferences.
 extension VaultSession: AgentVault {
-    /// The database the unlock opened. Other open databases are not offered to agents.
+    static let agentDatabaseKey = "agentDatabasePath"
+    static let agentKeepUnlockedKey = "agentKeepUnlocked"
+
+    // MARK: The agents database
+
+    /// The database that serves agents (Preferences > Agents > Agents database): the one chosen on this Mac while it is in
+    /// the list, else the current database. See "Two databases at once, and a Mac nobody sits at" in docs/UX.md.
+    var agentDatabasePath: String {
+        if let chosen = agentDatabaseChoice, databasePaths.contains(chosen) { return chosen }
+        return databaseURL.path
+    }
+
+    /// Chooses the agents database. The current database is kept as no choice, so it follows a switch as it always did.
+    func chooseAgentDatabase(_ path: String) {
+        let choice: String? = path == databaseURL.path || !databasePaths.contains(path) ? nil : path
+        agentDatabaseChoice = choice
+        if let choice {
+            UserDefaults.standard.set(choice, forKey: Self.agentDatabaseKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.agentDatabaseKey)
+        }
+    }
+
+    func setKeepAgentDatabaseUnlocked(_ on: Bool) {
+        agentKeepUnlocked = on
+        UserDefaults.standard.set(on, forKey: Self.agentKeepUnlockedKey)
+    }
+
+    /// "Keep unlocked while this Mac is awake" is in force: the setting is on, agent access is on, and the agents database
+    /// is the only thing open (no other database, no Chrome passwords). Read by auto-lock at each event, so with a personal
+    /// database open too the usual locking applies to both.
+    var keepsAgentDatabaseUnlocked: Bool {
+        agentKeepUnlocked && agentAccessOn && !locked && !unlocking
+            && openedFiles.count == 1 && openedFiles[0].url.path == agentDatabasePath && liveEntries.isEmpty
+    }
+
+    /// PasswordPie is unlocked, but the agents database is not open: another database of the list that did not open
+    /// with this unlock. Preferences > Agents offers its password field.
+    var agentDatabaseNeedsUnlock: Bool {
+        !locked && !unlocking && !openingOthers && agentFile == nil
+    }
+
+    /// Fires when anything `agentVaultLocked`, `agentDatabasePath` or `agentDatabaseNeedsUnlock` depends on is about to
+    /// change. `AgentAccess.agentStateChanged()` reads them after it.
+    var agentStateChanges: AnyPublisher<Void, Never> {
+        Publishers.Merge6(
+            $locked.map { _ in () }, $unlocking.map { _ in () }, $openDatabasePaths.map { _ in () },
+            $openingOthers.map { _ in () }, $agentDatabaseChoice.map { _ in () }, $databasePaths.map { _ in () }
+        ).eraseToAnyPublisher()
+    }
+
+    /// The agents database. No other open database is offered to agents.
     private var agentFile: OpenedFile? {
-        openedFiles.first { $0.url.path == databaseURL.path }
+        let path = agentDatabasePath
+        return openedFiles.first { $0.url.path == path }
     }
 
     var agentVaultLocked: Bool { locked || unlocking || agentFile == nil }
@@ -49,7 +102,7 @@ extension VaultSession: AgentVault {
         }
     }
 
-    /// A shared item's entry in the database PasswordPie unlocked, for a login. Nil when it is no longer there or no
+    /// A shared item's entry in the agents database, for a login. Nil when it is no longer there or no
     /// longer shared.
     func agentEntry(_ item: AgentItem) -> VaultEntry? {
         guard !agentVaultLocked, let file = agentFile, file.url.path == item.database,
@@ -78,18 +131,18 @@ extension VaultSession: AgentVault {
 
     // MARK: Sharing, for the owner's UI
 
-    /// What is shared in the current database.
+    /// What is shared in the agents database.
     var agentSharing: AgentSharing {
         AgentSharing(customData: agentFile?.vault.customData ?? [:])
     }
 
-    /// The stored entry behind a row of the list, when it is in the current database.
+    /// The stored entry behind a row of the list, when it is in the agents database.
     private func agentStoredID(_ listID: UUID) -> UUID? {
-        guard let path = listPaths[listID], path == databaseURL.path, storedEntry(listID) != nil else { return nil }
+        guard let path = listPaths[listID], path == agentDatabasePath, storedEntry(listID) != nil else { return nil }
         return listOrigins[listID] ?? listID
     }
 
-    /// Only items saved in the database PasswordPie unlocked can be shared (not a Chrome login, not another database's).
+    /// Only items saved in the agents database can be shared (not a Chrome login, not another database's).
     func canShareWithAgents(_ listID: UUID) -> Bool { agentStoredID(listID) != nil }
 
     /// Shared on its own or through its folder.
@@ -113,7 +166,7 @@ extension VaultSession: AgentVault {
         changeAgentSharing({ $0.set(folder: path, shared: shared) }, then: done)
     }
 
-    /// Every folder of the current database, outside the Recycle Bin, parents before children.
+    /// Every folder of the agents database, outside the Recycle Bin, parents before children.
     var agentFolders: [[String]] {
         var folders = Set<[String]>()
         for entry in agentFile?.vault.entries ?? [] where !entry.trashed {
@@ -134,7 +187,7 @@ extension VaultSession: AgentVault {
     /// Unsharing an item or a folder also ends every standing permission that names an item no longer shared, in the
     /// same write.
     private func changeAgentSharing(_ change: @escaping (inout AgentSharing) -> Void, then done: @escaping (Bool) -> Void) {
-        changeDatabase(at: databaseURL.path, { vault in
+        changeDatabase(at: agentDatabasePath, { vault in
             var sharing = AgentSharing(customData: vault.customData)
             let before = sharing
             change(&sharing)
@@ -150,16 +203,16 @@ extension VaultSession: AgentVault {
 
     // MARK: Standing permissions
 
-    /// The standing permissions kept in the database PasswordPie unlocked, or nil while locked. See "Standing
+    /// The standing permissions kept in the agents database, or nil while it is not open. See "Standing
     /// permissions" in docs/AGENTS.md: kept in its custom data, so writing the app's preferences cannot add one.
     var agentGrants: AgentGrants? {
         guard !agentVaultLocked, let file = agentFile else { return nil }
         return AgentGrants(customData: file.vault.customData)
     }
 
-    /// Changes the standing permissions in the database PasswordPie unlocked and writes the file.
+    /// Changes the standing permissions in the agents database and writes the file.
     func changeAgentGrants(_ edit: @escaping (inout AgentGrants) -> Void, then done: @escaping (Bool) -> Void = { _ in }) {
-        changeDatabase(at: databaseURL.path, { vault in
+        changeDatabase(at: agentDatabasePath, { vault in
             let before = AgentGrants(customData: vault.customData)
             var grants = before
             edit(&grants)

@@ -599,6 +599,12 @@ struct DetailsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                // With more than one database open, which one the item is in ("Two databases at once" in docs/UX.md).
+                if let database = model.session.databaseName(of: model.entryID) {
+                    DetailChrome(label: "database") {
+                        Text(database).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
+                    }
+                }
                 #if PP_DIRECT
                 AgentShareSlot(session: model.session, id: model.entryID)
                 #endif

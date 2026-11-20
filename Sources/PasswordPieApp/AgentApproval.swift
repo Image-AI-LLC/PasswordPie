@@ -15,6 +15,10 @@ protocol OwnerConfirmation: AnyObject {
 
 @MainActor
 final class SystemOwnerConfirmation: OwnerConfirmation {
+    /// Touch ID, or the Mac's login password where Touch ID cannot be used: no sensor, a closed lid, a Screen Sharing
+    /// session on a Mac nobody sits at (docs/UX.md, "Two databases at once, and a Mac nobody sits at"). Never biometrics
+    /// only, which would leave such a Mac no way to approve.
+    static let policy: LAPolicy = .deviceOwnerAuthentication
     private var context: LAContext?
 
     func confirm(reason: String) async -> Bool {
@@ -22,7 +26,7 @@ final class SystemOwnerConfirmation: OwnerConfirmation {
         self.context = context
         context.localizedFallbackTitle = "Use Password…"
         // Separate from unlocking the vault with Touch ID, and from its 7-day rule.
-        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false
+        return (try? await context.evaluatePolicy(Self.policy, localizedReason: reason)) ?? false
     }
 
     func cancel() {

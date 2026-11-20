@@ -470,6 +470,12 @@ struct PreferencesView: View {
                             if path == session.databaseURL.path {
                                 Text("Current").font(.system(size: 11)).foregroundStyle(.secondary)
                             } else {
+                                // Open beside the current one, or Unlock… for one that did not open with this unlock.
+                                if session.openDatabasePaths.contains(path) {
+                                    Text("Open").font(.system(size: 11)).foregroundStyle(.secondary)
+                                } else if !session.locked, !session.openingOthers {
+                                    DatabaseUnlockField(session: session, path: path)
+                                }
                                 Button("Switch") { recorder.stop(); session.selectDatabase(path) }
                             }
                             Button("Remove") { recorder.stop(); session.forgetDatabase(path) }

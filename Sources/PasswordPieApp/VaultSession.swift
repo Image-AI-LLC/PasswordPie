@@ -288,6 +288,18 @@ final class VaultSession: ObservableObject {
     }
     /// Every database the user has opened. The current file is first.
     @Published private(set) var databasePaths: [String] = []
+    /// The databases decrypted now, the current one first: what the list shows. Empty while locked. See "Two databases
+    /// at once, and a Mac nobody sits at" in docs/UX.md.
+    @Published private(set) var openDatabasePaths: [String] = []
+    /// The other databases in the list are still being opened from their saved unlocks after an unlock.
+    @Published private(set) var openingOthers = false
+    #if PP_DIRECT
+    /// Preferences > Agents > Agents database: the path chosen on this Mac, or nil for the current database. A preference
+    /// of this Mac, never of the file (`VaultSession+Agents.swift`).
+    @Published var agentDatabaseChoice: String? = UserDefaults.standard.string(forKey: VaultSession.agentDatabaseKey)
+    /// "Keep unlocked while this Mac is awake", for the agents database. Off by default.
+    @Published var agentKeepUnlocked: Bool = UserDefaults.standard.bool(forKey: VaultSession.agentKeepUnlockedKey)
+    #endif
     /// Menu id → file path. Set before `entries` so a refresh can label rows from other files.
     private(set) var entrySources: [UUID: String] = [:]
     /// The key file the lock screen holds for `databaseURL`: chosen there, or remembered in this Mac's keychain.
@@ -758,6 +770,8 @@ final class VaultSession: ObservableObject {
         unlockGeneration &+= 1
         catalogGeneration &+= 1
         openedFiles = []
+        openDatabasePaths = []
+        openingOthers = false
         listOrigins = [:]
         listSlots = [:]
         listPaths = [:]
@@ -1752,17 +1766,19 @@ final class VaultSession: ObservableObject {
         #if PP_DIRECT
         chromeAwaitingSiblings = !jobs.isEmpty
         #endif
+        openingOthers = !jobs.isEmpty
         guard !jobs.isEmpty else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            #if PP_DIRECT
             defer {
                 if generation == self.catalogGeneration {
+                    #if PP_DIRECT
                     self.chromeAwaitingSiblings = false
                     self.reconcileChromeUpdates()
+                    #endif
+                    self.openingOthers = false
                 }
             }
-            #endif
             for job in jobs {
                 if CatalogLoad.step(
                     generation: generation,
@@ -1811,8 +1827,88 @@ final class VaultSession: ObservableObject {
             copy.id = item.listID
             return copy
         }
+        let open = openedFiles.map(\.url.path)
+        if open != openDatabasePaths { openDatabasePaths = open }
         fileWatcher?.watch(openedFiles.filter(Self.follows).map(\.url.path))
         refreshMergeNotice()
+    }
+
+    // MARK: Another database beside the open one
+
+    static let alongsideNeedsKeyFileText = "Wrong password, or this database needs its key file: switch to it once and choose the key file on the lock screen."
+    static let alongsideLockedText = "PasswordPie locked first. Unlock, then try again."
+
+    /// Opens a database of the list beside the ones open, with its own master password, without locking anything. The
+    /// key file is the one this Mac remembers for it. Its Touch ID unlock is saved as an unlock with the master password
+    /// saves the current database's, so the next unlock opens it too. `done` gets nil when it is open, else why not.
+    /// See "Two databases at once, and a Mac nobody sits at" in docs/UX.md.
+    func unlockAlongside(_ path: String, password: String, then done: @escaping @MainActor (String?) -> Void = { _ in }) {
+        guard !locked, !creating else { return done(Self.alongsideLockedText) }
+        guard databasePaths.contains(path), path != databaseURL.path else { return done(nil) }
+        guard !openedFiles.contains(where: { $0.url.path == path }) else { return done(nil) }
+        guard !password.isEmpty else { return done("Enter the master password.") }
+        let url = URL(fileURLWithPath: path)
+        guard folderAccess.isUsable(url) else { return done(FolderAccess.declined(url)) }
+        let keyFile = Self.takesKeyFile(url) ? rememberedKeyFile(for: path)?.data : nil
+        let generation = unlockGeneration
+        Task { @MainActor [weak self] in
+            // A save from before may still be writing this file: read it once that has finished.
+            await self?.savesSettled()
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<Vault, Error> in
+                Result { try VaultFile.openRecovering(url: url, password: password, keyFile: keyFile) }
+            }.value
+            guard let self else { return }
+            if case .success(let opened) = result {
+                self.showRecoveryNotice(opened.recoveryNotice, path: path, detailed: self.unlockGeneration == generation)
+            }
+            guard self.unlockGeneration == generation, !self.locked else { return done(Self.alongsideLockedText) }
+            guard self.databasePaths.contains(path), path != self.databaseURL.path else { return done(nil) }
+            switch result {
+            case .failure(let error):
+                if self.isWrongPassword(error) {
+                    // A KeePass file this Mac keeps no key file for may simply need one.
+                    done(keyFile == nil && Self.takesKeyFile(url)
+                        ? Self.alongsideNeedsKeyFileText : "Wrong password for \(url.lastPathComponent).")
+                } else {
+                    done(self.openErrorText(error))
+                }
+            case .success(let vault):
+                if !self.openedFiles.contains(where: { $0.url.path == path }) {
+                    self.openedFiles.append(OpenedFile(url: url, vault: vault, password: password, keyFile: keyFile))
+                    self.publishCatalog()
+                    self.autoMergeFile(at: path)
+                    self.mergeOpened(path)
+                    #if PP_DIRECT
+                    self.reconcileChromeUpdates()
+                    #endif
+                }
+                self.rememberAlongsideUnlock(path: path, password: password, keyFile: keyFile)
+                self.onActivity?()
+                done(nil)
+            }
+        }
+    }
+
+    /// As an unlock with the master password saves the current database's Touch ID unlock, for another database: only
+    /// when Touch ID can gate a later read and was not turned off for that file.
+    private func rememberAlongsideUnlock(path: String, password: String, keyFile: Data?) {
+        let defaults = UserDefaults.standard
+        guard UnlockMemory.shouldStore(
+            hardware: biometryCanGate(),
+            declined: defaults.bool(forKey: touchIDDeclinedKey(for: path)),
+            alreadyEnabled: defaults.bool(forKey: touchIDEnabledKey(for: path))
+        ) else { return }
+        let secret = StoredUnlock(password: password, keyFile: password.isEmpty ? keyFile : nil).encoded
+        guard !secret.isEmpty, secretStore.save(secret: secret, account: path) == errSecSuccess else { return }
+        defaults.set(true, forKey: touchIDEnabledKey(for: path))
+        defaults.set(Date(), forKey: touchIDStampKey(for: path))
+        defaults.removeObject(forKey: touchIDStaleKey(for: path))
+    }
+
+    /// The name of the database a row of the list is in, when more than one is open. An item's details say it.
+    func databaseName(of listID: UUID) -> String? {
+        guard openDatabasePaths.count > 1, let path = listPaths[listID] else { return nil }
+        return URL(fileURLWithPath: path).lastPathComponent
     }
 
     private func appendStored(_ entry: VaultEntry, to path: String) {

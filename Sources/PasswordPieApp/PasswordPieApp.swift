@@ -171,7 +171,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         fileWatcher = watcher
         session.fileWatcher = watcher
         session.restore()
-        autoLock = AutoLockMonitor(settings: session.autoLock) { [weak self] in
+        #if PP_DIRECT
+        // "Keep unlocked while this Mac is awake", for the agents database alone (docs/UX.md).
+        let keepUnlocked: () -> Bool = { [weak self] in MainActor.assumeIsolated { self?.session.keepsAgentDatabaseUnlocked ?? false } }
+        #else
+        let keepUnlocked: () -> Bool = { false }
+        #endif
+        autoLock = AutoLockMonitor(settings: session.autoLock, keepUnlocked: keepUnlocked) { [weak self] in
             guard let self, !self.session.locked || self.session.unlocking else { return }
             self.session.lock()
         }
@@ -292,15 +298,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         agentAccess = AgentAccess(session: session)
         agentAccess.attachBrowser(bridge)
         agentAccess.onSilentUse = { [weak self] in self?.showSilentUseDot() }
+        // Locked: the lock screen. Unlocked, but the agents database did not open with this unlock: its password field in
+        // Preferences > Agents.
         agentAccess.onNeedsUnlock = { [weak self] in
-            guard let self, self.session.locked else { return }
-            if self.panelController.isVisible { self.panelController.bringForward() } else { self.panelController.show(.hotkey) }
+            guard let self else { return }
+            if self.session.locked {
+                if self.panelController.isVisible { self.panelController.bringForward() } else { self.panelController.show(.hotkey) }
+            } else if self.session.agentDatabaseNeedsUnlock {
+                self.showPreferences(at: .agents)
+            }
         }
-        Publishers.CombineLatest(session.$locked, session.$unlocking)
-            .map { $0 || $1 }
-            .removeDuplicates()
+        // On the main queue: a published value is read after it is set, not while it is about to be.
+        session.agentStateChanges
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] locked in self?.agentAccess.vaultStateChanged(locked: locked) }
+            .sink { [weak self] in self?.agentAccess.agentStateChanged() }
             .store(in: &cancellables)
         agentAccess.start()
     }

@@ -34,7 +34,8 @@ Premium, checked by the app's own `appHasPremium()`; nothing in a request carrie
 | `VaultBroker` | `PasswordPieAgent/VaultBroker.swift` | The one place a request that is not the owner clicking in PasswordPie is answered |
 | `agent.sock` server | `PasswordPieAgent/AgentServer.swift` | Peer check, caller walk per request, hands requests to the broker |
 | Activity log | `PasswordPieAgent/AgentActivity.swift`, file `~/Library/Application Support/PasswordPie/agent-activity.jsonl` | One line per request, no values |
-| The app's side | `AgentAccess.swift` (switch, socket, link), `AgentApproval.swift` (the window, Touch ID), `AgentsPane.swift`, `VaultSession+Agents.swift` (what agents see, sharing) | Direct download only |
+| The app's side | `AgentAccess.swift` (switch, socket, link), `AgentApproval.swift` (the window, Touch ID), `AgentsPane.swift`, `VaultSession+Agents.swift` (what agents see, sharing, the agents database) | Direct download only |
+| The agents database | `VaultSession+Agents.swift` (`agentDatabasePath`, `keepsAgentDatabaseUnlocked`); `VaultSession.unlockAlongside` and `DatabaseAlongsideViews.swift` (a second database beside the first); `AutoLockPolicy.keepUnlocked` in `PasswordPieCore/AutoLock.swift` | Which database serves agents, and "Keep unlocked while this Mac is awake" ("The agents database and a Mac nobody sits at") |
 | Sharing | `PasswordPieCore/AgentSharing.swift`, in the database's custom data (`Meta/CustomData`, key `PasswordPie.AgentSharing`) | Items by UUID, folders by path |
 | Standing permissions | `PasswordPieAgent/StandingPermissions.swift` (the store), `AgentGrants.swift` (what a grant is, matching), `AgentProgramRule.swift` (the program rule); in the database's custom data, key `PasswordPie.AgentGrants` | Grants made in the approval window with Premium, revoked in the Agents pane or the gear menu |
 
@@ -288,9 +289,9 @@ process tree as for the command-line tool.
 - `pp://id/<UUID>` survives renames and moves; the path form reads well in a committed `.env.pp`. `list` prints both.
 - A path can be read more than one way (is the last part a field or the title?). Every reading is tried against the
   shared items. More than one match answers `ambiguous` with the matches' `pp://id/` references, only among shared items.
-- References resolve against the database PasswordPie unlocked (the current one in the database list). Other open
-  databases are not searched: a reference does not name a database, and two copies of a file share item UUIDs. An
-  item's UUID is its KeePass UUID.
+- References resolve against the agents database (Preferences > Agents > Agents database; until one is chosen, the
+  current one in the database list). Other open databases are not searched: a reference does not name a database, and
+  two copies of a file share item UUIDs. An item's UUID is its KeePass UUID.
 - An answer must fit one 1 MiB frame as it would be sent (binary values travel as base64). A larger ask is refused with
   `usage` before anyone is asked.
 
@@ -630,6 +631,69 @@ the agent's pid, project, command, items and fields (or the reference as typed w
 agent's reason, and the walked chain (pid, path and signature of each ancestor). Never a value. Lines older than 90 days
 are dropped. It is not tamper-proof: same-user code can edit or delete it.
 
+## The agents database and a Mac nobody sits at
+
+What the owner sees is "Two databases at once, and a Mac nobody sits at" in [UX.md](UX.md).
+
+**Two databases open.** The session holds every open database (`openedFiles`), the current one first; the list and
+search are all of them. Unlocking opens the others in the list from their saved Touch ID unlocks, as it always did;
+`unlockAlongside` opens one more with its own master password (and the key file this Mac remembers for it) without
+locking anything, and saves its Touch ID unlock under the same rule as an unlock with the master password
+(`UnlockMemory.shouldStore`). Locking closes every one. `openDatabasePaths` publishes which are open.
+
+**Which one serves agents.** `agentDatabasePath` is the database chosen in Preferences > Agents > Agents database
+(preference `agentDatabasePath`, this Mac's), while it is in the list; otherwise the current database, which was the
+only one before. Choosing the current one stores nothing, so it follows a switch. Everything an agent reaches goes
+through it: `agentSharedItems`, `agentSecret` and `agentEntry` (references, `list`, `run`, `read`, `check`, `login`),
+the sharing the pane and the details change, and the standing permissions the grant store reads and writes. An item of
+another open database is not shared and cannot be (`canShareWithAgents`), whatever that file's own custom data says.
+Each `AgentItem` carries its database's path, and a value is read only from that database and only while it is still
+the agents database. Activity is one file per Mac, not per database.
+
+While the agents database is not open, `agentVaultLocked` is true: a request waits as it does while locked (`--wait`).
+`onNeedsUnlock` shows the lock screen when PasswordPie is locked, and Preferences > Agents (its password field and the
+waiting line) when PasswordPie is unlocked but the agents database did not open with this unlock
+(`agentDatabaseNeedsUnlock`). `AgentAccess.agentStateChanged()` runs on every change of what that depends on (locking,
+a database opening or closing, the list, the choice): a database closing counts as a lock to agents, and another one
+taking its place withdraws the windows open for the first.
+
+**A Mac nobody sits at** keeps only the agents database in its list. Its sharing and standing permissions come with
+the file ("On more than one Mac" under "Sharing" and "Standing permissions"); a grant counts only on the Mac it was given on.
+
+**Keep unlocked while this Mac is awake** (preference `agentKeepUnlocked`, this Mac's, off by default). In force
+(`keepsAgentDatabaseUnlocked`) only while it is on, agent access is on, and the agents database is the only thing open:
+no other database and no Chrome passwords. Auto-lock reads it at each event (`AutoLockPolicy.keepUnlocked`):
+
+| Event | In force | Not in force |
+|---|---|---|
+| Idle for the time set | Does not lock | Locks when Lock after inactivity is set |
+| The display sleeps (`screensDidSleep`), the screen saver starts | Does not lock | Locks when the matching switch is on |
+| The Mac sleeps (`willSleep`), the screen locks (`com.apple.screenIsLocked`), a user switch, power off or log out | Locks, whatever the switches | As the switches say; power off always |
+| Lock (⌘L, the gear menu) | Locks | Locks |
+
+Decision: it never keeps anything but the agents database unlocked: with a personal database open too, the usual
+locking applies to both, rather than locking one and keeping the other.
+
+Decision: the screen lock still locks, as the PRD asks. A Mac whose screen locks when its display sleeps ("Require
+password after screen saver begins or display is turned off" in Lock Screen settings) therefore locks the database
+then; on a Mac nobody sits at, set that to Never, or keep the display from sleeping, if jobs must run while nobody looks.
+
+Auto-lock could already be turned off: Lock after inactivity "Never" and the Security switches off stop it, but for
+every database, and on sleep and screen lock too.
+
+**Approving there (W1).** The approval window's confirmation is `SystemOwnerConfirmation.policy`,
+`.deviceOwnerAuthentication`: Touch ID where it can be used, else the Mac's login password ("Use Password…"). So a new
+use on that Mac is approved over Screen Sharing: unlock with the master password if it is locked, then Allow and the
+login password. Checked on the M2 (a MacBook Air with Touch ID) on 2026-11-20: the policy is available there. Not checked
+by an agent: that macOS shows the password sheet in a Screen Sharing session and takes the password typed there. The
+owner tries it once (the demo script in UX.md, step 7).
+
+**Activity from another Mac (R2.5).** The activity file is on the Mac where the request was made, one JSON line each,
+no values. From the owner's Mac:
+
+    ssh worker-mac 'tail -n 20 "Library/Application Support/PasswordPie/agent-activity.jsonl"'
+    ssh worker-mac 'cat "Library/Application Support/PasswordPie/agent-activity.jsonl"' | jq -r '[.time, .agent, .outcome, (.items | join(", "))] | @tsv'
+
 ## Security model
 
 Trusted: the kernel's word about processes (audit token, process table) and Apple's code-signing checks; PasswordPie,
@@ -657,6 +721,8 @@ agent, the model, the project's files, the commands the agent runs, other proces
 | An agent uses `check-import` to learn a value | It learns only whether a file it names holds the same value, after the owner approved that request with Touch ID; no standing permission covers a check; denials count toward the rate limit; only shared items are compared | A guess the owner approves the check of is confirmed or not: one answer per name per approval |
 | Prompt fatigue | One prompt per session at a time; 3 denials block the session for 10 minutes | |
 | Unlock coercion | Only the owner unlocks, in the lock screen; no message unlocks | |
+| A database kept unlocked on a Mac nobody sits at | Only the agents database, only while it is the only thing open; sleep, the screen lock, a user switch, logging out and Lock still lock it; sharing and standing permissions still decide what an agent gets | Anyone at that Mac's screen, or with its login, can use the open database; same-user code can turn the preference on |
+| A reference reaches the personal database | References, sharing and grants come from the agents database only; another open database's sharing never counts | none known |
 
 What cannot be prevented: a command that receives a secret can do anything with it; code running as the same user can,
 with effort, read what a command was given; a raw value given to an agent stays in its transcript, and with a hosted
@@ -782,3 +848,14 @@ result counted once from the connection and site that took it, the code with and
 `AgentLoginBridgeTests` in PasswordPieAppTests (the app's session and bridge with a scripted extension: submitted, another
 tab, the 30-second expiry, locking, hanging up, Premium), and `extension/tests/agent-login.test.ts` (pressing the form's
 own button, the username-only step, `login-result`).
+
+The agents database and the Mac nobody sits at: `AgentsDatabaseTests` in PasswordPieAppTests, with two real database
+files: a second database unlocked beside the first (a wrong password opens nothing, nothing is locked to do it, the list
+and search hold both and name them, locking closes both, a change saved into its own file); until one is chosen the
+current database serves agents; references, sharing, folders and standing permissions only from the agents database
+(the personal file's own sharing never counts, its items cannot be shared, a grant is written into the agents file and
+read back from it); a request waiting until the agents database is unlocked beside the open one; locking answers
+`locked`; the keep-unlocked setting in force only with the agents database alone; and the auto-lock monitor locking on
+the screen lock, sleep, a user switch and power off but not on the screen saver or the display sleeping, and as before
+with it off. `KeepUnlockedTests` in PasswordPieCoreTests covers the policy (idle, the switches not weakening it, off
+unchanged); `ApprovalWithoutTouchIDTests` that the window's confirmation falls back to the login password.

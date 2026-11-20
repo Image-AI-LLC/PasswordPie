@@ -19,16 +19,19 @@ public final class StandingPermissions: AgentGrantStore {
     /// The grants changed (made, revoked): the Agents pane reads them again.
     public var onChange: (() -> Void)?
 
-    /// The grants in the database PasswordPie unlocked, or nil while locked.
+    /// The grants in the agents database, or nil while it is not open.
     private let read: () -> AgentGrants?
     /// Changes them in that database and writes the file, then says whether it was written. The app's memory keeps what
     /// the file holds until then, so what this store did meanwhile is kept here.
     private let write: (@escaping (inout AgentGrants) -> Void, @escaping (Bool) -> Void) -> Void
-    /// Made and not written yet.
-    private var pending: [AgentGrant] = []
+    /// Which database the grants belong to now (its path), or nil while none is. The overlays below belong to the
+    /// database they were made under and do not count in another one.
+    private let database: () -> String?
+    /// Made and not written yet, with the database each was made under.
+    private var pending: [(database: String?, grant: AgentGrant)] = []
     /// Revoked in this run of the app: never used again, whether or not the file was written.
     private var revoked: Set<UUID> = []
-    private var revokedAllAt: Date?
+    private var revokedAllAt: [String?: Date] = [:]
     /// What each request's command was bound to when its window opened, by `AgentGrantQuery.id`: a lasting choice
     /// records that, and only if the files are still the same.
     private var offered: [UUID: AgentProgramBinding] = [:]
@@ -37,22 +40,25 @@ public final class StandingPermissions: AgentGrantStore {
 
     public init(
         mac: String = AgentMacIdentity.current, hasPremium: @escaping () -> Bool, read: @escaping () -> AgentGrants?,
-        write: @escaping (@escaping (inout AgentGrants) -> Void, @escaping (Bool) -> Void) -> Void
+        write: @escaping (@escaping (inout AgentGrants) -> Void, @escaping (Bool) -> Void) -> Void,
+        database: @escaping () -> String? = { nil }
     ) {
         self.mac = mac
         self.hasPremium = hasPremium
         self.read = read
         self.write = write
+        self.database = database
     }
 
     /// The grants that count on this Mac now, Premium or not, for the Agents pane. Empty while locked.
     public var inForce: [AgentGrant] {
         guard var grants = read() else { return [] }
-        for grant in pending where !grants.all.contains(where: { $0.id == grant.id }) { grants.add(grant) }
+        let current = database()
+        for (owner, grant) in pending where owner == current && !grants.all.contains(where: { $0.id == grant.id }) { grants.add(grant) }
         let now = clock()
         return grants.inForce(mac: mac, now: now, sessionAlive: sessionAlive).filter { grant in
             if revoked.contains(grant.id) { return false }
-            if let revokedAllAt, grant.created <= revokedAllAt { return false }
+            if let revokedAllAt = revokedAllAt[current], grant.created <= revokedAllAt { return false }
             if grant.session != nil, let ended = sessionsEndedAt, grant.created <= ended { return false }
             return true
         }
@@ -116,8 +122,8 @@ public final class StandingPermissions: AgentGrantStore {
             agent: query.caller.grantIdentity, agentName: query.caller.agentName, project: query.caller.project, program: binding,
             secrets: chosen.map(AgentGrantSecret.init), labels: chosen.map(\.logLabel)
         )
-        pending.append(grant)
-        change({ $0.add(grant) }) { [weak self] _ in self?.pending.removeAll { $0.id == grant.id } }
+        pending.append((database(), grant))
+        change({ $0.add(grant) }) { [weak self] _ in self?.pending.removeAll { $0.grant.id == grant.id } }
         return grant.description
     }
 
@@ -133,8 +139,8 @@ public final class StandingPermissions: AgentGrantStore {
             secrets: chosen.map(AgentGrantSecret.init), labels: chosen.map { "\($0.item.folder.isEmpty ? $0.item.title : $0.item.folderText + "/" + $0.item.title) › login" },
             site: site
         )
-        pending.append(grant)
-        change({ $0.add(grant) }) { [weak self] _ in self?.pending.removeAll { $0.id == grant.id } }
+        pending.append((database(), grant))
+        change({ $0.add(grant) }) { [weak self] _ in self?.pending.removeAll { $0.grant.id == grant.id } }
         return grant.description
     }
 
@@ -143,21 +149,22 @@ public final class StandingPermissions: AgentGrantStore {
     /// Counts at once, also before the file is written.
     public func revoke(_ id: UUID) {
         revoked.insert(id)
-        pending.removeAll { $0.id == id }
+        pending.removeAll { $0.grant.id == id }
         change { $0.remove(id) }
     }
 
     /// Every grant in the database, this Mac's and other Macs'.
     public func revokeAll() {
-        revokedAllAt = clock()
-        pending.removeAll()
+        let current = database()
+        revokedAllAt[current] = clock()
+        pending.removeAll { $0.database == current }
         change { $0.removeAll { _ in true } }
     }
 
     /// Agent access was turned off: every "this agent session" grant ends. The others stay and do nothing while it is off.
     public func endSessions() {
         sessionsEndedAt = clock()
-        pending.removeAll { $0.session != nil }
+        pending.removeAll { $0.grant.session != nil }
         guard read() != nil else {
             endSessionsAtUnlock = true
             return
