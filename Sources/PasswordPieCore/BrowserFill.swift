@@ -934,7 +934,7 @@ public struct BridgeState: Sendable {
         case "show":
             // The toolbar button. The app opens its panel; the answer only acknowledges it.
             links.noted(peer, now: now)
-            return BridgeResponse(type: "show", id: request.id)
+            return .show(id: request.id)
         default:
             return .error("bad-request", id: request.id)
         }

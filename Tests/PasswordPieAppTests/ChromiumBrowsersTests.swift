@@ -206,6 +206,22 @@ final class ChromiumBrowsersBridgeTests: XCTestCase {
         XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), .addChrome)
     }
 
+    func testTheLineThatAsksAgainShowsOnlyOverTheBrowserThatWasRefused() {
+        let (bridge, _) = bridge()
+        // Another signer's browser with this bundle ID was refused once; the one running now is allowed, not connected.
+        bridge.setApproval(.denied, bundleID: Self.egoID, teamID: "ZZZZZZZZZZ", name: "ego lite")
+        bridge.setApproval(.allowed, bundleID: Self.egoID, teamID: "JGQLC6YQYJ", name: "ego lite")
+        bridge.identityOfRunning = { [egoIdentity] _ in egoIdentity }
+        XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), .addChrome, "the other signer's refusal is not this browser's")
+
+        // The refused signer's own browser in front gets the line, and its click asks.
+        let other = ChromiumBrowserIdentity(bundleID: Self.egoID, teamID: "ZZZZZZZZZZ", bundleURL: egoIdentity.bundleURL, name: "ego lite", signer: nil)
+        bridge.identityOfRunning = { _ in other }
+        XCTAssertEqual(bridge.banner(frontBundleID: Self.egoID), .allowBrowser(name: "ego lite"))
+        bridge.install(.allowBrowser(name: "ego lite"), in: ego)
+        XCTAssertEqual(asked.map(\.teamID), ["ZZZZZZZZZZ"])
+    }
+
     func testTheSameBrowserSignedBySomeoneElseIsAskedAgain() {
         let (bridge, _) = bridge()
         bridge.approve(egoIdentity) { _ in }

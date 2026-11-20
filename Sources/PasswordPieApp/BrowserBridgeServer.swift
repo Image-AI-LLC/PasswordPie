@@ -123,7 +123,10 @@ final class BrowserBridgeServer: @unchecked Sendable {
         let fd = listener
         listener = -1
         lock.unlock()
-        if fd >= 0 { close(fd) }
+        guard fd >= 0 else { return }
+        // Wakes the thread blocked in accept before the number can be reused.
+        shutdown(fd, SHUT_RDWR)
+        close(fd)
     }
 
     /// Sends `payload` to one connection of `browser`, or to all of them when `link` is nil.

@@ -629,7 +629,7 @@ within the minute of the reconnect alarm.
   window"), not a modal alert: the app keeps working while it waits. Its two buttons are equal and neither is the
   default, and no key presses either: until 2026-11-20 it was a system alert whose one tinted button was Don't Allow,
   and a person who meant to allow pressed it. A debug build writes the window's words and window number to the status
-  file (`browserApproval`, `browserApprovalWindow`), and `PASSWORDPIE_BROWSER_APPROVE` (`allow`, `deny` or `hold`)
+  file (`browserApproval`, `browserApprovalWindow`), and `PASSWORDPIE_BROWSER_APPROVE` (`allow` or `deny`; any other word leaves it open)
   answers it two seconds after it opens, so the question can be tried with nobody at the Mac.
 
 What this protects: anyone who can start the host could otherwise claim to be a browser and receive the account the

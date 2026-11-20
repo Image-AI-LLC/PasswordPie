@@ -119,10 +119,11 @@ final class BrowserApprovalModel: ObservableObject {
     }
 
     #if DEBUG
-    /// Debug builds only: `PASSWORDPIE_BROWSER_APPROVE` (`allow`, `deny` or `hold`) answers the window two seconds after
-    /// it opens, so the question can be tried on a Mac nobody sits at. `hold` leaves it for a screenshot.
+    /// Debug builds only: `PASSWORDPIE_BROWSER_APPROVE` (`allow` or `deny`) answers the window two seconds after it
+    /// opens, so the question can be tried on a Mac nobody sits at. `hold`, or any other word, leaves it open: a
+    /// misspelt word must not write an answer into the preferences the debug build shares with the installed app.
     func runDebugScript() {
-        guard let step = ProcessInfo.processInfo.environment["PASSWORDPIE_BROWSER_APPROVE"], step != "hold" else { return }
+        guard let step = ProcessInfo.processInfo.environment["PASSWORDPIE_BROWSER_APPROVE"], ["allow", "deny"].contains(step) else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
             MainActor.assumeIsolated {
                 if step == "allow" { self?.allow() } else { self?.deny() }
