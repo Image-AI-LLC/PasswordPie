@@ -102,10 +102,11 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
     }
 
     /// The sync tool: the file of one Mac replaces the other's, as Dropbox and iCloud Drive do, and the other Mac's
-    /// watcher tells its session.
-    private func carry(from source: URL, to destination: URL, then session: VaultSession) throws {
+    /// watcher tells its session. Reading it is queued behind the session's other file work, so this waits for it.
+    private func carry(from source: URL, to destination: URL, then session: VaultSession) async throws {
         try Data(contentsOf: source).write(to: destination, options: .atomic)
         session.filesChangedOnDisk()
+        await session.savesSettled()
     }
 
     private func titles(_ session: VaultSession) -> [String] {
@@ -222,9 +223,9 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         try change("Cloudflare", in: macbook) { $0.password = "cloudflare-from-the-macbook" }
 
         // The M2's file reaches the MacBook Pro first: it lacks the MacBook Pro's change, so that Mac merges and writes.
-        try carry(from: m2File, to: macbookFile, then: macbook)
+        try await carry(from: m2File, to: macbookFile, then: macbook)
         // The merged file goes back to the M2, which has nothing the file lacks.
-        try carry(from: macbookFile, to: m2File, then: m2)
+        try await carry(from: macbookFile, to: m2File, then: m2)
 
         for (mac, session) in [("MacBook Pro", macbook), ("M2", m2)] {
             XCTAssertEqual(titles(session), ["Cloudflare", "Resend", "RunPod", "Stripe"], mac)
@@ -258,7 +259,8 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         let copy = directory.appendingPathComponent("macbook/Agents.sync-conflict-20261120-031800-M2M2M2M.kdbx")
         try FileManager.default.copyItem(at: m2File, to: copy)
         macbook.lookForCopies()
-        try carry(from: macbookFile, to: m2File, then: m2)
+        await macbook.savesSettled()
+        try await carry(from: macbookFile, to: m2File, then: m2)
 
         for (mac, session) in [("MacBook Pro", macbook), ("M2", m2)] {
             XCTAssertEqual(live("Cloudflare", in: session)?.password, planted, "\(mac): the newer change is the item")
@@ -278,7 +280,7 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
     func testThreeAnItemDeletedOnOneMacIsGoneOnTheOther() async throws {
         let (macbook, m2) = try await twoMacs()
         try change("Resend", in: macbook) { $0.trashed = true }
-        try carry(from: macbookFile, to: m2File, then: m2)
+        try await carry(from: macbookFile, to: m2File, then: m2)
 
         XCTAssertEqual(titles(m2), ["Cloudflare", "Stripe"])
         XCTAssertFalse(m2.agentSharedItems().contains { $0.title == "Resend" }, "agents on the M2 no longer reach it")
@@ -316,7 +318,7 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
 
         // The MacBook Pro gets the M2's file: the grant is there, but it is the M2's, so the MacBook Pro asks.
         await m2.savesSettled()
-        try carry(from: m2File, to: macbookFile, then: macbook)
+        try await carry(from: m2File, to: macbookFile, then: macbook)
         let (macbookAccess, macbookShown) = try access(macbook, mac: "macbook") { $0.allow(for: .days7) }
         _ = await macbookAccess.broker.handle(use(token, in: nightly), from: caller(in: nightly))
         XCTAssertEqual(macbookShown(), 1, "a grant counts only on the Mac it was given on")
@@ -331,7 +333,7 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
 
         // The MacBook Pro's file reaches the M2, which merges grant by grant: every grant of both Macs is kept, and the
         // M2's still let its jobs through.
-        try carry(from: macbookFile, to: m2File, then: m2)
+        try await carry(from: macbookFile, to: m2File, then: m2)
         let grants = AgentGrants(customData: try onDisk(m2File).customData).all
         XCTAssertEqual(grants.filter { $0.mac == "m2" }.count, 2, "the M2's two grants are kept")
         XCTAssertEqual(grants.filter { $0.mac == "macbook" }.count, 1, "and the MacBook Pro's")
@@ -368,7 +370,7 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         XCTAssertEqual(early.code, AgentErrorCode.notAvailable.rawValue)
 
         await m2.savesSettled()
-        try carry(from: m2File, to: macbookFile, then: macbook)
+        try await carry(from: m2File, to: macbookFile, then: macbook)
         let (macbookAccess, _) = try access(macbook, mac: "macbook") { $0.allow() }
         macbookAccess.refreshSaves()
         XCTAssertEqual(macbookAccess.waitingSaves.map(\.id), [id], "the M2's proposal waits on the MacBook Pro")
@@ -387,7 +389,7 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
         let secondID = try XCTUnwrap(later.save?.proposal)
         await m2.savesSettled()
 
-        try carry(from: macbookFile, to: m2File, then: m2)
+        try await carry(from: macbookFile, to: m2File, then: m2)
         XCTAssertEqual(live("OpenAI", in: m2)?.value(for: "API key"), planted, "after approval it is on both Macs")
         let file = try onDisk(m2File)
         let states = Dictionary(uniqueKeysWithValues: AgentProposals(customData: file.customData).all.map { ($0.id, $0.state) })
@@ -466,7 +468,7 @@ final class SecretsAcrossMacsAcceptanceTests: XCTestCase {
 
         // The file travels; the same .env.pp works on the M2.
         await macbook.savesSettled()
-        try carry(from: macbookFile, to: m2File, then: m2)
+        try await carry(from: macbookFile, to: m2File, then: m2)
         let (m2Access, _) = try access(m2, mac: "m2") { $0.allow() }
         let there = await m2Access.broker.handle(use(secrets, in: shop), from: caller(in: shop))
         XCTAssertEqual(there.secrets?.first?.value, planted, there.detail ?? "")
