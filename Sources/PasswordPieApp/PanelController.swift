@@ -239,13 +239,26 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         effect.banner = banner
         banner.onClick = { [weak self] in self?.installBannerExtension() }
         batchRow.onReview = { [weak self] in
-            self?.hide(refocusPrevious: false)
-            AppDelegate.shared?.showChromeBatchReview()
+            guard let self else { return }
+            self.hide(refocusPrevious: false)
+            // Chrome's question first: while it waits, the line is about it.
+            if self.session.chromeBatch != nil {
+                AppDelegate.shared?.showChromeBatchReview()
+            } else {
+                self.session.performMergeNotice()
+            }
         }
-        batchRow.onDismiss = { [weak self] in self?.session.dismissChromeBatch() }
+        batchRow.onDismiss = { [weak self] in
+            guard let self else { return }
+            if self.session.chromeBatch != nil { self.session.dismissChromeBatch() } else { self.session.dismissMergeNotice() }
+        }
         session.$chromeBatch
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] batch in self?.chromeBatchChanged(batch) }
+            .sink { [weak self] _ in self?.noticeRowChanged() }
+            .store(in: &cancellables)
+        session.$mergeNotice
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.noticeRowChanged() }
             .store(in: &cancellables)
         menu.siteSection = { [weak self] in self?.siteSectionRows() ?? [] }
 
@@ -704,11 +717,18 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         effect.bannerHeight = shownBanner == nil ? 0 : ExtensionBannerView.height
     }
 
-    /// A row in the panel, not a window: the rest of the panel keeps working while the question waits.
-    private func chromeBatchChanged(_ batch: ChromeBatch?) {
-        batchRow.show(batch?.summary)
-        effect.batchRowHeight = batch == nil ? 0 : ChromeBatchRowView.height
+    /// A row in the panel, not a window: the rest of the panel keeps working while the question waits. One line: what
+    /// Chrome changed, or else what there is to say about the database on more than one Mac (`MergeNotice`).
+    private func noticeRowChanged() {
+        let line = Self.noticeLine(chromeBatch: session.chromeBatch, mergeNotice: session.mergeNotice)
+        batchRow.show(line?.summary, action: line?.action ?? ChromeBatchRowView.reviewTitle)
+        effect.batchRowHeight = line == nil ? 0 : ChromeBatchRowView.height
         if panel.isVisible, !session.locked, !animatingLock, let screen = currentScreen { setFrame(animated: true, screen: screen) }
+    }
+
+    static func noticeLine(chromeBatch: ChromeBatch?, mergeNotice: MergeNotice?) -> (summary: String, action: String)? {
+        if let chromeBatch { return (chromeBatch.summary, ChromeBatchRowView.reviewTitle) }
+        return mergeNotice.map { ($0.summary, $0.actionTitle) }
     }
 
     private func installBannerExtension() {
@@ -1065,6 +1085,9 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
         add(to: gear, importPasswordsMenuTitle, #selector(openImport))
         add(to: gear, "Open Database…", #selector(openDatabase))
         add(to: gear, "New Database…", #selector(newDatabase))
+        // docs/UX.md, "The same database on two Macs".
+        add(to: gear, mergeFromFileMenuTitle, #selector(mergeFromFile))
+        if session.hasItemsChangedOnBoth { add(to: gear, changedOnBothMenuTitle, #selector(showChangedOnBoth)) }
         gear.addItem(.separator())
         add(to: gear, "Quit PasswordPie", #selector(quit))
         return gear
@@ -1088,6 +1111,8 @@ final class PanelController: NSObject, MenuHost, HeaderDelegate {
     @objc private func openBrowserExtensions() { showPreferences(at: .browserExtensions) }
     @objc private func openImport() { showPreferences(at: .importPasswords) }
     @objc private func openDatabase() { session.chooseDatabase() }
+    @objc private func mergeFromFile() { session.mergeFromFile() }
+    @objc private func showChangedOnBoth() { hide(refocusPrevious: false); AppDelegate.shared?.showChangedOnBoth() }
     @objc private func newDatabase() { session.newDatabase() }
     @objc private func quit() { NSApp.terminate(nil) }
 

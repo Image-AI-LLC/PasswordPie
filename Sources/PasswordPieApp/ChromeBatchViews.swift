@@ -2,17 +2,20 @@ import AppKit
 import PasswordPieCore
 import SwiftUI
 
-/// `12 passwords changed in Chrome   Review   ×`, laid out like a menu row under the search field.
+/// `12 passwords changed in Chrome   Review   ×`, laid out like a menu row under the search field. Also the line about
+/// the database on more than one Mac (`MergeNotice`), whose button has other words.
 final class ChromeBatchRowView: NSView {
     static let height: CGFloat = 26
     private static let dismissWidth: CGFloat = 26
     private static let reviewPadding: CGFloat = 10
-    private static let reviewTitle = "Review"
+    static let reviewTitle = "Review"
     private static let dismissTitle = "×"
 
     var onReview: (() -> Void)?
     var onDismiss: (() -> Void)?
     private var summary: String?
+    /// The button's words.
+    private(set) var actionTitle = ChromeBatchRowView.reviewTitle
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -20,9 +23,10 @@ final class ChromeBatchRowView: NSView {
     /// The panel moves by its background; without this a press here starts a drag and the click never arrives.
     override var mouseDownCanMoveWindow: Bool { false }
 
-    func show(_ summary: String?) {
-        guard summary != self.summary else { return }
+    func show(_ summary: String?, action: String = ChromeBatchRowView.reviewTitle) {
+        guard summary != self.summary || action != actionTitle else { return }
         self.summary = summary
+        actionTitle = action
         setAccessibilityElement(summary != nil)
         setAccessibilityRole(.group)
         setAccessibilityLabel(summary)
@@ -36,7 +40,7 @@ final class ChromeBatchRowView: NSView {
     }
 
     private var reviewRect: NSRect {
-        let width = ceil(MenuListView.textWidth(Self.reviewTitle, font)) + Self.reviewPadding
+        let width = ceil(MenuListView.textWidth(actionTitle, font)) + Self.reviewPadding
         return NSRect(x: dismissRect.minX - width, y: 0, width: width, height: bounds.height)
     }
 
@@ -56,7 +60,7 @@ final class ChromeBatchRowView: NSView {
 
     override func accessibilityChildren() -> [Any]? {
         [
-            element(Self.reviewTitle, rect: reviewRect) { [weak self] in self?.onReview?() },
+            element(actionTitle, rect: reviewRect) { [weak self] in self?.onReview?() },
             element("Dismiss", rect: dismissRect) { [weak self] in self?.onDismiss?() }
         ]
     }
@@ -88,7 +92,7 @@ final class ChromeBatchRowView: NSView {
         }
         let review = reviewRect
         draw(summary, x: 12, width: review.minX - 16, color: MenuPalette.text)
-        draw(Self.reviewTitle, x: review.minX + Self.reviewPadding / 2, width: review.width, color: MenuPalette.caret)
+        draw(actionTitle, x: review.minX + Self.reviewPadding / 2, width: review.width, color: MenuPalette.caret)
         draw(Self.dismissTitle, x: dismissRect.minX + 9, width: dismissRect.width - 9, color: MenuPalette.secondaryText, weight: NSFont.menuFont(ofSize: 14))
     }
 }

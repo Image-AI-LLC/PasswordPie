@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import PasswordPieCore
 import XCTest
@@ -213,6 +214,90 @@ final class VaultFileMergeTests: XCTestCase {
         }, beforeReplace: {}))
         XCTAssertNotNil(theirs)
         XCTAssertEqual(try Data(contentsOf: url), theirs)
+    }
+
+    /// Nobody asked for this read, and a header is untrusted until a key opens the file: a key derivation that is not
+    /// this database's own is never run for it.
+    func testAReplacedFileThatAsksForOtherKeySettingsIsNotOpened() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let other = try KDBX.testingDatabase(xml: MergeCopy(items: [bank, mail]).xml, password: "secret", kdf: KDFParameters(kind: .aes(rounds: 200)))
+        try other.write(to: url, options: .atomic)
+        mine.entries[0].password = "new"
+
+        for onlyIfNeeded in [true, false] {
+            XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil, onlyIfNeeded: onlyIfNeeded)) { error in
+                XCTAssertTrue((error as? VaultWriteError)?.description.contains("asks for other key settings") == true, "\(error)")
+            }
+            XCTAssertEqual(try Data(contentsOf: url), other)
+        }
+    }
+
+    func testAReplacedFileWhoseHeaderCannotBeReadInItsStartIsNotOpened() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let other = try KDBX.testingDatabase(
+            xml: MergeCopy(items: [bank, mail]).xml, password: "secret", kdf: KDFParameters(kind: .aes(rounds: 200)),
+            extraHeader: [HeaderField(type: 0x7F, payload: Data(count: KDBX.headerLimit))]
+        )
+        try other.write(to: url, options: .atomic)
+        mine.entries[0].password = "new"
+
+        for onlyIfNeeded in [true, false] {
+            XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil, onlyIfNeeded: onlyIfNeeded))
+            XCTAssertEqual(try Data(contentsOf: url), other)
+        }
+    }
+
+    /// A header too long to read in its first `KDBX.headerLimit` bytes says nothing about what it asks for, so the file
+    /// is not opened, though it is a valid database under this password.
+    func testAReplacedFileWhoseHeaderCannotBeReadIsNotOpened() throws {
+        var mine = try open(MergeCopy(items: [bank]))
+        let padded = try KDBX.testingDatabase(
+            xml: MergeCopy(items: [bank, mail]).xml, password: "secret",
+            extraHeader: [HeaderField(type: 12, payload: Data(count: KDBX.headerLimit))]
+        )
+        XCTAssertNoThrow(try KDBX.load(data: padded, password: "secret"))
+        XCTAssertNil(KDBX.kdf(ofHeader: padded))
+        try padded.write(to: url, options: .atomic)
+        mine.entries[0].password = "new"
+
+        XCTAssertThrowsError(try VaultFile.save(mine, to: url, password: "secret", keyFile: nil)) { error in
+            XCTAssertTrue((error as? VaultWriteError)?.description.contains("could not be read") == true, "\(error)")
+        }
+        XCTAssertEqual(try Data(contentsOf: url), padded)
+    }
+
+    func testTheKeySettingsAFileAsksForAreReadFromItsStartWithoutDerivingAnything() throws {
+        let data = try MergeCopy(items: [bank]).data()
+        XCTAssertEqual(KDBX.kdf(ofHeader: data), .aes(rounds: 100))
+        XCTAssertEqual(KDBX.kdf(ofHeader: data.prefix(400)), .aes(rounds: 100), "the header is enough")
+        XCTAssertNil(KDBX.kdf(ofHeader: Data("not a database".utf8)))
+        XCTAssertNil(KDBX.kdf(ofHeader: Data(repeating: 0, count: 2 * KDBX.headerLimit)))
+
+        // A header asking for more memory than a number in this app can hold is refused, not acted on.
+        let argon = try KDBX.testingDatabase(
+            xml: MergeCopy(items: [bank]).xml, password: "secret",
+            kdf: KDFParameters(kind: .argon2id(memoryKiB: 1024, iterations: 1, parallelism: 1, version: 0x13))
+        )
+        XCTAssertEqual(KDBX.kdf(ofHeader: argon), .argon2id(memoryKiB: 1024, iterations: 1, parallelism: 1, version: 0x13))
+        // The variant entry "M": type 5, a 1-byte name, an 8-byte value.
+        let entry = Data([0x05, 0x01, 0x00, 0x00, 0x00, UInt8(ascii: "M"), 0x08, 0x00, 0x00, 0x00])
+        let place = try XCTUnwrap(argon.range(of: entry))
+        var hostile = argon
+        hostile.replaceSubrange(place.upperBound..<(place.upperBound + 8), with: Data(repeating: 0xFF, count: 8))
+        // The header's SHA-256 follows it and is checked first: put the right one in, so only the value is wrong.
+        var end = 12
+        while true {
+            let type = hostile[end]
+            let size = Int(hostile[end + 1]) | Int(hostile[end + 2]) << 8 | Int(hostile[end + 3]) << 16 | Int(hostile[end + 4]) << 24
+            end += 5 + size
+            if type == 0 { break }
+        }
+        hostile.replaceSubrange(end..<(end + 32), with: Data(SHA256.hash(data: hostile.prefix(end))))
+        XCTAssertThrowsError(try KDBX.kdfOfHeader(hostile)) { error in
+            XCTAssertEqual(error as? KDBXError, .crypto("Argon2 parameters are out of range."))
+        }
+        XCTAssertNil(KDBX.kdf(ofHeader: hostile))
+        XCTAssertThrowsError(try KDBX.load(data: hostile, password: "secret"))
     }
 
     func testAReplacedFileThatIsNotADatabaseIsLeftAlone() throws {

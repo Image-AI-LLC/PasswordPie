@@ -18,6 +18,7 @@ The downloaded app keeps itself up to date: once a week a separate updater insid
 
 - Press `⌘\` from any app, type a few letters, and copy: `⌃⌘C` username, `⇧⌘C` password, `⌥⌘C` one-time code
 - Reads and writes standard KeePass KDBX 4 files, wherever you keep them. No account, no built-in sync
+- Keep the file in a folder that Syncthing, iCloud Drive or Dropbox carries between your Macs: changes made on two Macs are merged item by item, and the earlier version of an item both changed stays in its history
 - Two-step codes (TOTP), a password generator, Large Type (`⇧⌘O`), and a pinned window that stays above other apps
 - Scan a site's two-step QR code from the browser extension or a screenshot, read on your Mac
 - Touch ID unlock, auto-lock, and a clipboard that clears itself

@@ -11,6 +11,21 @@ public enum KDBX {
         try load(data: data, password: password, keyFile: keyFile, repairing: false)
     }
 
+    /// The key derivation a file asks for, read from the start of the file without deriving anything. Nil when that is
+    /// not a readable KDBX 4 header. Only the first `headerLimit` bytes are looked at, whatever the file's size: a header
+    /// is a few hundred bytes, and nothing in it is trusted before a key has opened the file.
+    public static func kdf(ofHeader data: Data) -> KDFKind? {
+        try? kdfOfHeader(data)
+    }
+
+    /// `kdf(ofHeader:)` with the reason a header could not be read.
+    static func kdfOfHeader(_ data: Data) throws -> KDFKind {
+        try parseOuter(Data(data.prefix(headerLimit))).kdf
+    }
+
+    /// How much of a file `kdf(ofHeader:)` reads.
+    public static let headerLimit = 1024 * 1024
+
     /// Opens a file the old writer damaged by repairing its XML in memory. `Vault.recovery` says what changed.
     public static func loadRecovering(data: Data, password: String, keyFile: Data?) throws -> Vault {
         try load(data: data, password: password, keyFile: keyFile, repairing: true)
@@ -474,10 +489,12 @@ private func parseKDF(_ blob: Data) throws -> ParsedKDF {
         return ParsedKDF(kind: kind, salt: salt, parameters: KDFParameters(kind: kind))
     }
     let memoryBytes = integer(values["M"])
-    let memoryKiB = UInt32(memoryBytes / 1024)
-    let iterations = UInt32(integer(values["I"]))
-    let parallelism = UInt32(integer(values["P"]))
-    let version = UInt32(integer(values["V"]))
+    guard let memoryKiB = UInt32(exactly: memoryBytes / 1024),
+          let iterations = UInt32(exactly: integer(values["I"])),
+          let parallelism = UInt32(exactly: integer(values["P"])),
+          let version = UInt32(exactly: integer(values["V"])) else {
+        throw KDBXError.crypto("Argon2 parameters are out of range.")
+    }
     guard memoryKiB > 0, iterations > 0, parallelism > 0, salt.count >= 8 else {
         throw KDBXError.crypto("Argon2 parameters are incomplete.")
     }

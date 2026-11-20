@@ -9,6 +9,7 @@ App Store builds do not contain direct-only code.
 | Swift flag | `PP_DIRECT` defined | not defined |
 | Sandbox | no (hardened runtime, notarized) | yes (`Entitlements/mas.entitlements`) |
 | Import CSV from Chrome / Apple Passwords | yes | yes |
+| Changes made on two Macs are merged ([UX.md](UX.md), "The same database on two Macs") | yes | yes, the same code. The file and the copies a sync tool leaves beside it are read through the folder the app was allowed; not yet tried in the sandbox (see "Before an App Store submission") |
 | Import a folder of `.env` files (Preferences > Import) | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Browsers) | **not compiled in** |
 | Two-step codes (Premium) | an activation from passwordpie.com, where Premium is bought. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
@@ -307,6 +308,9 @@ What used to block a store build, and where each one stands:
 5. **In-app purchase.** Built: see "Premium". What is left is in App Store Connect, under "Before Premium can be sold".
 6. **Site-ranking data.** The Majestic Million is CC BY 3.0, which allows commercial use with attribution; About and the
    README credit it.
+7. **The same database on two Macs** (UX.md). The merge itself needs nothing the sandbox withholds. Not yet tried on a
+   store build: finding a sync tool's copy beside the database and reading it (in the allowed folder), the dated copy
+   from before a merge, Move to Trash for a merged copy, and iCloud Drive's conflict versions (`NSFileVersion`).
 
 ## Premium
 

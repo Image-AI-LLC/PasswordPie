@@ -2115,6 +2115,164 @@ Use the direct download with the Chrome extension, an item **Demo Login** in **A
 4. `passwordpie login 'pp://Agents/Demo Login' --url https://example.com/`: `site-mismatch` at once, no window.
 5. Preferences > Agents > Activity shows each line with its outcome.
 
+## The same database on two Macs
+
+**In one line:** keep the database file in a folder that Syncthing, iCloud Drive or Dropbox carries between your Macs,
+change it on either, and PasswordPie merges what both Macs changed, item by item.
+
+**What you see:** nothing, most of the time. When both Macs changed the same item, one line under the search field:
+"2 items were changed on both Macs".
+
+### The problem
+
+A database is one file. Put it in a folder that travels between two Macs and the file travels whole: whichever Mac
+saved last replaced what the other saved. PasswordPie made this worse in silence. It read the file once, at unlock, and
+every save wrote what it had in memory over whatever was on disk by then, so a key added on the other Mac an hour ago
+was gone with the next star you clicked here. When both Macs had changed the file before the folder caught up, the
+tool that carries it kept the second version as a file with a long name beside the database, and PasswordPie never
+looked at it.
+
+### What happens now
+
+PasswordPie still opens no network connection and carries nothing anywhere. Your own tool moves the file, which is
+encrypted with your master password the whole way. What changes is what PasswordPie does when the file it has open is
+not the file it read.
+
+**It reads the file again.** While the database is unlocked, PasswordPie notices within a few seconds that the file
+was replaced, reads it, and the menu shows the other Mac's changes. There is no button and no question. Locked,
+nothing is read: the next unlock opens the file as it is then.
+
+**It merges instead of writing over.** If this Mac has something the new file lacks (a change saved here that the other
+Mac never saw), PasswordPie merges the two and writes the result, which then travels back. A save does the same: when
+the file changed since PasswordPie read it, the save merges into it. No save writes over a file PasswordPie has not
+read.
+
+| On one Mac | On the other | After the merge |
+|---|---|---|
+| An item changed | A different item changed, or a new one added | Both changes, nothing asked |
+| An item changed | The same item changed | The later change is the item. The earlier one is in the item's history, and the item is listed (below) |
+| An item moved to the Recycle Bin | Nothing | In the Recycle Bin on both |
+| An item moved to the Recycle Bin | The same item changed after that | It stays, with the change. Changed before that: it is in the Recycle Bin, with the change in its history, and listed (below) as being in the Recycle Bin |
+| An item deleted for good in another KeePass app | Nothing, or a change made before the deletion | Gone on both |
+| An item moved to another folder, a folder renamed or added | Nothing | Moved, renamed, added |
+| An attachment added or replaced | Nothing | The item has it |
+
+Which change is "later" is decided by the time each Mac wrote into the item when it saved it, to the second, as in
+KeePass and KeePassXC, whose rules these are. Two different changes with the same second: PasswordPie picks one, the
+same one on both Macs, and keeps the other in the history.
+
+Nothing PasswordPie does not understand is lost in a merge: fields and settings other KeePass apps wrote, attachments,
+custom icons and each item's history are kept as a save keeps them.
+
+**"2 items were changed on both Macs."** When the same item was changed on both, the later change wins and nobody is
+asked, so that a Mac nobody sits at is never stopped by a question. Nothing is replaced unseen, though: one line under
+the search field says how many, on each of your Macs, once. **Review** opens the list:
+
+- each item with its title and account, and when the version that is current now and the one in its history were made;
+- **History** shows the item's earlier versions, newest first, each with its time and the names of the fields that
+  differ from the item as it is now. Values are not shown. **Restore** makes that version the item again; the version
+  it replaces goes into the history, so Restore can be taken back the same way. A version whose fields are the item's
+  own has nothing to restore, and an item the other Mac moved to the Recycle Bin after your change is listed as being
+  there;
+- **Show Item** opens the item's details.
+
+**×** on the line dismisses it. The list stays in the gear menu as **Changed on Both Macs…** while the database has any
+such items (it remembers the newest 200).
+
+**The copies a sync tool leaves.** When both Macs changed the file before either had the other's version, the tool
+keeps one version under the database's name and the other beside it. PasswordPie looks for these each time it unlocks
+and each time the folder changes:
+
+| Tool | The copy beside `Passwords.kdbx` |
+|---|---|
+| Syncthing | `Passwords.sync-conflict-20261120-031800-ABCDEFG.kdbx` |
+| Dropbox | `Passwords (Ada's conflicted copy 2026-11-20).kdbx` |
+| Unison, with its `copyonconflict` setting | `Passwords.kdbx (conflict_on_2026-11-20)` |
+| iCloud Drive | No file: a conflict version that iCloud Drive holds for the file |
+
+A copy with such a name that opens with the database's own master password and key file, asks for the same key
+settings (the database's key derivation, which another KeePass app can change), and is the same database, is
+merged in without asking: it is the other Mac's half of what you did. The line under the search field then says "A copy
+was merged in", with **Move to Trash**: the copy holds nothing the database lacks now, and it is yours to remove. **×** keeps the file and does not mention it again.
+
+A copy that might be something else is offered, never merged unasked: a file such as `Passwords 2.kdbx` or
+`Passwords (old).kdbx`, which you could have made yourself, or a copy with a sync tool's name that does not open with
+this database's password, asks for other key settings, is larger than 512 MB or is not a plain file. PasswordPie
+opens none of these by itself: a file in a shared folder could ask for any amount of time and memory before it has
+shown that it is yours. A file that turns out to be another database is not merged on that guess either; Merge from
+File… is how you ask for that. The line says "Possible copy: Passwords 2.kdbx", with **Merge…**. Merged, it is yours to
+move to the Trash like the others.
+
+**Merge from File…** in the gear menu merges any KeePass database you choose into the open one, the same way. If the
+file does not open with this database's master password, PasswordPie asks for that file's password, and for its key
+file if it has one. The chosen file is never changed. Afterwards PasswordPie says what came of it: "3 items added, 1
+updated", or that the database already had everything.
+
+**The file from before.** Every merge that changes the database first keeps this Mac's file from before it, beside the
+database, as `Passwords.kdbx.before-merge-20261120-031800` (the newest five are kept). The file that was on disk when
+the merge was written is kept as `Passwords.kdbx.snapshot`, as on every save. Both open with your master password in
+PasswordPie or any KeePass app.
+
+### Clocks
+
+The merge trusts the clocks of your Macs. If one Mac's clock is wrong, "later" can be wrong: a Mac whose clock runs ten
+minutes fast wins against a change made on the other Mac up to ten minutes after its own. Nothing is lost when that
+happens: the change that should have won is in the item's history, the item is in the list of items changed on both
+Macs, and Restore puts it back. Macs set their clocks from the network by default (System Settings > General > Date &
+Time), which keeps them within a second of each other.
+
+### When it does not apply
+
+- **A locked database.** Nothing is read or merged while locked.
+- **Key settings changed on one Mac** (the key derivation, in another KeePass app's database settings). The other Mac
+  does not open the new file while unlocked, for the reason above, and says so under **Why?**. Lock, and unlock.
+- **A master password or key file changed on one Mac.** The other Mac cannot open the new file with the old password. It
+  leaves the file alone, saves nothing over it, and the line under the search field says "Passwords.kdbx cannot be
+  read"; **Why?** gives the reason. Lock, and unlock with the new password. The Mac that changes the keys
+  removes its files from before a merge, which open with the old ones. A copy a sync tool left, and such a file made on
+  another Mac that arrives later, still open with the old keys: remove them when you change a password because it may
+  be known.
+- **Another database under the same name.** A file that replaces the database and is not a version of it (it has
+  another root group) is left alone and never merged in, also when it opens with the same password.
+- **A file that is not a KeePass 2 database.** A CSV, 1PUX or KeePass 1 file opened as a database is not followed or
+  merged; its first change is saved as a `.kdbx` beside it, as before.
+- **The database's own settings**, such as its name or its history limits, are not merged: the file that is read is
+  the one whose settings count.
+- **A folder moved to the Recycle Bin** in another KeePass app goes there with everything in it, also an item changed
+  on the other Mac meanwhile. PasswordPie itself only ever moves items.
+- **History limits.** The history keeps the number of versions the database is set to (10 by default). With a limit
+  of 0 the earlier change is not kept anywhere but the files from before the merge.
+- **An item listed though only one Mac changed it.** This happens when the other Mac changed it more often than the
+  history holds since the Macs last met. Nothing is wrong with the item.
+- **Unison's backups** (`.bak.1.Passwords.kdbx`) are earlier versions, not the other Mac's: use Merge from File….
+- **What agents may ask for** ([AGENTS.md](AGENTS.md)) is merged item by item, and an item unshared on one Mac stays
+  unshared. Standing permissions are merged one by one, and one that was revoked stays revoked.
+
+### Privacy
+
+- PasswordPie opens no network connection. The file is carried by the tool you chose, encrypted with your master
+  password; that tool never has the password.
+- A copy is read on this Mac, with the master password PasswordPie already holds for the open database. A password
+  typed for Merge from File… is used once and not kept.
+- The list of items changed on both Macs is kept inside the database, as item identifiers and times: no titles and no
+  values. Which lines this Mac has already shown is kept in its preferences, as the same identifiers.
+
+### Demo script
+
+Two Macs, or two user accounts, with Syncthing sharing one folder that holds `Passwords.kdbx`.
+
+1. Unlock on both. On the first, add an item. Within seconds it is in the menu on the second: nothing was asked.
+2. Pause Syncthing on both. On the first, change the password of Bank. On the second, add API key and change the
+   password of Bank too, a minute later. Resume Syncthing.
+3. Syncthing keeps one version as `Passwords.sync-conflict-….kdbx`. On both Macs the menu shows API key and the second
+   Mac's password for Bank, and one line: "1 item was changed on both Macs".
+4. Click Review, then History on Bank: the first Mac's version is there with its time. Click Restore: Bank has the
+   first Mac's password again, on both Macs a few seconds later.
+5. The line now says "A copy was merged in". Click Move to Trash: the conflict file is in the Trash.
+6. On the first Mac, move an item to the Recycle Bin. It leaves the menu on the second.
+7. Choose Merge from File… in the gear menu and pick an old backup of the database: "The database already has
+   everything in Passwords-backup.kdbx", or what it added.
+
 ## A folder of .env files becomes items
 
 **In one line:** point PasswordPie at the folder where your API keys sit in `.env` files, look at what it found, and

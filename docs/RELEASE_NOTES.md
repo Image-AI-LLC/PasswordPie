@@ -35,11 +35,14 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - **Many secrets in one request.** The approval window groups them by item: twelve fields of one item are one row that opens, with a checkbox for the item and one for each secret
 - **Activity.** Preferences → Agents lists every request, allowed or not, with the processes that started it. It is kept for 90 days and never holds a value
 - **A value on a command line.** While a command runs, PasswordPie warns when a value it handed out shows up in a process's arguments, where any program on the Mac can read it
+- **The same database on two Macs.** Keep the file in a folder that Syncthing, iCloud Drive or Dropbox carries between your Macs. PasswordPie reads the file again when it changes and merges what both Macs changed, item by item. When both changed the same item, the later change is the item and the earlier one is in its history; one line says so, with a list to restore from. PasswordPie still opens no network connection: your own tool carries the file
+- **Merge from File…** in the gear menu merges any KeePass database into the open one, and a copy a sync tool left beside the database is merged in by itself
 - **Locked.** A request while PasswordPie is locked waits: the lock screen says "Claude Code is waiting for 1 secret." Only you unlock
 - **A folder of `.env` files becomes items.** Preferences → Import → A Folder of .env Files reads a folder of dotenv files: each file becomes an item named after it in a folder named after its folder, every variable a protected field, comment lines the notes, and key files beside it (PEM, `.p8`, a service-account JSON) attachments. You see the list before anything is written, importing the same folder again updates instead of doubling, and the folder itself is never changed. In the App Store app too
 - **Attachments are listed.** An item's details name the files attached to it
 
 ### Changed
+- A save no longer writes over a database file that changed on disk since PasswordPie read it: it merges into it, and keeps this Mac's file from before as `Passwords.kdbx.before-merge-…`
 - Preferences has an Agents pane, between Browsers and Import
 - Premium now covers agents' standing permissions as well as two-step codes. An approval each time, and everything else, stays free
 

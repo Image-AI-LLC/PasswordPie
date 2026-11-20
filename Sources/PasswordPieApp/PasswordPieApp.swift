@@ -82,6 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let switcherPresence = SwitcherPresence()
     private var aboutWindow: NSWindow?
     private var chromeReviewWindow: NSWindow?
+    private var changedOnBothWindow: NSWindow?
+    /// Looks at the open databases' files, so a file a sync tool replaced is read again (docs/UX.md, "The same database
+    /// on two Macs").
+    private var fileWatcher: DatabaseFileWatcher?
     private var paywallWindow: NSWindow?
     private var scanWindow: NSWindow?
     /// True while the scan window closes because the vault locked: the scan keeps waiting for the unlock.
@@ -159,6 +163,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if updates.installAtLaunch() { exit(0) }
         #endif
         session = VaultSession()
+        let watcher = DatabaseFileWatcher { [weak self] files, folders in
+            guard let session = self?.session else { return }
+            if !files.isEmpty { session.filesChangedOnDisk(files) }
+            if !folders.isEmpty { session.lookForCopies(of: folders) }
+        }
+        fileWatcher = watcher
+        session.fileWatcher = watcher
         session.restore()
         autoLock = AutoLockMonitor(settings: session.autoLock) { [weak self] in
             guard let self, !self.session.locked || self.session.unlocking else { return }
@@ -235,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var isIdleForUpdate: Bool {
         guard session.locked, !session.unlocking, !panelController.isVisible, !otpScan.isWaiting, pinnedAccounts.isEmpty,
               NSApp.modalWindow == nil, !session.touchIDBusy, !NSApp.isHidden else { return false }
-        let windows = [editorWindow, preferencesWindow, aboutWindow, chromeReviewWindow, paywallWindow, scanWindow, passwordChangeWindow, largeTypeWindow]
+        let windows = [editorWindow, preferencesWindow, aboutWindow, chromeReviewWindow, changedOnBothWindow, paywallWindow, scanWindow, passwordChangeWindow, largeTypeWindow]
         return !windows.contains { $0?.isVisible == true }
     }
     #endif
@@ -683,6 +694,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         chromeReviewWindow?.makeKeyAndOrderFront(nil)
     }
 
+    /// The items changed on both Macs, with their earlier versions (docs/UX.md, "The same database on two Macs").
+    func showChangedOnBoth() {
+        if changedOnBothWindow == nil {
+            let host = NSHostingController(rootView: ChangedOnBothView(session: session) { [weak self] in
+                self?.changedOnBothWindow?.close()
+            })
+            host.sizingOptions = [.preferredContentSize]
+            let window = NSWindow(contentViewController: host)
+            window.styleMask = [.titled, .closable]
+            window.title = ChangedOnBothView.windowTitle
+            window.applyWarmTitlebar()
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.center()
+            changedOnBothWindow = window
+        }
+        panelController.hide(refocusPrevious: false)
+        NSApp.activate(ignoringOtherApps: true)
+        changedOnBothWindow?.makeKeyAndOrderFront(nil)
+        syncSwitcherPresence()
+    }
+
     func showAbout() {
         if aboutWindow == nil {
             let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -716,6 +749,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         if window === paywallWindow { paywallWindow = nil }
         if window === chromeReviewWindow { chromeReviewWindow = nil }
+        if window === changedOnBothWindow { changedOnBothWindow = nil }
         #if PP_DIRECT
         if window === passwordChangeWindow {
             passwordChangeWindow = nil
@@ -748,7 +782,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// In the ⌘Tab switcher and the Dock while Preferences is open (`SwitcherPresence`).
     private func syncSwitcherPresence() {
-        let others = [editorWindow, aboutWindow, chromeReviewWindow, paywallWindow]
+        let others = [editorWindow, aboutWindow, chromeReviewWindow, changedOnBothWindow, paywallWindow]
         switcherPresence.sync(preferencesOpen: preferencesWindow != nil, otherWindowOpen: others.contains { $0 != nil })
     }
 
@@ -1174,6 +1208,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "chromeStatus": session.chromeStatus,
             "chromeBadges": session.chromeBadgeIDs.count,
             "chromeBatch": session.chromeBatch?.summary ?? NSNull(),
+            "mergeNotice": session.mergeNotice?.summary ?? NSNull(),
+            "mergeNoticeAction": session.mergeNotice?.actionTitle ?? NSNull(),
+            "changedOnBoth": session.itemsChangedOnBoth().map(\.title),
+            "changedOnBothWindow": changedOnBothWindow?.isVisible == true ? changedOnBothWindow?.windowNumber ?? NSNull() : NSNull(),
             "chromeFailures": session.chromeUpdateFailures.count,
             "rootRows": menu.root.rows.map(\.title),
             "appActive": NSApp.isActive,
