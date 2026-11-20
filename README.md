@@ -24,7 +24,7 @@ The downloaded app keeps itself up to date: once a week a separate updater insid
 - Touch ID unlock, auto-lock, and a clipboard that clears itself
 - An optional key file that stays on this Mac, so a database copied from your cloud folder cannot be opened with the password alone
 - Imports KeePass 1, 1Password, Bitwarden, Proton Pass and CSV exports
-- In the downloaded app, AI agents on your Mac (Claude Code, Codex, Cursor) can run a command with a secret, or sign in on a website in your browser, after you approve with Touch ID: the secret goes to the command or the page, not into the agent's conversation ([docs/AGENTS.md](docs/AGENTS.md))
+- In the downloaded app, AI agents on your Mac (Claude Code, Codex, Cursor) can run a command with a secret, or sign in on a website in your browser, after you approve with Touch ID: the secret goes to the command or the page, not into the agent's conversation ([docs/AGENTS.md](docs/AGENTS.md)). Moving a folder of `.env` files in: [docs/MIGRATING_DOTENV.md](docs/MIGRATING_DOTENV.md)
 
 More on [passwordpie.com](https://passwordpie.com/). Support: [support@passwordpie.com](mailto:support@passwordpie.com).
 

@@ -113,6 +113,52 @@ final class KDBXMergeTests: XCTestCase {
         XCTAssertEqual(two.report.changedOnBoth.map(\.id), [mergeID(0xA1)])
     }
 
+    /// KeePass times are whole seconds, so a change saved in the same second as the version before it has that
+    /// version's time. The other copy, which still holds that version, did not change the item: the copy that has it in
+    /// its history was made from it and wins, both ways, and nobody is told of a change on both. (Seen in the two-Mac
+    /// acceptance: a change made right after the item was written was undone by the merge about half the time.)
+    func testAChangeInTheSameSecondAsTheVersionTheOtherCopyHoldsWins() throws {
+        // Several new values: the old tie-break chose by content, so with one value the test could pass by luck.
+        for password in ["second", "b", "c", "d", "e", "f"] {
+            let original = MergeItem(0xA1, "Bank", password: "first", modified: 10)
+            let here = try MergeCopy(items: [
+                MergeItem(0xA1, "Bank", password: password, modified: 10, history: [original])
+            ]).vault()
+            let there = try MergeCopy(items: [original, MergeItem(0xA2, "Mail", modified: 20)]).vault()
+            for (base, other) in [(here, there), (there, here)] {
+                let outcome = try merged(other, into: base)
+                XCTAssertEqual(outcome.vault.item(0xA1)?.password, password, "the later change is the item")
+                XCTAssertEqual(outcome.vault.historyPasswords(0xA1), ["first"])
+                XCTAssertEqual(outcome.report.changedOnBoth, [], "only one copy changed it")
+            }
+        }
+    }
+
+    /// The same for a move to the Recycle Bin in the same second as the version the other copy holds, wherever the
+    /// folder and the Recycle Bin sort (the app gives groups random identifiers).
+    func testAMoveToTheRecycleBinInTheSameSecondAsTheVersionTheOtherCopyHoldsWins() throws {
+        for (folder, bin) in [(0x03, 0x02), (0xFE, 0x02), (0x03, 0xFF), (0xFE, 0xFF), (0x7E, 0x40)] {
+            let original = MergeItem(0xA1, "Bank", modified: 10, located: 10)
+            var trashedCopy = MergeCopy(groups: [
+                MergeGroup(folder, "Agents"),
+                mergeBin([MergeItem(0xA1, "Bank", modified: 10, located: 10, history: [original])], id: bin)
+            ])
+            trashedCopy.recycleBin = bin
+            var liveCopy = MergeCopy(groups: [
+                MergeGroup(folder, "Agents", items: [original, MergeItem(0xA2, "Other", modified: 20)]),
+                mergeBin(id: bin)
+            ])
+            liveCopy.recycleBin = bin
+            let trashed = try trashedCopy.vault()
+            let live = try liveCopy.vault()
+            for (base, other) in [(live, trashed), (trashed, live)] {
+                let outcome = try merged(other, into: base)
+                XCTAssertEqual(outcome.vault.item(0xA1)?.trashed, true, "folder \(folder), bin \(bin)")
+                XCTAssertEqual(outcome.report.changedOnBoth, [], "folder \(folder), bin \(bin)")
+            }
+        }
+    }
+
     /// PasswordPie writes its list of older passwords without making a new version. That is not the item changing.
     func testBookkeepingOfOlderPasswordsIsNotListedAsAChange() throws {
         let field = (key: PreviousPasswords.key, value: "{\"v\":1}", protected: true)

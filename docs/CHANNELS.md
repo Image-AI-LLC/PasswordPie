@@ -11,13 +11,14 @@ App Store builds do not contain direct-only code.
 | Import CSV from Chrome / Apple Passwords | yes | yes |
 | Changes made on two Macs are merged ([UX.md](UX.md), "The same database on two Macs") | yes | yes, the same code. The file and the copies a sync tool leaves beside it are read through the folder the app was allowed; not yet tried in the sandbox (see "Before an App Store submission") |
 | Import a folder of `.env` files (Preferences > Import) | yes | yes |
+| Two databases unlocked at once ([UX.md](UX.md), "Two databases at once, and a Mac nobody sits at") | yes | yes |
 | Live read of Chrome's password store | yes (Preferences > Browsers) | **not compiled in** |
 | Two-step codes (Premium) | an activation from passwordpie.com, where Premium is bought. **No account, no sign-in in the app** | a StoreKit 2 purchase on this Apple Account, or an activation from passwordpie.com. **No account, no sign-in** |
 | Two-step codes in the browser (Premium) | the app has Premium ([ACCOUNTS.md](ACCOUNTS.md)) | the app has Premium |
 | Network from the app | **none** of its own; the separate updater asks GitHub for a newer version once a week (see "Network" and "Updates" below) | **none**: no `URLSession`, no `network.client` entitlement |
 | Updates | `PasswordPieUpdater`, inside the app: weekly, from GitHub releases | the App Store; the updater is **not in the bundle** |
 | Extension toolbar button | Opens PasswordPie. No popup, no account, no request to the site. Right-click: Scan QR code on this page, and in Chrome Open passwordpie.com | The same Safari build as the direct channel's: no line that opens the site |
-| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` (`run`, `read`, `list`, `status`, `login`, `write-env`, `check-import`, `mcp`). An approval each time is free | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
+| Agent access ([AGENTS.md](AGENTS.md)) | Preferences > Agents, `agent.sock`, the `passwordpie` tool in `Contents/Helpers` (`run`, `read`, `list`, `status`, `login`, `write-env`, `check-import`, `save`, `mcp`), the agents database and "Keep unlocked while this Mac is awake". An approval each time, and a save, is free | **not compiled in**: the app links no `PasswordPieAgent`, and the bundle has no `Contents/Helpers` |
 | Agents' standing permissions (Premium) | the app has Premium (`appHasPremium()`); nothing in a request says so | not there |
 | Browser extension | Safari and Chrome (the Chrome Web Store extension; an unpacked build has the same ID) | Safari only; Chrome's native host is **not compiled in**. See [BROWSER_EXTENSION.md](BROWSER_EXTENSION.md) |
 
@@ -27,11 +28,15 @@ Check the store binary has none of it:
 
 Check the store app has no agent access:
 
-    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e agent.sock -e com.passwordpie.cli -e agentAccessEnabled -e PasswordPie.AgentSharing -e PasswordPie.AgentGrants -e agentGrantLength -e mcp_servers -e login-result   # expect 0
+    strings -a build/mas/PasswordPie.app/Contents/MacOS/PasswordPie | grep -c -e agent.sock -e com.passwordpie.cli -e agentAccessEnabled -e agentKeepUnlocked -e agentGrantLength -e mcp_servers -e login-result   # expect 0
     test ! -e build/mas/PasswordPie.app/Contents/Helpers && echo ok                                  # expect ok
 
 What stays in the store binary is view code both channels share and that does nothing there: the Agents pane's name in
-the list of panes (the pane is left out), and the lock screen's field for "… is waiting for 1 secret".
+the list of panes (the pane is left out), and the lock screen's field for "… is waiting for 1 secret". So do the names
+of the database's agent records (`PasswordPie.AgentSharing`, `PasswordPie.AgentGrants`, `PasswordPie.AgentProposals`):
+the merge in the core library merges them record by record in both channels, so that a database used by the App Store
+app on one Mac and the downloaded app on another keeps them (AGENTS.md, "On more than one Mac"). The store app reads
+them only to merge, and never acts on them.
 
 Check the direct bundle carries the tool, signed as the app expects, and that no debug hook reached a release build
 (`PASSWORDPIE_AGENT_APPROVE` answers the approval window without Touch ID; `PASSWORDPIE_AGENT_SOCKET` skips the tool's

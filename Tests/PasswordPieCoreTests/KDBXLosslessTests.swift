@@ -200,6 +200,35 @@ final class KDBXLosslessTests: XCTestCase {
         XCTAssertTrue(tree.contains("Empty"))
     }
 
+    /// A new database's first save names a Recycle Bin only when it writes one: otherwise `RecycleBinUUID` is the nil
+    /// UUID, as in a file KeePass makes, and not a group the file does not have (KeePassXC: "found 1 invalid group
+    /// reference"). The first item moved to the Recycle Bin later makes the group and names it.
+    func testANewDatabaseNamesARecycleBinOnlyWhenItHasOne() throws {
+        func recycleBinUUID(_ vault: Vault) -> String? {
+            vault.preserve?.document.rootElement().flatMap { direct($0, "Meta").first }.flatMap { direct($0, "RecycleBinUUID").first }?.stringValue
+        }
+        var kept = VaultEntry()
+        kept.title = "Kept"
+        kept.password = "kept-pw"
+        var created = Vault(name: "Created", entries: [kept], kdf: .fastTest)
+        var loaded = try KDBX.load(data: try KDBX.save(vault: &created, password: "secret"), password: "secret")
+        XCTAssertEqual(recycleBinUUID(loaded), id("00000000-0000-0000-0000-000000000000"), "no Recycle Bin yet: none named")
+        XCTAssertNil(group(named: "Recycle Bin", in: try XCTUnwrap(loaded.preserve).document))
+
+        loaded.entries[0].trashed = true
+        let trashedLater = try KDBX.load(data: try KDBX.save(vault: &loaded, password: "secret"), password: "secret")
+        let bin = try XCTUnwrap(group(named: "Recycle Bin", in: try XCTUnwrap(trashedLater.preserve).document))
+        XCTAssertEqual(recycleBinUUID(trashedLater), direct(bin, "UUID").first?.stringValue, "the group the first deletion made")
+
+        var gone = VaultEntry()
+        gone.title = "Gone"
+        gone.trashed = true
+        var withTrash = Vault(name: "Created", entries: [gone], kdf: .fastTest)
+        let first = try KDBX.load(data: try KDBX.save(vault: &withTrash, password: "secret"), password: "secret")
+        let firstBin = try XCTUnwrap(group(named: "Recycle Bin", in: try XCTUnwrap(first.preserve).document))
+        XCTAssertEqual(recycleBinUUID(first), direct(firstBin, "UUID").first?.stringValue, "a bin written at once is the one named")
+    }
+
     func testNewDatabaseSecondSaveKeepsUntouchedEntries() throws {
         var first = VaultEntry()
         first.title = "One"

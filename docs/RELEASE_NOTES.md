@@ -36,6 +36,8 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - **Activity.** Preferences → Agents lists every request, allowed or not, with the processes that started it. It is kept for 90 days and never holds a value
 - **A value on a command line.** While a command runs, PasswordPie warns when a value it handed out shows up in a process's arguments, where any program on the Mac can read it
 - **The same database on two Macs.** Keep the file in a folder that Syncthing, iCloud Drive or Dropbox carries between your Macs. PasswordPie reads the file again when it changes and merges what both Macs changed, item by item. When both changed the same item, the later change is the item and the earlier one is in its history; one line says so, with a list to restore from. PasswordPie still opens no network connection: your own tool carries the file
+- **Two databases unlocked at once.** Keep the secrets agents use in a database of their own beside your personal one: Preferences > Database > **Unlock…** opens a second database without locking the first, the menu and search show both, and ⌘L locks both. Preferences > Agents > **Agents database** chooses which one agents are served from; nothing in the other is ever found by a reference
+- **A Mac where agents work alone.** Keep only the agents database there, and turn on **Keep “Agents.kdbx” unlocked while this Mac is awake** (off by default; sleep, the screen lock, logging out and Lock still lock it). A standing permission given on that Mac lets its night jobs run with nobody there; a new use is approved at that Mac, over Screen Sharing with its login password
 - **Merge from File…** in the gear menu merges any KeePass database into the open one, and a copy a sync tool left beside the database is merged in by itself
 - **Agents save the keys they make.** `some-command | passwordpie save pp://Agents/Stripe/API key` (or the `passwordpie_save` MCP tool, which runs the command itself) hands a new key to PasswordPie instead of the conversation or a file. You see where it goes, a new item or a change, never the value, and Save with Touch ID; a change keeps the old value in the item's history. One you do not answer waits in Preferences → Agents → Saves waiting for you, also on your other Mac when the file travels there. No standing permission ever covers a save
 - **Locked.** A request while PasswordPie is locked waits: the lock screen says "Claude Code is waiting for 1 secret." Only you unlock
@@ -48,9 +50,11 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - Premium now covers agents' standing permissions as well as two-step codes. An approval each time, and everything else, stays free
 
 ### Fixed
+- A database made in PasswordPie named a Recycle Bin it did not have until something was deleted, and KeePassXC warned of "1 invalid group reference" when it opened the file. A new database now names none until it has one
 - Files attached to an item in a 1Password export, or in a KeePass 1 or OPVault file opened as a database, were left out when the item was saved. They are now saved as the item's attachments
 
 ### Good to know
+- Moving a folder of `.env` files into PasswordPie, step by step, on one Mac or two: [docs/MIGRATING_DOTENV.md](https://github.com/Image-AI-LLC/PasswordPie/blob/main/docs/MIGRATING_DOTENV.md)
 - Agent access is in the downloaded app only. The App Store app has none of it
 - PasswordPie still opens no network connection. The `passwordpie` tool is inside the app (`PasswordPie.app/Contents/Helpers`), and Preferences → Agents links it into `~/.local/bin`
 - What it cannot do: hide a value the command changes (base64, a part of it), or stop a command from sending what it was given somewhere else. Share with agents only what they need

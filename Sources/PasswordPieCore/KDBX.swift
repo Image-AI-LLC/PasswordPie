@@ -756,9 +756,12 @@ private func xmlDocument(_ vault: Vault, stream: inout ChaCha20) -> Data {
     xml += tag("Generator", "PasswordPie")
     xml += tag("DatabaseName", vault.name)
     xml += "<MemoryProtection><ProtectTitle>False</ProtectTitle><ProtectUserName>False</ProtectUserName><ProtectPassword>True</ProtectPassword><ProtectURL>False</ProtectURL><ProtectNotes>False</ProtectNotes></MemoryProtection>\n"
+    // The Recycle Bin is written only when something is in it, and until then the nil UUID names none, as KeePass does
+    // in a new file: a UUID with no group behind it is an invalid reference to KeePassXC. A later save makes the group.
     let recycle = UUID()
+    let trashed = vault.entries.filter(\.trashed)
     xml += "<RecycleBinEnabled>True</RecycleBinEnabled>\n"
-    xml += tag("RecycleBinUUID", base64UUID(recycle))
+    xml += tag("RecycleBinUUID", base64UUID(trashed.isEmpty ? UUID(uuid: UUID_NULL) : recycle))
     if !vault.customData.isEmpty {
         xml += "<CustomData>\n"
         for key in vault.customData.keys.sorted() {
@@ -773,7 +776,6 @@ private func xmlDocument(_ vault: Vault, stream: inout ChaCha20) -> Data {
         entries: vault.entries.filter { !$0.trashed },
         stream: &stream
     )
-    let trashed = vault.entries.filter(\.trashed)
     if !trashed.isEmpty {
         xml += groupXML(name: "Recycle Bin", entries: trashed, recycle: true, recycleID: recycle, stream: &stream)
     }
