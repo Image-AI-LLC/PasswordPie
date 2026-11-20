@@ -1244,6 +1244,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "premiumMessage": session.premium.activity.message ?? NSNull(),
             "paywallWindow": paywallWindow?.isVisible == true ? paywallWindow?.windowNumber ?? NSNull() : NSNull()
         ]
+        // The question about a browser built on Chromium (docs/UX.md, "Other browsers built on Chrome"): its words, and
+        // its window for `screencapture -l`.
+        state["browserApproval"] = BrowserApprovalPrompt.open.first.map { $0.debugSummary } ?? NSNull()
+        state["browserApprovalWindow"] = NSApp.windows.first { $0.isVisible && $0.contentView is NSHostingView<BrowserApprovalView> }?.windowNumber ?? NSNull()
         #if PP_DIRECT
         // Agent access (docs/AGENTS.md, "Trying it"): the switch, an open approval window, and what a silent use leaves
         // behind. With several windows open, the summary and the window number are each of one of them.

@@ -668,6 +668,11 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
 
     public static let poke = BridgeResponse(type: "poke")
 
+    /// The answer to `show`, the toolbar button: the app heard it. Carries nothing but the request's id.
+    public static func show(id: Int?) -> BridgeResponse {
+        BridgeResponse(type: "show", id: id)
+    }
+
     public static func error(_ code: String, id: Int?) -> BridgeResponse {
         BridgeResponse(type: "error", id: id, code: code)
     }
@@ -929,7 +934,7 @@ public struct BridgeState: Sendable {
         case "show":
             // The toolbar button. The app opens its panel; the answer only acknowledges it.
             links.noted(peer, now: now)
-            return BridgeResponse(type: "show", id: request.id)
+            return .show(id: request.id)
         default:
             return .error("bad-request", id: request.id)
         }

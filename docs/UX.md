@@ -502,19 +502,33 @@ and connects it there.
 1. Add the PasswordPie extension to the browser from the Chrome Web Store. (Edge asks you to turn on "Allow extensions
    from other stores" first.) When the browser is in front without the extension, the panel's first line is
    **Add Chrome Extension…** with that browser's icon, and it opens the store page in that browser.
-2. The first time the browser connects, PasswordPie asks, once:
+2. The first time the browser connects, PasswordPie asks, once, in a window of its own:
 
+   > PasswordPie
    > **Allow “ego lite” to fill passwords?**
-   > The PasswordPie extension in ego lite wants to connect. Once allowed, ego lite gets an account's username and
-   > password when you pick it in PasswordPie, as Chrome does.
-   > Signed by CITRO LABS PTE. LIMITED. Allow it only if you added the PasswordPie extension to ego lite yourself.
+   >
+   > ego lite (with its icon)
+   > Signed by CITRO LABS PTE. LIMITED
+   >
+   > It gets the username and password of each account you pick.
+   > **Only allow it if you added the PasswordPie extension to ego lite yourself.**
+   > You can change this in Preferences > Browsers.
    >
    > **Don't Allow** · **Allow**
 
-   Return is **Don't Allow**: a key pressed by accident never lets a browser in. Click **Allow**.
+   The two buttons look the same and neither is the default: Return and Escape answer nothing, so a key pressed by
+   accident neither lets a browser in nor shuts it out. Click **Allow**. PasswordPie keeps working while the window
+   waits, and the browser stays unconnected until you answer.
 3. That answer stays. **Allow**: the browser works exactly like Chrome, profiles included: `⌘\` puts the site's accounts
-   at the top, and Return fills the page. **Don't Allow**: its extension gets nothing, PasswordPie does not ask again,
-   no **Add Chrome Extension…** line is shown for it, and Fill types the username and password as in any app.
+   at the top, and Return fills the page. **Don't Allow**: its extension gets nothing, and Fill types the username and
+   password as in any app. PasswordPie does not ask again by itself. To be asked again:
+
+   - With that browser in front, the panel's first line is **Allow “ego lite” to Fill Passwords…** with the browser's
+     icon, where **Add Chrome Extension…** would be. Click it, and the question opens again.
+   - Click the PasswordPie button in that browser's toolbar. The question opens again, instead of the panel.
+
+   The same question, the same two buttons. A browser you said no to cannot make the question come back more than once
+   every 10 seconds.
 
 Google Chrome, and Chrome Beta, Dev and Canary, are never asked about: they are signed by Google.
 
@@ -545,6 +559,8 @@ app with the same name, signed by someone else, is asked about again.
 3. In ego lite, open github.com/login and press `⌘\`. The top group is GITHUB.COM. Press Return: both fields fill.
 4. Open **Preferences > Browsers**: ego lite says **Connected**. Click **Don't Allow**: it says **Not allowed**, and
    `⌘\` on the same page no longer fills through the extension.
+5. With ego lite in front, press `⌘\`: the first line is **Allow “ego lite” to Fill Passwords…**. Click it, then
+   **Allow** in the question: ego lite says **Connected** again.
 
 ### What it will not do
 

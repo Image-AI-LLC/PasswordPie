@@ -461,6 +461,20 @@ headers are upper-cased in code; CJK has no case, so they show as written.
   Password is `BrandPrimaryButtonStyle`, the default. A write that failed adds "Couldn't save. Nothing changed." in
   `caption` `error` and the window stays. The close button is Not Yet. Never the system's blue default button. Locking
   closes it.
+- **Browser question window** — direct channel only: "Allow “<browser>” to fill passwords?", asked once per browser
+  built on Chromium (docs/UX.md, "Other browsers built on Chrome"). 480 pt, `window-surface`, 20 pt padding, the
+  approval window's panel (no title, no close button), in front of everything. Two icon rows share one text edge 44 pt
+  in: the pie at 30 pt with "PasswordPie" in `caption` medium `text-secondary` over the question in `title` (16 pt
+  semibold), then the browser's own icon at 32 pt with its name in 14 pt medium and "Signed by <organization>" in
+  `caption` `text-secondary` (left out when the certificate names none). Below, from the left edge: what it gets in
+  `body`; the rule for deciding in `body` medium; where to change the answer in `caption` `text-secondary`. The
+  browser's name never breaks across lines. No fills, cards or rules: only the buttons are filled. Don't Allow and
+  Allow are two plain system buttons of equal width, large, 10 pt apart; neither is the default and no key presses
+  either, so neither answer is pushed. Never `BrandPrimaryButtonStyle` here, and never the system's blue default
+  button. Board and critic log: `art/browser-approval/`.
+- **Allow line** — over a browser the person said no to, the extension banner's row reads "Allow “<browser>” to Fill
+  Passwords…" with that browser's icon: the same row, height and hover as "Add Chrome Extension…". A click opens the
+  browser question window again.
 - **Preferences pane list** — `surface` with ink 4 % over it, and a 1 pt ink 8 % line on its right edge. Rows start
   42 pt from the top of the window, 8 pt from the sides, 30 pt tall, radius 7: a 13 pt symbol in a 20 pt slot, 8 pt,
   the name in `body`. No tile behind the symbol. Unselected: the symbol is `text-secondary`. Selected: the row takes
