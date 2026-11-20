@@ -79,5 +79,43 @@ final class AgentRecordsMergeTests: XCTestCase {
             XCTAssertFalse(merged.covers(VaultEntry(id: token)))
         }
     }
+
+    private func proposal(_ id: String) -> AgentProposal {
+        AgentProposal(
+            id: id, created: now, mac: "air", agent: "com.anthropic.claude-code", agentName: "Claude Code", signature: "Anthropic PBC",
+            project: "/Users/ada/shop", reason: "Webhook key", via: nil, item: nil, folder: ["Agents"], title: "Stripe \(id)",
+            field: .custom("API key"), change: .newItem, value: Data("PLANTED-proposal-\(id)".utf8)
+        )
+    }
+
+    /// Saves agents proposed, merged record by record: each Mac's proposals survive, and one answered on either Mac stays
+    /// answered (and without its value) whichever copy is merged into which.
+    func testProposalsOfBothMacsSurviveAndAnAnsweredOneIsNotPendingAgain() throws {
+        let both = proposal("AAAA0001"), fromAir = proposal("BBBB0002"), fromPro = proposal("CCCC0003"), twice = proposal("DDDD0004")
+        let air = AgentProposals([both, fromAir, twice.answered(.rejected, at: now)])
+        let pro = AgentProposals([both.answered(.saved, at: now, item: UUID()), fromPro, twice.answered(.saved, at: now, item: UUID())])
+        let onAir = try copy { air.write(into: &$0) }
+        let onPro = try copy { pro.write(into: &$0) }
+        for (base, source) in [(onPro, onAir), (onAir, onPro)] {
+            let merged = AgentProposals(customData: try VaultMerge.merge(source, into: base).vault.customData)
+            let states = Dictionary(uniqueKeysWithValues: merged.all.map { ($0.id, $0.state) })
+            XCTAssertEqual(states, ["AAAA0001": .saved, "BBBB0002": .pending, "CCCC0003": .pending, "DDDD0004": .saved])
+            XCTAssertNil(merged.all.first { $0.id == "AAAA0001" }?.value, "the value does not come back from the copy that held it pending")
+            XCTAssertEqual(merged.all.first { $0.id == "BBBB0002" }, fromAir, "every field as written")
+        }
+    }
+
+    /// The answered record wins by its state, not by how its text happens to sort: here the pending one sorts first.
+    func testAnAnsweredProposalWinsWhicheverSortsFirst() {
+        let pending = #"{"proposals":[{"a":"0","id":"X1","state":"pending","value":"UExBTlRFRA=="}],"version":1}"#
+        let saved = #"{"proposals":[{"id":"X1","state":"saved","z":"1"}],"version":1}"#
+        let rejected = #"{"proposals":[{"id":"X1","state":"rejected","zz":"1"}],"version":1}"#
+        for (a, b) in [(pending, saved), (saved, pending)] {
+            XCTAssertTrue(AgentProposalsRecord.merged(a, b)?.contains(#""state":"saved""#) ?? false)
+        }
+        for (a, b) in [(rejected, saved), (saved, rejected)] {
+            XCTAssertTrue(AgentProposalsRecord.merged(a, b)?.contains(#""state":"saved""#) ?? false, "saved over rejected")
+        }
+    }
 }
 #endif

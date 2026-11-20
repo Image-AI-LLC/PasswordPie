@@ -210,6 +210,66 @@ enum AgentGrantsRecord {
     }
 }
 
+// MARK: Saves agents proposed
+
+/// The stored form of the saves agents proposed (`AgentProposals` in the agent library, docs/AGENTS.md, "Saving a
+/// secret"): key `PasswordPie.AgentProposals`, JSON with `proposals`, each record with an `id` and a `state` (`pending`,
+/// `saved`, `rejected`). Read here as plain JSON, as the standing permissions are: a record is kept whole.
+enum AgentProposalsRecord {
+    static let customDataKey = "PasswordPie.AgentProposals"
+
+    private static func parse(_ text: String?) -> (version: Int, records: [String: [String: Any]])? {
+        guard let text, let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+              let proposals = object["proposals"] as? [[String: Any]] else { return nil }
+        var records: [String: [String: Any]] = [:]
+        for record in proposals {
+            guard let id = (record["id"] as? String)?.uppercased(), records[id] == nil else { continue }
+            records[id] = record
+        }
+        return (object["version"] as? Int ?? 1, records)
+    }
+
+    private static func canonical(_ record: [String: Any]) -> String {
+        let data = (try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Answered before pending, so a copy that still holds a proposal pending cannot bring back its value; saved before
+    /// rejected, since the item holds it then.
+    private static func rank(_ record: [String: Any]) -> Int {
+        switch record["state"] as? String {
+        case "saved": return 2
+        case "rejected": return 1
+        default: return 0
+        }
+    }
+
+    /// Every proposal either copy has. One both hold differently: the answered one, then the same whichever copy is
+    /// merged into which.
+    static func merged(_ ours: String?, _ theirs: String?) -> String? {
+        guard let other = parse(theirs) else { return ours }
+        guard let mine = parse(ours) else { return ours ?? theirs }
+        var records = mine.records
+        for (id, record) in other.records {
+            guard let own = records[id] else {
+                records[id] = record
+                continue
+            }
+            let (a, b) = (rank(own), rank(record))
+            if b > a || (b == a && canonical(record) < canonical(own)) { records[id] = record }
+        }
+        let texts = records.mapValues(canonical)
+        if texts == mine.records.mapValues(canonical) { return ours }
+        if texts == other.records.mapValues(canonical) { return theirs }
+        let object: [String: Any] = [
+            "version": max(mine.version, other.version),
+            "proposals": records.keys.sorted().compactMap { records[$0] },
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]) else { return ours }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
 // MARK: Items changed on both Macs
 
 /// The items a merge found changed in both copies, kept in the database (key `PasswordPie.ChangedOnBoth`) so that every

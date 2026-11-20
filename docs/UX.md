@@ -1788,7 +1788,7 @@ plain text on disk or in the model's context, and none asks the owner first.
 Some agents work better with MCP tools than with a shell command, and some have no shell at all. Preferences > Agents >
 **MCP server** shows the line to paste for **Claude Code** (a `claude mcp add` command for Terminal), **Codex** (lines for
 `~/.codex/config.toml`) and **Cursor** (an entry for `~/.cursor/mcp.json`), each with a **Copy** button. PasswordPie does
-not edit other apps' settings. The agent then has five tools:
+not edit other apps' settings. The agent then has six tools:
 
 | Tool | What it does |
 |---|---|
@@ -1797,6 +1797,7 @@ not edit other apps' settings. The agent then has five tools:
 | `passwordpie_read` | The value itself, after **Show to Agent**, every time |
 | `passwordpie_status` | Running, locked, access on, who PasswordPie sees asking |
 | `passwordpie_login` | Signs in on a website in your browser, exactly like `passwordpie login` ("Agents log in on a website"): the agent gets how it went and the account's name, never the password |
+| `passwordpie_save` | Runs a command that prints a key the agent made and hands the output to PasswordPie, exactly like `passwordpie save` ("Agents save a new secret"): the agent gets saved or pending, never the value |
 
 Nothing an MCP tool does shares an item, unlocks, or makes an approval last: those are only in PasswordPie, on your
 initiative. Every tool tells the agent that it never receives a password unless it uses `passwordpie_read` and you
@@ -2362,7 +2363,8 @@ lid, no sensor, a remote screen) asks for the password. If that Mac is locked, u
   at once work in both apps.
 - **A database removed from the list** closes, and if it was the agents database, agents go back to the current one.
 - **Approving from your own Mac** without going to the other one's screen is not built: approve there over Screen
-  Sharing, or give standing permissions for the jobs that run at night.
+  Sharing, or give standing permissions for the jobs that run at night. A key an agent saves there is different: it
+  waits in the list of saves, which comes with the file ("Agents save a new secret").
 
 ### Privacy
 
@@ -2389,6 +2391,115 @@ Two databases, `Personal.kdbx` and `Agents.kdbx`, each with its own master passw
    after inactivity to 1 minute, and wait two minutes: still unlocked. Lock the screen (⌃⌘Q) and log back in: locked.
 7. On that Mac, run step 3's command over SSH and approve over Screen Sharing with the login password. From the first
    Mac, the SSH line above shows the request.
+
+## Agents save a new secret
+
+**In one line:** an agent that creates a key hands it to PasswordPie (`some-command | passwordpie save
+pp://Agents/Stripe/API key`), you see where it goes and never the value, and Touch ID saves it. Until then it waits in
+Preferences > Agents. Direct download only. The reference is "Saving a secret" in [AGENTS.md](AGENTS.md).
+
+### The problem
+
+Agents make keys: a deploy token, a webhook secret, a service account. "Agents read; the owner writes" left the agent two
+places for the new value: pasted into the conversation, where it stays in the model's records, or written to a file in
+some folder. On a Mac nobody sits at, the file is the only choice.
+
+### What happens now
+
+1. **The agent hands the value over.** It pipes the command that prints the key into
+   `passwordpie save pp://Agents/Stripe/API key --reason "Webhook key for the shop"`, or calls the
+   `passwordpie_save` MCP tool with that command. The value goes from the command into PasswordPie; it is never an
+   argument, never printed, and never in the agent's conversation.
+2. **PasswordPie keeps it as a proposal** in the agents database and shows a window:
+
+        Claude Code wants to save a secret
+
+        Stripe  (Agents)
+          field API key · a new item
+        Project   ~/projects/shop
+        Agent     Claude Code, signed by Anthropic PBC, started in Terminal   (pid 4182)
+        The agent says:
+        “Webhook key for the shop”
+        The value is not shown. It came from the agent: save it only if you expect this key.
+
+        [ Reject ]        [ Decide Later ]        [ Save ]
+
+3. **Save** asks for Touch ID (or your login password). A new item is made in that folder (the folder too, if it is
+   not there) and shared with agents, so the agent can use it with `passwordpie run` and the usual approval. A change to
+   an item that is already shared says "changes it: the value it has now goes into the item's history", and the history
+   keeps it, as for any edit.
+4. **Reject** saves nothing and the agent hears `denied`. **Decide Later**, or no answer in 2 minutes, leaves it in the
+   list below: the agent hears `pending` and the proposal's id.
+
+**Saves waiting.** Preferences > Agents > **Saves waiting for you** lists each proposal that has not been answered:
+the agent, where it would go (folder, title, field, new item or a change), when, the agent's reason, and on which Mac it
+was made. **Save** (Touch ID) and **Reject** answer it. The list is in the database file, so it waits through a restart
+and comes with the file to your other Mac ("The same database on two Macs"): a key an agent made on the Mac nobody sits
+at can be saved from the Mac you are at. A proposal nobody answers is dropped after 30 days.
+
+`passwordpie status` shows the agent its own proposals made on this Mac, waiting, saved or rejected, by id.
+
+### Which item a reference names
+
+`pp://Agents/Stripe/API key` saves the field **API key** of the item **Stripe** in the folder **Agents**. When a shared
+item is already at that place, the save changes it. When none is:
+
+| Reference | Makes |
+|---|---|
+| `pp://Agents/Cloudflare token` | Item **Cloudflare token** in **Agents**, its password |
+| `pp://Agents/Stripe/API key` | Item **Stripe** in **Agents**, field **API key** |
+| `pp://Agents/Stripe/password` | Item **Stripe** in **Agents**, its password |
+| `pp://Developer/Apple/attachment/AuthKey_ABC.p8` | Item **Apple** in **Developer**, the attached file **AuthKey_ABC.p8** |
+| `pp://id/<UUID>/API key` | The field of that shared item; never a new item |
+
+So with three parts or more the last is the field; to save the password of a new item in a folder inside a folder, end
+with `/password`. When the reference could name two shared items, the agent hears `ambiguous` with their
+`pp://id/` references.
+
+### What it will not do
+
+- Show the value, in the window, the list, Activity or anywhere else. Not even whether it is the same as the value the
+  item holds now: the agent learns nothing about the current value from a save.
+- Let a standing permission cover a save. Every save asks, with Touch ID, because a save that replaced your Cloudflare
+  token with someone else's would send the next deploy to their account.
+- Let the agent use a value before you saved it. A waiting proposal is not an item: `run` and `read` get the item as it
+  is, or nothing.
+- Delete, move, rename, share or unshare anything. A save writes one field or one attached file, and the title, the
+  two-step code fields and PasswordPie's own fields are not among them.
+- Reach an item that is not shared. `pp://id/` of one answers `not-available`, as for any reference; a path makes a new
+  shared item beside it, which the window shows as a new item.
+- Save while locked. The request waits for you to unlock, as for a secret, then the agent hears `locked`. The command
+  in front of `passwordpie save` has already run by then: `passwordpie_save` asks first and runs its command only
+  while PasswordPie is unlocked.
+
+### Activity
+
+Each save is one line, with no value: **saved** (in the window), **waiting for the owner**, **rejected**, and later
+**saved from the list** or **rejected** when you answer it in Preferences > Agents. The line names the folder, item and
+field and says new item, new field or a change.
+
+### Privacy
+
+The value travels from the tool to PasswordPie over `agent.sock`, the one message that carries a value that way. A
+waiting proposal is kept inside the database file, encrypted with it, and is not an item: it is not in the list,
+search, AutoFill or the browser, and agents cannot read it. Saving or rejecting removes the value from the proposal;
+the record that it was answered stays for 30 days so that another copy of the file cannot bring it back.
+
+### Demo script
+
+Use the direct download with agent access on and a folder **Agents** shared with agents.
+
+1. `printf 'sk_test_demo_4242' | passwordpie save 'pp://Agents/Stripe/API key' --reason "demo"`: the window says
+   "wants to save a secret", **Stripe (Agents)**, "field API key · a new item", and no value. **Save**, Touch ID: the
+   tool prints the item's reference; the item **Stripe** is in **Agents** with the field, shared with agents.
+2. `printf 'sk_test_demo_9999' | passwordpie save 'pp://Agents/Stripe/API key'`: "changes it". **Save**: the item's
+   history has the first value.
+3. Again, and press **Decide Later**: the tool prints `pending` and an id, exit code 79. `passwordpie status` lists it.
+   Preferences > Agents > Saves waiting for you shows it; **Reject**: `passwordpie status` says rejected.
+4. Again, and press **Reject**: exit code 67.
+5. In Claude Code with the MCP server: "make a random token with `openssl rand -hex 16` and save it to PasswordPie as
+   pp://Agents/Demo/token". The window is the same; the agent's answer has `saved` and no token.
+6. `grep -r sk_test_demo ~/Library/Application\ Support/PasswordPie`: nothing.
 
 ## A folder of .env files becomes items
 

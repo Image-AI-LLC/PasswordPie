@@ -235,3 +235,79 @@ extension AgentRequest {
         return request
     }
 }
+
+/// Keeps proposals in memory and writes a saved one into a `FakeVault`, as the app's store writes the database.
+@MainActor
+final class FakeSaves: AgentSaveStore {
+    var kept: [AgentProposal] = []
+    var locked = false
+    /// Every `propose` fails, as a database that cannot be written.
+    var failWrites = false
+    let vault: FakeVault
+    var clock: () -> Date = Date.init
+
+    init(vault: FakeVault) {
+        self.vault = vault
+    }
+
+    var proposals: [AgentProposal]? {
+        guard !locked else { return nil }
+        return AgentProposals(kept).current(now: clock())
+    }
+
+    func propose(_ proposal: AgentProposal) async -> Bool {
+        guard !failWrites else { return false }
+        kept.append(proposal)
+        return true
+    }
+
+    func save(_ id: String) async -> AgentSaveResult {
+        guard let index = kept.firstIndex(where: { $0.id == id && $0.state == .pending }), let bytes = kept[index].bytes else {
+            return .failed("It is no longer waiting.")
+        }
+        let proposal = kept[index]
+        let field = proposal.fieldValue
+        let change: AgentSaveChange
+        let item: UUID
+        if let target = proposal.item ?? vault.agentSharedItems().first(where: { $0.folder == proposal.folder && $0.title == proposal.title })?.id,
+           let at = vault.items.firstIndex(where: { $0.id == target }) {
+            change = (vault.values[target]?[field]?.isEmpty ?? true) ? .newField : .changed
+            vault.values[target, default: [:]][field] = bytes
+            if case .custom(let name) = field, !vault.items[at].fields.contains(name) { vault.items[at].fields.append(name) }
+            if case .attachment(let name) = field, !vault.items[at].attachments.contains(name) { vault.items[at].attachments.append(name) }
+            item = target
+        } else {
+            var fields: [String: String] = [:]
+            var attachments: [String: Data] = [:]
+            switch field {
+            case .custom(let name): fields[name] = String(decoding: bytes, as: UTF8.self)
+            case .attachment(let name): attachments[name] = bytes
+            default: break
+            }
+            let made = vault.add(proposal.title, folder: proposal.folder, password: field == .password ? String(decoding: bytes, as: UTF8.self) : "", fields: fields, attachments: attachments)
+            if field == .username || field == .url || field == .notes { vault.values[made.id]?[field] = bytes }
+            change = .newItem
+            item = made.id
+        }
+        kept[index] = proposal.answered(.saved, at: clock(), item: item)
+        return .saved(item: item, change: change)
+    }
+
+    func reject(_ id: String) async -> Bool {
+        guard let index = kept.firstIndex(where: { $0.id == id && $0.state == .pending }) else { return false }
+        kept[index] = kept[index].answered(.rejected, at: clock())
+        return true
+    }
+}
+
+extension AgentRequest {
+    static func save(_ ref: String, value: String, wait: Int? = 0, reason: String? = nil, client: String? = nil) -> AgentRequest {
+        var request = AgentRequest(type: .save, id: 11)
+        request.secrets = [AgentSecretRequest(name: nil, ref: ref, delivery: .save)]
+        request.setSaved(Data(value.utf8))
+        request.wait = wait
+        request.reason = reason
+        request.client = client
+        return request
+    }
+}

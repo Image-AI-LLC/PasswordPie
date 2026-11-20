@@ -604,8 +604,8 @@ final class KDBXMerger {
         return items
     }
 
-    /// `Meta/CustomData`, key by key. What agents may ask for, standing permissions and the list of items changed in
-    /// both copies are merged record by record (`KDBXCustomDataMerge.swift`). Any other key is kept if only one copy has
+    /// `Meta/CustomData`, key by key. What agents may ask for, standing permissions, the saves agents proposed and the
+    /// list of items changed in both copies are merged record by record (`KDBXCustomDataMerge.swift`). Any other key is kept if only one copy has
     /// it; when both do, the later KDBX 4.1 `LastModificationTime` wins, and without one the choice is by value, so it
     /// is the same whichever copy is merged into which.
     private func mergeCustomData() {
@@ -617,6 +617,8 @@ final class KDBXMerger {
                 setCustomData(key, to: AgentSharingRecord.merged(mine?.value, other?.value), ours: mine)
             case AgentGrantsRecord.customDataKey:
                 setCustomData(key, to: AgentGrantsRecord.merged(mine?.value, other?.value), ours: mine)
+            case AgentProposalsRecord.customDataKey:
+                setCustomData(key, to: AgentProposalsRecord.merged(mine?.value, other?.value), ours: mine)
             case MergeConflictLog.customDataKey:
                 setCustomData(key, to: MergeConflictLog.merged(mine?.value, other?.value, adding: conflicts), ours: mine)
             default:

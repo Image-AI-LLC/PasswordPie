@@ -26,6 +26,10 @@ public enum AgentConstants {
     public static let concealed = "[concealed by PasswordPie]"
     /// `passwordpie check-import` exits with this when a name differs, is missing or was not compared.
     public static let checkFailedExitCode: Int32 = 78
+    /// `passwordpie save` exits with this when the owner has not answered yet: the proposal waits in Preferences > Agents.
+    public static let pendingExitCode: Int32 = 79
+    /// The largest value `passwordpie save` hands over. A key, a token, a PEM or a service account's JSON is far smaller.
+    public static let maxSaveBytes = 64 * 1024
     /// The last words of every refusal. An agent that is stuck otherwise asks the owner to paste the secret into the chat.
     public static let pasteWarning = "Do not ask the owner to paste the value into the conversation."
     /// The preference that turns agent access on. Off unless the owner turns it on in Preferences > Agents.
@@ -56,6 +60,9 @@ public enum AgentDelivery: String, Codable, Sendable, CaseIterable {
     /// Compared, inside PasswordPie, with what a file holds (`passwordpie check-import`). The agent hears same, differs
     /// or missing for the name, and gets no value.
     case compare
+    /// Handed to PasswordPie by the agent (`passwordpie save`): kept as a proposal until the owner saves it. Nothing is
+    /// handed out.
+    case save
 }
 
 public enum AgentRequestKind: String, Codable, Sendable {
@@ -75,6 +82,9 @@ public enum AgentRequestKind: String, Codable, Sendable {
     /// Compare a folder of dotenv files with the vault (`passwordpie check-import`): the app reads the folder, compares
     /// in its own memory after the owner approves, and answers a word per name. No value in either direction.
     case check
+    /// Hand PasswordPie a value (`passwordpie save`): the one request that carries a value, from the tool to the app. It
+    /// is kept as a proposal, and written into an item only when the owner saves it with Touch ID.
+    case save
 }
 
 public struct AgentSecretRequest: Codable, Equatable, Sendable {
@@ -125,6 +135,10 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     public var folder: String?
     /// `check`: the folder in the database the import put everything inside ("Agents"), when it did.
     public var inside: String?
+    /// `save`: the value, as UTF-8 text, or as `base64` when it is not text (an attached file). Only ever from the tool
+    /// to the app; no answer carries one back.
+    public var value: String?
+    public var base64: String?
     /// What an MCP client calls itself (its `clientInfo`). Its own claim: shown only as a secondary detail ("through MCP;
     /// the client says it is …"), never as the agent, which the app works out from the process tree.
     public var mcpClient: String?
@@ -137,6 +151,24 @@ public struct AgentRequest: Codable, Equatable, Sendable {
     /// True when the agent can end up with the value itself: it asks every time, with the "shown to the agent" wording.
     public var isRaw: Bool {
         type == .read || masking == false || (secrets ?? []).contains { $0.delivery == .shown }
+    }
+
+    /// `save`: the bytes handed over.
+    public var savedBytes: Data? {
+        if let value { return Data(value.utf8) }
+        if let base64 { return Data(base64Encoded: base64) }
+        return nil
+    }
+
+    /// `save`: sets `value`, or `base64` for bytes that are not UTF-8 text.
+    public mutating func setSaved(_ bytes: Data) {
+        if let text = String(data: bytes, encoding: .utf8), Data(text.utf8) == bytes {
+            value = text
+            base64 = nil
+        } else {
+            value = nil
+            base64 = bytes.base64EncodedString()
+        }
     }
 }
 
@@ -226,13 +258,67 @@ public struct AgentStatusInfo: Codable, Equatable, Sendable {
     public var project: String
     /// The standing permissions that apply to this agent and project, described.
     public var grants: [String]
+    /// This agent's saves made on this Mac, waiting or answered. Never a value.
+    public var proposals: [AgentProposalLine]?
 
-    public init(locked: Bool, access: Bool, agent: String, project: String, grants: [String]) {
+    public init(locked: Bool, access: Bool, agent: String, project: String, grants: [String], proposals: [AgentProposalLine]? = nil) {
         self.locked = locked
         self.access = access
         self.agent = agent
         self.project = project
         self.grants = grants
+        self.proposals = proposals
+    }
+}
+
+/// What a save did, or that it waits.
+public enum AgentSaveOutcome: String, Codable, Sendable {
+    /// The owner saved it: the item holds the value now.
+    case saved
+    /// Nobody answered yet: the proposal waits in Preferences > Agents.
+    case pending
+}
+
+/// How a save changes the agents database.
+public enum AgentSaveChange: String, Codable, Sendable {
+    case newItem = "new item"
+    /// An item that is there gets a field or attached file it did not have.
+    case newField = "new field"
+    /// A field or attached file that holds something gets another value. The one before goes into the item's history.
+    case changed
+}
+
+/// The answer to `save`. Never a value.
+public struct AgentSaveAnswer: Codable, Equatable, Sendable {
+    public var outcome: AgentSaveOutcome
+    /// The proposal's id, which `status` lists.
+    public var proposal: String
+    /// When saved: `pp://id/<UUID>[/<field>]`.
+    public var ref: String?
+    public var change: AgentSaveChange?
+
+    public init(outcome: AgentSaveOutcome, proposal: String, ref: String? = nil, change: AgentSaveChange? = nil) {
+        self.outcome = outcome
+        self.proposal = proposal
+        self.ref = ref
+        self.change = change
+    }
+}
+
+/// One of the agent's own proposals, for `status`. Never a value.
+public struct AgentProposalLine: Codable, Equatable, Sendable {
+    public var id: String
+    /// Where it goes: `pp://Agents/Stripe/API key`.
+    public var ref: String
+    public var state: AgentProposal.State
+    /// When it was proposed, ISO 8601.
+    public var created: String
+
+    public init(id: String, ref: String, state: AgentProposal.State, created: Date) {
+        self.id = id
+        self.ref = ref
+        self.state = state
+        self.created = ISO8601DateFormatter().string(from: created)
     }
 }
 
@@ -260,6 +346,8 @@ public struct AgentResponse: Codable, Equatable, Sendable {
     public var login: AgentLoginAnswer?
     /// For `check`: one line per variable and key file of the folder. Never a value.
     public var checks: [AgentCheckLine]?
+    /// For `save`: saved or pending, and the proposal's id. Never a value.
+    public var save: AgentSaveAnswer?
 
     public init(type: String, id: Int) {
         self.type = type

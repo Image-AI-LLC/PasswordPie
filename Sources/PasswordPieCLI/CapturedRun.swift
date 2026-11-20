@@ -82,6 +82,10 @@ enum CapturedRun {
         var report: (@Sendable (ArgumentWatch.Finding) -> Void)?
         /// Each stream keeps at most this many bytes: the first half and the last half.
         var limit = MCPLimits.streamBytes
+        /// `passwordpie_save`: each stream is kept as it came, unmasked and uncut, up to `rawLimit` bytes (what is past
+        /// it is counted), for the caller to take the value from and mask the rest with.
+        var raw = false
+        var rawLimit = 1024 * 1024
     }
 
     struct Outcome {
@@ -91,6 +95,9 @@ enum CapturedRun {
         var concealed: Int
         var truncated: Bool
         var timedOut: Bool
+        /// With `raw`: standard output and standard error as they came, and how many bytes of each were past `rawLimit`.
+        var raw: [Data] = []
+        var rawDropped: [Int] = []
     }
 
     static func run(_ plan: Plan, cancellation: Cancellation) throws -> Outcome {
@@ -197,6 +204,8 @@ enum CapturedRun {
 
         var maskers = readers.map { _ in OutputMasker(values: plan.mask) }
         var kept = readers.map { _ in Clipped(limit: plan.limit) }
+        var raw = readers.map { _ in Data() }
+        var rawDropped = readers.map { _ in 0 }
         var open = Array(readers.indices)
         var exited = false
         var timedOut = false
@@ -224,7 +233,11 @@ enum CapturedRun {
             var closed: [Int] = []
             for (slot, index) in open.enumerated() where polled[slot].revents != 0 {
                 let count = read(readers[index], &chunk, chunk.count)
-                if count > 0 {
+                if count > 0, plan.raw {
+                    let room = max(plan.rawLimit - raw[index].count, 0)
+                    raw[index].append(contentsOf: chunk[0..<min(count, room)])
+                    rawDropped[index] += count - min(count, room)
+                } else if count > 0 {
                     kept[index].append(maskers[index].feed(Data(chunk[0..<count])))
                 } else if count == 0 || (errno != EINTR && errno != EAGAIN) {
                     closed.append(index)
@@ -236,7 +249,7 @@ enum CapturedRun {
         // of is concealed from its start.
         let stopped = timedOut || cancellation.isCancelled
         for index in readers.indices {
-            kept[index].append(maskers[index].finish(cut: stopped || open.contains(index)))
+            if !plan.raw { kept[index].append(maskers[index].finish(cut: stopped || open.contains(index))) }
             close(readers[index])
         }
         parentEnds = []
@@ -247,8 +260,10 @@ enum CapturedRun {
             stdout: kept[0].text,
             stderr: kept[1].text,
             concealed: maskers.reduce(0) { $0 + $1.concealedCount },
-            truncated: kept.contains { $0.dropped > 0 },
-            timedOut: timedOut
+            truncated: kept.contains { $0.dropped > 0 } || rawDropped.contains { $0 > 0 },
+            timedOut: timedOut,
+            raw: plan.raw ? raw : [],
+            rawDropped: plan.raw ? rawDropped : []
         )
     }
 
@@ -292,6 +307,8 @@ final class ProcessGroup: @unchecked Sendable {
 enum MCPLimits {
     /// Each output stream of `passwordpie_run` is cut to this.
     static let streamBytes = 64 * 1024
+    /// How long `passwordpie_save`'s command may run, by default.
+    static let defaultSaveTimeoutSeconds = 120
     static let maxTimeoutSeconds = 3600
     static let defaultTimeoutSeconds = 600
 }

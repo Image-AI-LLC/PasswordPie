@@ -29,6 +29,15 @@ public enum AgentOutcome: String, Codable, Sendable {
     case noFields = "no sign-in fields"
     /// `check-import`: the folder's values were compared with the vault inside PasswordPie. Nothing was handed out.
     case compared = "compared"
+    // `save`. The value is in none of them.
+    /// The owner saved it in the approval window.
+    case saved = "saved"
+    /// Nobody answered the window: the proposal waits in Preferences > Agents.
+    case waiting = "waiting for the owner"
+    /// The owner rejected it, in the window or the list.
+    case rejected = "rejected"
+    /// The owner saved a waiting proposal from the list in Preferences > Agents.
+    case savedFromList = "saved from the list"
 }
 
 /// One line of the activity log. It holds no value, ever: names of items and fields, the command, the agent and its
@@ -47,7 +56,7 @@ public struct AgentActivityRecord: Codable, Equatable, Sendable {
     }
 
     public var time: Date
-    /// `run`, `read`, `list` or `login`.
+    /// `run`, `read`, `list`, `login`, `check` or `save`.
     public var kind: String
     public var outcome: AgentOutcome
     /// The standing permission that allowed it, described.

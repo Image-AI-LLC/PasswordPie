@@ -12,7 +12,7 @@ import PasswordPieAgent
 final class MCPServer: @unchecked Sendable {
     /// Protocol versions this server speaks, newest first. A client asking for another gets the newest.
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
-    static let toolNames = ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read", "passwordpie_login"]
+    static let toolNames = ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read", "passwordpie_save", "passwordpie_login"]
 
     private let output = NSLock()
     /// One request to the app at a time: the app reads this process's working folder as the project, so the server moves
@@ -175,6 +175,7 @@ final class MCPServer: @unchecked Sendable {
             case "passwordpie_list": structured = try list(arguments, cancellation: cancellation)
             case "passwordpie_run": structured = try run(arguments, cancellation: cancellation)
             case "passwordpie_login": structured = try login(arguments, cancellation: cancellation)
+            case "passwordpie_save": structured = try save(arguments, cancellation: cancellation)
             default: structured = try read(arguments, cancellation: cancellation)
             }
             // A login that ran but signed nothing in (another tab in front, a site the item does not list) is an error
@@ -253,6 +254,7 @@ final class MCPServer: @unchecked Sendable {
                 "agent": status.agent,
                 "project": status.project,
                 "grants": status.grants,
+                "proposals": (try? JSONSerialization.jsonObject(with: AgentCoding.encode(status.proposals ?? []))) ?? [],
             ]
         }
     }
@@ -390,14 +392,83 @@ final class MCPServer: @unchecked Sendable {
         return result
     }
 
+    /// `passwordpie save` as a tool: runs `command` and saves what it prints, so the value never passes through the
+    /// conversation. It runs nothing while PasswordPie is locked or off, and never returns the command's standard output.
+    private func save(_ arguments: [String: Any], cancellation: Cancellation) throws -> [String: Any] {
+        let input = Input(arguments, allowed: ["ref", "command", "cwd", "reason", "timeoutSeconds"])
+        guard let ref = try input.string("ref") else { throw Refusal(.usage, detail: "ref is required: where the value goes, pp://folder/item[/field].") }
+        try Input.check(reference: ref)
+        let command = try input.strings("command")
+        guard !command.isEmpty, !command[0].isEmpty else {
+            throw Refusal(.usage, detail: "command is required: the program that prints the value and its arguments, as an array.")
+        }
+        let cwd = try input.folder("cwd")
+        let reason = try input.string("reason")
+        let timeout = try input.integer("timeoutSeconds", in: 1...MCPLimits.maxTimeoutSeconds) ?? MCPLimits.defaultSaveTimeoutSeconds
+        try input.done()
+        let environment = ProcessInfo.processInfo.environment
+        guard let program = ProgramPath.resolve(command[0], path: environment["PATH"], cwd: cwd) else {
+            throw Refusal(.usage, detail: "Command not found: \(command[0]).")
+        }
+        // Before anything runs: a key made while PasswordPie cannot take it would be lost.
+        let hello = try ask(request(.hello), in: cwd, cancellation: cancellation)
+        if hello.locked == true { throw Refusal(.locked, detail: "Nothing was run.") }
+
+        let outcome = try CapturedRun.run(CapturedRun.Plan(
+            path: program, argv: command, environment: environment, cwd: cwd, stdin: nil, mask: [], timeout: TimeInterval(timeout),
+            raw: true, rawLimit: AgentConstants.maxSaveBytes + 2
+        ), cancellation: cancellation)
+        let printed = outcome.raw[0]
+        let attachment = RunFolder.namesAttachment(ref)
+        let value = try? SaveInput.value(printed, attachment: attachment)
+        // Standard error is the agent's, with the value (and whatever was printed instead) concealed.
+        var masker = OutputMasker(values: [value ?? printed].filter { !$0.isEmpty })
+        var errors = Clipped(limit: MCPLimits.streamBytes)
+        errors.append(masker.feed(outcome.raw[1]))
+        errors.append(masker.finish(cut: outcome.rawDropped[1] > 0 || outcome.timedOut))
+        let stderr = errors.text
+        func failed(_ why: String) -> Refusal {
+            let end = stderr.isEmpty ? "" : " Its standard error ends: " + String(stderr.suffix(1000))
+            return Refusal(.usage, detail: why + " Nothing was saved." + end)
+        }
+        if outcome.timedOut { throw failed("The command did not finish in \(timeout) seconds and was ended.") }
+        guard outcome.exitCode == 0 else { throw failed("The command exited with \(outcome.exitCode).") }
+        guard outcome.rawDropped[0] == 0 else { throw failed("The command printed more than \(AgentConstants.maxSaveBytes / 1024) KiB.") }
+        let bytes: Data
+        do {
+            bytes = try SaveInput.value(printed, attachment: attachment)
+        } catch let problem as UsageError {
+            throw failed(problem.message)
+        }
+
+        var request = request(.save)
+        request.secrets = [AgentSecretRequest(name: nil, ref: ref, delivery: .save)]
+        request.setSaved(bytes)
+        request.reason = reason
+        guard let save = try ask(request, in: cwd, cancellation: cancellation).save else { throw Refusal(.appUnavailable) }
+        var result: [String: Any] = [
+            "outcome": save.outcome.rawValue,
+            "proposal": save.proposal,
+            "exitCode": Int(outcome.exitCode),
+            "stderr": stderr,
+        ]
+        if let saved = save.ref { result["ref"] = saved }
+        if let change = save.change { result["change"] = change.rawValue }
+        result["message"] = save.outcome == .saved
+            ? "PasswordPie: saved \(ref) (\(save.change?.rawValue ?? "saved")). Use it with passwordpie_run; reading it back asks the owner."
+            : AgentRefusal.mcp(.pending, detail: "The save of \(ref) waits for the owner (proposal \(save.proposal)).")
+        return result
+    }
+
     // MARK: What the agent sees
 
     static let instructions = """
     PasswordPie keeps the owner's passwords and keys on this Mac. Use passwordpie_run to run a command with secrets: \
     PasswordPie gives the values to the command, not to you, and conceals them in its output. passwordpie_list shows \
     what the owner shared with agents. To sign in on a website in the owner's browser, open its sign-in page and use \
-    passwordpie_login: PasswordPie fills the form, and you never see the password. Each use asks the owner, who \
-    approves with Touch ID. \
+    passwordpie_login: PasswordPie fills the form, and you never see the password. When you create a key or token, \
+    save it with passwordpie_save, which runs the command that prints it and hands the output to PasswordPie, rather \
+    than printing it or writing it to a file. Each use and each save asks the owner, who approves with Touch ID. \
     \(AgentConstants.mcpGuidance)
     """
 
@@ -408,7 +479,7 @@ final class MCPServer: @unchecked Sendable {
             [
                 "name": "passwordpie_status",
                 "title": "PasswordPie status",
-                "description": "Whether PasswordPie is running and unlocked, whether agent access is on, who PasswordPie sees asking (worked out from the process tree) and the project, and the standing permissions that apply. No values and no items." + guidance,
+                "description": "Whether PasswordPie is running and unlocked, whether agent access is on, who PasswordPie sees asking (worked out from the process tree) and the project, the standing permissions that apply, and your saves (passwordpie_save) with whether the owner saved them. No values and no items." + guidance,
                 "inputSchema": ["type": "object", "properties": [String: Any](), "additionalProperties": false],
                 "annotations": ["readOnlyHint": true, "openWorldHint": false],
             ],
@@ -463,6 +534,24 @@ final class MCPServer: @unchecked Sendable {
                     "additionalProperties": false,
                 ],
                 "annotations": ["readOnlyHint": true, "openWorldHint": false],
+            ],
+            [
+                "name": "passwordpie_save",
+                "title": "Save a new secret",
+                "description": "Saves a key or token you created into PasswordPie without it passing through this conversation: runs `command` (an argument array, without a shell; [\"sh\", \"-c\", \"…\"] for a pipeline) in `cwd`, and hands what it prints on standard output (one line break at the end dropped; at most 64 KiB) to PasswordPie for `ref`. Nothing runs while PasswordPie is locked. The owner sees where it goes, never the value, and saves it with Touch ID. A shared item at that place is changed and its old value kept in its history; else a new item is made, shared with agents: with three parts or more the last part of ref is the field (pp://Agents/Stripe/API key), with two the item's password. The result has `outcome` (saved, or pending: the owner answers later in PasswordPie, and passwordpie_status lists it), `proposal`, the item's `ref` when saved, the exit code and the command's standard error with the value concealed. Never the value. Do not print the value yourself first." + guidance,
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "ref": ["type": "string", "description": "Where the value goes: pp://<folder>/<item>[/<field>] or pp://id/<UUID>[/<field>]; the field is password, username, url, notes, a custom field's name, or attachment/<name>."],
+                        "command": ["type": "array", "items": ["type": "string"], "minItems": 1, "description": "The program that prints the value, and its arguments, for example [\"openssl\", \"rand\", \"-hex\", \"32\"]."],
+                        "cwd": ["type": "string", "description": "The absolute path of the folder to run the command in: your project."],
+                        "reason": ["type": "string", "description": "What the secret is, in a few words, for the owner's window."],
+                        "timeoutSeconds": ["type": "integer", "minimum": 1, "maximum": MCPLimits.maxTimeoutSeconds, "description": "How long the command may run, in seconds. Default \(MCPLimits.defaultSaveTimeoutSeconds), at most \(MCPLimits.maxTimeoutSeconds)."],
+                    ],
+                    "required": ["ref", "command", "cwd"],
+                    "additionalProperties": false,
+                ],
+                "annotations": ["readOnlyHint": false, "destructiveHint": false, "openWorldHint": true],
             ],
             [
                 "name": "passwordpie_login",

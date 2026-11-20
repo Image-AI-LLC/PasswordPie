@@ -18,6 +18,8 @@ final class MCPServerTests: XCTestCase {
     private var client: MCPTestClient?
     /// The browser side for `passwordpie_login`.
     private var logins = FakeLogins()
+    /// Where `passwordpie_save` proposals go.
+    private var saves: FakeSaves!
     /// Every request the MCP server sent to the app.
     private var sent: [AgentRequest] = []
     private let planted = "planted-secret-4b7d2a"
@@ -38,6 +40,7 @@ final class MCPServerTests: XCTestCase {
         activity = MemoryActivity()
         vault.add("Token", password: planted, fields: ["Key ID": "KEYID-PLANTED-551"])
         vault.add("Hidden", password: hidden, shared: false)
+        saves = FakeSaves(vault: vault)
         try startServer(grants: NoAgentGrants())
     }
 
@@ -52,6 +55,7 @@ final class MCPServerTests: XCTestCase {
         server?.stop()
         let broker = VaultBroker(vault: vault, approver: approver, grants: grants, activity: activity) { true }
         broker.logins = logins
+        broker.saves = saves
         server = AgentServer(handler: { [unowned self] request, caller in
             sent.append(request)
             return await broker.handle(request, from: caller)
@@ -126,13 +130,13 @@ final class MCPServerTests: XCTestCase {
     // MARK: Tools
 
     /// No tool creates, widens or extends a standing permission, shares an item or unlocks: the server offers exactly
-    /// these five, each description carries the guidance, and the read tool says the value enters the conversation.
-    func testTheToolsAreExactlyTheFiveWithTheGuidance() async throws {
+    /// these six, each description carries the guidance, and the read tool says the value enters the conversation.
+    func testTheToolsAreExactlyTheSixWithTheGuidance() async throws {
         let client = try await connect()
         let id = client.request("tools/list", [:])
         let listed = await response(id)
         let tools = try XCTUnwrap((listed?["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read", "passwordpie_login"])
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["passwordpie_status", "passwordpie_list", "passwordpie_run", "passwordpie_read", "passwordpie_save", "passwordpie_login"])
         for tool in tools {
             let description = tool["description"] as? String ?? ""
             XCTAssertTrue(description.contains(AgentConstants.mcpGuidance), "\(tool["name"] ?? "")")
@@ -147,6 +151,78 @@ final class MCPServerTests: XCTestCase {
         XCTAssertTrue(read.contains("enters this conversation"))
         XCTAssertTrue(read.contains("prefer passwordpie_run"))
         XCTAssertTrue(read.contains("asks the owner every time"))
+    }
+
+    // MARK: passwordpie_save
+
+    /// The command's output is the value: it goes to the app as a save, and the result never holds it, nor does anything
+    /// the window or Activity was given. Its standard error is returned with the value concealed.
+    func testSaveRunsTheCommandAndStoresWhatItPrintsWithoutReturningIt() async throws {
+        let made = "PLANTED-mcp-made-\(UUID().uuidString.prefix(8))"
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.allow([0])) } }
+        try await connect()
+        let result = try await call("passwordpie_save", [
+            "ref": "pp://Agents/Shop/API key", "cwd": inside.path, "reason": "new key",
+            "command": ["sh", "-c", "printf '%s\\n' '\(made)'; echo \"made \(made)\" >&2"],
+        ])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(result.structured["outcome"] as? String, "saved")
+        XCTAssertEqual(result.structured["change"] as? String, "new item")
+        XCTAssertEqual(result.structured["exitCode"] as? Int, 0)
+        XCTAssertEqual(result.structured["stderr"] as? String, "made \(AgentConstants.concealed)\n")
+        XCTAssertFalse(result.raw.contains(made), "the value is not in the result")
+        let item = try XCTUnwrap(vault.agentSharedItems().first { $0.title == "Shop" })
+        XCTAssertEqual(vault.values[item.id]?[.custom("API key")], Data(made.utf8), "stored without its line break")
+        XCTAssertEqual(sent.map(\.type), [.hello, .save])
+        XCTAssertEqual(sent.last?.client, "mcp")
+        XCTAssertNil(sent.last?.argv, "the command is not part of the request")
+        XCTAssertEqual(approver.prompts.first?.via, "through MCP; the client says it is “test-client 9.9”")
+        let everything = approver.prompts.map { String(describing: $0) }.joined()
+            + activity.records.map { String(decoding: (try? JSONEncoder().encode($0)) ?? Data(), as: UTF8.self) }.joined()
+        XCTAssertFalse(everything.contains(made))
+    }
+
+    func testSaveRunsNothingWhileLocked() async throws {
+        vault.locked = true
+        let marker = folder.appendingPathComponent("ran")
+        try await connect()
+        let result = try await call("passwordpie_save", [
+            "ref": "pp://Agents/Shop/API key", "cwd": inside.path, "command": ["sh", "-c", "touch '\(marker.path)'; echo PLANTED-x"],
+        ])
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.text.hasPrefix("locked: "), result.text)
+        XCTAssertTrue(result.text.contains("Nothing was run."))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the command did not run")
+        XCTAssertEqual(sent.map(\.type), [.hello])
+    }
+
+    func testAFailingCommandSavesNothing() async throws {
+        try await connect()
+        let failed = try await call("passwordpie_save", [
+            "ref": "pp://Agents/Shop/API key", "cwd": inside.path, "command": ["sh", "-c", "echo PLANTED-half; echo 'went wrong: PLANTED-half' >&2; exit 3"],
+        ])
+        XCTAssertTrue(failed.isError)
+        XCTAssertTrue(failed.text.contains("exited with 3"), failed.text)
+        XCTAssertFalse(failed.raw.contains("PLANTED-half"), "what it printed is concealed in its error output too")
+        let empty = try await call("passwordpie_save", ["ref": "pp://Agents/Shop/API key", "cwd": inside.path, "command": ["true"]])
+        XCTAssertTrue(empty.isError)
+        XCTAssertEqual(sent.map(\.type), [.hello, .hello], "no save reached the app")
+        XCTAssertTrue(saves.kept.isEmpty)
+    }
+
+    func testASaveNobodyAnswersIsPendingAndStatusListsIt() async throws {
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.dismissed) } }
+        try await connect()
+        let result = try await call("passwordpie_save", ["ref": "pp://Agents/Later", "cwd": inside.path, "command": ["echo", "PLANTED-later"]])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertEqual(result.structured["outcome"] as? String, "pending")
+        let id = try XCTUnwrap(result.structured["proposal"] as? String)
+        XCTAssertTrue((result.structured["message"] as? String ?? "").hasPrefix("pending: "))
+        let status = try await call("passwordpie_status", [:])
+        let proposals = status.structured["proposals"] as? [[String: Any]] ?? []
+        XCTAssertEqual(proposals.compactMap { $0["id"] as? String }, [id])
+        XCTAssertEqual(proposals.first?["state"] as? String, "pending")
+        XCTAssertFalse(status.raw.contains("PLANTED"))
     }
 
     func testUnknownToolsAndOptionsAreRefused() async throws {

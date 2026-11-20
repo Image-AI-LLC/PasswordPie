@@ -14,6 +14,7 @@ final class CommandLineToolTests: XCTestCase {
     private var approver: FakeApprover!
     private var activity: MemoryActivity!
     private var broker: VaultBroker!
+    private var saves: FakeSaves!
     private var server: AgentServer!
     private let planted = "planted-secret-4b7d2a"
     private let plantedID = "KEYID-PLANTED-551"
@@ -43,6 +44,8 @@ final class CommandLineToolTests: XCTestCase {
     private func startServer(grants: AgentGrantStore) throws {
         server?.stop()
         let broker = VaultBroker(vault: vault, approver: approver, grants: grants, activity: activity) { true }
+        saves = saves ?? FakeSaves(vault: vault)
+        broker.saves = saves
         self.broker = broker
         server = AgentServer(handler: { request, caller in await broker.handle(request, from: caller) }, peerCheck: { _ in true })
         try server.start(path: socketPath)
@@ -69,7 +72,7 @@ final class CommandLineToolTests: XCTestCase {
         return environment
     }
 
-    private func start(_ arguments: [String], executable: URL? = nil) throws -> (Process, Pipe, Pipe) {
+    private func start(_ arguments: [String], executable: URL? = nil, input: Data? = nil) throws -> (Process, Pipe, Pipe) {
         let process = Process()
         process.executableURL = executable ?? tool
         process.arguments = arguments
@@ -79,14 +82,24 @@ final class CommandLineToolTests: XCTestCase {
         let err = Pipe()
         process.standardOutput = out
         process.standardError = err
-        process.standardInput = FileHandle.nullDevice
-        try process.run()
+        if let input {
+            let pipe = Pipe()
+            process.standardInput = pipe
+            try process.run()
+            Thread.detachNewThread {
+                try? pipe.fileHandleForWriting.write(contentsOf: input)
+                try? pipe.fileHandleForWriting.close()
+            }
+        } else {
+            process.standardInput = FileHandle.nullDevice
+            try process.run()
+        }
         return (process, out, err)
     }
 
     /// Runs the tool to the end without blocking the main actor, where the broker answers.
-    private func run(_ arguments: [String], executable: URL? = nil) async throws -> Ran {
-        let (process, out, err) = try start(arguments, executable: executable)
+    private func run(_ arguments: [String], executable: URL? = nil, input: Data? = nil) async throws -> Ran {
+        let (process, out, err) = try start(arguments, executable: executable, input: input)
         return await withCheckedContinuation { continuation in
             Thread.detachNewThread {
                 let stdout = out.fileHandleForReading.readDataToEndOfFile()
@@ -106,6 +119,89 @@ final class CommandLineToolTests: XCTestCase {
             let all = Set(prompt.rows.indices)
             DispatchQueue.main.async { self.approver.answer(.allow(all)) }
         }
+    }
+
+    // MARK: save
+
+    /// The value comes from standard input: never on a command line, in any output or the window, and stored without
+    /// the line break `echo` adds.
+    func testSaveReadsTheValueFromStandardInputAndPrintsOnlyTheReference() async throws {
+        let value = "PLANTED-cli-save-\(UUID().uuidString.prefix(8))"
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.allow([0])) } }
+        let ran = try await run(["save", "pp://Agents/Shop/API key", "--reason", "made it"], input: Data((value + "\n").utf8))
+        XCTAssertEqual(ran.code, 0, ran.err)
+        let item = try XCTUnwrap(vault.agentSharedItems().first { $0.title == "Shop" })
+        XCTAssertEqual(ran.out, "saved \(AgentReference.id(item.id, field: .custom("API key")))\n")
+        XCTAssertEqual(vault.values[item.id]?[.custom("API key")], Data(value.utf8))
+        XCTAssertFalse(ran.out.contains(value) || ran.err.contains(value))
+        XCTAssertEqual(approver.prompts.first?.kind, .save)
+        XCTAssertEqual(approver.prompts.first?.reason, "made it")
+        XCTAssertFalse(String(describing: approver.prompts).contains(value))
+        XCTAssertFalse(activity.records.map { String(describing: $0) }.joined().contains(value))
+    }
+
+    /// While the tool waits for the owner, no command line on the Mac holds the value.
+    func testSaveNeverPutsTheValueOnACommandLine() async throws {
+        let value = "PLANTED-on-no-line-\(UUID().uuidString.prefix(8))"
+        let (process, _, _) = try start(["save", "pp://Agents/Waiting"], input: Data(value.utf8))
+        defer { process.terminate() }
+        let shown = await eventually(timeout: 10) { self.approver.showing == 1 }
+        XCTAssertTrue(shown)
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["-axww", "-o", "args"]
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        try ps.run()
+        let listing = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        ps.waitUntilExit()
+        XCTAssertTrue(listing.contains("save pp://Agents/Waiting"), "the tool is running")
+        XCTAssertFalse(listing.contains(value))
+        approver.answer(.dismissed)
+    }
+
+    func testSavePendingExits79AndStatusListsIt() async throws {
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.dismissed) } }
+        let ran = try await run(["save", "pp://Agents/Later"], input: Data("PLANTED-later".utf8))
+        XCTAssertEqual(ran.code, 79, ran.err)
+        let id = try XCTUnwrap(saves.kept.first?.id)
+        XCTAssertEqual(ran.out, "pending \(id)\n")
+        XCTAssertTrue(ran.err.hasPrefix("PasswordPie: The save of pp://Agents/Later waits for the owner (proposal \(id))."), ran.err)
+        XCTAssertTrue(ran.err.hasSuffix(AgentConstants.pasteWarning + "\n"))
+        let status = try await run(["status"])
+        XCTAssertTrue(status.out.contains("\(id)  waiting for the owner  pp://Agents/Later"), status.out)
+        let json = try await run(["save", "pp://Agents/Later", "--json"], input: Data("PLANTED-later-2".utf8))
+        XCTAssertEqual(json.code, 79)
+        XCTAssertTrue(json.out.contains("\"outcome\":\"pending\""), json.out)
+        XCTAssertFalse((ran.out + ran.err + status.out + json.out).contains("PLANTED"))
+    }
+
+    func testSaveRejectedIsDenied() async throws {
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.deny) } }
+        let ran = try await run(["save", "pp://Agents/No"], input: Data("PLANTED-no".utf8))
+        XCTAssertEqual(ran.code, 67)
+        XCTAssertNil(vault.agentSharedItems().first { $0.title == "No" })
+    }
+
+    func testSaveRefusesAValueAsAnArgumentAndEmptyInput() async throws {
+        let argument = try await run(["save", "pp://Agents/A", "PLANTED-typed"], input: Data())
+        XCTAssertEqual(argument.code, 64)
+        XCTAssertTrue(argument.err.contains("standard input, never as an argument"), argument.err)
+        let empty = try await run(["save", "pp://Agents/A"], input: Data("\n".utf8))
+        XCTAssertEqual(empty.code, 64)
+        let binary = try await run(["save", "pp://Agents/A"], input: Data([0xFF, 0xFE]))
+        XCTAssertEqual(binary.code, 64)
+        XCTAssertTrue(approver.prompts.isEmpty)
+        XCTAssertTrue(saves.kept.isEmpty)
+    }
+
+    func testSaveKeepsAnAttachedFilesBytes() async throws {
+        approver.onPresent = { [unowned self] _ in DispatchQueue.main.async { self.approver.answer(.allow([0])) } }
+        let key = Data("-----BEGIN PRIVATE KEY-----\nPLANTED\n-----END PRIVATE KEY-----\n".utf8)
+        let ran = try await run(["save", "pp://Agents/Apple/attachment/AuthKey.p8"], input: key)
+        XCTAssertEqual(ran.code, 0, ran.err)
+        let apple = try XCTUnwrap(vault.agentSharedItems().first { $0.title == "Apple" })
+        XCTAssertEqual(vault.values[apple.id]?[.attachment("AuthKey.p8")], key, "the line break at the end stays")
     }
 
     // MARK: PRD phase 1 checks

@@ -1,4 +1,5 @@
 #if PP_DIRECT
+import Combine
 import Darwin
 import Foundation
 import PasswordPieAgent
@@ -18,11 +19,19 @@ final class AgentAccess: ObservableObject {
     @Published private(set) var standing: [AgentGrant] = []
     /// The database holds standing permissions of any Mac: Revoke All has something to remove.
     @Published private(set) var anyGrants = false
+    /// The saves agents proposed that wait for the owner, oldest first, for the Agents pane. Empty while locked.
+    @Published private(set) var waitingSaves: [AgentProposal] = []
+    /// Why saving one from the list did not work, by its id.
+    @Published private(set) var saveProblems: [String: String] = [:]
 
     let session: VaultSession
     let broker: VaultBroker
     let approver: AgentApprovalController
     let grants: StandingPermissions
+    let saves: AgentSaves
+    /// Touch ID (or the login password) for saving a proposal from the list. Tests stand in an answer.
+    private let confirmation: OwnerConfirmation
+    private var watching: AnyCancellable?
     /// A request was let through by a standing permission: the menu-bar pie shows its dot.
     var onSilentUse: (() -> Void)?
     private let log: AgentActivityLog
@@ -46,6 +55,7 @@ final class AgentAccess: ObservableObject {
         socketPath: String? = nil,
         logURL: URL = AgentActivityLog.defaultURL,
         approver: AgentApprovalController? = nil,
+        confirmation: OwnerConfirmation? = nil,
         hasPremium: @escaping @MainActor () -> Bool = appHasPremium,
         mac: String = AgentMacIdentity.current,
         peerCheck: (@Sendable (Int32) -> Bool)? = nil,
@@ -75,6 +85,11 @@ final class AgentAccess: ObservableObject {
         self.grants = grants
         let broker = VaultBroker(vault: session, approver: approver, grants: grants, activity: relay) { false }
         broker.folders = DotenvFolderCheck()
+        broker.mac = mac
+        let saves = AgentSaves(session: session)
+        broker.saves = saves
+        self.saves = saves
+        self.confirmation = confirmation ?? Self.debugConfirmation() ?? SystemOwnerConfirmation()
         self.broker = broker
         server = AgentServer(
             handler: { request, caller in await broker.handle(request, from: caller) },
@@ -87,10 +102,21 @@ final class AgentAccess: ObservableObject {
             if record.ranUnderGrant { self?.onSilentUse?() }
         }
         grants.onChange = { [weak self] in self?.refreshStanding() }
+        saves.onChange = { [weak self] in self?.refreshSaves() }
         activity = log.records().reversed()
         session.agentAccessOn = enabled
         servedPath = session.agentVaultLocked ? nil : session.agentDatabasePath
         refreshStanding()
+        // A copy of the file merged in from another Mac can bring proposals made there.
+        watching = session.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in self?.refreshSaves() }
+    }
+
+    private static func debugConfirmation() -> OwnerConfirmation? {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["PASSWORDPIE_AGENT_APPROVE"] == nil ? nil : DebugConfirmation()
+        #else
+        return nil
+        #endif
     }
 
     /// Debug builds only: `PASSWORDPIE_AGENT_APPROVE` shows the window, then answers it without Touch ID, so the whole
@@ -175,6 +201,41 @@ final class AgentAccess: ObservableObject {
     func refreshStanding() {
         standing = grants.inForce.sorted { $0.created > $1.created }
         anyGrants = !(session.agentGrants?.isEmpty ?? true)
+        refreshSaves()
+    }
+
+    // MARK: Saves waiting for the owner
+
+    /// What the agents database held for proposals when they were last read, so a change elsewhere in the app does not
+    /// read them again.
+    private var readSaves: (path: String, text: String?)?
+
+    func refreshSaves() {
+        let read = (session.agentDatabasePath, session.agentCustomData?[AgentProposals.customDataKey])
+        if let last = readSaves, last.path == read.0, last.text == read.1, !session.agentVaultLocked { return }
+        readSaves = session.agentVaultLocked ? nil : read
+        let waiting = (saves.proposals ?? []).filter { $0.state == .pending }
+        if waiting != waitingSaves { waitingSaves = waiting }
+        let ids = Set(waiting.map(\.id))
+        if saveProblems.keys.contains(where: { !ids.contains($0) }) { saveProblems = saveProblems.filter { ids.contains($0.key) } }
+    }
+
+    /// Save in the list: Touch ID (or the login password), then the item is written. Returns when it is done.
+    func saveProposal(_ proposal: AgentProposal) async {
+        guard await confirmation.confirm(reason: "save a secret from \(proposal.agentName)") else { return }
+        if case .failed(let why) = await broker.saveProposal(proposal.id) { saveProblems[proposal.id] = why }
+        refreshSaves()
+    }
+
+    /// Reject in the list. No Touch ID: nothing is written but the answer.
+    func rejectProposal(_ proposal: AgentProposal) async {
+        if !(await broker.rejectProposal(proposal.id)) { saveProblems[proposal.id] = "PasswordPie could not write the agents database." }
+        refreshSaves()
+    }
+
+    /// "this Mac", or "another Mac" for one made where the same file is used.
+    func macText(_ proposal: AgentProposal) -> String {
+        proposal.mac == broker.mac ? "on this Mac" : "on another Mac"
     }
 
     /// Premium is here, so the standing permissions count.
@@ -308,6 +369,7 @@ private final class DebugConfirmation: OwnerConfirmation {
 ///   `8h`, `7d`, `30d`). Without Premium this opens the Premium window and the approval window stays, so
 ///   `lasting,allow` is the free user's path.
 /// - `hold`: nothing, for a screenshot of the window as it stands.
+/// - `later`: Decide Later, in a save's window: the proposal waits in the list.
 ///
 /// `@/path/to/file` reads the steps from that file each time a window opens, so one run of the app can answer each
 /// request differently. A file that cannot be read denies.
@@ -317,6 +379,7 @@ enum AgentApprovalScript {
         case deny
         case lasting(AgentGrantLength?)
         case hold
+        case later
     }
 
     static func steps(_ script: String, read: (String) -> String? = { try? String(contentsOfFile: $0, encoding: .utf8) }) -> [Step] {
@@ -330,6 +393,7 @@ enum AgentApprovalScript {
             switch word {
             case "allow": return .allow
             case "hold": return .hold
+            case "later": return .later
             case "lasting": return .lasting(nil)
             default:
                 guard word.hasPrefix("lasting:"), let length = AgentGrantLength(rawValue: String(word.dropFirst("lasting:".count))) else {
@@ -353,6 +417,7 @@ enum AgentApprovalScript {
                 case .deny: model.deny()
                 case .lasting(let length): model.allow(for: length ?? model.length)
                 case .hold: break
+                case .later: model.later()
                 }
                 // The confirmation answers on a later turn of the main actor.
                 for _ in 0..<20 { await Task.yield() }

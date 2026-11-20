@@ -15,6 +15,7 @@ struct AgentsPane: View {
         VStack(alignment: .leading, spacing: 26) {
             group("Agent access") { accessSection }
             group("Agents database") { databaseSection }
+            group("Saves waiting for you") { savesSection }
             group("Command-line tool") { toolSection }
             group("MCP server") { mcpSection }
             group("Shared with agents") { sharingSection }
@@ -104,6 +105,35 @@ struct AgentsPane: View {
         return session.agentVaultLocked ? "Opening…" : "Open"
     }
 
+    // MARK: Saves waiting
+
+    /// The saves agents proposed that nobody answered in the window. See "Agents save a new secret" in docs/UX.md.
+    @ViewBuilder
+    private var savesSection: some View {
+        if session.agentVaultLocked {
+            Text("Unlock the agents database to see the saves that wait for you. They are kept in it.").font(note).foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("An agent that makes a key can hand it to PasswordPie with passwordpie save. Each one you did not answer in its window waits here, with where it would go; you never see the value. Save asks for Touch ID.")
+                    .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if access.waitingSaves.isEmpty {
+                    Text("None.").font(note).foregroundStyle(.secondary)
+                }
+                ForEach(access.waitingSaves) { proposal in
+                    WaitingSaveRow(
+                        proposal: proposal,
+                        preview: session.agentSavePreview(proposal),
+                        mac: access.macText(proposal),
+                        problem: access.saveProblems[proposal.id],
+                        save: { Task { await access.saveProposal(proposal) } },
+                        reject: { Task { await access.rejectProposal(proposal) } }
+                    )
+                    PaneRule()
+                }
+            }
+        }
+    }
+
     // MARK: Command-line tool
 
     private var toolSection: some View {
@@ -134,7 +164,7 @@ struct AgentsPane: View {
 
     private var mcpSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read, passwordpie_status and passwordpie_login. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
+            Text("For agents that use MCP tools: passwordpie_run, passwordpie_list, passwordpie_read, passwordpie_status, passwordpie_login and passwordpie_save. Same approvals as the command-line tool. Paste the line for your agent; PasswordPie does not change other apps' settings.")
                 .font(note).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(access.mcpHosts) { host in
                 VStack(alignment: .leading, spacing: 4) {
@@ -257,6 +287,65 @@ struct AgentsPane: View {
             Text("Kept for 90 days in ~/Library/Application Support/PasswordPie/agent-activity.jsonl. It never holds a value.")
                 .font(note).foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct WaitingSaveRow: View {
+    let proposal: AgentProposal
+    let preview: Result<AgentSaveChange, AgentSaveApply.Problem>?
+    let mac: String
+    let problem: String?
+    let save: () -> Void
+    let reject: () -> Void
+
+    private static let time: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("d MMM, HH:mm")
+        return formatter
+    }()
+
+    /// "a new item", "changes it: …", or why it cannot be saved now.
+    private var what: (text: String, savable: Bool) {
+        switch preview {
+        case .success(let change)?: return (VaultBroker.changeText(change), true)
+        case .failure(let problem)?: return (problem.message, false)
+        case nil: return ("", false)
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(proposal.agentName).font(.system(size: 12, weight: .medium))
+                    Text("\(Self.time.string(from: proposal.created)), \(mac)").font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 6) {
+                    Text(proposal.title).font(.system(size: 12))
+                    if !proposal.folder.isEmpty {
+                        Text("(\(proposal.folder.joined(separator: "/")))").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Text(proposal.fieldValue.label).font(.system(size: 12))
+                }
+                Text(what.text).font(.system(size: 11)).foregroundStyle(what.savable ? Color.secondary : Color.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let reason = proposal.reason {
+                    Text("“\(reason)”").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Text(AgentAccess.tilde(proposal.project)).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                if let problem {
+                    Text(problem).font(.system(size: 11)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            Button("Reject", action: reject).controlSize(.small)
+            Button(action: save) { Label("Save", systemImage: "touchid") }
+                .controlSize(.small)
+                .disabled(!what.savable)
+                .help("Confirm with Touch ID or your login password")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("agents.save.\(proposal.id)")
     }
 }
 

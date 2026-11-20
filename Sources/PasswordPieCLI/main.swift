@@ -299,6 +299,76 @@ enum WriteEnv {
     }
 }
 
+/// `passwordpie save`: reads the value from standard input and hands it to the app, which keeps it as a proposal until
+/// the owner saves it. Nothing printed holds the value.
+func saveCommand(_ options: SaveOptions) -> Never {
+    guard isatty(STDIN_FILENO) != 1 else {
+        refuse(.usage, detail: "save reads the value from standard input: some-command | passwordpie save \(options.ref).")
+    }
+    let read: Data
+    do {
+        read = try SaveInput.read(FileHandle.standardInput, attachment: RunFolder.namesAttachment(options.ref))
+    } catch let problem as UsageError {
+        refuse(.usage, detail: problem.message)
+    } catch {
+        refuse(.usage, detail: "Could not read standard input.")
+    }
+    var request = AgentRequest(type: .save, id: 1)
+    request.version = AgentConstants.protocolVersion
+    request.client = "cli"
+    request.secrets = [AgentSecretRequest(name: nil, ref: options.ref, delivery: .save)]
+    request.setSaved(read)
+    request.reason = options.reason
+    request.wait = options.wait
+    guard let save = ask(request).save else { refuse(.appUnavailable, detail: "PasswordPie gave no answer about the save.") }
+    if options.json {
+        FileHandle.standardOutput.write(AgentCoding.encode(save) + Data("\n".utf8))
+    }
+    switch save.outcome {
+    case .saved:
+        if !options.json { print("saved \(save.ref ?? options.ref)") }
+        printError("PasswordPie: saved \(options.ref) (\(save.change?.rawValue ?? "saved")). Use it with passwordpie run; reading it back asks the owner.")
+        exit(0)
+    case .pending:
+        if !options.json { print("pending \(save.proposal)") }
+        printError(AgentRefusal.line(.pending, detail: "The save of \(options.ref) waits for the owner (proposal \(save.proposal))."))
+        exit(AgentConstants.pendingExitCode)
+    }
+}
+
+enum SaveInput {
+    /// All of standard input, at most `AgentConstants.maxSaveBytes`. A field's value is text, with one line break at its
+    /// end dropped; an attached file's bytes are kept as they are.
+    static func read(_ handle: FileHandle, attachment: Bool) throws -> Data {
+        var data = Data()
+        while true {
+            let chunk = handle.availableData
+            if chunk.isEmpty { break }
+            data.append(chunk)
+            if data.count > AgentConstants.maxSaveBytes + 2 {
+                throw UsageError("The value on standard input is larger than \(AgentConstants.maxSaveBytes / 1024) KiB.")
+            }
+        }
+        return try value(data, attachment: attachment)
+    }
+
+    static func value(_ input: Data, attachment: Bool) throws -> Data {
+        var data = input
+        if !attachment {
+            if data.last == 0x0A { data.removeLast() }
+            if data.last == 0x0D { data.removeLast() }
+            guard String(data: data, encoding: .utf8) != nil, !data.contains(0) else {
+                throw UsageError("The value is not text. Save a file as an attachment: …/attachment/<name>.")
+            }
+        }
+        guard !data.isEmpty else { throw UsageError("Nothing to save: standard input was empty.") }
+        guard data.count <= AgentConstants.maxSaveBytes else {
+            throw UsageError("The value on standard input is larger than \(AgentConstants.maxSaveBytes / 1024) KiB.")
+        }
+        return data
+    }
+}
+
 func statusCommand(json: Bool) -> Never {
     var request = AgentRequest(type: .status, id: 1)
     request.version = AgentConstants.protocolVersion
@@ -327,6 +397,13 @@ func statusCommand(json: Bool) -> Never {
         print("Agent: \(status.agent)")
         print("Project: \(status.project)")
         print("Standing permissions: \(status.grants.isEmpty ? "none; every use asks" : status.grants.joined(separator: "; "))")
+        if let proposals = status.proposals, !proposals.isEmpty {
+            print("Your saves:")
+            for proposal in proposals {
+                let word = proposal.state == .pending ? "waiting for the owner" : proposal.state.rawValue
+                print("  \(proposal.id)  \(word)  \(proposal.ref)")
+            }
+        }
         exit(0)
     }
 }
@@ -359,6 +436,8 @@ case .writeEnv(let options):
     writeEnvCommand(options)
 case .checkImport(let options):
     checkImportCommand(options)
+case .save(let options):
+    saveCommand(options)
 case .mcp:
     MCPServer().serve()
 }
