@@ -332,6 +332,8 @@ final class VaultSession: ObservableObject {
     var copyTargetApp: (() -> LinkedApp?)?
     /// A link was made, or an account and an app that were unlinked before met again: the bubble says so.
     var onAppLink: ((AppLinkNotice) -> Void)?
+    /// A pick on a sign-in page added the page's site to the account: the bubble says so, with Undo.
+    var onSiteNotice: ((SiteNotice) -> Void)?
 
     private(set) var vaultName = "PasswordPie"
     var masterPassword = ""

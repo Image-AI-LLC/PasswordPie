@@ -49,6 +49,8 @@ public struct BridgeLinks: Sendable {
         var hadFocusOrder = 0
         var url: String?
         var urlAt: Date?
+        /// Whether the extension said `url` shows a sign-in form. Said of that page only: every report replaces it.
+        var signIn = false
         var reportedAt: Date?
         /// When it last asked for the panel (`show`): a sign of life that is not a tab report.
         var notedAt: Date?
@@ -125,12 +127,14 @@ public struct BridgeLinks: Sendable {
         if holding, focused { held[scope(of: peer)] = peer }
     }
 
-    /// A `tab` report: the active tab's page (nil when it is not a web page), and the focus if the extension says it.
-    public mutating func reported(_ peer: BridgePeer, url: String?, focused: Bool?, now: Date) {
+    /// A `tab` report: the active tab's page (nil when it is not a web page), the focus if the extension says it, and
+    /// whether the page shows a sign-in form (nil from an extension that does not say: then it does not).
+    public mutating func reported(_ peer: BridgePeer, url: String?, focused: Bool?, signIn: Bool? = nil, now: Date) {
         opened(peer)
         if let focused { said(peer, focused: focused) }
         links[peer]?.url = url
         links[peer]?.urlAt = url == nil ? nil : now
+        links[peer]?.signIn = url != nil && signIn == true
         links[peer]?.reportedAt = now
     }
 
@@ -214,6 +218,11 @@ public struct BridgeLinks: Sendable {
     public func url(of peer: BridgePeer, now: Date, maxAge: TimeInterval) -> String? {
         guard let link = links[peer], let url = link.url, let at = link.urlAt, now.timeIntervalSince(at) <= maxAge else { return nil }
         return url
+    }
+
+    /// Whether `peer` said the page of `url(of:now:maxAge:)` shows a sign-in form. False once that page is forgotten.
+    public func signIn(of peer: BridgePeer, now: Date, maxAge: TimeInterval) -> Bool {
+        url(of: peer, now: now, maxAge: maxAge) != nil && links[peer]?.signIn == true
     }
 
     /// True when a connection of `browser` sent a tab report in the last `within` seconds.
@@ -451,6 +460,8 @@ public struct PendingFillStore: Sendable {
     public private(set) var pending: PendingFill?
     public private(set) var code: PendingCode?
     public private(set) var change: PendingChange?
+    /// How many picks there have been: a pick that waits for a save can tell whether a newer one came meanwhile.
+    public private(set) var picks = 0
     #if PP_DIRECT
     public private(set) var agentResult: PendingAgentResult?
     /// From the moment a tab took an agent's fill: the fill's own 30 s for the fields to appear, and a little more.
@@ -462,8 +473,15 @@ public struct PendingFillStore: Sendable {
     /// A new pick replaces the old one, and the code of the one before. A change still waiting for its page stays:
     /// filling another account meanwhile does not answer it.
     public mutating func set(_ fill: PendingFill) {
+        picks += 1
         pending = fill
         code = nil
+    }
+
+    /// Counts a pick whose fill is set later, once its save is written.
+    public mutating func nextPick() -> Int {
+        picks += 1
+        return picks
     }
 
     public mutating func clear() {
@@ -597,6 +615,9 @@ public struct BridgeRequest: Decodable, Sendable {
     /// `tab` and `focus`: whether a window of the extension's profile has the focus. Missing from an extension that
     /// does not say (before 0.4.0, and Safari's).
     public var focused: Bool?
+    /// `tab` only: whether the reported page shows a sign-in form. Missing from an extension that does not say (before
+    /// 0.8.0), and when it could not find out in time. Only a yes lets a pick add the page's site to an account.
+    public var signIn: Bool?
     /// `scan` only: the text of the QR code the user scanned on the page. Never logged or kept by the bridge.
     public var otpauth: String?
     #if PP_DIRECT
@@ -696,6 +717,18 @@ public struct BridgeResponse: Encodable, Equatable, Sendable {
     }
 }
 
+/// The page a browser's profile in front is on, as its extension last reported it.
+public struct ReportedPage: Equatable, Sendable {
+    public let url: String
+    /// The extension said the page shows a sign-in form (docs/BROWSER_EXTENSION.md, "`tab`").
+    public let signIn: Bool
+
+    public init(url: String, signIn: Bool) {
+        self.url = url
+        self.signIn = signIn
+    }
+}
+
 /// The app's side of the protocol: the pending fill, and what each connection last reported. Memory only.
 public struct BridgeState: Sendable {
     public var pending = PendingFillStore()
@@ -730,8 +763,14 @@ public struct BridgeState: Sendable {
     /// Another profile's tab is never it. `usedLast` is for when the browser is not the app in front: then the page
     /// is that of the profile used last.
     public func currentURL(for browser: BridgeBrowser, app: String? = nil, now: Date, maxAge: TimeInterval = 3600, usedLast: Bool = false) -> String? {
-        guard let front = usedLast ? links.recent(browser, app: app) : links.front(browser, app: app) else { return nil }
-        return links.url(of: front.peer, now: now, maxAge: maxAge)
+        currentPage(for: browser, app: app, now: now, maxAge: maxAge, usedLast: usedLast)?.url
+    }
+
+    /// `currentURL`, with what the same report said of the page: whether it shows a sign-in form.
+    public func currentPage(for browser: BridgeBrowser, app: String? = nil, now: Date, maxAge: TimeInterval = 3600, usedLast: Bool = false) -> ReportedPage? {
+        guard let front = usedLast ? links.recent(browser, app: app) : links.front(browser, app: app),
+              let url = links.url(of: front.peer, now: now, maxAge: maxAge) else { return nil }
+        return ReportedPage(url: url, signIn: links.signIn(of: front.peer, now: now, maxAge: maxAge))
     }
 
     /// A connection opened (Chrome: a profile's extension connected). `app` is the browser app it is in, when known.
@@ -820,7 +859,7 @@ public struct BridgeState: Sendable {
                 #endif
                 return BridgeResponse(type: "tab", id: request.id)
             }
-            links.reported(peer, url: url, focused: request.focused, now: now)
+            links.reported(peer, url: url, focused: request.focused, signIn: request.signIn, now: now)
             #if PP_DIRECT
             // An agent's fill is answered only on its own site: a report of another site from its connection says the
             // agent's tab is not in front, and the fill is dropped rather than wait for a tab to be switched.

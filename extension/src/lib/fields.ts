@@ -145,3 +145,23 @@ export function findLoginFields(root: Document | ShadowRoot | Element): LoginFie
   const username = password ? chooseUsername(password, inputs) : chooseLoneUsername(inputs);
   return { username, password };
 }
+
+/** The element that has the caret, followed down through open shadow roots. */
+function focusedElement(root: Document): Element | null {
+  let active: Element | null = root.activeElement;
+  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  return active;
+}
+
+/**
+ * Whether the page shows a sign-in form now: a password field, or the username step of a two-step sign-in. A lone
+ * username field counts only when it is marked `autocomplete="username"` or the caret is in it: an e-mail box nobody
+ * is in is usually a newsletter form. `activeElement` stays the field while another app's window has the keyboard
+ * (PasswordPie's panel), so the caret still counts then.
+ */
+export function showsSignIn(root: Document): boolean {
+  const { username, password } = findLoginFields(root);
+  if (password) return true;
+  if (!username) return false;
+  return tokens(username).includes('username') || focusedElement(root) === username;
+}

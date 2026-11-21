@@ -11,8 +11,10 @@ export type Request =
   /**
    * The active tab. `focused` says whether a window of this profile has the focus (Chrome only): the app goes by the
    * profile in front, and another profile's tab is never the page (docs/BROWSER_EXTENSION.md, "Chrome profiles").
+   * `signIn` says whether the page shows a sign-in form (from 0.8.0): yes or no, nothing about the field. Left out when
+   * the page could not be asked. An app from before it ignores the word.
    */
-  | { type: 'tab'; url: string; reason: TabReason; focused?: boolean }
+  | { type: 'tab'; url: string; reason: TabReason; focused?: boolean; signIn?: boolean }
   /** This profile's windows gained or lost the focus. Sent at once; an app from before it answers with an error. */
   | { type: 'focus'; focused: boolean }
   | { type: 'show' }

@@ -17,6 +17,7 @@ import {
   type FillMessage,
   type FrameMessage,
   type LoginResult,
+  type SignInAsk,
   type TabFill,
   type TabReason,
 } from './protocol';
@@ -24,6 +25,8 @@ import { systemTimers, type TimerHandle, type Timers } from './timers';
 import { wantsIcon } from './site-icon';
 
 export const REPORT_DEBOUNCE_MS = 100;
+/** How long a tab report waits for the page to say whether it shows a sign-in form. A content script answers in a few. */
+export const SIGN_IN_ASK_MS = 200;
 /** How long after the note about Premium a click on its Upgrade counts: the note shows for 8 s. */
 export const UPGRADE_WINDOW_MS = 10_000;
 const WINDOW_ID_NONE = -1;
@@ -62,6 +65,11 @@ export interface TabsAdapter {
   sendFill(tabId: number, frameId: number, msg: FillMessage): Promise<unknown>;
   /** The two-step code messages; resolves with the frame's answer. */
   sendToFrame(tabId: number, frameId: number, msg: FrameMessage): Promise<unknown>;
+  /**
+   * Asks one frame whether it shows a sign-in form; resolves with its answer (a boolean), or undefined or a rejection
+   * when no content script answered. Left out where the browser side cannot ask: reports then say nothing about it.
+   */
+  askSignIn?(tabId: number, frameId: number, msg: SignInAsk): Promise<unknown>;
   /** Opens `url` in a new tab of the current window. */
   openTab(url: string): Promise<unknown>;
   /** The tab's icon as base64 PNG (at most 128 × 128 and 64 KB), if the tab is still on `origin`. */
@@ -249,6 +257,46 @@ export class FillController {
     }
   }
 
+  /**
+   * Whether the page reported shows a sign-in form: asked of the tab's frames of the reported origin, the ones a fill
+   * could reach. True as soon as one says so; false when every one answered and none does; undefined when that is not
+   * known (not a web page, a frame with no content script, or no answer within `SIGN_IN_ASK_MS`). Only this word goes to
+   * the app, never anything about the field.
+   */
+  private showsSignIn(tabId: number | undefined, url: string): Promise<boolean | undefined> {
+    const ask = this.tabs.askSignIn?.bind(this.tabs);
+    const origin = url === '' ? undefined : originOf(url);
+    if (!ask || tabId === undefined || origin === undefined) return Promise.resolve(undefined);
+    const msg: SignInAsk = { type: 'sign-in', origin };
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (known: boolean | undefined): void => {
+        if (settled) return;
+        settled = true;
+        this.timers.clearTimeout(timeout);
+        resolve(known);
+      };
+      const timeout = this.timers.setTimeout(() => finish(undefined), SIGN_IN_ASK_MS);
+      const askFrames = async (): Promise<void> => {
+        const frames = (await this.tabs.frames(tabId)).filter((frame) => originOf(frame.url) === origin);
+        const answers = await Promise.all(
+          frames.map(async (frame) => {
+            let answer: unknown;
+            try {
+              answer = await ask(tabId, frame.frameId, msg);
+            } catch {
+              return undefined; // no content script in that frame (yet)
+            }
+            if (answer === true) finish(true);
+            return answer;
+          }),
+        );
+        finish(frames.length > 0 && answers.every((answer) => answer === false) ? false : undefined);
+      };
+      askFrames().catch(() => finish(undefined));
+    });
+  }
+
   private async reportNow(reason: TabReason): Promise<void> {
     let tab: TabInfo | undefined;
     try {
@@ -256,10 +304,16 @@ export class FillController {
     } catch {
       tab = undefined;
     }
-    const focused = await this.profileFocused();
     const url = reportableUrl(tab?.url);
     const tabId = tab?.id;
-    const answer = await this.channel.request({ type: 'tab', url, reason, ...(focused === undefined ? {} : { focused }) });
+    const [focused, signIn] = await Promise.all([this.profileFocused(), this.showsSignIn(tabId, url)]);
+    const answer = await this.channel.request({
+      type: 'tab',
+      url,
+      reason,
+      ...(focused === undefined ? {} : { focused }),
+      ...(signIn === undefined ? {} : { signIn }),
+    });
     if (wantsIcon(answer) && tabId !== undefined) void this.sendIcon(tabId, tab?.favIconUrl, url);
     const fill = fillOfTabAnswer(answer);
     // A code just added from a scan of this page: watch for its field, as after a fill. Nothing secret in it.

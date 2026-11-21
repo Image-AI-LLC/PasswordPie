@@ -3,8 +3,9 @@ import { defineContentScript } from 'wxt/utils/define-content-script';
 import { CodeFiller } from '@/lib/code-filler';
 import { isScanNoteMessage, showScanNote } from '@/lib/page-note';
 import { PageFiller, sameOriginWithTop } from '@/lib/page-filler';
-import { parseFillMessage, parseFrameMessage, type ContentMessage } from '@/lib/protocol';
+import { parseFillMessage, parseFrameMessage, parseSignInAsk, type ContentMessage } from '@/lib/protocol';
 import { isQrImagesMessage, pageQrImages } from '@/lib/qr-page';
+import { signInAnswer } from '@/lib/sign-in';
 import { pageIconLinks, parseIconLinksMessage } from '@/lib/site-icon';
 
 function send(msg: ContentMessage): void {
@@ -52,6 +53,12 @@ export default defineContentScript({
       if (iconAsk) {
         // Only the top frame, and only while it is still on the page the app asked about.
         sendResponse(window.top === window && location.origin === iconAsk.origin ? pageIconLinks(document) : []);
+        return false;
+      }
+      // Asked for each tab report: yes or no, nothing about the field.
+      const signInAsk = parseSignInAsk(raw);
+      if (signInAsk) {
+        sendResponse(signInAnswer(signInAsk, { document, origin: location.origin, frameAllowed: () => sameOriginWithTop(window) }));
         return false;
       }
       const fill = parseFillMessage(raw);

@@ -1,5 +1,5 @@
 import type { ChannelEvents, NativeChannel, PortLike, Request } from '../src/lib/native-channel';
-import type { FillMessage, FillResult, FrameMessage } from '../src/lib/protocol';
+import type { FillMessage, FillResult, FrameMessage, SignInAsk } from '../src/lib/protocol';
 import type { FrameInfo, TabInfo, TabsAdapter } from '../src/lib/controller';
 
 export class FakeChannel implements NativeChannel {
@@ -67,6 +67,19 @@ export class FakeTabs implements TabsAdapter {
   async openTab(url: string): Promise<unknown> {
     this.opened.push(url);
     return undefined;
+  }
+
+  signInAsks: Array<{ tabId: number; frameId: number; msg: SignInAsk }> = [];
+  /** What each frame answers when asked whether it shows a sign-in form. Unset: this browser side cannot ask. */
+  signInAnswer: ((tabId: number, frameId: number) => unknown) | undefined;
+
+  get askSignIn(): TabsAdapter['askSignIn'] {
+    const answer = this.signInAnswer;
+    if (!answer) return undefined;
+    return async (tabId, frameId, msg) => {
+      this.signInAsks.push({ tabId, frameId, msg });
+      return answer(tabId, frameId);
+    };
   }
 
   iconAsks: Array<{ tabId: number; favIconUrl: string | undefined; origin: string }> = [];

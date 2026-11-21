@@ -75,7 +75,9 @@ So credentials only ever travel as the answer to a request the extension made:
 1. The user picks an account and presses Return. The app records one **pending fill**: entry id, target browser, target
    site (eTLD+1 of the entry website that matched, or of its reset link), created at, and for Chrome the connection of the profile in front
    (see "Chrome profiles"). It expires after 30 s. Whether the app opened a new tab makes no difference: any tab of that
-   browser, in that profile, on that site may take it.
+   browser, in that profile, on that site may take it. On a sign-in page of a site the account does not list, the
+   site is first saved into the account, and the pending fill is recorded once the file holds it (see "A site added
+   by a pick").
 2. The app hides the panel (focus goes back to the browser) or opens the login URL in that browser
    (`NSWorkspace.open(_:withApplicationAt:)`, a new tab).
 3. The app sends a **poke** (no data) so the extension asks now: over the open port of the profile in front for Chrome,
@@ -104,7 +106,7 @@ Sent when the extension starts and when its port (re)connects. It makes the brow
 
 ### `tab`
 
-    → {"type":"tab","id":2,"url":"https://github.com/","reason":"activated","focused":true}
+    → {"type":"tab","id":2,"url":"https://github.com/","reason":"activated","focused":true,"signIn":true}
     ← {"type":"tab","id":2}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28}}
     ← {"type":"tab","id":2,"fill":{"origin":"https://github.com","username":"octocat","password":"…","expiresIn":28,"otp":true}}
@@ -117,6 +119,13 @@ clears the cached URL and never fills.
 `focused` (Chrome, from 0.4.0) says whether a window of the extension's profile has the focus as the report goes out
 (`windows.getLastFocused`, every window type). Safari's build and older extensions leave it out. A report with
 `focused: false` never gets a fill that is not for its own connection (see "Chrome profiles").
+`signIn` (from 0.8.0) says whether the reported page shows a sign-in form: a usable password field, or a lone username
+field that is marked `autocomplete="username"` or has the focus (`showsSignIn` in `extension/src/lib/fields.ts`). A lone
+e-mail box that is neither is usually a newsletter form and does not count. The background asks the tab's frames of the
+reported origin (`{"type":"sign-in","origin"}`) just before the report, for at most 200 ms; it sends `true` when one
+says yes, `false` when all answered no, and leaves the key out when it does not know (no answer in time, not a web
+page). Only the yes or no leaves the page. An older extension leaves it out, and the app then never adds a site
+("A site added by a pick").
 `expiresIn` is the whole seconds left of the pending fill's 30; the extension keeps its copy no longer than that.
 `otp: true` says the account has a two-step code. It carries no code: the app now keeps a **pending code** for that
 browser and the page's site for 30 seconds, and the extension watches that tab's frames of `origin` for a code field.
@@ -335,6 +344,16 @@ All in `PasswordPieCore`, with tests:
   often on another domain. The person typed that link into the item, as they typed the website. An `http` reset link
   on a site where the account has an `https` website is left out, so a reset link never undoes "No downgrade". Search,
   icons, Chrome logins, merging and the item a scanned code is offered for use the websites only.
+- **A site added by a pick.** Return or ⇧Return on an account that lists no site for the page, over a page whose latest
+  report said `signIn: true`, adds the page's origin to the account (`EntryWebsites.add`: a numbered `URL (n)` field,
+  or the main website of an account that had none) and fills that tab. Only when the page the fill would go to is the
+  one the report named (the address read from the window, when it disagrees, wins and nothing is added), the page is
+  `https` or this Mac's loopback, and the account has a password. The account is saved first (`VaultSession.changeEntry`,
+  which also saves a Chrome login into the database); the pending fill is set, for the connection picked at Return,
+  only after the file holds the website, so "Same site" holds for this fill as for any other and a failed save fills
+  nothing. A pick made while the save is written is the newer one and keeps its fill (`PendingFillStore.picks`). Unlocked, as always. ⌥Return never adds. The person is told in a bubble with Undo (`SiteNotice`), which
+  removes exactly that website again. What the person sees is "An account you pick on another site's sign-in page" in
+  [UX.md](UX.md).
 - **Fresh and once.** A pending fill is used by the first matching report and then deleted. After 30 s it is deleted
   unused. Locking the vault deletes it. A new pick replaces it.
 - **A new password only to the account's own site.** Reset Password hands the new password to the bridge only when the
@@ -360,7 +379,8 @@ loads after the answer still gets the fill, if its origin matches), `{"type":"fo
 (report now), `{"type":"filled","password":true}` when a password filled late (drop the copy), `{"type":"code-field"}`
 when an empty code field showed up while the frame was watching, and `{"type":"upgrade"}` when Upgrade was clicked in the
 note about Premium. Background → content script:
-`{"type":"fill","origin","username","password"}`, `{"type":"watch-code","origin","waitMs"}` (look for a code field until
+`{"type":"fill","origin","username","password"}`, `{"type":"sign-in","origin"}` (answered with true or false: does this
+frame show a sign-in form; carries nothing secret), `{"type":"watch-code","origin","waitMs"}` (look for a code field until
 then; carries nothing secret), `{"type":"code","origin","code"}` and `{"type":"code-hint","origin"}` (no
 Premium: a small note in the page's corner for 8 seconds, in a closed shadow root, taking no focus, with an Upgrade
 button that is not a link). All are sent only to
@@ -419,7 +439,9 @@ an account with a code, on that origin, for 30 seconds.
   worker and content script, and then in the page's fields. They are never logged, never stored by the extension, and never
   written to disk by the app. The host and appex log only sizes and error codes.
 - Tab URLs are used for matching, the "this site" list and `wantIcon` only: held in memory, never logged, never saved.
-  A cached icon is the only trace of a visit on disk, and only for a site the vault already has an account on.
+  A cached icon is the only trace of a visit on disk, and only for a site the vault already has an account on. The one
+  exception is the person's own pick on a sign-in page: that page's origin is saved into the account they picked, as a
+  website ("A site added by a pick").
 - The fill never submits the form, except an agent's approved login that asked for it (`submit`, "Agent logins").
 
 ## Agent logins
@@ -669,6 +691,11 @@ Chromium browser the value of the toolbar's address field. The walk is bounded (
 
 - `swift test`: public suffix rules, same-site and downgrade rules, pending fill expiry and single use, message coding,
   framing, the "this site" list, site icon lookup order, when `wantIcon` is set, and which `icon` requests are refused.
+- `swift test --filter 'SiteAdded|EntryWebsites|BridgeSignIn|BrowserFillPlan'`: what a report's `signIn` is kept as and
+  when it is forgotten, which picks add a site and which open a new tab, the website added and taken off again, and the
+  bridge with a real database file: the site saved before the fill is set, nothing filled when the save fails, a Chrome
+  login saved with it, and Undo. `cd extension && pnpm test tests/sign-in.test.ts tests/controller.test.ts`: which
+  pages count as showing a sign-in form, and what the report says.
 - `swift test --filter 'BridgeLinks|BridgeProfiles|BrowserProfiles|ChromeFillRoute|ExtensionStatus'`: which connection is
   in front (focus said, lost, never said, held by the panel), that another profile's tab is neither the page nor
   filled, the banner for a profile without the extension, where the store page opens, and Preferences' lines.

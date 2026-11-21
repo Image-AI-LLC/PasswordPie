@@ -6,7 +6,8 @@ description. After publishing, replace it with the notes of the version after th
 [releases page](https://github.com/Image-AI-LLC/PasswordPie/releases).
 
 Next version: **0.4.0** (after 0.3.0, build 7). Before it goes out, the owner's acceptance in
-[AGENTS.md](AGENTS.md), "Trying it", and Chrome extension 0.7.0 in the Chrome Web Store.
+[AGENTS.md](AGENTS.md), "Trying it", and Chrome extension 0.8.0 in the Chrome Web Store (agents' website login needs
+0.7.0, filling the sign-in page you are on needs 0.8.0).
 
 ---
 
@@ -45,6 +46,7 @@ SHA-256 of `PasswordPie-0.4.0.dmg` and `PasswordPie.dmg` (same file):
 - **Attachments are listed.** An item's details name the files attached to it
 
 ### Changed
+- On a sign-in page, an account you pick that does not list the page's site now fills that page, and the site is added to the account. A bubble names the site, with Undo. Before, the account's own website opened in a new tab, and an account with no website asked for Accessibility access to type. Needs Chrome extension 0.8.0 (Safari's comes with the app). ⌥Return, and a page with no sign-in form, still open the account's website in a new tab
 - A save no longer writes over a database file that changed on disk since PasswordPie read it: it merges into it, and keeps this Mac's file from before as `Passwords.kdbx.before-merge-…`
 - Preferences has an Agents pane, between Browsers and Import
 - Premium now covers agents' standing permissions as well as two-step codes. An approval each time, and everything else, stays free

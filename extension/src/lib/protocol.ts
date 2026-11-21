@@ -1,7 +1,7 @@
 // Message shapes shared by the background, the content script and the native side.
 // The native protocol is in docs/BROWSER_EXTENSION.md, "Messages".
 
-export const EXTENSION_VERSION = '0.7.0'; // manifest.ts version (tests/manifest.test.ts)
+export const EXTENSION_VERSION = '0.8.0'; // manifest.ts version (tests/manifest.test.ts)
 export const PROTOCOL_VERSION = 1;
 export const NATIVE_APP = 'com.passwordpie';
 /** Where the toolbar button goes when PasswordPie is not installed or cannot be started. */
@@ -74,6 +74,15 @@ export interface CodeHintMessage {
 }
 
 export type FrameMessage = WatchCodeMessage | CodeMessage | CodeHintMessage;
+
+/**
+ * background → content script: does this frame show a sign-in form? Asked for each tab report. Carries no secret, and
+ * the answer is one boolean: nothing about the field, or what is typed in it, leaves the page.
+ */
+export interface SignInAsk {
+  type: 'sign-in';
+  origin: string;
+}
 
 /** content script → background */
 export type ContentMessage =
@@ -180,6 +189,11 @@ export function parseFrameMessage(value: unknown): FrameMessage | undefined {
   if (value.type === 'code' && typeof value.code === 'string') return { type: 'code', origin, code: value.code };
   if (value.type === 'code-hint') return { type: 'code-hint', origin };
   return undefined;
+}
+
+export function parseSignInAsk(value: unknown): SignInAsk | undefined {
+  if (!isRecord(value) || value.type !== 'sign-in' || typeof value.origin !== 'string') return undefined;
+  return { type: 'sign-in', origin: value.origin };
 }
 
 export function parseFillMessage(value: unknown): FillMessage | undefined {

@@ -119,6 +119,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// A pick on a sign-in page added the page's site to the account. Undo takes that website off again; what the page
+    /// was filled with stays in its form.
+    private func showSiteBubble(_ notice: SiteNotice) {
+        guard let entry = session.entry(notice.entry) else { return }
+        linkBubble.show(notice, title: VaultSession.linkTitle(of: entry), siteHost: websiteHost(of: entry)) { [weak self] in
+            self?.session.removeWebsite(notice.website, from: notice.entry)
+        }
+    }
+
     /// The browser extensions fill through the bridge; Fill falls back to keystrokes when it cannot.
     private func startBrowserBridge() {
         bridge = BrowserBridge(session: session)
@@ -128,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         bridge.hidePanel = { [weak self] refocus in self?.panelController.hide(refocusPrevious: refocus) }
         session.onAppLink = { [weak self] notice in self?.showLinkBubble(notice) }
+        session.onSiteNotice = { [weak self] notice in self?.showSiteBubble(notice) }
         // The app a copy is for: the one the menu opened over, or with the menu closed (a pinned window) the one in front.
         session.copyTargetApp = { [weak self] in
             guard let target = self?.panelController.fillTarget else { return nil }
