@@ -34,11 +34,11 @@ final class AppLinkSessionTests: XCTestCase {
         session.passwordDraft = "pw"
         session.confirmDraft = "pw"
         session.unlock()
-        for title in titles {
+        for (index, title) in titles.enumerated() {
             var entry = VaultEntry()
             entry.title = title
             // Not the same sign-in as another title's, or the two would be merged into one account.
-            entry.username = "ada+\(title.count)@northwind.example"
+            entry.username = "ada+\(index)@northwind.example"
             entry.password = "secret"
             entry.otp = "JBSWY3DPEHPK3PXP"
             entry.url = "https://sso.northwind.example"
@@ -128,7 +128,7 @@ final class AppLinkSessionTests: XCTestCase {
         XCTAssertEqual(try apps(session), [harbor])
     }
 
-    func testAfterAnUndoAPasswordCopyAsksAndDoesNotLink() throws {
+    func testAfterAnUndoAPasswordCopyStaysCompletelySilentAndManualLinkWorks() throws {
         let session = session()
         let id = try id(session)
         session.copy(.password, of: id)
@@ -139,15 +139,62 @@ final class AppLinkSessionTests: XCTestCase {
         XCTAssertEqual(session.appEntries(for: harbor), [])
 
         session.copy(.username, of: id)
-        XCTAssertEqual(notices.count, 1, "a username does not ask either")
         session.copy(.password, of: id)
-        XCTAssertEqual(try apps(session), [])
-        XCTAssertEqual(notices.last, .offer(entry: id, title: "Northwind SSO", app: harbor))
-        XCTAssertEqual(notices.last?.message, "Show Northwind SSO first in Harbor again?")
-        XCTAssertEqual(notices.last?.action, "Show first")
+        XCTAssertEqual(try apps(session), [], "does not auto-link again after refusal")
+        XCTAssertEqual(notices.count, 1, "completely silent — no repeat offer bubble")
 
-        session.linkApp(harbor, to: id)
-        XCTAssertEqual(try apps(session), [harbor], "Show first on the bubble links it again")
+        // Manual link still works and clears the refusal.
+        session.linkApp(harbor, to: id, manual: true)
+        XCTAssertEqual(try apps(session), [harbor])
+    }
+
+    func testThreeDistinctAutoUndosStopAutomaticAddingForThatApp() throws {
+        let session = session(titles: ["Northwind", "Staging DB", "Admin API", "Billing"])
+        let id1 = try id(session, "Northwind")
+        let id2 = try id(session, "Staging DB")
+        let id3 = try id(session, "Admin API")
+        let id4 = try id(session, "Billing")
+
+        // 1st and 2nd auto-add + Undo
+        session.copy(.password, of: id1)
+        session.unlinkApp(harbor, from: id1)
+        session.copy(.password, of: id2)
+        session.unlinkApp(harbor, from: id2)
+        XCTAssertFalse(session.appLinkAutoExclusions.isExcluded(bundleID: harbor.bundleID))
+
+        // 3rd distinct account undone triggers app-level exclusion and announces .autoStopped
+        session.copy(.password, of: id3)
+        session.unlinkApp(harbor, from: id3)
+        XCTAssertTrue(session.appLinkAutoExclusions.isExcluded(bundleID: harbor.bundleID))
+        XCTAssertEqual(notices.last, .autoStopped(app: harbor))
+        XCTAssertEqual(notices.last?.message, "Stopped adding Harbor automatically")
+        XCTAssertEqual(notices.last?.action, "Turn Back On")
+
+        // 4th account copied over Harbor stays completely silent (not auto-linked, no bubble)
+        let noticeCountBefore = notices.count
+        session.copy(.password, of: id4)
+        XCTAssertEqual(try apps(session, "Billing"), [])
+        XCTAssertEqual(notices.count, noticeCountBefore)
+
+        // Manual linking still works even while automatic adding is off for Harbor
+        session.linkApp(harbor, to: id4, manual: true)
+        XCTAssertEqual(try apps(session, "Billing"), [harbor])
+
+        // Re-enabling automatic adding resets the count and allows future auto-adds
+        session.reenableAutoLink(bundleID: harbor.bundleID)
+        XCTAssertFalse(session.appLinkAutoExclusions.isExcluded(bundleID: harbor.bundleID))
+        XCTAssertEqual(session.appLinkAutoExclusions.undoCount(for: harbor.bundleID), 0)
+    }
+
+    func testRemovingManuallyAddedLinksDoesNotCountTowardAppExclusion() throws {
+        let session = session(titles: ["One", "Two", "Three"])
+        for title in ["One", "Two", "Three"] {
+            let entryID = try id(session, title)
+            session.linkApp(harbor, to: entryID, manual: true)
+            session.unlinkApp(harbor, from: entryID)
+        }
+        XCTAssertFalse(session.appLinkAutoExclusions.isExcluded(bundleID: harbor.bundleID))
+        XCTAssertEqual(session.appLinkAutoExclusions.undoCount(for: harbor.bundleID), 0)
     }
 
     func testAnAccountCanHaveTwoAppsAndLosesOnlyTheOneUnlinked() throws {

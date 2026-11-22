@@ -190,6 +190,8 @@ final class DetailsModel: ObservableObject {
     @Published var favorite: Bool
     /// The apps this account is shown first in, for the line under the title.
     @Published private(set) var linkedApps: [LinkedApp] = []
+    /// Apps previously removed from this account, for the quiet "Removed earlier" note in the picker.
+    @Published private(set) var refusedApps: [LinkedApp] = []
     let presentation: DetailsPresentation
     unowned let session: VaultSession
     fileprivate let done: () -> Void
@@ -272,6 +274,36 @@ final class DetailsModel: ObservableObject {
         }
     }
 
+    struct AppPickerOptions: Equatable {
+        var active: LinkedApp?
+        var running: [LinkedApp]
+        var refusedBundleIDs: Set<String>
+    }
+
+    /// Manually links an app from the picker popover. Clears any earlier refusal for that app on this account.
+    func link(_ app: LinkedApp) {
+        session.linkApp(app, to: entryID, manual: true)
+    }
+
+    /// Opens the `.app` chooser and manually links the chosen app.
+    func chooseAndLinkApp() {
+        if let app = session.chooseAppPanel("Add") {
+            link(app)
+        }
+    }
+
+    /// Candidates for the manual picker popover: active app first, then running apps, excluding already-linked apps.
+    func pickerOptions() -> AppPickerOptions {
+        let linkedIDs = Set(linkedApps.map { $0.bundleID.lowercased() })
+        let activeCandidate = session.copyTargetApp?()
+        let active = activeCandidate.flatMap { linkedIDs.contains($0.bundleID.lowercased()) ? nil : $0 }
+        var excluded = linkedIDs
+        if let active { excluded.insert(active.bundleID.lowercased()) }
+        let running = session.runningLinkableApps(excluded)
+        let refusedIDs = Set(refusedApps.map { $0.bundleID.lowercased() })
+        return AppPickerOptions(active: active, running: running, refusedBundleIDs: refusedIDs)
+    }
+
     /// A click on an app under the title: the account is no longer shown first there. The bubble offers Undo.
     func unlink(_ app: LinkedApp) {
         session.unlinkApp(app, from: entryID, announce: true)
@@ -280,6 +312,7 @@ final class DetailsModel: ObservableObject {
     private func apply(_ entry: VaultEntry) {
         favorite = entry.favorite
         linkedApps = AppLinks.apps(of: entry)
+        refusedApps = AppLinks.refusedApps(of: entry)
         fields = Self.detailFields(of: entry)
         changeInDays = PasswordRotation.daysLeft(of: entry, now: Date())
         #if PP_DIRECT
@@ -633,49 +666,66 @@ struct DetailsView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             SiteIconView(host: model.siteHost, title: model.title, side: 32)
                 .overlay(alignment: .bottomTrailing) { headerBadge }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
-                if !model.linkedApps.isEmpty { LinkedAppsLine(model: model) }
-            }
-            Spacer(minLength: 0)
-            Button { model.edit() } label: {
-                Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Edit (⌘E)")
-            if showsPinButton(model.presentation) {
-                Button { model.pin() } label: {
-                    Image(systemName: "pin").font(.system(size: 13)).foregroundStyle(Color.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
+                    Text(model.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Button { model.edit() } label: {
+                        Image(systemName: "pencil").font(.system(size: 13)).foregroundStyle(Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Edit (⌘E)")
+                    if showsPinButton(model.presentation) {
+                        Button { model.pin() } label: {
+                            Image(systemName: "pin").font(.system(size: 13)).foregroundStyle(Color.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Pin window (⌘O)")
+                    }
+                    Button { model.toggleFavorite() } label: {
+                        Image(systemName: model.favorite ? "star.fill" : "star")
+                            .font(.system(size: 15))
+                            .foregroundStyle(model.favorite ? Palette.favorite : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.favorite ? "Remove from Favorites" : "Add to Favorites")
                 }
-                .buttonStyle(.plain)
-                .help("Pin window (⌘O)")
+                LinkedAppsLine(model: model)
             }
-            Button { model.toggleFavorite() } label: {
-                Image(systemName: model.favorite ? "star.fill" : "star")
-                    .font(.system(size: 15))
-                    .foregroundStyle(model.favorite ? Palette.favorite : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(model.favorite ? "Remove from Favorites" : "Add to Favorites")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
     }
 }
 
-/// "Shown first in", then the account's apps. As many as fit; the rest are counted.
-/// See "An account remembers its app" in docs/UX.md.
+/// "+ Add app" when empty; "Shown first in", then the account's apps, optional "N more ⌄" popover, and "+".
+/// Keeps a fixed 60 pt header across all states so fields never shift. See "An account remembers its app" in docs/UX.md.
 private struct LinkedAppsLine: View {
     @ObservedObject var model: DetailsModel
+    @State private var showingPicker = false
+    @State private var showingOverflow = false
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            ForEach(Array(stride(from: model.linkedApps.count, through: 1, by: -1)), id: \.self) { shown in
-                line(shown: shown)
+        Group {
+            if model.linkedApps.isEmpty {
+                AddAppEmptyButton(isOpen: showingPicker) { showingPicker = true }
+                    .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
+                        AppPickerPopover(model: model) { showingPicker = false }
+                    }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    ForEach(Array(stride(from: model.linkedApps.count, through: 0, by: -1)), id: \.self) { shown in
+                        line(shown: shown)
+                    }
+                }
             }
+        }
+        .frame(height: 18)
+        .onChange(of: model.linkedApps) { _, apps in
+            if apps.isEmpty { showingOverflow = false }
         }
     }
 
@@ -686,20 +736,315 @@ private struct LinkedAppsLine: View {
                 LinkedAppToken(app: app, account: model.title) { model.unlink(app) }
             }
             if shown < model.linkedApps.count {
-                Text(linkedAppsOverflow(hidden: model.linkedApps.count - shown))
-                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize()
+                OverflowAppsButton(hidden: model.linkedApps.count - shown, isOpen: showingOverflow) {
+                    showingOverflow = true
+                }
+                .popover(isPresented: $showingOverflow, arrowEdge: .bottom) {
+                    LinkedAppsOverflowPopover(model: model) { showingOverflow = false }
+                }
             }
+            AddAppPlusButton(isOpen: showingPicker) { showingPicker = true }
+                .popover(isPresented: $showingPicker, arrowEdge: .bottom) {
+                    AppPickerPopover(model: model) { showingPicker = false }
+                }
         }
     }
 }
 
 let linkedAppsLabel = "Shown first in"
+let linkedAppsEmptyLabel = "Add app"
 
 func linkedAppsOverflow(hidden: Int) -> String {
-    "+\(hidden) more"
+    "\(hidden) more"
 }
 
-/// One app: its icon, its name, and a close mark that is always there. A click anywhere on it unlinks.
+/// Compact "+ Add app" button shown under the title when no apps are linked yet.
+private struct AddAppEmptyButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var isOpen: Bool
+    var action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        let active = isOpen || hovered
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
+                Text(linkedAppsEmptyLabel).font(.system(size: 11, weight: isOpen ? .medium : .regular)).fixedSize()
+            }
+            .foregroundStyle(active ? Palette.text(dark: dark) : Palette.secondaryText(dark: dark))
+            .padding(.horizontal, 8)
+            .frame(height: 18)
+            .background(RoundedRectangle(cornerRadius: 5).fill(active ? Palette.fieldSurface(dark: dark) : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(
+                isOpen ? Palette.accentText(dark: dark).opacity(0.85) : Color.primary.opacity(hovered ? 0.45 : 0.25),
+                lineWidth: isOpen ? 1.2 : 1
+            ))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("Show this account first in an app")
+        .accessibilityLabel("Add app")
+    }
+}
+
+/// Chip-adjacent "+" button (24x18 visual pill with a generous >=24x24 hit target).
+private struct AddAppPlusButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var isOpen: Bool
+    var action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        let active = isOpen || hovered
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(active ? Palette.text(dark: dark) : Palette.secondaryText(dark: dark))
+                .frame(width: 24, height: 18)
+                .background(RoundedRectangle(cornerRadius: 5).fill(active ? Palette.fieldSurface(dark: dark) : Color.clear))
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(
+                    isOpen ? Palette.accentText(dark: dark).opacity(0.85) : Color.primary.opacity(hovered ? 0.45 : 0.25),
+                    lineWidth: isOpen ? 1.2 : 1
+                ))
+                .padding(.vertical, 3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("Add app")
+        .accessibilityLabel("Add app")
+    }
+}
+
+/// Interactive "2 more ⌄" pill that opens the full list of linked apps so hidden apps can be viewed or removed.
+private struct OverflowAppsButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var hidden: Int
+    var isOpen: Bool
+    var action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        let active = isOpen || hovered
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(linkedAppsOverflow(hidden: hidden))
+                    .font(.system(size: 11, weight: isOpen ? .medium : .regular))
+                    .fixedSize()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7.5, weight: .semibold))
+                    .opacity(active ? 0.9 : 0.7)
+            }
+            .foregroundStyle(active ? Palette.text(dark: dark) : Palette.secondaryText(dark: dark))
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .background(RoundedRectangle(cornerRadius: 5).fill(active ? Palette.fieldSurface(dark: dark) : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(
+                isOpen ? Palette.accentText(dark: dark).opacity(0.85) : Color.primary.opacity(hovered ? 0.45 : 0.25),
+                lineWidth: isOpen ? 1.2 : 1
+            ))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 }
+        .help("Show all linked apps")
+        .accessibilityLabel("\(linkedAppsOverflow(hidden: hidden)) linked apps")
+    }
+}
+
+/// Popover opened by "+ Add app" or "+": active app first, running apps, Choose App…, and a note on browsers.
+private struct AppPickerPopover: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var model: DetailsModel
+    var close: () -> Void
+    @State private var hoveredID: String?
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        let options = model.pickerOptions()
+        VStack(alignment: .leading, spacing: 0) {
+            if let active = options.active {
+                pickerRow(
+                    id: "active:" + active.bundleID.lowercased(),
+                    app: active,
+                    trailing: "Active app",
+                    dark: dark
+                ) {
+                    model.link(active)
+                    close()
+                }
+                divider
+            }
+            if !options.running.isEmpty {
+                Text("Running apps")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Palette.secondaryText(dark: dark))
+                    .padding(.horizontal, 12)
+                    .padding(.top, options.active == nil ? 6 : 4)
+                    .padding(.bottom, 4)
+                ScrollView(.vertical, showsIndicators: options.running.count > 8) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        ForEach(options.running, id: \.self) { app in
+                            let wasRemoved = options.refusedBundleIDs.contains(app.bundleID.lowercased())
+                            pickerRow(
+                                id: "run:" + app.bundleID.lowercased(),
+                                app: app,
+                                trailing: wasRemoved ? "Removed earlier" : nil,
+                                dark: dark
+                            ) {
+                                model.link(app)
+                                close()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+                divider
+            }
+            chooseRow(dark: dark)
+            Text("Browsers aren’t listed — they match by site")
+                .font(.system(size: 10.5))
+                .foregroundStyle(Palette.secondaryText(dark: dark).opacity(0.8))
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
+                .padding(.bottom, 6)
+        }
+        .padding(.vertical, 4)
+        .frame(width: 260)
+        .background(Palette.surface(dark: dark))
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.12))
+            .frame(height: 1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+    }
+
+    private func pickerRow(id: String, app: LinkedApp, trailing: String?, dark: Bool, action: @escaping () -> Void) -> some View {
+        let hovered = hoveredID == id
+        return Button(action: action) {
+            HStack(spacing: 8) {
+                Image(nsImage: AppIdentity.icon(for: app))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                Text(app.name)
+                    .font(.system(size: 13, weight: hovered ? .medium : .regular))
+                    .foregroundStyle(hovered ? Palette.selectionInk : Palette.text(dark: dark))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
+                if let trailing {
+                    Text(trailing)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(hovered ? Palette.selectionInk.opacity(0.88) : Palette.secondaryText(dark: dark))
+                        .fixedSize()
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 5).fill(hovered ? Palette.selectionFill : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 5)
+        .onHover { inside in
+            if inside { hoveredID = id } else if hoveredID == id { hoveredID = nil }
+        }
+    }
+
+    private func chooseRow(dark: Bool) -> some View {
+        let id = "choose"
+        let hovered = hoveredID == id
+        return Button {
+            close()
+            DispatchQueue.main.async { model.chooseAndLinkApp() }
+        } label: {
+            HStack(spacing: 8) {
+                Color.clear.frame(width: 16, height: 16)
+                Text("Choose App…")
+                    .font(.system(size: 13, weight: hovered ? .medium : .regular))
+                    .foregroundStyle(hovered ? Palette.selectionInk : Palette.text(dark: dark))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 5).fill(hovered ? Palette.selectionFill : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 5)
+        .onHover { inside in
+            if inside { hoveredID = id } else if hoveredID == id { hoveredID = nil }
+        }
+    }
+}
+
+/// Popover opened by "N more ⌄": lists every linked app with a dedicated × button on each row.
+private struct LinkedAppsOverflowPopover: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var model: DetailsModel
+    var close: () -> Void
+    @State private var hoveredRemoveID: String?
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        VStack(alignment: .leading, spacing: 2) {
+            Text(linkedAppsLabel)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(Palette.secondaryText(dark: dark))
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 2)
+            ForEach(model.linkedApps, id: \.self) { app in
+                let key = app.bundleID.lowercased()
+                let hovered = hoveredRemoveID == key
+                HStack(spacing: 8) {
+                    Image(nsImage: AppIdentity.icon(for: app))
+                        .resizable()
+                        .frame(width: 16, height: 16)
+                    Text(app.name)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Palette.text(dark: dark))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    Button {
+                        model.unlink(app)
+                        if model.linkedApps.isEmpty { close() }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(Palette.text(dark: dark).opacity(hovered ? 1 : 0.5))
+                            .frame(width: 20, height: 20)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(hovered ? Palette.fieldSurface(dark: dark) : Color.clear))
+                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(hovered ? 0.28 : 0), lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { inside in
+                        if inside { hoveredRemoveID = key } else if hoveredRemoveID == key { hoveredRemoveID = nil }
+                    }
+                    .help("Stop showing \(model.title) first in \(app.name)")
+                    .accessibilityLabel("Remove \(app.name)")
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 26)
+            }
+        }
+        .padding(.bottom, 6)
+        .frame(width: 220)
+        .background(Palette.surface(dark: dark))
+    }
+}
+
+/// One app: its icon, its name (truncated cleanly for long names), and a close mark that is always there.
 private struct LinkedAppToken: View {
     @Environment(\.colorScheme) private var colorScheme
     var app: LinkedApp
@@ -712,7 +1057,12 @@ private struct LinkedAppToken: View {
         Button(action: unlink) {
             HStack(spacing: 5) {
                 Image(nsImage: AppIdentity.icon(for: app)).resizable().frame(width: 12, height: 12)
-                Text(app.name).font(.system(size: 11)).lineLimit(1).fixedSize()
+                Text(app.name)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 136, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
                 Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).opacity(hovered ? 1 : 0.6)
             }
             .padding(.horizontal, 6)

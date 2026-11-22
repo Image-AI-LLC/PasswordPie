@@ -1507,16 +1507,38 @@ So one copy is enough, and sometimes it is the wrong guess: a password copied ov
 links the account to the chat app. Press **Undo** on the bubble, or take the app off later in the account's details.
 Either is one click, and PasswordPie does not make that link again on its own.
 
-### Seeing it and taking it back
+### Seeing it, adding by hand, and taking it back
 
-An account's details, beside the menu and in a pinned window, show the link under the title: "Shown first in", then
-each app with its icon, its name and a close mark. Click an app and the account is no longer shown first there. The
-bubble says so, "Northwind SSO is no longer shown first in Harbor", with **Undo**, because a click can be a slip.
-An account with no app has no such line, and its details look as they always did.
+An account's details, beside the menu and in a pinned window, keep a fixed 60 pt header with the app line under the
+title:
 
-After **Undo** on a new link, or a click that took an app off, PasswordPie does not link that account to that app
-again on its own. If you copy the password over the app again, the bubble asks instead, "Show Northwind SSO first in
-Harbor again?", with **Show first**. Ignore it and nothing changes.
+- **With no apps yet:** a compact **`+ Add app`** button. Clicking it opens a popover menu without closing the details:
+  the active frontmost app sits at the top (`Active app`), followed by `Running apps` (omitting browsers and PasswordPie),
+  and `Choose App…` to pick any `.app` from `/Applications`.
+- **With apps linked:** "Shown first in", then each app with its icon, its name and a close mark, followed by a compact
+  **`+`** button to add more. When more apps are linked than fit on one line, the rest collapse into **`2 more ⌄`**,
+  which opens the full list with a remove button on each row.
+- Click an app chip to stop showing the account first there. The bubble says so ("Northwind SSO is no longer shown
+  first in Harbor", with **Undo**).
+
+After **Undo** on a new link, or a click that took an app off, PasswordPie records that refusal on the account and
+stays **completely silent** when you copy that account's password over that app again — no auto-link and no repeat
+prompt. You can still re-add the app by hand anytime from **`+ Add app`** / **`+`** (where previously removed running
+apps carry a quiet `Removed earlier` note).
+
+### Stopping automatic adding for an app (AI agents, terminals, chat)
+
+If you undo or remove **3 distinct automatically-added accounts** in the same app (removing links you added by hand does
+not count), PasswordPie stops adding that app automatically:
+
+- The bubble says `"Stopped adding <App> automatically"`, with **Turn Back On** (protected by a short double-click guard
+  when swapping in place after Undo). Pressing **Turn Back On** restores automatic adding for future copies and resets
+  that app's undo count; the 3 unlinked accounts stay unlinked.
+- **Preferences › General › Don't add automatically** lists every excluded app (`After 3 undos` or `Excluded manually`),
+  with a native **`+` / `−`** bar so you can also proactively exclude terminals or AI agents or restore automatic adding
+  at any time.
+- Even while automatic adding is off for an app, you can still add it manually to any account with **`+ Add app`** /
+  **`+`**.
 
 ### Where the link is kept
 
@@ -1549,7 +1571,9 @@ Use an app that asks for an account whose name is not the app's name, such as Mi
 4. Switch to another app and press `⌘\`: no group.
 5. Back over the first app, press `⌘\`, then → on the account. Under the title: "Shown first in", and Microsoft
    Teams with its icon. Click it: the bubble says the account is no longer shown first there. Press `⌘\` again: no group.
-6. Copy the password over the app once more: the bubble now asks, with **Show first**.
+6. Copy the password over the app once more: it copies silently — no link, no repeat prompt.
+7. Open the account details and click **`+ Add app`** → pick Microsoft Teams: it is shown first in Microsoft Teams again.
+8. Copy and undo 3 distinct accounts over a chat/agent app: on the 3rd undo the bubble says `"Stopped adding <App> automatically"` with **Turn Back On**, and the app appears under **Preferences › General › Don't add automatically**.
 
 ## Preferences is in the app switcher
 

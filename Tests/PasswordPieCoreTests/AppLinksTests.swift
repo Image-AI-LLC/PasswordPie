@@ -191,4 +191,62 @@ final class AppLinksTests: XCTestCase {
         XCTAssertEqual(rows.last, .separator)
         XCTAssertEqual(MenuBuilder.appRows(app: harbor, entries: []), [])
     }
+
+    // MARK: Manual vs automatic links & refused list
+
+    func testManualFlagIsKeptAndClearedOnUnlink() {
+        var entry = account()
+        AppLinks.link(harbor, to: &entry, manual: false)
+        AppLinks.link(ledger, to: &entry, manual: true)
+        XCTAssertFalse(AppLinks.isManual(entry, to: harbor))
+        XCTAssertTrue(AppLinks.isManual(entry, to: ledger))
+        XCTAssertEqual(AppLinks.apps(of: entry), [harbor, ledger])
+
+        AppLinks.unlink(ledger, from: &entry)
+        XCTAssertFalse(AppLinks.isManual(entry, to: ledger))
+        XCTAssertEqual(AppLinks.refusedApps(of: entry), [ledger])
+    }
+
+    // MARK: App-level automatic linking exclusions
+
+    func testThreeDistinctAutoUndosExcludeTheAppAndReenableResetsCount() {
+        var exclusions = AppLinkAutoExclusions()
+        let relay = LinkedApp(bundleID: "example.relay", teamID: nil, name: "Relay")
+        let a1 = UUID(), a2 = UUID(), a3 = UUID(), a4 = UUID()
+
+        XCTAssertFalse(exclusions.recordAutoUndo(app: relay, entryID: a1))
+        XCTAssertEqual(exclusions.undoCount(for: relay.bundleID), 1)
+        // Undoing the same account twice still counts as 1 distinct account.
+        XCTAssertFalse(exclusions.recordAutoUndo(app: relay, entryID: a1))
+        XCTAssertEqual(exclusions.undoCount(for: relay.bundleID), 1)
+
+        XCTAssertFalse(exclusions.recordAutoUndo(app: relay, entryID: a2))
+        XCTAssertEqual(exclusions.undoCount(for: relay.bundleID), 2)
+        // Re-linking a2 clears its strike before the 3rd threshold is reached.
+        exclusions.clearUndo(bundleID: relay.bundleID, entryID: a2)
+        XCTAssertEqual(exclusions.undoCount(for: relay.bundleID), 1)
+
+        XCTAssertFalse(exclusions.recordAutoUndo(app: relay, entryID: a3))
+        XCTAssertTrue(exclusions.recordAutoUndo(app: relay, entryID: a4), "the 3rd distinct account crosses the threshold")
+        XCTAssertTrue(exclusions.isExcluded(bundleID: "EXAMPLE.RELAY"))
+        XCTAssertEqual(exclusions.excluded, [AutoLinkExclusion(bundleID: "example.relay", name: "Relay", reason: .afterUndos)])
+        XCTAssertEqual(exclusions.excluded.first?.reason.label, "After 3 undos")
+
+        let roundTripped = AppLinkAutoExclusions.decode(exclusions.encoded())
+        XCTAssertEqual(roundTripped, exclusions)
+
+        XCTAssertTrue(exclusions.reenable(bundleID: relay.bundleID))
+        XCTAssertFalse(exclusions.isExcluded(bundleID: relay.bundleID))
+        XCTAssertEqual(exclusions.undoCount(for: relay.bundleID), 0)
+    }
+
+    func testManualExclusionRecordsReasonAndIsIdempotent() {
+        var exclusions = AppLinkAutoExclusions()
+        let terminal = LinkedApp(bundleID: "com.apple.Terminal", teamID: nil, name: "Terminal")
+        XCTAssertTrue(exclusions.excludeManually(terminal))
+        XCTAssertFalse(exclusions.excludeManually(terminal))
+        XCTAssertTrue(exclusions.isExcluded(bundleID: terminal.bundleID))
+        XCTAssertEqual(exclusions.excluded.first?.reason, .manual)
+        XCTAssertEqual(exclusions.excluded.first?.reason.label, "Excluded manually")
+    }
 }

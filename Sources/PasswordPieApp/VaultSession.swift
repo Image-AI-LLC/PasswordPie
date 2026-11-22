@@ -330,7 +330,17 @@ final class VaultSession: ObservableObject {
     var onActivity: (() -> Void)?
     /// The app a copy is for, when it is one an account can be linked to. See `VaultSession+AppLinks.swift`.
     var copyTargetApp: (() -> LinkedApp?)?
-    /// A link was made, or an account and an app that were unlinked before met again: the bubble says so.
+    /// Running desktop apps available for manual linking or Preferences exclusion. Replaced in tests.
+    var runningLinkableApps: (Set<String>) -> [LinkedApp] = { AppIdentity.runningLinkableApps(excluding: $0) }
+    /// Modal `.app` chooser for "Choose App…". Replaced in tests.
+    var chooseAppPanel: ((String) -> LinkedApp?) = { prompt in
+        AppDelegate.shared.map { $0.keepOpen { AppIdentity.chooseAppPanel(prompt: prompt) } }
+            ?? AppIdentity.chooseAppPanel(prompt: prompt)
+    }
+    /// Apps excluded from automatic linking (after 3 undos or excluded manually in Preferences).
+    @Published var appLinkAutoExclusions = AppLinkAutoExclusions()
+    var appLinkExclusionsURL: URL!
+    /// A link was made, removed, or automatic adding stopped for an app: the bubble says so.
     var onAppLink: ((AppLinkNotice) -> Void)?
     /// A pick on a sign-in page added the page's site to the account: the bubble says so, with Undo.
     var onSiteNotice: ((SiteNotice) -> Void)?
@@ -421,7 +431,10 @@ final class VaultSession: ObservableObject {
         let support = Self.defaultDatabaseURL.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         let usagePath = ProcessInfo.processInfo.environment["PASSWORDPIE_USAGE"]
-        usage = UsageStore(url: usagePath.map { URL(fileURLWithPath: $0) } ?? support.appendingPathComponent("usage.json"))
+        let usageURL = usagePath.map { URL(fileURLWithPath: $0) } ?? support.appendingPathComponent("usage.json")
+        usage = UsageStore(url: usageURL)
+        appLinkExclusionsURL = usageURL.deletingLastPathComponent().appendingPathComponent("app-link-exclusions.json")
+        appLinkAutoExclusions = AppLinkAutoExclusions.decode(try? Data(contentsOf: appLinkExclusionsURL))
         let initialPath: String
         if let override = ProcessInfo.processInfo.environment["PASSWORDPIE_DB"] {
             initialPath = override
