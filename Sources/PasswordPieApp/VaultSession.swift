@@ -332,10 +332,14 @@ final class VaultSession: ObservableObject {
     var copyTargetApp: (() -> LinkedApp?)?
     /// Running desktop apps available for manual linking or Preferences exclusion. Replaced in tests.
     var runningLinkableApps: (Set<String>) -> [LinkedApp] = { AppIdentity.runningLinkableApps(excluding: $0) }
-    /// Modal `.app` chooser for "Choose App…". Replaced in tests.
-    var chooseAppPanel: ((String) -> LinkedApp?) = { prompt in
-        AppDelegate.shared.map { $0.keepOpen { AppIdentity.chooseAppPanel(prompt: prompt) } }
-            ?? AppIdentity.chooseAppPanel(prompt: prompt)
+    /// Modal `.app` chooser for "Choose App…". Routes through `presentFilePanel` (`FilePanelTiming`) so the first open
+    /// panel created from the non-activating menu activates the app first. Replaced in tests.
+    var chooseAppPanel: (String, @escaping (LinkedApp?) -> Void) -> Void = { prompt, done in
+        if let delegate = AppDelegate.shared {
+            delegate.presentFilePanel { done(AppIdentity.chooseAppPanel(prompt: prompt)) }
+        } else {
+            done(AppIdentity.chooseAppPanel(prompt: prompt))
+        }
     }
     /// Apps excluded from automatic linking (after 3 undos or excluded manually in Preferences).
     @Published var appLinkAutoExclusions = AppLinkAutoExclusions()

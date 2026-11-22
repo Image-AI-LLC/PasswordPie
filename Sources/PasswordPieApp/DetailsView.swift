@@ -285,10 +285,10 @@ final class DetailsModel: ObservableObject {
         session.linkApp(app, to: entryID, manual: true)
     }
 
-    /// Opens the `.app` chooser and manually links the chosen app.
+    /// Opens the `.app` chooser (via `presentFilePanel`) and manually links the chosen app.
     func chooseAndLinkApp() {
-        if let app = session.chooseAppPanel("Add") {
-            link(app)
+        session.chooseAppPanel("Add") { [weak self] app in
+            if let app { self?.link(app) }
         }
     }
 

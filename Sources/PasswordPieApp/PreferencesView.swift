@@ -960,8 +960,8 @@ private struct AutoLinkExclusionsSection: View {
                             Divider()
                         }
                         Button("Choose App…") {
-                            if let chosen = session.chooseAppPanel("Exclude") {
-                                session.excludeAppFromAutoLink(chosen)
+                            session.chooseAppPanel("Exclude") { chosen in
+                                if let chosen { session.excludeAppFromAutoLink(chosen) }
                             }
                         }
                     } label: {

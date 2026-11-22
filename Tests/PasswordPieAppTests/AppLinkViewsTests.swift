@@ -113,6 +113,15 @@ final class AppLinkViewsTests: XCTestCase {
         model.link(relay)
         XCTAssertEqual(model.linkedApps, [harbor, relay])
         XCTAssertEqual(model.refusedApps, [], "manual re-link clears the refusal")
+
+        var capturedPrompt: String?
+        session.chooseAppPanel = { prompt, done in
+            capturedPrompt = prompt
+            done(self.ledger)
+        }
+        model.chooseAndLinkApp()
+        XCTAssertEqual(capturedPrompt, "Add")
+        XCTAssertEqual(model.linkedApps, [harbor, relay, ledger])
     }
 
     func testAClickOnAnAppUnlinksItAndTheBubbleOffersUndo() throws {
