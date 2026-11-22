@@ -158,6 +158,7 @@ extension VaultSession {
         appLinkAutoExclusions = updated
         guard let url = appLinkExclusionsURL else { return }
         try? updated.encoded().write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
     /// Apps previously removed from this account, for the quiet "Removed earlier" note in the picker.

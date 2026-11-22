@@ -166,6 +166,8 @@ final class AppLinkSessionTests: XCTestCase {
         session.copy(.password, of: id3)
         session.unlinkApp(harbor, from: id3)
         XCTAssertTrue(session.appLinkAutoExclusions.isExcluded(bundleID: harbor.bundleID))
+        let mode = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: session.appLinkExclusionsURL.path)[.posixPermissions] as? Int)
+        XCTAssertEqual(mode & 0o777, 0o600, "exclusions file uses owner-only permissions like usage.json")
         XCTAssertEqual(notices.last, .autoStopped(app: harbor))
         XCTAssertEqual(notices.last?.message, "Stopped adding Harbor automatically")
         XCTAssertEqual(notices.last?.action, "Turn Back On")
