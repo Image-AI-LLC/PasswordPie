@@ -241,6 +241,9 @@ struct PreferencesView: View {
                     everyday
                 }
             }
+            section("Don't add automatically") {
+                AutoLinkExclusionsSection(session: session)
+            }
             #if PP_DIRECT
             if let updates {
                 if updates.state == .unavailable {
@@ -895,3 +898,120 @@ struct UpdatesSection: View {
     }
 }
 #endif
+
+/// Bordered macOS exclusion list in Preferences › General ("Don't add automatically").
+/// Lists apps stopped after 3 undos or excluded manually, with a native +/- bar to add or restore apps.
+private struct AutoLinkExclusionsSection: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ObservedObject var session: VaultSession
+    @State private var selectedID: String?
+
+    private var excluded: [AutoLinkExclusion] { session.appLinkAutoExclusions.excluded }
+
+    var body: some View {
+        let dark = colorScheme == .dark
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(spacing: 0) {
+                if excluded.isEmpty {
+                    Text("No apps excluded. PasswordPie adds an app here automatically after 3 automatic adds are undone.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.secondaryText(dark: dark))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 14)
+                } else {
+                    ForEach(Array(excluded.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 {
+                            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
+                        }
+                        let selected = selectedID == item.id
+                        HStack(spacing: 10) {
+                            Image(nsImage: AppIdentity.icon(forBundleID: item.bundleID))
+                                .resizable()
+                                .frame(width: 18, height: 18)
+                                .accessibilityHidden(true)
+                            Text(item.name)
+                                .font(.system(size: 12.5, weight: selected ? .medium : .regular))
+                                .foregroundStyle(Palette.text(dark: dark))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            Text(item.reason.label)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.secondaryText(dark: dark))
+                                .fixedSize()
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 30)
+                        .background(selected ? Palette.brandAccent.opacity(0.16) : Color.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedID = item.id }
+                    }
+                }
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1)
+                HStack(spacing: 0) {
+                    Menu {
+                        let excludedSet = Set(excluded.map { $0.bundleID.lowercased() })
+                        let running = session.runningLinkableApps(excludedSet)
+                        if !running.isEmpty {
+                            ForEach(running, id: \.self) { app in
+                                Button(app.name) { session.excludeAppFromAutoLink(app) }
+                            }
+                            Divider()
+                        }
+                        Button("Choose App…") {
+                            session.chooseAppPanel("Exclude") { chosen in
+                                if let chosen { session.excludeAppFromAutoLink(chosen) }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 26, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Add app")
+                    .accessibilityLabel("Add app to exclusion list")
+
+                    Rectangle().fill(Color.primary.opacity(0.14)).frame(width: 1, height: 14)
+
+                    Button {
+                        guard let selectedID,
+                              let item = excluded.first(where: { $0.id == selectedID }) else { return }
+                        session.reenableAutoLink(bundleID: item.bundleID)
+                        self.selectedID = nil
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 11, weight: .medium))
+                            .frame(width: 26, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedID == nil || !excluded.contains { $0.id == selectedID })
+                    .opacity((selectedID == nil || !excluded.contains { $0.id == selectedID }) ? 0.35 : 1)
+                    .help("Turn back on")
+                    .accessibilityLabel("Turn automatic adding back on for selected app")
+
+                    Spacer(minLength: 0)
+                }
+                .frame(height: 24)
+            }
+            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.fieldSurface(dark: dark)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Palette.border(dark: dark), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            Text("You can still add these apps manually from any account.")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.secondaryText(dark: dark))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: excluded) { _, items in
+            if let selectedID, !items.contains(where: { $0.id == selectedID }) {
+                self.selectedID = nil
+            }
+        }
+    }
+}

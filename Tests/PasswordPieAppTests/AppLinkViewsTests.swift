@@ -82,12 +82,46 @@ final class AppLinkViewsTests: XCTestCase {
         }
         let plain = try XCTUnwrap(heights[false]), linked = try XCTUnwrap(heights[true])
         XCTAssertGreaterThan(plain, 0)
-        XCTAssertEqual(linked - plain, 8, accuracy: 1.5, "the header goes from 52 to 60 pt; the fields keep their size")
+        XCTAssertEqual(linked - plain, 0, accuracy: 1.5, "header stays a fixed 60 pt whether empty (+ Add app) or linked")
     }
 
     func testTheLineSaysWhatTheGroupDoes() {
         XCTAssertEqual(linkedAppsLabel, "Shown first in")
-        XCTAssertEqual(linkedAppsOverflow(hidden: 2), "+2 more")
+        XCTAssertEqual(linkedAppsEmptyLabel, "Add app")
+        XCTAssertEqual(linkedAppsOverflow(hidden: 2), "2 more")
+    }
+
+    func testDetailsModelPickerOrdersActiveThenRunningAndMarksRemovedApps() throws {
+        let relay = LinkedApp(bundleID: "example.relay", teamID: nil, name: "Relay")
+        let session = session(with: account(apps: [harbor]))
+        let entry = try XCTUnwrap(session.entries.first { $0.title == "Northwind SSO" })
+        // Link then remove Relay so it is refused on this account
+        session.linkApp(relay, to: entry.id, manual: true)
+        session.unlinkApp(relay, from: entry.id)
+
+        session.copyTargetApp = { self.ledger }
+        session.runningLinkableApps = { excluding in
+            [self.harbor, self.ledger, relay].filter { !excluding.contains($0.bundleID.lowercased()) }
+        }
+
+        let model = DetailsModel(entry: try XCTUnwrap(session.entry(entry.id)), session: session, done: {})
+        let options = model.pickerOptions()
+        XCTAssertEqual(options.active, ledger, "active frontmost app sits first")
+        XCTAssertEqual(options.running, [relay], "already-linked harbor and active ledger are omitted from Running apps")
+        XCTAssertEqual(options.refusedBundleIDs, ["example.relay"], "previously removed app is flagged for the quiet trace")
+
+        model.link(relay)
+        XCTAssertEqual(model.linkedApps, [harbor, relay])
+        XCTAssertEqual(model.refusedApps, [], "manual re-link clears the refusal")
+
+        var capturedPrompt: String?
+        session.chooseAppPanel = { prompt, done in
+            capturedPrompt = prompt
+            done(self.ledger)
+        }
+        model.chooseAndLinkApp()
+        XCTAssertEqual(capturedPrompt, "Add")
+        XCTAssertEqual(model.linkedApps, [harbor, relay, ledger])
     }
 
     func testAClickOnAnAppUnlinksItAndTheBubbleOffersUndo() throws {
@@ -106,7 +140,7 @@ final class AppLinkViewsTests: XCTestCase {
         XCTAssertEqual(notice.action, "Undo")
 
         // Undo on that bubble links it again, and says nothing more.
-        session.linkApp(notice.app, to: notice.entry)
+        session.linkApp(notice.app, to: try XCTUnwrap(notice.entry))
         XCTAssertEqual(model.linkedApps, [ledger, harbor])
         XCTAssertEqual(notices.count, 1)
     }
@@ -156,13 +190,18 @@ final class AppLinkViewsTests: XCTestCase {
 
         let notices: [AppLinkNotice] = [
             .linked(entry: UUID(), title: "Northwind SSO", app: harbor),
-            .offer(entry: UUID(), title: "Northwind SSO", app: harbor),
+            .autoStopped(app: harbor),
             .linked(entry: UUID(), title: String(repeating: "A very long account title ", count: 8), app: harbor),
         ]
+        XCTAssertGreaterThanOrEqual(appLinkSwapGuardInterval(systemDoubleClick: 0.3), 0.5)
+        XCTAssertEqual(appLinkSwapGuardInterval(systemDoubleClick: 0.8), 0.8)
         for (index, notice) in notices.enumerated() {
             for dark in [false, true] {
-                let view = AppLinkBubbleView(message: notice.message, action: notice.action, title: "Northwind SSO", siteHost: nil,
-                                             appIcon: AppIdentity.icon(for: harbor), onAct: {}, onHover: { _ in })
+                let icon: BubbleIconKind = switch notice {
+                case .autoStopped(let app): .appStopped(appIcon: AppIdentity.icon(for: app))
+                case .linked, .unlinked: .account(title: "Northwind SSO", siteHost: nil, appIcon: AppIdentity.icon(for: harbor))
+                }
+                let view = AppLinkBubbleView(message: notice.message, action: notice.action, icon: icon, onAct: {}, onHover: { _ in })
                 let host = FirstMouseHostingView(rootView: view)
                 host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
                 let size = host.fittingSize

@@ -5,35 +5,36 @@ import PasswordPieCore
 enum AppLinkNotice: Equatable {
     /// The account was just linked to the app. The bubble offers Undo.
     case linked(entry: UUID, title: String, app: LinkedApp)
-    /// The user took this link back before, so a password copied over the app only asks. The bubble offers Show first.
-    case offer(entry: UUID, title: String, app: LinkedApp)
     /// A click on the app in the account's details took the link off. The bubble offers Undo.
     case unlinked(entry: UUID, title: String, app: LinkedApp)
+    /// Three distinct auto-added links were undone in `app`, so automatic adding stopped for it.
+    case autoStopped(app: LinkedApp)
 
     var message: String {
         switch self {
         case .linked(_, let title, let app): "\(title) is now shown first in \(app.name)"
-        case .offer(_, let title, let app): "Show \(title) first in \(app.name) again?"
         case .unlinked(_, let title, let app): "\(title) is no longer shown first in \(app.name)"
+        case .autoStopped(let app): "Stopped adding \(app.name) automatically"
         }
     }
 
     var action: String {
         switch self {
         case .linked, .unlinked: "Undo"
-        case .offer: "Show first"
+        case .autoStopped: "Turn Back On"
         }
     }
 
-    var entry: UUID {
+    var entry: UUID? {
         switch self {
-        case .linked(let entry, _, _), .offer(let entry, _, _), .unlinked(let entry, _, _): entry
+        case .linked(let entry, _, _), .unlinked(let entry, _, _): entry
+        case .autoStopped: nil
         }
     }
 
     var app: LinkedApp {
         switch self {
-        case .linked(_, _, let app), .offer(_, _, let app), .unlinked(_, _, let app): app
+        case .linked(_, _, let app), .unlinked(_, _, let app), .autoStopped(let app): app
         }
     }
 }
@@ -85,34 +86,85 @@ extension VaultSession {
     }
 
     /// The one rule that links an account to an app without asking: its password was copied while the app was in front.
-    /// The username is not asked for, because many apps already show it. A wrong guess costs one click on Undo or on
-    /// the app in the account's details, and after that the same copy only asks.
+    /// If the user removed this app from this account before, or if automatic adding is off for the app (after 3 undos
+    /// or excluded in Preferences), copying stays completely silent.
     func noteCopy(_ target: CopyTarget, of entry: VaultEntry) {
         guard target == .password, let app = copyTargetApp?(), !AppLinks.isLinked(entry, to: app) else { return }
+        if AppLinks.refuses(entry, app) { return }
+        if appLinkAutoExclusions.isExcluded(bundleID: app.bundleID) { return }
         let title = Self.linkTitle(of: entry)
-        if AppLinks.refuses(entry, app) {
-            onAppLink?(.offer(entry: entry.id, title: title, app: app))
-            return
-        }
-        linkApp(app, to: entry.id) { [weak self] saved in
+        linkApp(app, to: entry.id, manual: false) { [weak self] saved in
             if saved { self?.onAppLink?(.linked(entry: entry.id, title: title, app: app)) }
         }
     }
 
-    func linkApp(_ app: LinkedApp, to id: UUID, then done: @escaping (Bool) -> Void = { _ in }) {
+    /// Links `app` to the account. Manual additions (`manual == true`) do not count toward the 3-undo app exclusion
+    /// if later removed, and clear any pending strike for this account.
+    func linkApp(_ app: LinkedApp, to id: UUID, manual: Bool = true, then done: @escaping (Bool) -> Void = { _ in }) {
         onActivity?()
-        changeEntry(id, { AppLinks.link(app, to: &$0) }, then: done)
+        changeEntry(id, { AppLinks.link(app, to: &$0, manual: manual) }, then: { [weak self] saved in
+            if saved, let self {
+                var updated = self.appLinkAutoExclusions
+                let before = updated
+                updated.clearUndo(bundleID: app.bundleID, entryID: id)
+                if updated != before { self.saveAppLinkAutoExclusions(updated) }
+            }
+            done(saved)
+        })
     }
 
     /// Undo on the bubble, or a click on the app in the account's details. The refusal is kept with the account.
-    /// `announce` is for the click: the bubble then says what went, with Undo, because a click can be a slip.
+    /// If the removed link was added automatically, records an undo for `app`; on the 3rd distinct account undone
+    /// in the same app, automatic adding stops for that app and announces `.autoStopped`.
     func unlinkApp(_ app: LinkedApp, from id: UUID, announce: Bool = false, then done: @escaping (Bool) -> Void = { _ in }) {
         onActivity?()
-        let title = entry(id).map(Self.linkTitle) ?? ""
+        let existing = entry(id)
+        let title = existing.map(Self.linkTitle) ?? ""
+        let wasAuto = existing.map { AppLinks.isLinked($0, to: app) && !AppLinks.isManual($0, to: app) } ?? false
         changeEntry(id, { AppLinks.unlink(app, from: &$0) }, then: { [weak self] saved in
-            if saved, announce { self?.onAppLink?(.unlinked(entry: id, title: title, app: app)) }
+            guard let self else { done(saved); return }
+            if saved {
+                var stoppedApp = false
+                if wasAuto {
+                    var updated = self.appLinkAutoExclusions
+                    stoppedApp = updated.recordAutoUndo(app: app, entryID: id)
+                    self.saveAppLinkAutoExclusions(updated)
+                }
+                if stoppedApp {
+                    self.onAppLink?(.autoStopped(app: app))
+                } else if announce {
+                    self.onAppLink?(.unlinked(entry: id, title: title, app: app))
+                }
+            }
             done(saved)
         })
+    }
+
+    /// Proactively excludes `app` from automatic linking (Preferences › General). Manual linking still works.
+    func excludeAppFromAutoLink(_ app: LinkedApp) {
+        var updated = appLinkAutoExclusions
+        guard updated.excludeManually(app) else { return }
+        saveAppLinkAutoExclusions(updated)
+    }
+
+    /// Re-enables automatic linking for `bundleID` and resets its undo counter.
+    func reenableAutoLink(bundleID: String) {
+        var updated = appLinkAutoExclusions
+        guard updated.reenable(bundleID: bundleID) else { return }
+        saveAppLinkAutoExclusions(updated)
+    }
+
+    private func saveAppLinkAutoExclusions(_ updated: AppLinkAutoExclusions) {
+        appLinkAutoExclusions = updated
+        guard let url = appLinkExclusionsURL else { return }
+        try? updated.encoded().write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    /// Apps previously removed from this account, for the quiet "Removed earlier" note in the picker.
+    func refusedApps(of id: UUID) -> [LinkedApp] {
+        guard let entry = entry(id) else { return [] }
+        return AppLinks.refusedApps(of: entry)
     }
 
     /// What the bubble calls the account.

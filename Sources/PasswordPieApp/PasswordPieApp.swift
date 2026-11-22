@@ -106,15 +106,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private let linkBubble = AppLinkBubbleController()
 
-    /// The bubble at the bottom of the screen: a link was made, was taken off, or is offered again. Its button is the
-    /// way back (or, for an offer, the way in).
+    /// The bubble at the bottom of the screen: a link was made, taken off, or automatic adding stopped for an app.
     private func showLinkBubble(_ notice: AppLinkNotice) {
-        guard let entry = session.entry(notice.entry) else { return }
-        linkBubble.show(notice, title: VaultSession.linkTitle(of: entry), siteHost: websiteHost(of: entry)) { [weak self] in
-            guard let self else { return }
-            switch notice {
-            case .linked: self.session.unlinkApp(notice.app, from: notice.entry)
-            case .offer, .unlinked: self.session.linkApp(notice.app, to: notice.entry)
+        switch notice {
+        case .linked(let entryID, _, let app):
+            guard let entry = session.entry(entryID) else { return }
+            linkBubble.show(notice, title: VaultSession.linkTitle(of: entry), siteHost: websiteHost(of: entry)) { [weak self] in
+                self?.session.unlinkApp(app, from: entryID)
+            }
+        case .unlinked(let entryID, _, let app):
+            guard let entry = session.entry(entryID) else { return }
+            linkBubble.show(notice, title: VaultSession.linkTitle(of: entry), siteHost: websiteHost(of: entry)) { [weak self] in
+                self?.session.linkApp(app, to: entryID, manual: true)
+            }
+        case .autoStopped(let app):
+            linkBubble.show(notice, title: nil, siteHost: nil) { [weak self] in
+                self?.session.reenableAutoLink(bundleID: app.bundleID)
             }
         }
     }

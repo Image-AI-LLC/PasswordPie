@@ -1,0 +1,250 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1480' height='820' viewBox='0 0 1480 820'>
+<defs>
+  <symbol id='rim' viewBox='0 0 24 24'><path d='M12.0000 1.9000 L12.5236 2.0092 L13.0196 2.2989 L13.4776 2.6708 L13.9119 3.0055 L14.3553 3.2101 L14.8416 3.2546 L15.3850 3.1819 L15.9675 3.0888 L16.5420 3.0859 L17.0500 3.2531 L17.4488 3.6095 L17.7336 4.1084 L17.9442 4.6595 L18.1530 5.1664 L18.4347 5.5653 L18.8336 5.8470 L19.3405 6.0558 L19.8916 6.2664 L20.3905 6.5512 L20.7469 6.9500 L20.9141 7.4580 L20.9112 8.0325 L20.8181 8.6150 L20.7454 9.1584 L20.7899 9.6447 L20.9945 10.0881 L21.3292 10.5224 L21.7011 10.9804 L21.9908 11.4764 L22.1000 12.0000 L21.9908 12.5236 L21.7011 13.0196 L21.3292 13.4776 L20.9945 13.9119 L20.7899 14.3553 L20.7454 14.8416 L20.8181 15.3850 L20.9112 15.9675 L20.9141 16.5420 L20.7469 17.0500 L20.3905 17.4488 L19.8916 17.7336 L19.3405 17.9442 L18.8336 18.1530 L18.4347 18.4347 L18.1530 18.8336 L17.9442 19.3405 L17.7336 19.8916 L17.4488 20.3905 L17.0500 20.7469 L16.5420 20.9141 L15.9675 20.9112 L15.3850 20.8181 L14.8416 20.7454 L14.3553 20.7899 L13.9119 20.9945 L13.4776 21.3292 L13.0196 21.7011 L12.5236 21.9908 L12.0000 22.1000 L11.4764 21.9908 L10.9804 21.7011 L10.5224 21.3292 L10.0881 20.9945 L9.6447 20.7899 L9.1584 20.7454 L8.6150 20.8181 L8.0325 20.9112 L7.4580 20.9141 L6.9500 20.7469 L6.5512 20.3905 L6.2664 19.8916 L6.0558 19.3405 L5.8470 18.8336 L5.5653 18.4347 L5.1664 18.1530 L4.6595 17.9442 L4.1084 17.7336 L3.6095 17.4488 L3.2531 17.0500 L3.0859 16.5420 L3.0888 15.9675 L3.1819 15.3850 L3.2546 14.8416 L3.2101 14.3553 L3.0055 13.9119 L2.6708 13.4776 L2.2989 13.0196 L2.0092 12.5236 L1.9000 12.0000 L2.0092 11.4764 L2.2989 10.9804 L2.6708 10.5224 L3.0055 10.0881 L3.2101 9.6447 L3.2546 9.1584 L3.1819 8.6150 L3.0888 8.0325 L3.0859 7.4580 L3.2531 6.9500 L3.6095 6.5512 L4.1084 6.2664 L4.6595 6.0558 L5.1664 5.8470 L5.5653 5.5653 L5.8470 5.1664 L6.0558 4.6595 L6.2664 4.1084 L6.5512 3.6095 L6.9500 3.2531 L7.4580 3.0859 L8.0325 3.0888 L8.6150 3.1819 L9.1584 3.2546 L9.6447 3.2101 L10.0881 3.0055 L10.5224 2.6708 L10.9804 2.2989 L11.4764 2.0092 Z'/></symbol>
+  <symbol id='key' viewBox='0 0 24 24'><path d='M10.65 11.6 A3 3 0 1 1 13.35 11.6 L14.4 16.6 Q14.5 17 14 17 H10 Q9.5 17 9.6 16.6 Z'/></symbol>
+  <symbol id='harbor' viewBox='0 0 32 32'>
+    <rect width='32' height='32' rx='7.2' fill='#2457D6'/>
+    <path d='M16 6 L16 21 L8 21 Z' fill='#FFFFFF'/>
+    <path d='M18 10 L18 21 L24 21 Z' fill='#BFD2FF'/>
+    <path d='M6 24 H26' stroke='#FFFFFF' stroke-width='2.2' stroke-linecap='round'/>
+  </symbol>
+  <symbol id='ledger' viewBox='0 0 32 32'>
+    <rect width='32' height='32' rx='7.2' fill='#1F8A5B'/>
+    <path d='M9 10 H23 M9 16 H23 M9 22 H18' stroke='#FFFFFF' stroke-width='2.4' stroke-linecap='round'/>
+  </symbol>
+  <symbol id='relay' viewBox='0 0 32 32'>
+    <rect width='32' height='32' rx='7.2' fill='#5E4AE3'/>
+    <circle cx='16' cy='16' r='7.5' fill='none' stroke='#FFFFFF' stroke-width='2.2'/>
+    <circle cx='16' cy='16' r='2.6' fill='#D9D2FF'/>
+    <path d='M16 5.5 V8.5 M16 23.5 V26.5 M5.5 16 H8.5 M23.5 16 H26.5' stroke='#D9D2FF' stroke-width='2' stroke-linecap='round'/>
+  </symbol>
+  <symbol id='teams' viewBox='0 0 32 32'>
+    <rect width='32' height='32' rx='7.2' fill='#4B53BC'/>
+    <rect x='7' y='9' width='13' height='14' rx='2.4' fill='#FFFFFF' fill-opacity='0.95'/>
+    <path d='M10.5 13.5 H16.5 M13.5 13.5 V19.5' stroke='#4B53BC' stroke-width='2.2' stroke-linecap='round'/>
+    <circle cx='23.5' cy='12.5' r='2.6' fill='#C6CBFF'/>
+    <path d='M21 17 H26 V21.5 A2.5 2.5 0 0 1 21 21.5 Z' fill='#C6CBFF'/>
+  </symbol>
+  <symbol id='terminal' viewBox='0 0 32 32'>
+    <rect width='32' height='32' rx='7.2' fill='#26282E'/>
+    <rect x='1' y='1' width='30' height='30' rx='6.4' fill='none' stroke='#505460' stroke-width='1.2'/>
+    <path d='M8.5 11.5 L14 16 L8.5 20.5 M16.5 21 H23.5' fill='none' stroke='#E8E4DD' stroke-width='2.3' stroke-linecap='round' stroke-linejoin='round'/>
+  </symbol>
+  <linearGradient id='tileN' x1='0' y1='0' x2='0' y2='1'>
+    <stop offset='0' stop-color='#85F2DD'/><stop offset='1' stop-color='#3CC7AB'/>
+  </linearGradient>
+  <linearGradient id='tileA' x1='0' y1='0' x2='0' y2='1'>
+    <stop offset='0' stop-color='#A7B8F8'/><stop offset='1' stop-color='#5E73D8'/>
+  </linearGradient>
+  <filter id='shadow' x='-20%' y='-20%' width='140%' height='160%'>
+    <feDropShadow dx='0' dy='10' stdDeviation='14' flood-color='#000' flood-opacity='0.45'/>
+  </filter>
+  <filter id='menuShadow' x='-20%' y='-20%' width='150%' height='160%'>
+    <feDropShadow dx='0' dy='8' stdDeviation='12' flood-color='#000' flood-opacity='0.34'/>
+  </filter>
+  <filter id='soft' x='-20%' y='-40%' width='140%' height='200%'>
+    <feDropShadow dx='0' dy='6' stdDeviation='9' flood-color='#000' flood-opacity='0.35'/>
+  </filter>
+</defs>
+<rect width='1480' height='820' fill='#1E1F23'/>
+<text x='56' y='56' font-family='SF Pro Rounded' font-size='28' font-weight='700' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Add apps manually, and keep removed apps quiet</text>
+<text x='56' y='82' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Every account keeps + Add app in its header. Removed apps stay silent — and undoing 3 automatic adds in one app stops adding it automatically.</text>
+<circle cx='66' cy='118.8' r='10.5' fill='none' stroke='#EE8C32' stroke-width='1.5'/><text x='66' y='123' font-family='SF Pro Text' font-size='12' font-weight='700' fill='#EE8C32' text-anchor='middle' opacity='1' letter-spacing='0'>1</text><text x='85' y='124' font-family='SF Pro Text' font-size='15.5' font-weight='600' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Open any account</text>
+<clipPath id='c1'><rect x='56' y='148' width='400' height='212' rx='10'/></clipPath>
+<g filter='url(#shadow)'><rect x='56' y='148' width='400' height='212' rx='10' fill='#FFF6E7'/></g>
+<g clip-path='url(#c1)'>
+<rect x='56' y='148' width='400' height='212' fill='#FFF6E7'/>
+<rect x='70' y='162' width='32' height='32' rx='7.04' fill='url(#tileN)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='86.0' y='185.04' font-family='SF Pro Text' font-size='18.56' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>N</text>
+<text x='112' y='172' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Northwind SSO</text>
+<path d='M380 172 l1 -3.2 l7.6 -7.6 l2.2 2.2 l-7.6 7.6 z' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<g transform='translate(411,167) rotate(45)' fill='none' stroke='#70604F' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'><path d='M-2.6 -5.2 H2.6 M-1.9 -5.2 L-1.6 -0.8 L-3.6 1.2 H3.6 L1.6 -0.8 L1.9 -5.2 M0 1.2 V5.4'/></g>
+<polygon points='434.00,159.80 435.78,164.55 440.85,164.78 436.88,167.93 438.23,172.82 434.00,170.02 429.77,172.82 431.12,167.93 427.15,164.78 432.22,164.55' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='112.5' y='181.5' width='71' height='17' rx='5' fill='#FFFFFF' stroke='#302A24' stroke-opacity='0.45' stroke-width='1'/>
+<path d='M120.3 190.0 H126.7 M123.5 186.8 V193.2' stroke='#302A24' stroke-width='1.3' stroke-linecap='round'/>
+<text x='132' y='193.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Add app</text>
+<rect x='56' y='208' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='70' y='222.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>username</text>
+<text x='70' y='238.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>ada@northwind.example</text>
+<rect x='56' y='246' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='70' y='260.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>password</text>
+<text x='70' y='276.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>••••••••••••••••</text>
+<rect x='56' y='284' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='70' y='298.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>website</text>
+<text x='70' y='314.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#A65312' text-anchor='start' opacity='1' letter-spacing='0'>https://sso.northwind.example</text>
+<rect x='56' y='322' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='70' y='336.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>tags</text>
+<text x='70' y='352.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>work, sso</text>
+</g>
+<rect x='56.5' y='148.5' width='399' height='211' rx='10' fill='none' stroke='#C8BBAA' stroke-opacity='0.55'/>
+<path d='M175 194 l0 15 l4 -3.6 l2.6 6 l2.6 -1.1 l-2.6 -5.9 l5.4 0 z' fill='#111111' stroke='#FFFFFF' stroke-width='1.1'/>
+<text x='56' y='434' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Fixed 60 pt header — compact + Add app never shifts fields.</text>
+<path d='M475 252 h46 m-6 -5 l6 5 l-6 5' fill='none' stroke='#6B7079' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>
+<circle cx='550' cy='118.8' r='10.5' fill='none' stroke='#EE8C32' stroke-width='1.5'/><text x='550' y='123' font-family='SF Pro Text' font-size='12' font-weight='700' fill='#EE8C32' text-anchor='middle' opacity='1' letter-spacing='0'>2</text><text x='569' y='124' font-family='SF Pro Text' font-size='15.5' font-weight='600' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Pick an app from the popover</text>
+<clipPath id='c2'><rect x='540' y='148' width='400' height='212' rx='10'/></clipPath>
+<g filter='url(#shadow)'><rect x='540' y='148' width='400' height='212' rx='10' fill='#FFF6E7'/></g>
+<g clip-path='url(#c2)'>
+<rect x='540' y='148' width='400' height='212' fill='#FFF6E7'/>
+<rect x='554' y='162' width='32' height='32' rx='7.04' fill='url(#tileN)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='570.0' y='185.04' font-family='SF Pro Text' font-size='18.56' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>N</text>
+<text x='596' y='172' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Northwind SSO</text>
+<path d='M864 172 l1 -3.2 l7.6 -7.6 l2.2 2.2 l-7.6 7.6 z' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<g transform='translate(895,167) rotate(45)' fill='none' stroke='#70604F' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'><path d='M-2.6 -5.2 H2.6 M-1.9 -5.2 L-1.6 -0.8 L-3.6 1.2 H3.6 L1.6 -0.8 L1.9 -5.2 M0 1.2 V5.4'/></g>
+<polygon points='918.00,159.80 919.78,164.55 924.85,164.78 920.88,167.93 922.23,172.82 918.00,170.02 913.77,172.82 915.12,167.93 911.15,164.78 916.22,164.55' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='596.5' y='181.5' width='71' height='17' rx='5' fill='#FFFFFF' stroke='#A65312' stroke-opacity='0.85' stroke-width='1.2'/>
+<path d='M604.3 190.0 H610.7 M607.5 186.8 V193.2' stroke='#302A24' stroke-width='1.3' stroke-linecap='round'/>
+<text x='616' y='193.8' font-family='SF Pro Text' font-size='11' font-weight='500' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Add app</text>
+<g opacity='0.52'>
+<rect x='540' y='208' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='554' y='222.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>username</text>
+<text x='554' y='238.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>ada@northwind.example</text>
+<rect x='540' y='246' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='554' y='260.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>password</text>
+<text x='554' y='276.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>••••••••••••••••</text>
+<rect x='540' y='284' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='554' y='298.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>website</text>
+<text x='554' y='314.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#A65312' text-anchor='start' opacity='1' letter-spacing='0'>https://sso.northwind.example</text>
+<rect x='540' y='322' width='400' height='0.5' fill='#302A24' fill-opacity='0.1'/>
+<text x='554' y='336.5' font-family='SF Pro Text' font-size='10' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>tags</text>
+<text x='554' y='352.5' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>work, sso</text>
+</g>
+</g>
+<rect x='540.5' y='148.5' width='399' height='211' rx='10' fill='none' stroke='#C8BBAA' stroke-opacity='0.55'/>
+<g filter='url(#menuShadow)'><rect x='596' y='203' width='256' height='176' rx='8' fill='#FFF6E7'/></g>
+<rect x='596.5' y='203.5' width='255' height='175' rx='8' fill='#FFF6E7' stroke='#C8BBAA'/>
+<rect x='601' y='209' width='246' height='26' rx='5' fill='#EE8C32'/>
+<use href='#teams' x='608' y='214' width='16' height='16' opacity='1'/>
+<text x='631' y='226.2' font-family='SF Pro Text' font-size='13' font-weight='500' fill='#302315' text-anchor='start' opacity='1' letter-spacing='0'>Microsoft Teams</text>
+<text x='839' y='225.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#302315' text-anchor='end' opacity='0.88' letter-spacing='0'>Active app</text>
+<rect x='606' y='239' width='236' height='0.75' fill='#302A24' fill-opacity='0.14'/>
+<text x='608' y='257.5' font-family='SF Pro Text' font-size='11' font-weight='500' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>Running apps</text>
+<use href='#harbor' x='608' y='269' width='16' height='16' opacity='1'/>
+<text x='631' y='281.2' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Harbor</text>
+<use href='#relay' x='608' y='295' width='16' height='16' opacity='1'/>
+<text x='631' y='307.2' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Relay</text>
+<text x='839' y='306.8' font-family='SF Pro Text' font-size='10.5' font-weight='400' fill='#70604F' text-anchor='end' opacity='0.82' letter-spacing='0'>Removed earlier</text>
+<rect x='606' y='320' width='236' height='0.75' fill='#302A24' fill-opacity='0.14'/>
+<text x='631' y='342.2' font-family='SF Pro Text' font-size='13' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Choose App…</text>
+<text x='608' y='365.5' font-family='SF Pro Text' font-size='10.5' font-weight='400' fill='#70604F' text-anchor='start' opacity='0.78' letter-spacing='0'>Browsers aren’t listed — they match by site</text>
+<path d='M746 225 l0 15 l4 -3.6 l2.6 6 l2.6 -1.1 l-2.6 -5.9 l5.4 0 z' fill='#111111' stroke='#FFFFFF' stroke-width='1.1'/>
+<text x='540' y='434' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Details stay open. Already-added apps are omitted.</text>
+<path d='M959 252 h46 m-6 -5 l6 5 l-6 5' fill='none' stroke='#6B7079' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>
+<circle cx='1034' cy='118.8' r='10.5' fill='none' stroke='#EE8C32' stroke-width='1.5'/><text x='1034' y='123' font-family='SF Pro Text' font-size='12' font-weight='700' fill='#EE8C32' text-anchor='middle' opacity='1' letter-spacing='0'>3</text><text x='1053' y='124' font-family='SF Pro Text' font-size='15.5' font-weight='600' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Shown first — manage overflow inline</text>
+<g filter='url(#soft)'><rect x='1024' y='148' width='400' height='60' rx='8' fill='#FFF6E7'/></g>
+<rect x='1038' y='162' width='32' height='32' rx='7.04' fill='url(#tileN)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='1054.0' y='185.04' font-family='SF Pro Text' font-size='18.56' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>N</text>
+<text x='1080' y='172' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Northwind SSO</text>
+<path d='M1348 172 l1 -3.2 l7.6 -7.6 l2.2 2.2 l-7.6 7.6 z' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<g transform='translate(1379,167) rotate(45)' fill='none' stroke='#70604F' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'><path d='M-2.6 -5.2 H2.6 M-1.9 -5.2 L-1.6 -0.8 L-3.6 1.2 H3.6 L1.6 -0.8 L1.9 -5.2 M0 1.2 V5.4'/></g>
+<polygon points='1402.00,159.80 1403.78,164.55 1408.85,164.78 1404.88,167.93 1406.23,172.82 1402.00,170.02 1397.77,172.82 1399.12,167.93 1395.15,164.78 1400.22,164.55' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<text x='1080' y='193.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>Shown first in</text>
+<rect x='1158.5' y='181.5' width='130' height='17' rx='5' fill='none' stroke='#302A24' stroke-opacity='0.25'/>
+<use href='#teams' x='1164' y='184' width='12' height='12' opacity='1'/>
+<text x='1181' y='193.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Microsoft Teams</text>
+<path d='M1277.1 187.6 l4.8 4.8 M1281.9 187.6 l-4.8 4.8' stroke='#302A24' stroke-opacity='0.55' stroke-width='1.2' stroke-linecap='round'/>
+<rect x='1295.5' y='181.5' width='23' height='17' rx='5' fill='none' stroke='#302A24' stroke-opacity='0.25' stroke-width='1'/>
+<path d='M1303.4 190.0 H1310.6 M1307.0 186.4 V193.6' stroke='#70604F' stroke-width='1.35' stroke-linecap='round'/>
+<rect x='1024.5' y='148.5' width='399' height='59' rx='8' fill='none' stroke='#C8BBAA' stroke-opacity='0.55'/>
+<text x='1024' y='225' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Becomes "Shown first in" once added; + sits beside the chips.</text>
+<g filter='url(#soft)'><rect x='1024' y='244' width='400' height='60' rx='8' fill='#FFF6E7'/></g>
+<rect x='1038' y='258' width='32' height='32' rx='7.04' fill='url(#tileN)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='1054.0' y='281.04' font-family='SF Pro Text' font-size='18.56' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>N</text>
+<text x='1080' y='268' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Northwind SSO</text>
+<path d='M1348 268 l1 -3.2 l7.6 -7.6 l2.2 2.2 l-7.6 7.6 z' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<g transform='translate(1379,263) rotate(45)' fill='none' stroke='#70604F' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'><path d='M-2.6 -5.2 H2.6 M-1.9 -5.2 L-1.6 -0.8 L-3.6 1.2 H3.6 L1.6 -0.8 L1.9 -5.2 M0 1.2 V5.4'/></g>
+<polygon points='1402.00,255.80 1403.78,260.55 1408.85,260.78 1404.88,263.93 1406.23,268.82 1402.00,266.02 1397.77,268.82 1399.12,263.93 1395.15,260.78 1400.22,260.55' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<text x='1080' y='289.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>Shown first in</text>
+<rect x='1158.5' y='277.5' width='130' height='17' rx='5' fill='none' stroke='#302A24' stroke-opacity='0.25'/>
+<use href='#teams' x='1164' y='280' width='12' height='12' opacity='1'/>
+<text x='1181' y='289.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Microsoft Teams</text>
+<path d='M1277.1 283.6 l4.8 4.8 M1281.9 283.6 l-4.8 4.8' stroke='#302A24' stroke-opacity='0.55' stroke-width='1.2' stroke-linecap='round'/>
+<rect x='1295.5' y='277.5' width='63' height='17' rx='5' fill='#FFFFFF' stroke='#A65312' stroke-opacity='0.85' stroke-width='1.2'/>
+<text x='1303' y='289.8' font-family='SF Pro Text' font-size='11' font-weight='500' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>2 more</text>
+<path d='M1345.9 285.1 l2.6 2.6 l2.6 -2.6' fill='none' stroke='#302A24' stroke-opacity='0.85' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'/>
+<rect x='1365.5' y='277.5' width='23' height='17' rx='5' fill='none' stroke='#302A24' stroke-opacity='0.25' stroke-width='1'/>
+<path d='M1373.4 286.0 H1380.6 M1377.0 282.4 V289.6' stroke='#70604F' stroke-width='1.35' stroke-linecap='round'/>
+<rect x='1024.5' y='244.5' width='399' height='59' rx='8' fill='none' stroke='#C8BBAA' stroke-opacity='0.55'/>
+<g filter='url(#menuShadow)'><rect x='1218' y='299' width='206' height='108' rx='8' fill='#FFF6E7'/></g>
+<rect x='1218.5' y='299.5' width='205' height='107' rx='8' fill='#FFF6E7' stroke='#C8BBAA'/>
+<text x='1230' y='317' font-family='SF Pro Text' font-size='10.5' font-weight='600' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>Shown first in</text>
+<use href='#teams' x='1230' y='328' width='16' height='16' opacity='1'/>
+<text x='1253' y='340' font-family='SF Pro Text' font-size='12.5' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Microsoft Teams</text>
+<path d='M1403 333 l6 6 M1409 333 l-6 6' stroke='#302A24' stroke-opacity='0.45' stroke-width='1.3' stroke-linecap='round'/>
+<use href='#harbor' x='1230' y='354' width='16' height='16' opacity='1'/>
+<text x='1253' y='366' font-family='SF Pro Text' font-size='12.5' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Harbor</text>
+<rect x='1397' y='353' width='18' height='18' rx='4' fill='#FFFFFF' stroke='#302A24' stroke-opacity='0.25'/>
+<path d='M1403 359 l6 6 M1409 359 l-6 6' stroke='#302A24' stroke-opacity='1.0' stroke-width='1.3' stroke-linecap='round'/>
+<use href='#ledger' x='1230' y='380' width='16' height='16' opacity='1'/>
+<text x='1253' y='392' font-family='SF Pro Text' font-size='12.5' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Ledger</text>
+<path d='M1403 385 l6 6 M1409 385 l-6 6' stroke='#302A24' stroke-opacity='0.45' stroke-width='1.3' stroke-linecap='round'/>
+<text x='1024' y='434' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Clicking "2 more ⌄" lists every app with a direct × remove button.</text>
+<rect x='56' y='468' width='1368' height='1' fill='#34363C'/>
+<text x='56' y='506' font-family='SF Pro Text' font-size='10.5' font-weight='600' fill='#EE8C32' text-anchor='start' opacity='1' letter-spacing='0.7'>PER-ACCOUNT REMOVAL</text>
+<text x='56' y='530' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Remove once — quiet from then on</text>
+<g filter='url(#soft)'><rect x='56' y='552' width='400' height='60' rx='8' fill='#FFF6E7'/></g>
+<rect x='70' y='566' width='32' height='32' rx='7.04' fill='url(#tileN)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='86.0' y='589.04' font-family='SF Pro Text' font-size='18.56' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>N</text>
+<text x='112' y='576' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Northwind SSO</text>
+<path d='M380 576 l1 -3.2 l7.6 -7.6 l2.2 2.2 l-7.6 7.6 z' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<g transform='translate(411,571) rotate(45)' fill='none' stroke='#70604F' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'><path d='M-2.6 -5.2 H2.6 M-1.9 -5.2 L-1.6 -0.8 L-3.6 1.2 H3.6 L1.6 -0.8 L1.9 -5.2 M0 1.2 V5.4'/></g>
+<polygon points='434.00,563.80 435.78,568.55 440.85,568.78 436.88,571.93 438.23,576.82 434.00,574.02 429.77,576.82 431.12,571.93 427.15,568.78 432.22,568.55' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<text x='112' y='597.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>Shown first in</text>
+<rect x='190.5' y='585.5' width='71' height='17' rx='5' fill='#FFFFFF' stroke='#302A24' stroke-opacity='0.45'/>
+<use href='#relay' x='196' y='588' width='12' height='12' opacity='1'/>
+<text x='213' y='597.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Relay</text>
+<path d='M250.1 591.6 l4.8 4.8 M254.9 591.6 l-4.8 4.8' stroke='#302A24' stroke-opacity='1' stroke-width='1.2' stroke-linecap='round'/>
+<rect x='268.5' y='585.5' width='23' height='17' rx='5' fill='none' stroke='#302A24' stroke-opacity='0.25' stroke-width='1'/>
+<path d='M276.4 594.0 H283.6 M280.0 590.4 V597.6' stroke='#70604F' stroke-width='1.35' stroke-linecap='round'/>
+<rect x='56.5' y='552.5' width='399' height='59' rx='8' fill='none' stroke='#C8BBAA' stroke-opacity='0.55'/>
+<path d='M253 598 l0 15 l4 -3.6 l2.6 6 l2.6 -1.1 l-2.6 -5.9 l5.4 0 z' fill='#111111' stroke='#FFFFFF' stroke-width='1.1'/>
+<path d='M76 622 v26 m-5 -6 l5 6 l5 -6' fill='none' stroke='#6B7079' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>
+<text x='92' y='639' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>copy password while Relay is active again</text>
+<g filter='url(#soft)'><rect x='56' y='664' width='400' height='60' rx='8' fill='#FFF6E7'/></g>
+<rect x='70' y='678' width='32' height='32' rx='7.04' fill='url(#tileN)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='86.0' y='701.04' font-family='SF Pro Text' font-size='18.56' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>N</text>
+<text x='112' y='688' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Northwind SSO</text>
+<path d='M380 688 l1 -3.2 l7.6 -7.6 l2.2 2.2 l-7.6 7.6 z' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<g transform='translate(411,683) rotate(45)' fill='none' stroke='#70604F' stroke-width='1.15' stroke-linecap='round' stroke-linejoin='round'><path d='M-2.6 -5.2 H2.6 M-1.9 -5.2 L-1.6 -0.8 L-3.6 1.2 H3.6 L1.6 -0.8 L1.9 -5.2 M0 1.2 V5.4'/></g>
+<polygon points='434.00,675.80 435.78,680.55 440.85,680.78 436.88,683.93 438.23,688.82 434.00,686.02 429.77,688.82 431.12,683.93 427.15,680.78 432.22,680.55' fill='none' stroke='#70604F' stroke-width='1.2' stroke-linejoin='round'/>
+<rect x='112.5' y='697.5' width='71' height='17' rx='5' fill='none' stroke='#302A24' stroke-opacity='0.25' stroke-width='1'/>
+<path d='M120.3 706.0 H126.7 M123.5 702.8 V709.2' stroke='#70604F' stroke-width='1.3' stroke-linecap='round'/>
+<text x='132' y='709.8' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>Add app</text>
+<rect x='56.5' y='664.5' width='399' height='59' rx='8' fill='none' stroke='#C8BBAA' stroke-opacity='0.55'/>
+<text x='56' y='768' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Copies silently — not re-added, no nag. Marked "Removed earlier" in menu.</text>
+<text x='540' y='506' font-family='SF Pro Text' font-size='10.5' font-weight='600' fill='#EE8C32' text-anchor='start' opacity='1' letter-spacing='0.7'>APP-LEVEL EXCLUSION  ·  AGENTS, TERMINALS, CHAT</text>
+<text x='540' y='530' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Undo 3 automatic adds in one app</text>
+<g filter='url(#soft)'><rect x='540' y='560' width='400' height='44' rx='10' fill='#FFF6E7'/></g>
+<rect x='540.5' y='560.5' width='399' height='43' rx='10' fill='#FFF6E7' stroke='#C8BBAA'/>
+<rect x='552' y='569' width='24' height='24' rx='5.28' fill='url(#tileA)' stroke='#000' stroke-opacity='0.22' stroke-width='0.5'/><text x='564.0' y='586.28' font-family='SF Pro Text' font-size='13.919999999999998' font-weight='600' fill='#FFFFFF' text-anchor='middle' opacity='1' letter-spacing='0'>A</text>
+<rect x='567.5' y='584.5' width='14' height='14' rx='3.8' fill='#FFF6E7'/>
+<use href='#relay' x='569' y='586' width='11' height='11' opacity='1'/>
+<text x='590' y='586.5' font-family='SF Pro Text' font-size='12.5' font-weight='500' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Admin API is now shown first in Relay</text>
+<rect x='881.5' y='572.0' width='47' height='21' rx='5' fill='#FFFFFF' stroke='#302A24' stroke-opacity='0.25'/><text x='905.0' y='586.5' font-family='SF Pro Text' font-size='11.5' font-weight='500' fill='#302A24' text-anchor='middle' opacity='1' letter-spacing='0'>Undo</text>
+<path d='M921 587 l0 15 l4 -3.6 l2.6 6 l2.6 -1.1 l-2.6 -5.9 l5.4 0 z' fill='#111111' stroke='#FFFFFF' stroke-width='1.1'/>
+<path d='M560 622 v26 m-5 -6 l5 6 l5 -6' fill='none' stroke='#6B7079' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/>
+<text x='576' y='639' font-family='SF Pro Text' font-size='11.5' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>3rd distinct account undone (manual removals don’t count)</text>
+<g filter='url(#soft)'><rect x='540' y='672' width='400' height='44' rx='10' fill='#FFF6E7'/></g>
+<rect x='540.5' y='672.5' width='399' height='43' rx='10' fill='#FFF6E7' stroke='#C8BBAA'/>
+<use href='#relay' x='552' y='681' width='24' height='24' opacity='1'/>
+<circle cx='574.5' cy='703.5' r='7.2' fill='#FFF6E7'/>
+<circle cx='574.5' cy='703.5' r='5.4' fill='none' stroke='#70604F' stroke-width='1.5'/>
+<path d='M570.8 699.8 l7.4 7.4' stroke='#70604F' stroke-width='1.5' stroke-linecap='round'/>
+<text x='590' y='698.5' font-family='SF Pro Text' font-size='12.5' font-weight='500' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Stopped adding Relay automatically</text>
+<rect x='835.5' y='684.0' width='93' height='21' rx='5' fill='#FFFFFF' stroke='#302A24' stroke-opacity='0.25'/><text x='882.0' y='698.5' font-family='SF Pro Text' font-size='11.5' font-weight='500' fill='#302A24' text-anchor='middle' opacity='1' letter-spacing='0'>Turn Back On</text>
+<text x='540' y='768' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Double-click guard on swap. Turn Back On resets the count.</text>
+<text x='1024' y='506' font-family='SF Pro Text' font-size='10.5' font-weight='600' fill='#EE8C32' text-anchor='start' opacity='1' letter-spacing='0.7'>MANAGE IN PREFERENCES</text>
+<text x='1024' y='530' font-family='SF Pro Text' font-size='16' font-weight='600' fill='#ECE6DE' text-anchor='start' opacity='1' letter-spacing='0'>Exclude or restore apps anytime</text>
+<g filter='url(#soft)'><rect x='1024' y='552' width='400' height='172' rx='10' fill='#FFF6E7'/></g>
+<rect x='1024.5' y='552.5' width='399' height='171' rx='10' fill='#FFF6E7' stroke='#C8BBAA' stroke-opacity='0.65'/>
+<text x='1040' y='573' font-family='SF Pro Text' font-size='10.5' font-weight='400' fill='#70604F' text-anchor='start' opacity='0.8' letter-spacing='0'>Preferences › General</text>
+<text x='1040' y='592' font-family='SF Pro Text' font-size='12' font-weight='600' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Don't add automatically</text>
+<rect x='1040.5' y='602.5' width='367' height='85' rx='6' fill='#FFFFFF' stroke='#C8BBAA'/>
+<rect x='1041' y='603' width='366' height='30' rx='5' fill='#EE8C32' fill-opacity='0.14'/>
+<use href='#relay' x='1050' y='608' width='18' height='18' opacity='1'/>
+<text x='1076' y='622' font-family='SF Pro Text' font-size='12.5' font-weight='500' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Relay</text>
+<text x='1398' y='621.5' font-family='SF Pro Text' font-size='10.5' font-weight='400' fill='#70604F' text-anchor='end' opacity='1' letter-spacing='0'>After 3 undos</text>
+<rect x='1041' y='633' width='366' height='0.75' fill='#302A24' fill-opacity='0.09'/>
+<use href='#terminal' x='1050' y='639' width='18' height='18' opacity='1'/>
+<text x='1076' y='653' font-family='SF Pro Text' font-size='12.5' font-weight='400' fill='#302A24' text-anchor='start' opacity='1' letter-spacing='0'>Terminal</text>
+<text x='1398' y='652.5' font-family='SF Pro Text' font-size='10.5' font-weight='400' fill='#70604F' text-anchor='end' opacity='1' letter-spacing='0'>Excluded manually</text>
+<rect x='1041' y='664' width='366' height='0.75' fill='#302A24' fill-opacity='0.12'/>
+<path d='M1050 676 h8 M1054 672 v8' stroke='#302A24' stroke-width='1.3' stroke-linecap='round'/>
+<rect x='1068' y='668' width='0.75' height='16' fill='#302A24' fill-opacity='0.15'/>
+<path d='M1078 676 h8' stroke='#302A24' stroke-width='1.3' stroke-linecap='round'/>
+<text x='1040' y='708' font-family='SF Pro Text' font-size='11' font-weight='400' fill='#70604F' text-anchor='start' opacity='1' letter-spacing='0'>You can still add these apps manually from any account.</text>
+<text x='1024' y='768' font-family='SF Pro Text' font-size='12' font-weight='400' fill='#A9A39B' text-anchor='start' opacity='1' letter-spacing='0'>Exclude terminals or agents with +, or restore with −.</text>
+</svg>

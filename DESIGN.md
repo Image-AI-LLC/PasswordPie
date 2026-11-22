@@ -358,22 +358,30 @@ headers are upper-cased in code; CJK has no case, so they show as written.
 - **Details popover** — header, then one field per value: username, password (+ strength and previous passwords),
   one-time password, websites, custom fields, notes, tags. Up and down walk the same order. Pin opens that account in its own utility window and
   hides the menu.
-- **Linked apps line** — in the details header, under the title, only for an account linked to an app: "Shown
-  first in" in `caption` `text-secondary`, then one token per app, 6 pt apart. The header is then 60 pt and not 52.
-  A token is 18 pt tall, radius 5, a 1 pt ink 25 % outline and no fill: the app's icon at 12 pt, its name in `caption`
-  `text`, and an 7 pt bold `xmark` at 60 %, 5 pt between them and 6 pt at the sides. The close mark is always there, so
-  nothing moves under the pointer. Hover: `field-surface` fill, outline at 45 %, mark at 100 %. A click anywhere on
-  the token unlinks. Apps that do not fit are counted: "+2 more".
-- **Link bubble** — says that an account was linked to an app, was unlinked, or may be linked again, or that a site
-  was added to an account ("portal.example is now a website of Northwind SSO", with "Undo"; then the account's icon
-  carries no app mark). A borderless
-  panel that never takes focus, at the pinned windows' level, centred 48 pt above the bottom of the screen's visible
-  frame. 44 pt tall, at most 560 pt wide, radius 10, `surface` with a 1 pt `border` outline and the system window
-  shadow; nothing behind it shows through. From the left, 12 pt in: the account's 24 pt icon with the app's icon as its
-  mark (13 pt, bottom right, a 1.5 pt `surface` ring, radius 4, set 6 pt out), one line in `body` medium, cut in the
-  middle when long, and one compact quiet split action button: "Undo", or "Show first" when it asks. It fades in and
-  out over 0.2 s, stays 6 seconds, and waits while the pointer is on it. Locking closes it. Orange is not used:
-  the bubble is a notice, not the surface's main action.
+- **Linked apps line** — in the details header, under the title, always present so the header stays 60 pt and fields
+  never shift. With no apps linked: a quiet `+ Add app` button (18 pt tall, radius 5, 1 pt ink 25 % outline, 8 pt side
+  padding, `caption` `text-secondary`; hover fills `field-surface` with ink 45 % outline and `text`; open shows an
+  `accent-text` 85 % outline). With apps linked: "Shown first in" in `caption` `text-secondary`, then one token per
+  app, 6 pt apart, then a chip-adjacent `+` pill (24 × 18 pt visual, ≥ 24 × 24 pt hit target). A token is 18 pt tall,
+  radius 5, a 1 pt ink 25 % outline and no fill: the app's icon at 12 pt, its name in `caption` `text` (capped at
+  136 pt with tail truncation), and a 7 pt bold `xmark` at 60 %, 5 pt between them and 6 pt at the sides. The close
+  mark is always there, so nothing moves under the pointer. Hover: `field-surface` fill, outline at 45 %, mark at 100 %.
+  A click anywhere on the token unlinks. Apps that do not fit collapse into an interactive `2 more ⌄` pill (no `+`
+  sign) that opens a warm-surface popover listing all linked apps with a dedicated `×` remove button per row. Clicking
+  `+ Add app` or `+` opens a warm-surface popover with the active app first (`Active app`), then `Running apps`
+  (flagging apps previously removed from this account as `Removed earlier`), `Choose App…`, and a disabled browser note,
+  while keeping the details open.
+- **Link bubble** — says that an account was linked to an app, was unlinked, automatic adding stopped for an app
+  ("Stopped adding Relay automatically", with "Turn Back On" and a swap double-click guard `≥ max(NSEvent.doubleClickInterval, 0.5 s)`),
+  or that a site was added to an account ("portal.example is now a website of Northwind SSO", with "Undo"; then the
+  account's icon carries no app mark). A borderless panel that never takes focus, at the pinned windows' level, centred
+  48 pt above the bottom of the screen's visible frame. 44 pt tall, at most 560 pt wide, radius 10, `surface` with a
+  1 pt `border` outline and the system window shadow; nothing behind it shows through. From the left, 12 pt in: the
+  account's 24 pt icon with the app's icon as its mark (13 pt, bottom right, a 1.5 pt `surface` ring, radius 4, set
+  6 pt out) — or for app-level stop, the app's 24 pt icon with a muted `nosign` mark in the same 28 pt leading width so
+  text never shifts on swap — one line in `body` medium, cut in the middle when long, and one compact quiet split action
+  button: "Undo", or "Turn Back On". It fades in and out over 0.2 s, stays 6 seconds, and waits while the pointer is on
+  it. Locking closes it. Orange is not used: the bubble is a notice, not the surface's main action.
 - **Pinned window** — one window per account; pinning again brings it forward and leaves it in place. A
   new window starts at the top-right of the screen; each further one steps 28 pt down and left. Its level
   is the main-menu level minus 2, so it stays above normal windows and under PasswordPie's menu, also after
